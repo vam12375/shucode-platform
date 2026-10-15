@@ -1,0 +1,22 @@
+{
+  "name": "shucode-platform",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "build": "pnpm -r --if-present build",
+    "dev:api": "pnpm --filter @shucode-platform/api dev",
+    "dev:gateway": "pnpm --filter @shucode-platform/gateway dev",
+    "dev:console": "pnpm --filter @shucode-platform/console dev",
+    "migrate": "pnpm --filter @shucode-platform/db migrate",
+    "seed": "pnpm --filter @shucode-platform/api seed"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2"
+  }
+}
