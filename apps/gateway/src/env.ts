@@ -8,11 +8,27 @@ export interface GatewayEnv {
   upstreamBaseUrl: string;
   upstreamApiKey: string;
   anthropicVersion: string;
+  /** 上游限时（毫秒）：非流式覆盖整个上游响应；流式覆盖到响应头返回。 */
+  upstreamTimeoutMs: number;
+  /** 流式闲置超时（毫秒）：连续无字节即中断上游并释放额度预留。 */
+  upstreamIdleTimeoutMs: number;
+  /** 与 api 共用的凭据密钥：解密 upstream_providers 密文；缺省时绑定供应商的前缀解析不可用。 */
+  platformSecretKey: string | null;
 }
 
 function isTruthy(value: string | undefined): boolean {
   const normalized = value?.trim().toLowerCase();
   return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+function readPositiveIntMs(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const raw = env[name]?.trim();
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name} 非法: ${env[name]}`);
+  }
+  return parsed;
 }
 
 export function loadGatewayEnv(env: NodeJS.ProcessEnv = process.env): GatewayEnv {
@@ -34,5 +50,9 @@ export function loadGatewayEnv(env: NodeJS.ProcessEnv = process.env): GatewayEnv
     ),
     upstreamApiKey: env.UPSTREAM_API_KEY?.trim() || "",
     anthropicVersion: env.ANTHROPIC_VERSION?.trim() || "2023-06-01",
+    // 超时保底：上游挂死不释放的预留会冻结团队额度，必须有时限兜底。
+    upstreamTimeoutMs: readPositiveIntMs(env, "UPSTREAM_TIMEOUT_MS", 120_000),
+    upstreamIdleTimeoutMs: readPositiveIntMs(env, "UPSTREAM_IDLE_TIMEOUT_MS", 60_000),
+    platformSecretKey: env.PLATFORM_SECRET_KEY?.trim() || null,
   };
 }
