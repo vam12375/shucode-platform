@@ -1,0 +1,327 @@
+import { Fragment, useCallback, useEffect, useState, type FormEvent } from "react";
+import { api } from "../api.js";
+import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
+import { Select } from "../components/Select.js";
+import { Chip, Notice } from "../components/StatusChip.js";
+
+interface ProviderRow {
+  id: string;
+  name: string;
+  baseUrl: string;
+  protocol: "openai-chat-completions" | "openai-responses" | "anthropic-messages";
+  enabled: boolean;
+  hasKey: boolean;
+  apiKeyHint: string | null;
+  anthropicVersion: string | null;
+  timeoutMs: number | null;
+  createdAt: string;
+}
+
+function protocolLabel(protocol: ProviderRow["protocol"]): string {
+  if (protocol === "anthropic-messages") return "anthropic · /v1/messages";
+  if (protocol === "openai-responses") return "openai responses · /v1/responses（专用）";
+  // OpenAI 兼容家族：chat 与 responses 两个端点都透传给该供应商。
+  return "openai · /chat/completions · /responses";
+}
+
+export function ProvidersPage() {
+  const [providers, setProviders] = useState<ProviderRow[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    name: "",
+    baseUrl: "",
+    protocol: "openai-chat-completions" as ProviderRow["protocol"],
+    apiKey: "",
+    anthropicVersion: "",
+    timeoutMs: "",
+  });
+  const [expandedModels, setExpandedModels] = useState<string | null>(null);
+  const [fetchedModels, setFetchedModels] = useState<Record<string, string[]>>({});
+
+  const load = useCallback(async () => {
+    try {
+      const data = await api<{ providers: ProviderRow[] }>("/providers");
+      setProviders(data.providers);
+      setError(null);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "加载失败");
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const resetForm = (): void => {
+    setEditingId(null);
+    setForm({ name: "", baseUrl: "", protocol: "openai-chat-completions", apiKey: "", anthropicVersion: "", timeoutMs: "" });
+  };
+
+  const submit = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      const body = {
+        name: form.name.trim(),
+        baseUrl: form.baseUrl.trim(),
+        protocol: form.protocol,
+        // 空密钥 = 不修改已存密钥（编辑时）；新供应商留空则不配密钥。
+        ...(form.apiKey ? { apiKey: form.apiKey } : {}),
+        anthropicVersion: form.anthropicVersion.trim() || null,
+        timeoutMs: form.timeoutMs ? Number.parseInt(form.timeoutMs, 10) : null,
+      };
+      if (editingId) {
+        await api(`/providers/${editingId}`, { method: "PATCH", body: JSON.stringify(body) });
+        toastOk(`已更新供应商「${form.name.trim()}」`, "已保存");
+      } else {
+        await api("/providers", { method: "POST", body: JSON.stringify(body) });
+        toastOk(`已创建供应商「${form.name.trim()}」，把模型绑定到它即可生效`, "已创建");
+      }
+      resetForm();
+      await load();
+    } catch (actionError) {
+      toastErr(actionError instanceof Error ? actionError.message : "操作失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startEdit = (provider: ProviderRow): void => {
+    setEditingId(provider.id);
+    setForm({
+      name: provider.name,
+      baseUrl: provider.baseUrl,
+      protocol: provider.protocol,
+      apiKey: "",
+      anthropicVersion: provider.anthropicVersion ?? "",
+      timeoutMs: provider.timeoutMs === null ? "" : String(provider.timeoutMs),
+    });
+  };
+
+  const toggleEnabled = async (provider: ProviderRow): Promise<void> => {
+    setBusy(true);
+    try {
+      await api(`/providers/${provider.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: !provider.enabled }),
+      });
+      await load();
+      toastOk(provider.enabled ? `已停用「${provider.name}」` : `已启用「${provider.name}」`);
+    } catch (actionError) {
+      toastErr(actionError instanceof Error ? actionError.message : "操作失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (provider: ProviderRow): Promise<void> => {
+    const answer = await confirmDialog({
+      k: "删除供应商",
+      title: `删除「${provider.name}」？`,
+      message: "绑定该供应商的模型将自动解绑并回落网关默认上游（env 单上游）。",
+      confirmText: "删除",
+      danger: true,
+    });
+    if (!answer.confirmed) return;
+    setBusy(true);
+    try {
+      await api(`/providers/${provider.id}`, { method: "DELETE" });
+      if (editingId === provider.id) resetForm();
+      await load();
+      toastOk(`已删除供应商「${provider.name}」`, "已删除");
+    } catch (actionError) {
+      toastErr(actionError instanceof Error ? actionError.message : "删除失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const fetchModels = async (provider: ProviderRow): Promise<void> => {
+    setBusy(true);
+    try {
+      const data = await api<{ models: string[] }>(`/providers/${provider.id}/models`);
+      setFetchedModels((current) => ({ ...current, [provider.id]: data.models }));
+      setExpandedModels(provider.id);
+      toastOk(`上游返回 ${data.models.length} 个模型，对照「上游模型」列填写映射`, "获取成功");
+    } catch (actionError) {
+      toastErr(actionError instanceof Error ? actionError.message : "获取模型列表失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div>
+      <header className="page-head">
+        <div>
+          <p className="eyebrow">接入 / 上游</p>
+          <h1>上游供应商</h1>
+        </div>
+        <span className="readout">{providers.filter((p) => p.enabled).length} 生效 · {providers.length} 家</span>
+      </header>
+      <p className="readout" style={{ margin: 0, marginBottom: 18 }}>
+        模型转发目标：控制台按需接入多家模型商，模型在「模型目录」绑定供应商；未绑定的模型走网关默认上游。
+        API Key 加密存储、只显示后四位；base_url 填协议根（自动去掉尾部 /v1，路径由平台拼接）。
+      </p>
+
+      {error ? (
+        <Notice tone="stop" k="加载失败">
+          {error}
+        </Notice>
+      ) : null}
+
+      <section className="pane">
+        <div className="pane-h">
+          <h2>{editingId ? "编辑供应商" : "接入新供应商"}</h2>
+          <span className="readout">默认 OpenAI 兼容（/v1/chat/completions）</span>
+        </div>
+        <div className="pane-b">
+          <form className="form-row" onSubmit={(event) => void submit(event)}>
+            <input
+              className="input"
+              style={{ width: 150 }}
+              placeholder="名称"
+              aria-label="供应商名称"
+              value={form.name}
+              onChange={(event) => setForm({ ...form, name: event.target.value })}
+              required
+            />
+            <input
+              className="input grow"
+              placeholder="Base URL（如 https://api.deepseek.com）"
+              aria-label="Base URL"
+              value={form.baseUrl}
+              onChange={(event) => setForm({ ...form, baseUrl: event.target.value })}
+              required
+            />
+            <Select
+              ariaLabel="API 格式"
+              style={{ width: 260 }}
+              value={form.protocol}
+              onChange={(value) => setForm({ ...form, protocol: value as ProviderRow["protocol"] })}
+              options={[
+                { value: "openai-chat-completions", label: "OpenAI 兼容（/chat/completions · /responses）" },
+                { value: "openai-responses", label: "OpenAI Responses（/v1/responses 专用）" },
+                { value: "anthropic-messages", label: "Anthropic（/v1/messages）" },
+              ]}
+            />
+            <input
+              className="input masked-input"
+              style={{ width: 170 }}
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder={editingId ? "API Key（留空不修改）" : "API Key（可空）"}
+              aria-label="API Key"
+              value={form.apiKey}
+              onChange={(event) => setForm({ ...form, apiKey: event.target.value })}
+            />
+            <input
+              className="input num"
+              style={{ width: 120 }}
+              placeholder="超时 ms"
+              aria-label="超时毫秒"
+              value={form.timeoutMs}
+              onChange={(event) => setForm({ ...form, timeoutMs: event.target.value })}
+            />
+            <button className="btn" type="submit" disabled={busy || !form.name.trim() || !form.baseUrl.trim()}>
+              {editingId ? "保存修改" : "创建供应商"}
+            </button>
+            {editingId ? (
+              <button className="btn btn-ghost" type="button" disabled={busy} onClick={resetForm}>
+                取消编辑
+              </button>
+            ) : null}
+          </form>
+        </div>
+      </section>
+
+      <section className="pane d1">
+        <div className="pane-h">
+          <h2>供应商清单</h2>
+          <span className="readout">密钥 AES-256-GCM 加密落库</span>
+        </div>
+        <div className="pane-b flush table-scroll">
+          <table className="table">
+            <thead>
+              <tr>
+                <th scope="col">名称</th>
+                <th scope="col">Base URL</th>
+                <th scope="col">API 格式</th>
+                <th scope="col">Key</th>
+                <th scope="col">状态</th>
+                <th scope="col" aria-label="操作" />
+              </tr>
+            </thead>
+            <tbody>
+              {providers.map((provider) => (
+                <Fragment key={provider.id}>
+                  <tr>
+                    <td className="name">{provider.name}</td>
+                    <td className="num">{provider.baseUrl}</td>
+                    <td>{protocolLabel(provider.protocol)}</td>
+                    <td>{provider.hasKey ? <code>…{provider.apiKeyHint}</code> : <span className="readout">未配置</span>}</td>
+                    <td>{provider.enabled ? <Chip>生效</Chip> : <Chip tone="mute">停用</Chip>}</td>
+                    <td>
+                      <div className="form-row" style={{ justifyContent: "flex-end" }}>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          disabled={busy}
+                          onClick={() => void fetchModels(provider)}
+                        >
+                          获取模型列表
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          disabled={busy}
+                          onClick={() => void toggleEnabled(provider)}
+                        >
+                          {provider.enabled ? "停用" : "启用"}
+                        </button>
+                        <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => startEdit(provider)}>
+                          编辑
+                        </button>
+                        <button
+                          className="btn btn-danger btn-sm"
+                          disabled={busy}
+                          onClick={() => void remove(provider)}
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {expandedModels === provider.id ? (
+                    <tr>
+                      <td colSpan={6}>
+                        <div className="form-row">
+                          {(fetchedModels[provider.id] ?? []).map((modelId) => (
+                            <Chip key={modelId} tone="mute">
+                              {modelId}
+                            </Chip>
+                          ))}
+                          {(fetchedModels[provider.id] ?? []).length === 0 ? (
+                            <span className="readout">上游未返回模型。</span>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              ))}
+              {providers.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="readout">
+                    还没有供应商，接入一家试试（如 DeepSeek：https://api.deepseek.com）。
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+}

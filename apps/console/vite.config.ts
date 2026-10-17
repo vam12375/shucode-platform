@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   base: "/console/",
   server: {
-    port: 5174,
+    port: 5177,
     proxy: {
       // 开发期直连本地 API（pnpm dev:api）；生产由 API 以 /console 路径托管构建产物。
       "/console/api": {

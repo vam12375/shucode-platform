@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { api } from "../api.js";
+import { Gauge } from "../components/Gauge.js";
 import type { AdminUser } from "../App.js";
 
 export function LoginPage({ onLogin }: { onLogin: (user: AdminUser) => void }) {
@@ -26,13 +27,19 @@ export function LoginPage({ onLogin }: { onLogin: (user: AdminUser) => void }) {
   };
 
   return (
-    <div className="center">
+    <div className="login-page">
       <form className="login-card" onSubmit={(event) => void submit(event)}>
-        <p className="muted" style={{ letterSpacing: "0.14em", textTransform: "uppercase", fontSize: 12 }}>
-          Mendao Console
-        </p>
-        <h1>控制台登录</h1>
+        <h1 className="login-title">MENDAO</h1>
+        <p className="login-sub">计量控制台 · METERING CONSOLE</p>
+        <div className="login-gauge">
+          <Gauge used={62} quota={100} bare />
+        </div>
+        <label className="sr-only" htmlFor="lg-email">
+          管理员邮箱
+        </label>
         <input
+          className="input"
+          id="lg-email"
           type="email"
           placeholder="管理员邮箱"
           autoComplete="username"
@@ -40,7 +47,12 @@ export function LoginPage({ onLogin }: { onLogin: (user: AdminUser) => void }) {
           onChange={(event) => setEmail(event.target.value)}
           required
         />
+        <label className="sr-only" htmlFor="lg-pass">
+          密码
+        </label>
         <input
+          className="input"
+          id="lg-pass"
           type="password"
           placeholder="密码"
           autoComplete="current-password"
@@ -49,9 +61,10 @@ export function LoginPage({ onLogin }: { onLogin: (user: AdminUser) => void }) {
           required
         />
         {error ? <p className="error">{error}</p> : null}
-        <button type="submit" disabled={busy}>
+        <button className="btn" type="submit" disabled={busy}>
           {busy ? "登录中…" : "登录"}
         </button>
+        <p className="login-foot">仅限平台管理员 · ADMIN ONLY</p>
       </form>
     </div>
   );

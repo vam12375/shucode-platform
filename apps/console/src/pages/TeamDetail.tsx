@@ -1,6 +1,12 @@
-import { formatCreditsDisplay, formatMicroCredits } from "@shucode-platform/contracts/credits";
+import {
+  MICRO_CREDITS_PER_CREDIT,
+  formatCreditsDisplay,
+} from "@shucode-platform/contracts/credits";
 import { useCallback, useEffect, useState } from "react";
-import { api, navigate } from "../api.js";
+import { api } from "../api.js";
+import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
+import { Gauge } from "../components/Gauge.js";
+import { Chip, Notice } from "../components/StatusChip.js";
 
 interface TeamDetail {
   team: {
@@ -32,6 +38,17 @@ interface TeamDetail {
     creditsMicro: number;
     createdAt: string;
   }>;
+  recentUsageNextCursor: string | null;
+}
+
+function credits(micro: number): string {
+  return formatCreditsDisplay(micro / MICRO_CREDITS_PER_CREDIT);
+}
+
+function statusChip(status: string): { tone?: "hot" | "stop" | "mute"; label: string } {
+  if (status === "ok") return { label: "成功" };
+  if (status === "aborted") return { tone: "hot", label: "中断" };
+  return { tone: "stop", label: "错误" };
 }
 
 export function TeamDetailPage({ teamId }: { teamId: string }) {
@@ -58,14 +75,40 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
     void load();
   }, [load]);
 
-  const run = async (action: () => Promise<unknown>): Promise<void> => {
+  const loadMoreUsage = async (): Promise<void> => {
+    const cursor = detail?.recentUsageNextCursor;
+    if (!cursor || busy) return;
     setBusy(true);
     setError(null);
     try {
+      const data = await api<TeamDetail>(
+        `/teams/${teamId}?usageCursor=${encodeURIComponent(cursor)}`,
+      );
+      setDetail((previous) =>
+        previous
+          ? {
+              ...previous,
+              recentUsage: [...previous.recentUsage, ...data.recentUsage],
+              recentUsageNextCursor: data.recentUsageNextCursor,
+            }
+          : data,
+      );
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "加载失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // 操作结果走全局 Toast；内联 error 仅保留给页面加载失败。
+  const run = async (action: () => Promise<unknown>, success?: string): Promise<void> => {
+    setBusy(true);
+    try {
       await action();
       await load();
+      if (success) toastOk(success);
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "操作失败");
+      toastErr(actionError instanceof Error ? actionError.message : "操作失败");
     } finally {
       setBusy(false);
     }
@@ -74,191 +117,310 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
   if (!detail) {
     return (
       <div>
-        <button className="secondary" onClick={() => navigate("/teams")}>
-          ← 返回团队列表
-        </button>
-        {error ? <p className="error">{error}</p> : <p className="muted">加载中…</p>}
+        <p className="eyebrow">
+          <a href="#/teams">← 返回团队列表</a>
+        </p>
+        {error ? (
+          <Notice tone="stop" k="加载失败">
+            {error}
+          </Notice>
+        ) : (
+          <p className="readout">加载中…</p>
+        )}
       </div>
     );
   }
 
   const { team, members, aggregates, recentUsage } = detail;
   const used = Number.parseFloat(team.usedCredits) || 0;
+  const reserved = Number.parseFloat(team.reservedCredits) || 0;
+  const quotaValue = Number.parseFloat(team.quotaCredits) || 0;
+  const totalCredits = aggregates.reduce((sum, row) => sum + row.creditsMicro, 0);
+  const totalRequests = aggregates.reduce((sum, row) => sum + row.requests, 0);
 
   return (
     <div>
-      <p>
-        <a href="#/teams" className="muted">
-          ← 返回团队列表
-        </a>
-      </p>
-      <h1>{team.name}</h1>
-      {error ? <p className="error">{error}</p> : null}
+      <header className="page-head">
+        <div>
+          <p className="eyebrow">
+            <a href="#/teams">← 返回团队列表</a>
+          </p>
+          <h1>{team.name}</h1>
+        </div>
+        <span className="readout m0">
+          共 {totalRequests.toLocaleString("en-US")} 次请求 · {credits(totalCredits)} CR
+        </span>
+      </header>
 
-      <div className="card">
-        <h2 style={{ marginTop: 0 }}>额度</h2>
-        <div className="row">
-          <span className="mono">已用 {formatCreditsDisplay(team.usedCredits)}</span>
-          <span className="mono muted">预留 {formatCreditsDisplay(team.reservedCredits)}</span>
-          <input
-            style={{ width: 160 }}
-            value={quota}
-            onChange={(event) => setQuota(event.target.value)}
-            placeholder="额度 credit"
-          />
-          <label className="row" style={{ gap: 6 }}>
-            <input
-              type="checkbox"
-              checked={unlimited}
-              onChange={(event) => setUnlimited(event.target.checked)}
+      {error ? (
+        <Notice tone="stop" k="操作未完成">
+          {error}
+        </Notice>
+      ) : null}
+
+      <section className="pane">
+        <div className="pane-h">
+          <h2>额度</h2>
+          <span className="readout">实时 · 网关计量</span>
+        </div>
+        <div className="pane-b">
+          <div style={{ marginBottom: 14 }}>
+            <Gauge
+              used={used}
+              quota={team.unlimited ? null : quotaValue}
             />
-            不限额度
-          </label>
-          <button
-            disabled={busy}
-            onClick={() =>
-              void run(() =>
-                api(`/teams/${teamId}`, {
-                  method: "PATCH",
-                  body: JSON.stringify({ quotaCredits: quota, unlimited }),
-                }),
-              )
-            }
-          >
-            保存
-          </button>
+          </div>
+          <div className="form-row">
+            <input
+              className="input num"
+              style={{ width: 160 }}
+              value={quota}
+              onChange={(event) => setQuota(event.target.value)}
+              placeholder="额度 credit"
+              aria-label="额度 credit"
+              disabled={unlimited}
+            />
+            <label className="form-row" style={{ gap: 8 }}>
+              <span className="switch">
+                <input
+                  type="checkbox"
+                  aria-label="不限额度"
+                  checked={unlimited}
+                  onChange={(event) => setUnlimited(event.target.checked)}
+                />
+                <i />
+              </span>
+              <span style={{ fontSize: 13 }}>不限额度</span>
+            </label>
+            <button
+              className="btn"
+              disabled={busy}
+              onClick={() =>
+                void run(
+                  () =>
+                    api(`/teams/${teamId}`, {
+                      method: "PATCH",
+                      body: JSON.stringify({ quotaCredits: quota, unlimited }),
+                    }),
+                  unlimited ? "已保存额度设置（不限额度）" : "已保存额度设置",
+                )
+              }
+            >
+              保存
+            </button>
+          </div>
+          <p className="readout" style={{ margin: 0, marginTop: 10 }}>
+            已用 {formatCreditsDisplay(used)} · 预留 {formatCreditsDisplay(reserved)} CR。额度扣减发生在模型网关，页面展示为实时汇总。
+          </p>
         </div>
-        <p className="muted" style={{ marginBottom: 0 }}>
-          当前用量 {used.toFixed(4)} credit。额度扣减发生在模型网关，页面展示为实时汇总。
-        </p>
-      </div>
+      </section>
 
-      <div className="card">
-        <h2 style={{ marginTop: 0 }}>成员</h2>
-        <div className="row" style={{ marginBottom: 10 }}>
-          <input
-            className="grow"
-            placeholder="按邮箱添加成员（需已创建用户）"
-            value={memberEmail}
-            onChange={(event) => setMemberEmail(event.target.value)}
-          />
-          <button
-            className="secondary"
-            disabled={busy || !memberEmail.trim()}
-            onClick={() =>
-              void run(async () => {
-                await api(`/teams/${teamId}/members`, {
-                  method: "POST",
-                  body: JSON.stringify({ email: memberEmail.trim() }),
-                });
-                setMemberEmail("");
-              })
-            }
-          >
-            添加
-          </button>
+      <section className="pane d1">
+        <div className="pane-h">
+          <h2>成员</h2>
+          <span className="readout">{members.length} 人</span>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>成员</th>
-              <th>角色</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {members.map((member) => (
-              <tr key={member.user.id}>
-                <td>
-                  {member.user.displayName} <span className="muted">({member.user.email})</span>
-                </td>
-                <td>{member.role === "owner" ? "所有者" : "成员"}</td>
-                <td style={{ textAlign: "right" }}>
-                  <button
-                    className="danger"
-                    disabled={busy}
-                    onClick={() =>
-                      void run(() =>
-                        api(`/teams/${teamId}/members/${member.user.id}`, { method: "DELETE" }),
-                      )
-                    }
-                  >
-                    移除
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="card">
-        <h2 style={{ marginTop: 0 }}>模型用量汇总</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>模型</th>
-              <th>请求数</th>
-              <th>输入 Token</th>
-              <th>输出 Token</th>
-              <th>费用（credit）</th>
-            </tr>
-          </thead>
-          <tbody>
-            {aggregates.map((row) => (
-              <tr key={row.model}>
-                <td className="mono">{row.model}</td>
-                <td>{row.requests}</td>
-                <td>{row.inputTokens.toLocaleString()}</td>
-                <td>{row.outputTokens.toLocaleString()}</td>
-                <td className="mono">{formatMicroCredits(row.creditsMicro)}</td>
-              </tr>
-            ))}
-            {aggregates.length === 0 ? (
+        <div className="pane-b">
+          <div className="form-row" style={{ marginBottom: 10 }}>
+            <input
+              className="input grow"
+              placeholder="按邮箱添加成员（需已创建用户）"
+              value={memberEmail}
+              onChange={(event) => setMemberEmail(event.target.value)}
+            />
+            <button
+              className="btn btn-ghost"
+              disabled={busy || !memberEmail.trim()}
+              onClick={() =>
+                void run(async () => {
+                  await api(`/teams/${teamId}/members`, {
+                    method: "POST",
+                    body: JSON.stringify({ email: memberEmail.trim() }),
+                  });
+                  setMemberEmail("");
+                }, `已添加成员 ${memberEmail.trim()}`)
+              }
+            >
+              添加
+            </button>
+          </div>
+        </div>
+        <div className="table-scroll">
+          <table className="table">
+            <thead>
               <tr>
-                <td colSpan={5} className="muted">
-                  暂无用量。
-                </td>
+                <th scope="col">成员</th>
+                <th scope="col">角色</th>
+                <th scope="col" aria-label="操作" />
               </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {members.map((member) => (
+                <tr key={member.user.id}>
+                  <td>
+                    {member.user.displayName} <span className="readout">({member.user.email})</span>
+                  </td>
+                  <td>{member.role === "owner" ? "所有者" : "成员"}</td>
+                  <td>
+                    <div className="form-row" style={{ justifyContent: "flex-end" }}>
+                      <button
+                        className="btn btn-danger btn-sm"
+                        disabled={busy}
+                        onClick={() => {
+                          void confirmDialog({
+                            k: "移除成员",
+                            title: `将 ${member.user.displayName} 移出「${team.name}」？`,
+                            message: "移除后该用户不再共享本团队额度；其设备凭据与账号本身不受影响。",
+                            confirmText: "移除",
+                            danger: true,
+                          }).then((answer) => {
+                            if (!answer.confirmed) return;
+                            return run(
+                              () => api(`/teams/${teamId}/members/${member.user.id}`, { method: "DELETE" }),
+                              `已移除 ${member.user.displayName}`,
+                            );
+                          });
+                        }}
+                      >
+                        移除
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {members.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="readout">
+                    还没有成员。
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-      <div className="card">
-        <h2 style={{ marginTop: 0 }}>最近请求</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>时间</th>
-              <th>模型</th>
-              <th>状态</th>
-              <th>Token（入/出）</th>
-              <th>费用</th>
-            </tr>
-          </thead>
-          <tbody>
-            {recentUsage.map((record) => (
-              <tr key={record.id}>
-                <td className="mono">{record.createdAt.replace("T", " ").slice(0, 19)}</td>
-                <td className="mono">{record.model}</td>
-                <td>{record.status}</td>
-                <td className="mono">
-                  {record.inputTokens} / {record.outputTokens}
-                </td>
-                <td className="mono">{formatMicroCredits(record.creditsMicro)}</td>
-              </tr>
-            ))}
-            {recentUsage.length === 0 ? (
+      <section className="pane d2">
+        <div className="pane-h">
+          <h2>模型用量汇总</h2>
+          <span className="readout">网关计量 · 团队账单口径</span>
+        </div>
+        <div className="pane-b flush table-scroll">
+          <table className="table">
+            <thead>
               <tr>
-                <td colSpan={5} className="muted">
-                  暂无请求记录。
-                </td>
+                <th scope="col">模型</th>
+                <th scope="col" className="num">
+                  请求数
+                </th>
+                <th scope="col" className="num">
+                  输入 Token
+                </th>
+                <th scope="col" className="num">
+                  输出 Token
+                </th>
+                <th scope="col" className="num">
+                  费用（CR）
+                </th>
               </tr>
+            </thead>
+            <tbody>
+              {aggregates.map((row) => (
+                <tr key={row.model}>
+                  <td>{row.model}</td>
+                  <td className="num">{row.requests.toLocaleString("en-US")}</td>
+                  <td className="num">{row.inputTokens.toLocaleString("en-US")}</td>
+                  <td className="num">{row.outputTokens.toLocaleString("en-US")}</td>
+                  <td className="num">{credits(row.creditsMicro)}</td>
+                </tr>
+              ))}
+              {aggregates.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="readout">
+                    暂无用量。
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+            {aggregates.length > 0 ? (
+              <tfoot>
+                <tr>
+                  <td>合计 · {aggregates.length} 个模型</td>
+                  <td className="num">{totalRequests.toLocaleString("en-US")}</td>
+                  <td className="num">
+                    {aggregates.reduce((sum, row) => sum + row.inputTokens, 0).toLocaleString("en-US")}
+                  </td>
+                  <td className="num">
+                    {aggregates.reduce((sum, row) => sum + row.outputTokens, 0).toLocaleString("en-US")}
+                  </td>
+                  <td className="num">{credits(totalCredits)}</td>
+                </tr>
+              </tfoot>
             ) : null}
-          </tbody>
-        </table>
-      </div>
+          </table>
+        </div>
+      </section>
+
+      <section className="pane d2">
+        <div className="pane-h">
+          <h2>最近请求</h2>
+          <span className="readout">每页 50 条</span>
+        </div>
+        <div className="pane-b flush table-scroll vscroll">
+          <table className="table">
+            <thead>
+              <tr>
+                <th scope="col">时间</th>
+                <th scope="col">模型</th>
+                <th scope="col">状态</th>
+                <th scope="col" className="num">
+                  Token（入 / 出）
+                </th>
+                <th scope="col" className="num">
+                  费用
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentUsage.map((record) => {
+                const status = statusChip(record.status);
+                return (
+                  <tr key={record.id}>
+                    <td className="num">{record.createdAt.replace("T", " ").slice(0, 19)}</td>
+                    <td>{record.model}</td>
+                    <td>
+                      <Chip tone={status.tone}>{status.label}</Chip>
+                    </td>
+                    <td className="num">
+                      {record.inputTokens.toLocaleString("en-US")} / {record.outputTokens.toLocaleString("en-US")}
+                    </td>
+                    <td className="num">{credits(record.creditsMicro)}</td>
+                  </tr>
+                );
+              })}
+              {recentUsage.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="readout">
+                    暂无请求记录。
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+        {detail.recentUsageNextCursor ? (
+          <div className="pane-b">
+            <button
+              className="btn btn-ghost"
+              type="button"
+              disabled={busy}
+              onClick={() => void loadMoreUsage()}
+            >
+              加载更多
+            </button>
+          </div>
+        ) : null}
+      </section>
     </div>
   );
 }

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
+import { toastErr, toastOk } from "../components/Feedback.js";
+import { Chip, Notice } from "../components/StatusChip.js";
 
 interface ReleaseRow {
   revision: number;
@@ -12,7 +14,6 @@ export function ReleasesPage() {
   const [content, setContent] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -31,17 +32,29 @@ export function ReleasesPage() {
   const publish = async (): Promise<void> => {
     setBusy(true);
     setError(null);
-    setNotice(null);
     try {
       const result = await api<{ revision: number }>("/releases", {
         method: "POST",
         body: JSON.stringify({ content }),
       });
-      setNotice(`已发布 revision ${result.revision} 并设为生效版本`);
       setContent("");
       await load();
+      toastOk(`已发布 revision ${result.revision} 并设为生效版本`, "发布完成");
     } catch (publishError) {
-      setError(publishError instanceof Error ? publishError.message : "发布失败");
+      toastErr(publishError instanceof Error ? publishError.message : "发布失败", "发布失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const activate = async (revision: number): Promise<void> => {
+    setBusy(true);
+    try {
+      await api(`/releases/${revision}/activate`, { method: "POST" });
+      await load();
+      toastOk(`已切换到 R${revision}，客户端约 1 小时内拉取生效`, "已生效");
+    } catch (activateError) {
+      toastErr(activateError instanceof Error ? activateError.message : "操作失败");
     } finally {
       setBusy(false);
     }
@@ -54,87 +67,96 @@ export function ReleasesPage() {
 
   return (
     <div>
-      <h1>内置配置发布</h1>
-      <p className="muted">
-        发布客户端内置 Provider/模型规则（Built-in Release）。客户端约 1 小时内拉取生效；
-        内容必须是客户端可解析的完整配置，发布前请用客户端的配置目录文件校验（推荐直接以当前
-        <span className="mono"> config/provider/shucode-builtin.json </span>
-        为模板修改）。错误内容会被客户端整份拒绝并回落旧缓存。
+      <header className="page-head">
+        <div>
+          <p className="eyebrow">下发 / 版本</p>
+          <h1>内置配置发布</h1>
+        </div>
+        <span className="readout">生效版本 · {releases.find((r) => r.isActive)?.revision ?? "—"}</span>
+      </header>
+      <p className="readout" style={{ margin: 0, marginBottom: 18 }}>
+        发布客户端内置 Provider/模型规则（Built-in Release）；客户端约 1 小时内拉取生效。内容必须是客户端可解析的完整配置，推荐以
+        config/provider/shucode-builtin.json 为模板修改；错误内容会被客户端整份拒绝并回落旧缓存。
       </p>
-      {error ? <p className="error">{error}</p> : null}
-      {notice ? <p className="muted">{notice}</p> : null}
 
-      <div className="card">
-        <h2 style={{ marginTop: 0 }}>发布新版本</h2>
-        <div className="row" style={{ marginBottom: 8 }}>
-          <input
-            type="file"
-            accept="application/json"
-            onChange={(event) => void onPickFile(event.target.files?.[0])}
+      {error ? (
+        <Notice tone="stop" k="加载失败">
+          {error}
+        </Notice>
+      ) : null}
+
+      <section className="pane">
+        <div className="pane-h">
+          <h2>发布新版本</h2>
+        </div>
+        <div className="pane-b">
+          <div className="form-row">
+            <input className="input grow" type="file" accept="application/json" onChange={(event) => void onPickFile(event.target.files?.[0])} />
+          </div>
+          <textarea
+            placeholder={'粘贴内置配置 JSON（{"schemaVersion":1,"revision":N,"config":{...}}）'}
+            value={content}
+            onChange={(event) => setContent(event.target.value)}
           />
+          <div className="form-row" style={{ marginTop: 10 }}>
+            <button className="btn" disabled={busy || !content.trim()} onClick={() => void publish()}>
+              {busy ? "发布中…" : "发布并生效"}
+            </button>
+          </div>
         </div>
-        <textarea
-          placeholder='粘贴内置配置 JSON（{"schemaVersion":1,"revision":N,"config":{...}}）'
-          value={content}
-          onChange={(event) => setContent(event.target.value)}
-        />
-        <div className="row" style={{ marginTop: 10 }}>
-          <button disabled={busy || !content.trim()} onClick={() => void publish()}>
-            {busy ? "发布中…" : "发布并生效"}
-          </button>
-        </div>
-      </div>
+      </section>
 
-      <div className="card">
-        <h2 style={{ marginTop: 0 }}>版本历史</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Revision</th>
-              <th>发布时间</th>
-              <th>状态</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {releases.map((release) => (
-              <tr key={release.revision}>
-                <td className="mono">{release.revision}</td>
-                <td className="mono">{release.publishedAt.replace("T", " ").slice(0, 19)}</td>
-                <td>{release.isActive ? "生效中" : "历史"}</td>
-                <td style={{ textAlign: "right" }}>
-                  {release.isActive ? null : (
-                    <button
-                      className="secondary"
-                      disabled={busy}
-                      onClick={() =>
-                        void (async () => {
-                          await api(`/releases/${release.revision}/activate`, { method: "POST" })
-                            .then(load)
-                            .catch((activateError: unknown) =>
-                              setError(
-                                activateError instanceof Error ? activateError.message : "操作失败",
-                              ),
-                            );
-                        })()
-                      }
-                    >
-                      切换到此版本
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {releases.length === 0 ? (
+      <section className="pane d1">
+        <div className="pane-h">
+          <h2>版本历史</h2>
+          <span className="readout">{releases.length} 个版本</span>
+        </div>
+        <div className="pane-b flush table-scroll">
+          <table className="table">
+            <thead>
               <tr>
-                <td colSpan={4} className="muted">
-                  暂无发布记录。
-                </td>
+                <th scope="col" className="num">
+                  Revision
+                </th>
+                <th scope="col" className="num">
+                  发布时间
+                </th>
+                <th scope="col">状态</th>
+                <th scope="col" aria-label="操作" />
               </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {releases.map((release) => (
+                <tr key={release.revision}>
+                  <td className="num">R{release.revision}</td>
+                  <td className="num">{release.publishedAt.replace("T", " ").slice(0, 19)}</td>
+                  <td>{release.isActive ? <Chip>生效中</Chip> : <Chip tone="mute">历史</Chip>}</td>
+                  <td>
+                    <div className="form-row" style={{ justifyContent: "flex-end" }}>
+                      {release.isActive ? null : (
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          disabled={busy}
+                          onClick={() => void activate(release.revision)}
+                        >
+                          切换到此版本
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {releases.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="readout">
+                    暂无发布记录。
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }

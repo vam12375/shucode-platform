@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
+import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
+import { EditableCell } from "../components/EditableCell.js";
+import { Select } from "../components/Select.js";
+import { Notice } from "../components/StatusChip.js";
 
 interface ModelRow {
   modelId: string;
   displayName: string;
   upstreamModel: string | null;
+  upstreamProviderId: string | null;
   inputPricePerMtok: string;
   outputPricePerMtok: string;
   cacheReadPricePerMtok: string;
@@ -13,9 +18,26 @@ interface ModelRow {
   sortOrder: number;
 }
 
+interface ProviderOption {
+  id: string;
+  name: string;
+  enabled: boolean;
+}
+
+/** 定价库条目（/console/api/model-pricing）：命中模型 ID 时自动带价。 */
+interface PricingEntry {
+  modelId: string;
+  displayName: string;
+  inputCostPerMillion: string;
+  outputCostPerMillion: string;
+  cacheReadCostPerMillion: string;
+  cacheCreationCostPerMillion: string;
+}
+
 interface DraftState {
   displayName: string;
   upstreamModel: string;
+  upstreamProviderId: string;
   inputPricePerMtok: string;
   outputPricePerMtok: string;
   cacheReadPricePerMtok: string;
@@ -28,6 +50,7 @@ function toDraft(model: ModelRow): DraftState {
   return {
     displayName: model.displayName,
     upstreamModel: model.upstreamModel ?? "",
+    upstreamProviderId: model.upstreamProviderId ?? "",
     inputPricePerMtok: model.inputPricePerMtok,
     outputPricePerMtok: model.outputPricePerMtok,
     cacheReadPricePerMtok: model.cacheReadPricePerMtok,
@@ -39,16 +62,34 @@ function toDraft(model: ModelRow): DraftState {
 
 export function ModelsPage() {
   const [models, setModels] = useState<ModelRow[]>([]);
+  const [providers, setProviders] = useState<ProviderOption[]>([]);
+  const [pricingMap, setPricingMap] = useState<Map<string, PricingEntry>>(new Map());
   const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [newModelId, setNewModelId] = useState("");
+  // 从上游导入：选供应商 → 拉取模型列表 → 勾选 → 批量建档。
+  const [importProviderId, setImportProviderId] = useState("");
+  const [importModels, setImportModels] = useState<string[] | null>(null);
+  const [importSelected, setImportSelected] = useState<Set<string>>(new Set());
+  const [importBusy, setImportBusy] = useState(false);
+  // 点编辑单元格：同一时刻只编辑一格（Enter/失焦收起，Esc 还原草稿）。
+  type ModelsEditableField = "displayName" | "upstreamModel" | "inputPricePerMtok" | "outputPricePerMtok" | "cacheReadPricePerMtok" | "cacheWritePricePerMtok" | "sortOrder";
+  const [editingCell, setEditingCell] = useState<{ modelId: string; field: ModelsEditableField } | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const data = await api<{ models: ModelRow[] }>("/models?includeDisabled=1");
-      setModels(data.models);
-      setDrafts(Object.fromEntries(data.models.map((model) => [model.modelId, toDraft(model)])));
+      const [modelData, providerData, pricingData] = await Promise.all([
+        api<{ models: ModelRow[] }>("/models?includeDisabled=1"),
+        api<{ providers: ProviderOption[] }>("/providers"),
+        api<{ entries: PricingEntry[] }>("/model-pricing"),
+      ]);
+      setModels(modelData.models);
+      setProviders(providerData.providers);
+      setPricingMap(new Map(pricingData.entries.map((entry) => [entry.modelId, entry])));
+      setDrafts(
+        Object.fromEntries(modelData.models.map((model) => [model.modelId, toDraft(model)])),
+      );
       setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "加载失败");
@@ -63,13 +104,13 @@ export function ModelsPage() {
     const draft = drafts[modelId];
     if (!draft) return;
     setBusy(true);
-    setError(null);
     try {
       await api(`/models/${encodeURIComponent(modelId)}`, {
         method: "PUT",
         body: JSON.stringify({
           displayName: draft.displayName,
           upstreamModel: draft.upstreamModel.trim() || null,
+          upstreamProviderId: draft.upstreamProviderId || null,
           inputPricePerMtok: draft.inputPricePerMtok,
           outputPricePerMtok: draft.outputPricePerMtok,
           cacheReadPricePerMtok: draft.cacheReadPricePerMtok,
@@ -79,8 +120,9 @@ export function ModelsPage() {
         }),
       });
       await load();
+      toastOk(`已保存模型 ${modelId}`, "已保存");
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "保存失败");
+      toastErr(saveError instanceof Error ? saveError.message : "保存失败", "保存失败");
     } finally {
       setBusy(false);
     }
@@ -93,155 +135,335 @@ export function ModelsPage() {
     }));
   };
 
+  // Esc 放弃当前格子：回退到服务端原始值。
+  const editableCellProps = (modelId: string, field: ModelsEditableField, num = false) => ({
+    value: drafts[modelId]?.[field] ?? "",
+    editing: editingCell?.modelId === modelId && editingCell.field === field,
+    num,
+    ariaLabel: `${modelId} ${field}`,
+    onStartEdit: () => setEditingCell({ modelId, field }),
+    onEndEdit: () => setEditingCell(null),
+    onChange: (next: string) => update(modelId, { [field]: next } as Partial<DraftState>),
+    onRevert: () => {
+      const original = models.find((model) => model.modelId === modelId);
+      if (original) update(modelId, { [field]: toDraft(original)[field] });
+    },
+  });
+
+  const missingModelIds = (ids: string[]): Set<string> =>
+    new Set(ids.filter((id) => !models.some((model) => model.modelId === id)));
+
+  const fetchUpstreamModels = async (): Promise<void> => {
+    if (!importProviderId) return;
+    setImportBusy(true);
+    try {
+      const data = await api<{ models: string[] }>(`/providers/${importProviderId}/models`);
+      setImportModels(data.models);
+      setImportSelected(missingModelIds(data.models));
+      if (data.models.length === 0) {
+        toastErr("上游未返回任何模型", "没有可导入的模型");
+      }
+    } catch (actionError) {
+      toastErr(actionError instanceof Error ? actionError.message : "拉取模型列表失败");
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
+  const toggleImport = (modelId: string): void => {
+    setImportSelected((current) => {
+      const next = new Set(current);
+      if (next.has(modelId)) next.delete(modelId);
+      else next.add(modelId);
+      return next;
+    });
+  };
+
+  const runImport = async (): Promise<void> => {
+    if (!importProviderId || importSelected.size === 0) return;
+    setImportBusy(true);
+    try {
+      const result = await api<{ created: string[]; skipped: string[] }>("/models/import", {
+        method: "POST",
+        body: JSON.stringify({ providerId: importProviderId, modelIds: [...importSelected] }),
+      });
+      await load();
+      toastOk(
+        `已导入 ${result.created.length} 个模型（跳过 ${result.skipped.length} 个已存在）。默认停用，填好价格后再启用。`,
+        "导入完成",
+      );
+      setImportModels(null);
+    } catch (actionError) {
+      toastErr(actionError instanceof Error ? actionError.message : "导入失败", "导入失败");
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
+  const remove = async (modelId: string): Promise<void> => {
+    const answer = await confirmDialog({
+      k: "删除模型",
+      title: `删除 ${modelId}？`,
+      message: "价格配置将一并移除，仍缓存旧配置的客户端请求会得到 404。",
+      confirmText: "删除",
+      danger: true,
+    });
+    if (!answer.confirmed) return;
+    setBusy(true);
+    try {
+      await api(`/models/${encodeURIComponent(modelId)}`, { method: "DELETE" });
+      await load();
+      toastOk(`已删除模型 ${modelId}`, "已删除");
+    } catch (deleteError) {
+      toastErr(deleteError instanceof Error ? deleteError.message : "删除失败", "删除失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addModel = async (): Promise<void> => {
+    const modelId = newModelId.trim();
+    setBusy(true);
+    try {
+      // 命中定价库时自动带价（显示名/入价/出价/缓存读写），避免免费上线。
+      const pricing = pricingMap.get(modelId);
+      await api(`/models/${encodeURIComponent(modelId)}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          displayName: pricing?.displayName ?? modelId,
+          inputPricePerMtok: pricing?.inputCostPerMillion ?? "0",
+          outputPricePerMtok: pricing?.outputCostPerMillion ?? "0",
+          ...(pricing
+            ? {
+                cacheReadPricePerMtok: pricing.cacheReadCostPerMillion,
+                cacheWritePricePerMtok: pricing.cacheCreationCostPerMillion,
+              }
+            : {}),
+          enabled: false,
+        }),
+      });
+      setNewModelId("");
+      await load();
+      toastOk(
+        pricing
+          ? `已添加模型 ${modelId}（已按定价库带价，默认停用）`
+          : `已添加模型 ${modelId}（未命中定价库，价格为 0，请先填价再启用）`,
+        "已添加",
+      );
+    } catch (createError) {
+      toastErr(createError instanceof Error ? createError.message : "创建失败", "创建失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div>
-      <h1>模型目录</h1>
-      <p className="muted">
-        这里定义的模型会随用户级配置下发到客户端（作为网关 Provider 的模型清单）；
-        价格用于额度计量（每 1M token 的 credit 数）。上游模型名留空时按模型 ID 转发。
-      </p>
-      {error ? <p className="error">{error}</p> : null}
-
-      <div className="card">
-        <div className="row">
-          <input
-            className="grow"
-            placeholder="新模型 ID（对应上游模型名，如 claude-sonnet-4-5）"
-            value={newModelId}
-            onChange={(event) => setNewModelId(event.target.value)}
-          />
-          <button
-            className="secondary"
-            disabled={busy || !newModelId.trim()}
-            onClick={() =>
-              void (async () => {
-                const modelId = newModelId.trim();
-                setBusy(true);
-                try {
-                  await api(`/models/${encodeURIComponent(modelId)}`, {
-                    method: "PUT",
-                    body: JSON.stringify({
-                      displayName: modelId,
-                      inputPricePerMtok: "0",
-                      outputPricePerMtok: "0",
-                      enabled: false,
-                    }),
-                  });
-                  setNewModelId("");
-                  await load();
-                } catch (createError) {
-                  setError(createError instanceof Error ? createError.message : "创建失败");
-                } finally {
-                  setBusy(false);
-                }
-              })()
-            }
-          >
-            添加模型
-          </button>
+      <header className="page-head">
+        <div>
+          <p className="eyebrow">下发 / 价目</p>
+          <h1>模型目录</h1>
         </div>
-      </div>
+      </header>
 
-      <div className="card">
-        <table>
-          <thead>
-            <tr>
-              <th>模型 ID</th>
-              <th>显示名</th>
-              <th>上游模型</th>
-              <th>入价</th>
-              <th>出价</th>
-              <th>缓存读</th>
-              <th>缓存写</th>
-              <th>排序</th>
-              <th>启用</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
+      {error ? (
+        <Notice tone="stop" k="操作未完成">
+          {error}
+        </Notice>
+      ) : null}
+
+      <section className="pane">
+        <div className="pane-b">
+          <div className="form-row">
+            <input
+              className="input grow"
+              placeholder="新模型 ID（对应上游模型名，如 claude-sonnet-4-5）"
+              aria-label="新模型 ID"
+              value={newModelId}
+              onChange={(event) => setNewModelId(event.target.value)}
+            />
+            <button className="btn btn-ghost" type="button" disabled={busy || !newModelId.trim()} onClick={() => void addModel()}>
+              添加模型
+            </button>
+          </div>
+          <p className="readout" style={{ margin: 0, marginTop: 10 }}>
+            价格单位：每 1M token 的 credit 数 · 上游模型留空按模型 ID 转发。模型清单随用户级配置下发到客户端；
+            命中「模型定价库」的模型在添加/导入时自动带价。
+          </p>
+          <div className="form-row" style={{ marginTop: 12 }}>
+            <span className="readout">从上游导入：</span>
+            <Select
+              ariaLabel="导入来源供应商"
+              style={{ width: 200 }}
+              value={importProviderId}
+              onChange={(value) => {
+                setImportProviderId(value);
+                setImportModels(null);
+              }}
+              options={[
+                { value: "", label: "选择供应商…" },
+                ...providers.map((provider) => ({
+                  value: provider.id,
+                  label: provider.enabled ? provider.name : `${provider.name}（已停用）`,
+                })),
+              ]}
+            />
+            <button
+              className="btn btn-ghost btn-sm"
+              type="button"
+              disabled={importBusy || !importProviderId}
+              onClick={() => void fetchUpstreamModels()}
+            >
+              {importBusy ? "拉取中…" : "拉取模型列表"}
+            </button>
+            {importModels ? (
+              <>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  type="button"
+                  disabled={importBusy}
+                  onClick={() => setImportSelected(missingModelIds(importModels))}
+                >
+                  全选未导入
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  type="button"
+                  disabled={importBusy}
+                  onClick={() => setImportSelected(new Set())}
+                >
+                  清空选择
+                </button>
+                <button
+                  className="btn btn-sm"
+                  type="button"
+                  disabled={importBusy || importSelected.size === 0}
+                  onClick={() => void runImport()}
+                >
+                  导入所选（{importSelected.size}）
+                </button>
+              </>
+            ) : null}
+          </div>
+          {importModels ? (
+            <div className="form-row" style={{ marginTop: 10, flexWrap: "wrap" }}>
+              {importModels.map((modelId) => {
+                const existing = models.some((model) => model.modelId === modelId);
+                const selected = importSelected.has(modelId);
+                return (
+                  <button
+                    key={modelId}
+                    type="button"
+                    aria-pressed={selected}
+                    disabled={existing || importBusy}
+                    className={
+                      "import-chip" + (existing ? " existing" : selected ? " selected" : "")
+                    }
+                    onClick={() => toggleImport(modelId)}
+                  >
+                    {modelId}
+                    {existing ? " · 已在目录" : ""}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      <section className="pane d1">
+        <div className="pane-h">
+          <h2>模型清单</h2>
+          <span className="readout">{models.length} 个 · 保存后随下一轮配置下发</span>
+        </div>
+        <div className="pane-b">
+          <div className="model-grid">
             {models.map((model) => {
               const draft = drafts[model.modelId] ?? toDraft(model);
               return (
-                <tr key={model.modelId}>
-                  <td className="mono">{model.modelId}</td>
-                  <td>
-                    <input
-                      style={{ width: 130 }}
-                      value={draft.displayName}
-                      onChange={(event) => update(model.modelId, { displayName: event.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      style={{ width: 120 }}
-                      value={draft.upstreamModel}
-                      placeholder="同模型 ID"
-                      onChange={(event) =>
-                        update(model.modelId, { upstreamModel: event.target.value })
-                      }
-                    />
-                  </td>
-                  <td>
-                    <input
-                      style={{ width: 64 }}
-                      value={draft.inputPricePerMtok}
-                      onChange={(event) =>
-                        update(model.modelId, { inputPricePerMtok: event.target.value })
-                      }
-                    />
-                  </td>
-                  <td>
-                    <input
-                      style={{ width: 64 }}
-                      value={draft.outputPricePerMtok}
-                      onChange={(event) =>
-                        update(model.modelId, { outputPricePerMtok: event.target.value })
-                      }
-                    />
-                  </td>
-                  <td>
-                    <input
-                      style={{ width: 64 }}
-                      value={draft.cacheReadPricePerMtok}
-                      onChange={(event) =>
-                        update(model.modelId, { cacheReadPricePerMtok: event.target.value })
-                      }
-                    />
-                  </td>
-                  <td>
-                    <input
-                      style={{ width: 64 }}
-                      value={draft.cacheWritePricePerMtok}
-                      onChange={(event) =>
-                        update(model.modelId, { cacheWritePricePerMtok: event.target.value })
-                      }
-                    />
-                  </td>
-                  <td>
-                    <input
-                      style={{ width: 48 }}
-                      value={draft.sortOrder}
-                      onChange={(event) => update(model.modelId, { sortOrder: event.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={draft.enabled}
-                      onChange={(event) => update(model.modelId, { enabled: event.target.checked })}
-                    />
-                  </td>
-                  <td style={{ textAlign: "right" }}>
-                    <button className="secondary" disabled={busy} onClick={() => void save(model.modelId)}>
+                <article
+                  key={model.modelId}
+                  className={draft.enabled ? "model-card" : "model-card disabled"}
+                >
+                  <div className="model-card-head">
+                    <span className="model-card-id" title={model.modelId}>
+                      {model.modelId}
+                    </span>
+                    <EditableCell {...editableCellProps(model.modelId, "displayName")} />
+                    <label className="switch" title={`启用 ${model.modelId}`}>
+                      <input
+                        type="checkbox"
+                        aria-label={`启用 ${model.modelId}`}
+                        checked={draft.enabled}
+                        onChange={(event) => update(model.modelId, { enabled: event.target.checked })}
+                      />
+                      <i />
+                    </label>
+                    <button className="btn btn-ghost btn-sm" type="button" disabled={busy} onClick={() => void save(model.modelId)}>
                       保存
                     </button>
-                  </td>
-                </tr>
+                    <button
+                      className="btn btn-danger btn-sm"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void remove(model.modelId)}
+                    >
+                      删除
+                    </button>
+                  </div>
+                  <div className="model-card-row">
+                    <label className="field" style={{ flex: "1.2 1 150px" }}>
+                      <span className="field-label">供应商</span>
+                      <Select
+                        ariaLabel={`供应商 ${model.modelId}`}
+                        style={{ width: "100%" }}
+                        value={draft.upstreamProviderId}
+                        onChange={(value) => update(model.modelId, { upstreamProviderId: value })}
+                        options={[
+                          { value: "", label: "默认（env 上游）" },
+                          ...providers.map((provider) => ({
+                            value: provider.id,
+                            label: provider.enabled ? provider.name : `${provider.name}（已停用）`,
+                          })),
+                        ]}
+                      />
+                    </label>
+                    <label className="field" style={{ flex: "1.4 1 170px" }}>
+                      <span className="field-label">上游模型（留空按模型 ID 转发）</span>
+                      <EditableCell {...editableCellProps(model.modelId, "upstreamModel")} />
+                    </label>
+                  </div>
+                  <div className="model-card-row">
+                    <label className="field">
+                      <span className="field-label">入价</span>
+                      <EditableCell {...editableCellProps(model.modelId, "inputPricePerMtok", true)} />
+                    </label>
+                    <label className="field">
+                      <span className="field-label">出价</span>
+                      <EditableCell {...editableCellProps(model.modelId, "outputPricePerMtok", true)} />
+                    </label>
+                    <label className="field">
+                      <span className="field-label">缓存读</span>
+                      <EditableCell {...editableCellProps(model.modelId, "cacheReadPricePerMtok", true)} />
+                    </label>
+                    <label className="field">
+                      <span className="field-label">缓存写</span>
+                      <EditableCell {...editableCellProps(model.modelId, "cacheWritePricePerMtok", true)} />
+                    </label>
+                    <label className="field" style={{ flex: "0.8 1 64px" }}>
+                      <span className="field-label">排序</span>
+                      <EditableCell {...editableCellProps(model.modelId, "sortOrder", true)} />
+                    </label>
+                  </div>
+                </article>
               );
             })}
-          </tbody>
-        </table>
-      </div>
+            {models.length === 0 ? (
+              <div className="readout">还没有模型，先添加一个或从上方「从上游导入」批量建档。</div>
+            ) : null}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

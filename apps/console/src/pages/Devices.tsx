@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
+import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
+import { Chip, Notice } from "../components/StatusChip.js";
 
 interface DeviceRow {
   id: string;
@@ -31,75 +33,104 @@ export function DevicesPage() {
     void load();
   }, [load]);
 
+  const revoke = async (device: DeviceRow): Promise<void> => {
+    const answer = await confirmDialog({
+      k: "吊销设备",
+      title: `吊销「${device.name}」的凭据？`,
+      message: `吊销后该设备的网关请求立即 401，需重新走设备登录流方可恢复（${device.userEmail}）。`,
+      confirmText: "吊销",
+      danger: true,
+    });
+    if (!answer.confirmed) return;
+    setBusy(true);
+    try {
+      await api(`/devices/${device.id}/revoke`, { method: "POST" });
+      await load();
+      toastOk(`已吊销「${device.name}」的设备凭据`, "已吊销");
+    } catch (revokeError) {
+      toastErr(revokeError instanceof Error ? revokeError.message : "吊销失败", "吊销失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div>
-      <h1>设备凭据</h1>
-      <p className="muted">
+      <header className="page-head">
+        <div>
+          <p className="eyebrow">接入 / 凭据</p>
+          <h1>设备凭据</h1>
+        </div>
+        <span className="readout">
+          {devices.filter((d) => !d.revokedAt).length} 有效 · {devices.length} 台
+        </span>
+      </header>
+      <p className="readout" style={{ margin: 0, marginBottom: 18 }}>
         每台登录设备持有独立凭据（共享团队额度、可单独吊销）。吊销后该设备的网关请求立即 401。
       </p>
-      {error ? <p className="error">{error}</p> : null}
-      <div className="card">
-        <table>
-          <thead>
-            <tr>
-              <th>设备</th>
-              <th>账号</th>
-              <th>后缀</th>
-              <th>最近使用</th>
-              <th>状态</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {devices.map((device) => (
-              <tr key={device.id}>
-                <td>
-                  {device.name}
-                  {device.platform ? <span className="muted"> · {device.platform}</span> : null}
-                </td>
-                <td className="mono">{device.userEmail}</td>
-                <td className="mono">…{device.hint}</td>
-                <td className="mono">
-                  {device.lastUsedAt ? device.lastUsedAt.replace("T", " ").slice(0, 19) : "从未"}
-                </td>
-                <td>{device.revokedAt ? "已吊销" : "有效"}</td>
-                <td style={{ textAlign: "right" }}>
-                  {device.revokedAt ? null : (
-                    <button
-                      className="danger"
-                      disabled={busy}
-                      onClick={() =>
-                        void (async () => {
-                          setBusy(true);
-                          try {
-                            await api(`/devices/${device.id}/revoke`, { method: "POST" });
-                            await load();
-                          } catch (revokeError) {
-                            setError(
-                              revokeError instanceof Error ? revokeError.message : "吊销失败",
-                            );
-                          } finally {
-                            setBusy(false);
-                          }
-                        })()
-                      }
-                    >
-                      吊销
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {devices.length === 0 ? (
+
+      {error ? (
+        <Notice tone="stop" k="操作未完成">
+          {error}
+        </Notice>
+      ) : null}
+
+      <section className="pane">
+        <div className="pane-h">
+          <h2>设备清单</h2>
+          <span className="readout">共享团队额度 · 独立凭据</span>
+        </div>
+        <div className="pane-b flush table-scroll">
+          <table className="table">
+            <thead>
               <tr>
-                <td colSpan={6} className="muted">
-                  还没有设备登录记录。
-                </td>
+                <th scope="col">设备</th>
+                <th scope="col">账号</th>
+                <th scope="col">后缀</th>
+                <th scope="col" className="num">
+                  最近使用
+                </th>
+                <th scope="col">状态</th>
+                <th scope="col" aria-label="操作" />
               </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {devices.map((device) => (
+                <tr key={device.id}>
+                  <td className="name">
+                    {device.name}
+                    {device.platform ? <span className="readout"> · {device.platform}</span> : null}
+                  </td>
+                  <td>{device.userEmail}</td>
+                  <td className="num">…{device.hint}</td>
+                  <td className="num">{device.lastUsedAt ? device.lastUsedAt.replace("T", " ").slice(0, 19) : "从未"}</td>
+                  <td>{device.revokedAt ? <Chip tone="stop">已吊销</Chip> : <Chip>有效</Chip>}</td>
+                  <td>
+                    <div className="form-row" style={{ justifyContent: "flex-end" }}>
+                      {device.revokedAt ? null : (
+                        <button
+                          className="btn btn-danger btn-sm"
+                          disabled={busy}
+                          onClick={() => void revoke(device)}
+                        >
+                          吊销
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {devices.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="readout">
+                    还没有设备登录记录。
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }

@@ -4,13 +4,11 @@ export interface ApiError extends Error {
 
 /** /console/api 客户端：携带会话 cookie，统一解包 { code, data, msg } 信封。 */
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const initHeaders = init.headers as Record<string, string> | undefined;
   const response = await fetch(`/console/api${path}`, {
     ...init,
     credentials: "include",
-    headers: {
-      "content-type": "application/json",
-      ...(init.headers ?? {}),
-    },
+    headers: { "content-type": "application/json", ...initHeaders },
   });
   const body = (await response.json().catch(() => null)) as
     | { code?: number; data?: T; msg?: string }
