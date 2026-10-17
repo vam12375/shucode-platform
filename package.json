@@ -9,7 +9,14 @@
   "scripts": {
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
     "build": "pnpm -r --if-present build",
+    "dev": "node scripts/dev.mjs",
+    "dev:memory": "node scripts/dev.mjs --memory",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose rm -sf api gateway migrate seed",
+    "docker:logs": "docker compose logs -f --tail=100 api gateway",
     "dev:api": "pnpm --filter @shucode-platform/api dev",
     "dev:gateway": "pnpm --filter @shucode-platform/gateway dev",
     "dev:console": "pnpm --filter @shucode-platform/console dev",
@@ -17,6 +24,7 @@
     "seed": "pnpm --filter @shucode-platform/api seed"
   },
   "devDependencies": {
+    "oxlint": "^1.14.0",
     "typescript": "^6.0.2"
   }
 }

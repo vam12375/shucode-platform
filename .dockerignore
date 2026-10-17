@@ -1,0 +1,13 @@
+# 构建上下文排除项：镜像内依赖由 Dockerfile 里的 pnpm install 生成，
+# .env 不进入镜像（运行时由 docker-compose 的 env_file 注入，避免密钥被烘焙进层）。
+node_modules
+**/node_modules
+**/dist
+.env
+.env.local
+.git
+.gitignore
+*.log
+.DS_Store
+.github
+.trellis

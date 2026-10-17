@@ -1,15 +1,120 @@
-# 本地开发用 Postgres。生产环境请使用托管数据库。
+# 服务编排。
+#
+#   整套一键启动（Postgres → 迁移 → 种子 → api → 网关）：
+#     docker compose up -d            # 等价 pnpm docker:up（加 --build 显式重建镜像）
+#   只起 Postgres（本地 pnpm dev 用）：docker compose up -d postgres
+#
+# 生产部署用同一套文件：填好 .env（正式域名 / 密钥 / 上游地址）后在服务器执行第一条命令。
+# 容器内地址与密钥来自 .env（env_file，不存在时跳过），DATABASE_URL / 端口在下方显式覆盖。
+
+# .env 里的 DATABASE_URL 指向 localhost（本机开发用），容器内要访问 compose 网络里的 postgres。
+x-app-env: &app-env
+  DATABASE_URL: postgres://mendao:mendao@postgres:5432/mendao
+  # 防止 .env 里的 MEMORY_DB=1 让容器退回内存模式。
+  MEMORY_DB: ""
+
 services:
   postgres:
+    # 本地开发与 stack 共用，数据在 mendao-pg 卷；生产建议换托管数据库。
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: mendao
       POSTGRES_PASSWORD: mendao
       POSTGRES_DB: mendao
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - mendao-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mendao -d mendao"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
+    restart: unless-stopped
+
+  # 一次性任务：应用 migrations/*.sql（幂等）。
+  migrate:
+    build: { context: ., target: tools }
+    command: ["pnpm", "--filter", "@shucode-platform/db", "migrate"]
+    env_file:
+      - path: .env
+        required: false
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # 一次性任务：管理员（SEED_ADMIN_PASSWORD）+ 种子内置配置 + 默认模型目录（幂等）。
+  seed:
+    build: { context: ., target: tools }
+    command: ["pnpm", "--filter", "@shucode-platform/api", "seed"]
+    env_file:
+      - path: .env
+        required: false
+    environment: *app-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  api:
+    # 控制台产物在 api 镜像内（Dockerfile 的 console-build 阶段），以 /console 路径托管。
+    build: { context: ., target: api }
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *app-env
+      PORT: "8787"
+      CONSOLE_DIST_DIR: /app/apps/console/dist
+    ports:
+      - "${API_HOST_PORT:-8787}:8787"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8787/api/v1/client/configs').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    restart: unless-stopped
+
+  gateway:
+    build: { context: ., target: gateway }
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *app-env
+      GATEWAY_PORT: "8788"
+    ports:
+      - "${GATEWAY_HOST_PORT:-8788}:8788"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # 无凭据请求应返回 401：只要不是 5xx 就说明服务在跑。
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8788/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then((r) => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    restart: unless-stopped
 
 volumes:
   mendao-pg:
