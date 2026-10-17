@@ -85,6 +85,8 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
+          # 默认 command_timeout 只有 10m：首部署跨境拉 ghcr.io 镜像远超 10 分钟，会被中途掐断
+          command_timeout: 120m
           script: |
             # compose 报错必须中止：没有 set -e 时后续 docker image prune 的 0 退出码会掩盖失败、job 假绿
             set -euo pipefail
