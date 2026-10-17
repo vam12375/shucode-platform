@@ -86,6 +86,8 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
+            # compose 报错必须中止：没有 set -e 时后续 docker image prune 的 0 退出码会掩盖失败、job 假绿
+            set -euo pipefail
             cd /opt/shucode-platform
             docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
