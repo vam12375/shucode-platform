@@ -11,6 +11,7 @@ import {
 import { createApp } from "./app.js";
 import { createConsoleLogger, type AppContext } from "./context.js";
 import { loadPlatformEnv } from "./env.js";
+import { createConfigEventBus } from "./services/config-events.js";
 import { ensureDefaultModels, ensureSeedRelease } from "./services/release-bootstrap.js";
 
 async function main(): Promise<void> {
@@ -39,7 +40,14 @@ async function main(): Promise<void> {
     logger.warn("未配置 PLATFORM_SECRET_KEY，已生成临时密钥（重启后旧设备 token 无法恢复）");
   }
 
-  const context: AppContext = { store, env, now: Date.now, secretBox, logger };
+  const context: AppContext = {
+    store,
+    env,
+    now: Date.now,
+    secretBox,
+    configEvents: createConfigEventBus(),
+    logger,
+  };
   await ensureSeedRelease(context);
   await ensureDefaultModels(context);
 

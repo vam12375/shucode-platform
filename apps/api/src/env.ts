@@ -13,6 +13,10 @@ export interface PlatformEnv {
   cookieDomain: string | null;
   secureCookies: boolean;
   gatewayBaseUrl: string;
+  /** 平台下发的网关协议：openai-chat-completions（默认）或 anthropic-messages。 */
+  gatewayApiType: "openai-chat-completions" | "anthropic-messages";
+  /** 写入用户级下发的 provider api.baseUrl（openai 类型补 /v1 后缀，客户端在其后拼 /chat/completions）。 */
+  gatewayApiBaseUrl: string;
   /** Release JSON 下载基址；客户端要求 https。 */
   releaseBaseUrl: string;
   consoleDistDir: string | null;
@@ -45,6 +49,17 @@ export function loadPlatformEnv(env: NodeJS.ProcessEnv = process.env): PlatformE
     env.PUBLIC_API_ORIGIN?.trim() || `http://localhost:${port}`,
   );
   const publicAppOrigin = normalizeOrigin(env.PUBLIC_APP_ORIGIN?.trim() || publicApiOrigin);
+  const gatewayBaseUrl = (env.GATEWAY_BASE_URL?.trim() || "https://gw.mendao.chat").replace(
+    /\/+$/u,
+    "",
+  );
+  // 平台下发的网关协议：openai-chat-completions（默认，模型如 GLM/DeepSeek 走 chat 接口）
+  // 或 anthropic-messages（转发 Claude 系模型时可用）。openai 类型 baseUrl 带版本前缀，
+  // 客户端在其后拼 /chat/completions。
+  const gatewayApiType: "openai-chat-completions" | "anthropic-messages" =
+    env.GATEWAY_API_TYPE?.trim() === "anthropic-messages"
+      ? "anthropic-messages"
+      : "openai-chat-completions";
 
   return {
     port,
@@ -56,7 +71,10 @@ export function loadPlatformEnv(env: NodeJS.ProcessEnv = process.env): PlatformE
     platformSecretKey: env.PLATFORM_SECRET_KEY?.trim() || null,
     cookieDomain: env.COOKIE_DOMAIN?.trim() || null,
     secureCookies: publicApiOrigin.startsWith("https:"),
-    gatewayBaseUrl: (env.GATEWAY_BASE_URL?.trim() || "https://gw.mendao.chat").replace(/\/+$/u, ""),
+    gatewayBaseUrl,
+    gatewayApiType,
+    gatewayApiBaseUrl:
+      gatewayApiType === "openai-chat-completions" ? `${gatewayBaseUrl}/v1` : gatewayBaseUrl,
     releaseBaseUrl: (env.RELEASE_BASE_URL?.trim() || publicApiOrigin).replace(/\/+$/u, ""),
     consoleDistDir: env.CONSOLE_DIST_DIR?.trim() || null,
     publicConsoleOrigin: env.PUBLIC_CONSOLE_ORIGIN?.trim() || null,

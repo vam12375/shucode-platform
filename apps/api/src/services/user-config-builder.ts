@@ -8,14 +8,14 @@ import type { PlatformModelRecord } from "@shucode-platform/db";
 /** 平台网关 Provider 的固定身份；客户端 personal 层以该 providerId 注册。 */
 export const PLATFORM_PROVIDER_ID = "platform:gateway";
 export const PLATFORM_PROVIDER_NAME = "Mendao Platform";
-/** 需匹配客户端 isProviderProvisioningAccountCredentialKey: account-provider:<providerId>:api-key。 */
-export const PLATFORM_GATEWAY_CREDENTIAL_KEY = "account-provider:platform:gateway:api-key";
 
 export interface BuildUserConfigInput {
   userId: string;
   teamId: string | null;
   deviceTokenId: string;
   gatewayBaseUrl: string;
+  /** 下发给客户端的网关 API 类型与 baseUrl（openai 类型 baseUrl 带 /v1 前缀）。 */
+  gatewayApi: { type: "openai-chat-completions" | "anthropic-messages"; baseUrl: string };
   models: ReadonlyArray<
     Pick<
       PlatformModelRecord,
@@ -45,9 +45,11 @@ export function buildUserConfigEnvelope(
     enabled: true,
     config: {
       group: "standard-personal",
-      // apiKey 明文不进入配置；请求凭据经 credentials 通道下发（见 attachPlatformCredential）。
+      // apiKey 由 withPlatformAccessToken 在构造时填入（设备 token）。
+      // 客户端 Registry 完整校验要求 Provider access 完整（缺 apiKey 时 Provider 会被整份丢弃），
+      // 这与客户端 UI 创建 personal provider 时把 key 存在 config.access 的行为一致。
       access: { type: "api-key" },
-      api: { type: "anthropic-messages", baseUrl: input.gatewayBaseUrl },
+      api: { type: input.gatewayApi.type, baseUrl: input.gatewayApi.baseUrl },
       personalModelIds: modelIds,
       modelOrder: modelIds,
       visibility: "visible",
@@ -86,16 +88,37 @@ export function buildUserConfigEnvelope(
   return providerProvisioningEnvelopeSchema.parse(envelope);
 }
 
-/** 追加平台设备 token 凭据；同一信封可被同一设备反复应用（already-applied 由客户端去重）。 */
-export function attachPlatformCredential(
+/**
+ * 把设备 token 写入网关 Provider 的 config.access.apiKey。
+ *
+ * 客户端 Registry 完整校验只认 config.access.apiKey：credentials 通道的
+ * `account-provider:*:api-key` 仅用于 Account Provider，普通 personal provider 不消费它，
+ * 不在此处填入会让 Provider 被整份丢弃（provider-not-found → 信封回滚）。
+ * 同一信封可被同一设备反复应用（already-applied 由客户端去重）。
+ */
+export function withPlatformAccessToken(
   envelope: ProviderProvisioningEnvelope,
   deviceToken: string,
 ): ProviderProvisioningEnvelope {
+  const providerRules = envelope.personalConfig.providerConfigRules.providerRules.map((rule) => {
+    const typed = rule as { providerId?: unknown; config?: { access?: Record<string, unknown> } };
+    if (typed.providerId !== PLATFORM_PROVIDER_ID || !typed.config?.access) {
+      return rule;
+    }
+    return {
+      ...(rule as object),
+      config: {
+        ...typed.config,
+        access: { ...typed.config.access, apiKey: deviceToken },
+      },
+    };
+  });
   return providerProvisioningEnvelopeSchema.parse({
     ...envelope,
-    credentials: [
-      { scope: "account-provider", key: PLATFORM_GATEWAY_CREDENTIAL_KEY, value: deviceToken },
-    ],
+    personalConfig: {
+      ...envelope.personalConfig,
+      providerConfigRules: { providerRules },
+    },
   });
 }
 
@@ -105,7 +128,7 @@ export function computeUserConfigSyncId(input: BuildUserConfigInput): string {
     userId: input.userId,
     teamId: input.teamId,
     deviceTokenId: input.deviceTokenId,
-    gatewayBaseUrl: input.gatewayBaseUrl,
+    gatewayApi: input.gatewayApi,
     defaultModelId: input.defaultModelId,
     models: [...input.models]
       .map((model) => ({

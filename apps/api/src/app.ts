@@ -4,6 +4,7 @@ import { cors } from "hono/cors";
 import { Hono } from "hono";
 import type { AppContext } from "./context.js";
 import { registerClientConfigRoutes } from "./routes/client-configs.js";
+import { registerClientEventRoutes } from "./routes/client-events.js";
 import { registerConsoleRoutes } from "./routes/console.js";
 import { registerPlatformAuthRoutes } from "./routes/platform-auth.js";
 import { registerReleaseRoutes } from "./routes/releases.js";
@@ -77,6 +78,7 @@ export function createApp(context: AppContext): Hono {
   registerReleaseRoutes(app, context);
   registerPlatformAuthRoutes(app, context);
   registerUserConfigRoutes(app, context);
+  registerClientEventRoutes(app, context);
   registerConsoleRoutes(app, context);
 
   if (context.env.consoleDistDir) {

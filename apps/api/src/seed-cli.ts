@@ -1,11 +1,7 @@
-import {
-  createPostgresStore,
-  hashPassword,
-  runMigrations,
-  type PlatformStore,
-} from "@shucode-platform/db";
+import { createPostgresStore, hashPassword, runMigrations, type PlatformStore } from "@shucode-platform/db";
 import { createConsoleLogger, type AppContext } from "./context.js";
 import { loadPlatformEnv } from "./env.js";
+import { createConfigEventBus } from "./services/config-events.js";
 import { ensureDefaultModels, ensureSeedRelease } from "./services/release-bootstrap.js";
 
 /**
@@ -21,7 +17,15 @@ async function main(): Promise<void> {
   await runMigrations(env.databaseUrl as string, { log: (message) => console.log(message) });
   const store: PlatformStore = createPostgresStore(env.databaseUrl as string);
   const logger = createConsoleLogger("seed");
-  const context: AppContext = { store, env, now: Date.now, secretBox: null, logger };
+  const context: AppContext = {
+    store,
+    env,
+    now: Date.now,
+    secretBox: null,
+    // 一次性种子任务没有订阅者；事件总线仅满足 AppContext 装配完整性。
+    configEvents: createConfigEventBus(),
+    logger,
+  };
 
   const adminEmail = process.env.SEED_ADMIN_EMAIL?.trim() || "admin@mendao.chat";
   const adminPassword = process.env.SEED_ADMIN_PASSWORD?.trim() || "";
