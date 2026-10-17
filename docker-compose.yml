@@ -4,7 +4,8 @@
 #     docker compose up -d            # 等价 pnpm docker:up（加 --build 显式重建镜像）
 #   只起 Postgres（本地 pnpm dev 用）：docker compose up -d postgres
 #
-# 生产部署用同一套文件：填好 .env（正式域名 / 密钥 / 上游地址）后在服务器执行第一条命令。
+# 生产部署叠加 docker-compose.prod.yml（镜像由 GitHub Actions 推到 ghcr.io，服务器不本地构建）：
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 # 容器内地址与密钥来自 .env（env_file，不存在时跳过），DATABASE_URL / 端口在下方显式覆盖。
 
 # .env 里的 DATABASE_URL 指向 localhost（本机开发用），容器内要访问 compose 网络里的 postgres。

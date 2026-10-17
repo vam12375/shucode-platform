@@ -1,0 +1,39 @@
+# 生产部署覆写：与 docker-compose.yml 叠加使用，服务器上不做本地构建——
+# 镜像由 GitHub Actions 构建并推送到 ghcr.io（见 .github/workflows/deploy.yml）。
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# 要求服务器 .env 提供 POSTGRES_PASSWORD（未设置时 compose 直接报错，避免弱口令上公网）。
+# ports: !override 需要 Docker Compose v2.24+（2024-01 之后，Ubuntu 24.04+ 官方源均满足）。
+
+x-prod-database-url: &prod-database-url
+  # 容器内一律走 compose 网络，覆盖 .env 里指向 localhost 的 DATABASE_URL。
+  DATABASE_URL: postgres://mendao:${POSTGRES_PASSWORD:?服务器 .env 需设置 POSTGRES_PASSWORD}@postgres:5432/mendao
+
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?服务器 .env 需设置 POSTGRES_PASSWORD}
+    # 只绑回环：公网无法直连数据库（云防火墙也不要放行 5432）。
+    ports: !override
+      - "127.0.0.1:5432:5432"
+
+  migrate:
+    image: ghcr.io/vam12375/shucode-platform/tools:latest
+    environment:
+      <<: *prod-database-url
+
+  seed:
+    image: ghcr.io/vam12375/shucode-platform/tools:latest
+    environment:
+      <<: *prod-database-url
+
+  api:
+    image: ghcr.io/vam12375/shucode-platform/api:latest
+    environment:
+      <<: *prod-database-url
+
+  gateway:
+    image: ghcr.io/vam12375/shucode-platform/gateway:latest
+    environment:
+      <<: *prod-database-url
