@@ -11,6 +11,7 @@ import type {
   TeamMemberView,
   TeamRecord,
   TeamWithUsage,
+  UpstreamProviderRecord,
   UsageAggregateRow,
   UsageFilter,
   UsageRecord,
@@ -40,6 +41,7 @@ export async function createMemoryStore(
   const flows = new Map<string, LoginFlowRecord>();
   const releases = new Map<number, ReleaseRecord>();
   const models = new Map<string, PlatformModelRecord>();
+  const providers = new Map<string, UpstreamProviderRecord>();
   const config = new Map<string, unknown>();
   const usage: UsageRecord[] = [];
 
@@ -89,6 +91,15 @@ export async function createMemoryStore(
     async listUsers() {
       return [...users.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     },
+    async updateUser(id, patch) {
+      const user = users.get(id);
+      if (!user) return null;
+      if (patch.disabledAt !== undefined) user.disabledAt = patch.disabledAt;
+      if (patch.displayName !== undefined) user.displayName = patch.displayName;
+      if (patch.passwordHash !== undefined) user.passwordHash = patch.passwordHash;
+      if (patch.role !== undefined) user.role = patch.role;
+      return user;
+    },
 
     // ---- sessions ----
     async createSession(record) {
@@ -103,6 +114,11 @@ export async function createMemoryStore(
     },
     async deleteSession(tokenHash) {
       sessions.delete(tokenHash);
+    },
+    async deleteSessionsForUser(userId) {
+      for (const [tokenHash, session] of sessions) {
+        if (session.userId === userId) sessions.delete(tokenHash);
+      }
     },
 
     // ---- teams ----
@@ -213,6 +229,16 @@ export async function createMemoryStore(
       const token = deviceTokens.get(id);
       if (token) token.revokedAt = at;
     },
+    async revokeDeviceTokensForUser(userId, at) {
+      let count = 0;
+      for (const token of deviceTokens.values()) {
+        if (token.userId === userId && !token.revokedAt) {
+          token.revokedAt = at;
+          count += 1;
+        }
+      }
+      return count;
+    },
 
     // ---- login flows ----
     async createLoginFlow(record) {
@@ -290,10 +316,18 @@ export async function createMemoryStore(
     },
     async upsertModel(input) {
       const existing = models.get(input.modelId);
+      // 绑定字段与 Postgres 语义一致：字段缺省=保持原值，显式 null=清除。
+      const hasUpstreamModel = Object.prototype.hasOwnProperty.call(input, "upstreamModel");
+      const hasProviderId = Object.prototype.hasOwnProperty.call(input, "upstreamProviderId");
       const record: PlatformModelRecord = {
         modelId: input.modelId,
         displayName: input.displayName,
-        upstreamModel: input.upstreamModel ?? existing?.upstreamModel ?? null,
+        upstreamModel: hasUpstreamModel
+          ? input.upstreamModel ?? null
+          : existing?.upstreamModel ?? null,
+        upstreamProviderId: hasProviderId
+          ? input.upstreamProviderId ?? null
+          : existing?.upstreamProviderId ?? null,
         inputPricePerMtok: input.inputPricePerMtok,
         outputPricePerMtok: input.outputPricePerMtok,
         cacheReadPricePerMtok: input.cacheReadPricePerMtok ?? existing?.cacheReadPricePerMtok ?? "0",
@@ -309,6 +343,57 @@ export async function createMemoryStore(
     },
     async deleteModel(modelId) {
       return models.delete(modelId);
+    },
+
+    // ---- upstream providers ----
+    async listUpstreamProviders(options) {
+      return [...providers.values()]
+        .filter((provider) => (options?.includeDisabled ? true : provider.enabled))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    },
+    async getUpstreamProvider(id) {
+      return providers.get(id) ?? null;
+    },
+    async createUpstreamProvider(input) {
+      if ([...providers.values()].some((provider) => provider.name === input.name.trim())) {
+        throw new Error(`供应商名已存在: ${input.name.trim()}`);
+      }
+      const record: UpstreamProviderRecord = {
+        id: randomId(),
+        name: input.name.trim(),
+        baseUrl: input.baseUrl,
+        protocol: input.protocol,
+        apiKeyCiphertext: input.apiKeyCiphertext,
+        apiKeyHint: input.apiKeyHint,
+        anthropicVersion: input.anthropicVersion ?? null,
+        timeoutMs: input.timeoutMs ?? null,
+        enabled: input.enabled ?? true,
+        createdAt: nowIso(),
+      };
+      providers.set(record.id, record);
+      return record;
+    },
+    async updateUpstreamProvider(id, patch) {
+      const provider = providers.get(id);
+      if (!provider) return null;
+      if (patch.name !== undefined) provider.name = patch.name;
+      if (patch.baseUrl !== undefined) provider.baseUrl = patch.baseUrl;
+      if (patch.protocol !== undefined) provider.protocol = patch.protocol;
+      if (Object.prototype.hasOwnProperty.call(patch, "apiKeyCiphertext")) {
+        provider.apiKeyCiphertext = patch.apiKeyCiphertext ?? null;
+        provider.apiKeyHint = patch.apiKeyHint ?? null;
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, "anthropicVersion")) {
+        provider.anthropicVersion = patch.anthropicVersion ?? null;
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, "timeoutMs")) {
+        provider.timeoutMs = patch.timeoutMs ?? null;
+      }
+      if (patch.enabled !== undefined) provider.enabled = patch.enabled;
+      return provider;
+    },
+    async deleteUpstreamProvider(id) {
+      return providers.delete(id);
     },
 
     // ---- config kv ----
@@ -401,6 +486,13 @@ function matchesFilter(record: UsageRecord, filter: UsageFilter): boolean {
   if (filter.userId && record.userId !== filter.userId) return false;
   if (filter.from && record.createdAt < filter.from) return false;
   if (filter.to && record.createdAt > filter.to) return false;
+  // 游标：排除排在游标行（含同刻同行）之前页已交付的记录，镜像 Postgres 的
+  // (created_at, id) 元组比较语义。
+  if (filter.cursorCreatedAt && filter.cursorId) {
+    const compare = record.createdAt.localeCompare(filter.cursorCreatedAt);
+    if (compare > 0) return false;
+    if (compare === 0 && record.id >= filter.cursorId) return false;
+  }
   return true;
 }
 

@@ -10,8 +10,8 @@ import type {
   TeamMemberView,
   TeamRecord,
   TeamWithUsage,
+  UpstreamProviderRecord,
   UsageAggregateRow,
-  UsageFilter,
   UsageRecord,
   UserRecord,
 } from "./ports.js";
@@ -121,6 +121,7 @@ function mapModel(row: Row): PlatformModelRecord {
     modelId: str(row.model_id),
     displayName: str(row.display_name),
     upstreamModel: strNullable(row.upstream_model),
+    upstreamProviderId: strNullable(row.upstream_provider_id),
     inputPricePerMtok: str(row.input_price_per_mtok),
     outputPricePerMtok: str(row.output_price_per_mtok),
     cacheReadPricePerMtok: str(row.cache_read_price_per_mtok),
@@ -129,6 +130,21 @@ function mapModel(row: Row): PlatformModelRecord {
     sortOrder: num(row.sort_order),
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
+  };
+}
+
+function mapProvider(row: Row): UpstreamProviderRecord {
+  return {
+    id: str(row.id),
+    name: str(row.name),
+    baseUrl: str(row.base_url),
+    protocol: str(row.protocol) as UpstreamProviderRecord["protocol"],
+    apiKeyCiphertext: strNullable(row.api_key_ciphertext),
+    apiKeyHint: strNullable(row.api_key_hint),
+    anthropicVersion: strNullable(row.anthropic_version),
+    timeoutMs: numNullable(row.timeout_ms),
+    enabled: row.enabled === true,
+    createdAt: iso(row.created_at),
   };
 }
 
@@ -149,6 +165,7 @@ function mapUsage(row: Row): UsageRecord {
     status: str(row.status) as UsageRecord["status"],
     errorType: strNullable(row.error_type),
     latencyMs: numNullable(row.latency_ms),
+    providerId: strNullable(row.provider_id),
     createdAt: iso(row.created_at),
   };
 }
@@ -179,6 +196,20 @@ export function createPostgresStore(databaseUrl: string): PlatformStore {
       const rows = await sql`SELECT * FROM users ORDER BY created_at ASC`;
       return rows.map((row) => mapUser(row as Row));
     },
+    async updateUser(id, patch) {
+      const hasDisabled = Object.prototype.hasOwnProperty.call(patch, "disabledAt");
+      const disabledAt = patch.disabledAt ?? null;
+      const rows = await sql`
+        UPDATE users SET
+          display_name = COALESCE(${patch.displayName ?? null}, display_name),
+          password_hash = COALESCE(${patch.passwordHash ?? null}, password_hash),
+          role = COALESCE(${patch.role ?? null}, role),
+          disabled_at = CASE WHEN ${hasDisabled} THEN ${disabledAt}::timestamptz ELSE disabled_at END
+        WHERE id = ${id}::uuid
+        RETURNING *
+      `;
+      return rows[0] ? mapUser(rows[0] as Row) : null;
+    },
 
     // ---- sessions ----
     async createSession(record: SessionRecord) {
@@ -204,6 +235,9 @@ export function createPostgresStore(databaseUrl: string): PlatformStore {
     },
     async deleteSession(tokenHash) {
       await sql`DELETE FROM sessions WHERE token_hash = ${tokenHash}`;
+    },
+    async deleteSessionsForUser(userId) {
+      await sql`DELETE FROM sessions WHERE user_id = ${userId}::uuid`;
     },
 
     // ---- teams ----
@@ -320,6 +354,14 @@ export function createPostgresStore(databaseUrl: string): PlatformStore {
     async revokeDeviceToken(id, at) {
       await sql`UPDATE device_tokens SET revoked_at = ${at}::timestamptz WHERE id = ${id}::uuid`;
     },
+    async revokeDeviceTokensForUser(userId, at) {
+      const rows = await sql`
+        UPDATE device_tokens SET revoked_at = ${at}::timestamptz
+        WHERE user_id = ${userId}::uuid AND revoked_at IS NULL
+        RETURNING id
+      `;
+      return rows.length;
+    },
 
     // ---- login flows ----
     async createLoginFlow(record) {
@@ -420,21 +462,29 @@ export function createPostgresStore(databaseUrl: string): PlatformStore {
       return rows[0] ? mapModel(rows[0] as Row) : null;
     },
     async upsertModel(input) {
+      // upstreamModel / upstreamProviderId 两个绑定字段遵循「缺省=保持、显式 null=清除」，
+      // 与 updateUser 的 disabledAt 同一套 hasOwnProperty CASE 语义。
+      const hasUpstreamModel = Object.prototype.hasOwnProperty.call(input, "upstreamModel");
+      const hasProviderId = Object.prototype.hasOwnProperty.call(input, "upstreamProviderId");
       const rows = await sql`
         INSERT INTO platform_models (
-          model_id, display_name, upstream_model,
+          model_id, display_name, upstream_model, upstream_provider_id,
           input_price_per_mtok, output_price_per_mtok,
           cache_read_price_per_mtok, cache_write_price_per_mtok,
           enabled, sort_order
         ) VALUES (
           ${input.modelId}, ${input.displayName}, ${input.upstreamModel ?? null},
+          ${input.upstreamProviderId ?? null}::uuid,
           ${input.inputPricePerMtok}::numeric, ${input.outputPricePerMtok}::numeric,
           ${input.cacheReadPricePerMtok ?? "0"}::numeric, ${input.cacheWritePricePerMtok ?? "0"}::numeric,
           ${input.enabled ?? true}, ${input.sortOrder ?? 0}
         )
         ON CONFLICT (model_id) DO UPDATE SET
           display_name = EXCLUDED.display_name,
-          upstream_model = COALESCE(EXCLUDED.upstream_model, platform_models.upstream_model),
+          upstream_model = CASE WHEN ${hasUpstreamModel}
+            THEN EXCLUDED.upstream_model ELSE platform_models.upstream_model END,
+          upstream_provider_id = CASE WHEN ${hasProviderId}
+            THEN EXCLUDED.upstream_provider_id ELSE platform_models.upstream_provider_id END,
           input_price_per_mtok = EXCLUDED.input_price_per_mtok,
           output_price_per_mtok = EXCLUDED.output_price_per_mtok,
           cache_read_price_per_mtok = EXCLUDED.cache_read_price_per_mtok,
@@ -448,6 +498,62 @@ export function createPostgresStore(databaseUrl: string): PlatformStore {
     },
     async deleteModel(modelId) {
       const rows = await sql`DELETE FROM platform_models WHERE model_id = ${modelId} RETURNING model_id`;
+      return rows.length > 0;
+    },
+
+    // ---- upstream providers ----
+    async listUpstreamProviders(options) {
+      const rows = options?.includeDisabled
+        ? await sql`SELECT * FROM upstream_providers ORDER BY created_at ASC`
+        : await sql`SELECT * FROM upstream_providers WHERE enabled ORDER BY created_at ASC`;
+      return rows.map((row) => mapProvider(row as Row));
+    },
+    async getUpstreamProvider(id) {
+      const rows = await sql`SELECT * FROM upstream_providers WHERE id = ${id}::uuid LIMIT 1`;
+      return rows[0] ? mapProvider(rows[0] as Row) : null;
+    },
+    async createUpstreamProvider(input) {
+      const rows = await sql`
+        INSERT INTO upstream_providers (
+          name, base_url, protocol, api_key_ciphertext, api_key_hint,
+          anthropic_version, timeout_ms, enabled
+        ) VALUES (
+          ${input.name.trim()}, ${input.baseUrl}, ${input.protocol},
+          ${input.apiKeyCiphertext}, ${input.apiKeyHint},
+          ${input.anthropicVersion ?? null}, ${input.timeoutMs ?? null}, ${input.enabled ?? true}
+        )
+        RETURNING *
+      `;
+      return mapProvider(rows[0] as Row);
+    },
+    async updateUpstreamProvider(id, patch) {
+      // apiKey 两字段与 anthropicVersion/timeoutMs 遵循「缺省=保持、显式 null=清除」；
+      // name/baseUrl/protocol/enabled 用 COALESCE（这些字段没有置空场景）。
+      const name = patch.name ?? null;
+      const baseUrl = patch.baseUrl ?? null;
+      const protocol = patch.protocol ?? null;
+      const hasKey = Object.prototype.hasOwnProperty.call(patch, "apiKeyCiphertext");
+      const anthropicVersion = patch.anthropicVersion ?? null;
+      const hasAnthropicVersion = Object.prototype.hasOwnProperty.call(patch, "anthropicVersion");
+      const timeoutMs = patch.timeoutMs ?? null;
+      const hasTimeout = Object.prototype.hasOwnProperty.call(patch, "timeoutMs");
+      const rows = await sql`
+        UPDATE upstream_providers SET
+          name = COALESCE(${name}, name),
+          base_url = COALESCE(${baseUrl}, base_url),
+          protocol = COALESCE(${protocol}, protocol),
+          api_key_ciphertext = CASE WHEN ${hasKey} THEN ${patch.apiKeyCiphertext ?? null} ELSE api_key_ciphertext END,
+          api_key_hint = CASE WHEN ${hasKey} THEN ${patch.apiKeyHint ?? null} ELSE api_key_hint END,
+          anthropic_version = CASE WHEN ${hasAnthropicVersion} THEN ${anthropicVersion} ELSE anthropic_version END,
+          timeout_ms = CASE WHEN ${hasTimeout} THEN ${timeoutMs} ELSE timeout_ms END,
+          enabled = COALESCE(${patch.enabled ?? null}, enabled)
+        WHERE id = ${id}::uuid
+        RETURNING *
+      `;
+      return rows[0] ? mapProvider(rows[0] as Row) : null;
+    },
+    async deleteUpstreamProvider(id) {
+      const rows = await sql`DELETE FROM upstream_providers WHERE id = ${id}::uuid RETURNING id`;
       return rows.length > 0;
     },
 
@@ -471,13 +577,13 @@ export function createPostgresStore(databaseUrl: string): PlatformStore {
         INSERT INTO usage_records (
           id, request_id, user_id, team_id, device_token_id, model, upstream_model,
           input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-          credits_micro, status, error_type, latency_ms, created_at
+          credits_micro, status, error_type, latency_ms, provider_id, created_at
         ) VALUES (
           ${record.id}::uuid, ${record.requestId}, ${record.userId}::uuid, ${record.teamId}::uuid,
           ${record.deviceTokenId}::uuid, ${record.model}, ${record.upstreamModel},
           ${record.inputTokens}, ${record.outputTokens}, ${record.cacheReadTokens},
           ${record.cacheCreationTokens}, ${record.creditsMicro}, ${record.status},
-          ${record.errorType}, ${record.latencyMs}, ${record.createdAt}::timestamptz
+          ${record.errorType}, ${record.latencyMs}, ${record.providerId}::uuid, ${record.createdAt}::timestamptz
         )
       `;
     },
@@ -487,12 +593,18 @@ export function createPostgresStore(databaseUrl: string): PlatformStore {
       const to = filter.to ?? null;
       const teamId = filter.teamId ?? null;
       const userId = filter.userId ?? null;
+      const cursorCreatedAt = filter.cursorCreatedAt ?? null;
+      const cursorId = filter.cursorId ?? null;
       const rows = await sql`
         SELECT * FROM usage_records
         WHERE (${from}::timestamptz IS NULL OR created_at >= ${from}::timestamptz)
           AND (${to}::timestamptz IS NULL OR created_at <= ${to}::timestamptz)
           AND (${teamId}::uuid IS NULL OR team_id = ${teamId}::uuid)
           AND (${userId}::uuid IS NULL OR user_id = ${userId}::uuid)
+          AND (
+            ${cursorCreatedAt}::timestamptz IS NULL
+            OR (created_at, id) < (${cursorCreatedAt}::timestamptz, ${cursorId}::uuid)
+          )
         ORDER BY created_at DESC
         LIMIT ${limit}
       `;
@@ -554,13 +666,13 @@ export function createPostgresStore(databaseUrl: string): PlatformStore {
           INSERT INTO usage_records (
             id, request_id, user_id, team_id, device_token_id, model, upstream_model,
             input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-            credits_micro, status, error_type, latency_ms, created_at
+            credits_micro, status, error_type, latency_ms, provider_id, created_at
           ) VALUES (
             ${record.id}::uuid, ${record.requestId}, ${record.userId}::uuid, ${record.teamId}::uuid,
             ${record.deviceTokenId}::uuid, ${record.model}, ${record.upstreamModel},
             ${record.inputTokens}, ${record.outputTokens}, ${record.cacheReadTokens},
             ${record.cacheCreationTokens}, ${record.creditsMicro}, ${record.status},
-            ${record.errorType}, ${record.latencyMs}, ${record.createdAt}::timestamptz
+            ${record.errorType}, ${record.latencyMs}, ${record.providerId}::uuid, ${record.createdAt}::timestamptz
           )
         `;
       });
