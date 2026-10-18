@@ -34,6 +34,7 @@ interface UsageRecordRow {
   userId: string;
   model: string;
   status: string;
+  clientIp: string | null;
   inputTokens: number;
   outputTokens: number;
   creditsMicro: number;
@@ -341,6 +342,7 @@ export function UsagePage() {
               <tr>
                 <th scope="col">时间</th>
                 <th scope="col">账号</th>
+                <th scope="col">真实IP</th>
                 <th scope="col">模型</th>
                 <th scope="col">状态</th>
                 <th scope="col" className="num">
@@ -358,6 +360,7 @@ export function UsagePage() {
                   <tr key={record.id}>
                     <td className="num">{record.createdAt.replace("T", " ").slice(0, 19)}</td>
                     <td>{userEmails.get(record.userId) ?? record.userId.slice(0, 8)}</td>
+                    <td>{record.clientIp ?? "—"}</td>
                     <td>{record.model}</td>
                     <td>
                       <Chip tone={status.tone}>{status.label}</Chip>
@@ -371,7 +374,7 @@ export function UsagePage() {
               })}
               {records.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="readout">
+                  <td colSpan={7} className="readout">
                     暂无请求记录。
                   </td>
                 </tr>
