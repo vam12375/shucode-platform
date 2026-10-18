@@ -9,6 +9,14 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.20.1] - 2026-10-18
+
+### 文档
+
+- AGENTS.md / README.md 全面更新为 Go 时代：仓库结构（server/ + console + contracts）、容器化工具链（本机无需 Go、GOPROXY 口径）、命令表、Redis 边界、conformance 测试环境变量、时区语义修正（usage from/to 按 UTC 解析、series 按上海墙钟分桶）。
+- `.env.example` 增加可选 `REDIS_URL` 说明；`.env.production.example` 同步（compose 整栈自动注入）。
+- fixtures 重新生成所需的 TS 参考实现保留在 `scripts/reference/`（crypto/passwords/pricing-doc），导出脚本已切换引用。
+
 ## [0.20.0] - 2026-10-18
 
 ### 变更(后端 Go 重构 M4:切换与清理)
