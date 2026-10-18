@@ -9,6 +9,13 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.20.5] - 2026-10-18
+
+### 清理
+
+- 删除 `apps/api`、`apps/gateway`、`packages/db` 的残留目录（源码已于 0.20.0 删除，本地仅剩未跟踪的 node_modules 缓存）。
+- `pnpm-workspace.yaml` 收窄为 `apps/console` + `packages/contracts`；`pnpm install --frozen-lockfile` 后 workspace 为根 + 两个包，锁文件无需变更。
+
 ## [0.20.4] - 2026-10-18
 
 ### 修复(部署)
