@@ -9,6 +9,19 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.19.0] - 2026-10-18
+
+### 新增(后端 Go 重构 M3:控制面 API)
+
+- `internal/apiapp`:Go 版控制面 API,镜像 apps/api 全部端点——console 管理面(auth/teams/users/releases/models/providers/定价库/配置/用量/series/设备/审计)、平台设备登录流(客户端 init/poll + 浏览器登录/授权页 + deep link)、公开配置与 Release、user-config(信封 + ETag/304)、客户端 SSE 事件。
+- 会话与凭据:`mendao_session` cookie 属性逐项一致(httpOnly/SameSite=Lax/secure 派生/7 天/可选 Domain);`uuid.base36` token 形态;设备凭据 Bearer 与 x-api-key 双通道;密码重置/禁用/降级联动吊销会话与设备。
+- 信封:provider 规则含 `config.access.apiKey`(设备 token),`credentials` 保持空数组;syncId 内容寻址;默认模型选择照旧。
+- 定价库:内置 15KB 默认定价资产 embed,首访初始化 + 内容版本乐观锁(409);导入模型按 modelId 自动带价。
+- 供应商运维:base_url 归一(剥尾部 /v1)、密钥仅存密文+hint、模型列表代理(15s 超时)、连通/推理测试(三协议探测、超时/网络/鉴权/404/429 归类、结果落库、密钥不出后端)。
+- 控制台静态托管:/console 302 → /console/,SPA fallback、MIME/缓存头、路径穿越防护;`PUBLIC_CONSOLE_ORIGIN` 带凭据 CORS 预检。
+- Redis 接入:设置 REDIS_URL 时登录限流与配置事件总线走共享存储,否则进程内(单实例语义)。
+- `cmd/api`:启动装配(memory=演示种子+临时密钥,PG=启动即迁移+强制 PLATFORM_SECRET_KEY),启动时补种子 Release/默认模型,优雅退出。
+
 ## [0.18.0] - 2026-10-18
 
 ### 新增(后端 Go 重构 M2:模型网关)

@@ -1,0 +1,725 @@
+package apiapp
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"io"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/vam12375/shucode-platform/server/internal/contracts"
+	"github.com/vam12375/shucode-platform/server/internal/crypto"
+	"github.com/vam12375/shucode-platform/server/internal/store"
+)
+
+// 公共路由:公开配置 / Release / user-config / SSE / 设备登录流(镜像 api 的六个 route 文件)。
+
+func registerPublicRoutes(router *gin.Engine, deps *Deps) {
+	registerClientConfigRoutes(router, deps)
+	registerReleaseRoutes(router, deps)
+	registerPlatformAuthRoutes(router, deps)
+	registerUserConfigRoutes(router, deps)
+	registerClientEventRoutes(router, deps)
+}
+
+// ---- client-configs ----
+
+func registerClientConfigRoutes(router *gin.Engine, deps *Deps) {
+	handler := func(c *gin.Context) {
+		ctx := c.Request.Context()
+		helpRaw, err := deps.Store.GetConfigValue(ctx, contracts.PlatformConfigKeyHelp)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		forceRaw, err := deps.Store.GetConfigValue(ctx, contracts.PlatformConfigKeyForceUpdate)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		pluginRaw, err := deps.Store.GetConfigValue(ctx, contracts.PlatformConfigKeyPluginStoreOrder)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		active, err := deps.Store.GetActiveRelease(ctx)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		input := contracts.BuildClientConfigsEnvelopeInput{}
+		if help, err := jsonDecode(helpRaw); err == nil {
+			input.Help = help
+		}
+		if plugin, err := jsonDecode(pluginRaw); err == nil && plugin != nil {
+			input.PluginStoreOrder = plugin
+		}
+		if force, err := jsonDecode(forceRaw); err == nil {
+			input.ForceUpdateMinimalVersion = readForceUpdateMinimalVersion(force)
+		}
+		// 客户端 download 边界只接受 https 绝对地址;非 https(本地开发)不下发。
+		if active != nil && strings.HasPrefix(deps.Env.ReleaseBaseURL, "https://") {
+			input.BuiltinReleaseURL = contracts.BuildBuiltinReleaseDownloadURL(deps.Env.ReleaseBaseURL, float64(active.Revision))
+		}
+		c.Header("Cache-Control", "no-cache")
+		c.JSON(200, contracts.BuildClientConfigsEnvelope(input))
+	}
+	router.GET("/api/v1/client/configs", handler)
+	router.GET("/n/configs", handler)
+}
+
+func readForceUpdateMinimalVersion(value any) string {
+	record, ok := value.(map[string]any)
+	if !ok {
+		return ""
+	}
+	if minimal, ok := record["minimalVersion"].(string); ok {
+		if trimmed := strings.TrimSpace(minimal); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+// ---- releases ----
+
+func registerReleaseRoutes(router *gin.Engine, deps *Deps) {
+	// latest.json 与 :revision 合并在同一路由(gin 的静态/参数同级会冲突),按 param 分派。
+	router.GET("/api/v1/releases/builtin/:revision", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		// latest.json 必须先于 parseInt 判定(TS 静态路由优先于参数路由)。
+		if c.Param("revision") == "latest.json" {
+			active, err := deps.Store.GetActiveRelease(ctx)
+			if err != nil {
+				internalError(c, deps, err)
+				return
+			}
+			if active == nil {
+				c.JSON(404, gin.H{"error": "no active release"})
+				return
+			}
+			c.Header("Cache-Control", "public, max-age=60")
+			c.Data(200, "application/json; charset=utf-8", active.Content)
+			return
+		}
+		raw := strings.TrimSuffix(c.Param("revision"), ".json")
+		revision, ok := parseLeadingInt(raw)
+		if !ok {
+			c.JSON(400, gin.H{"error": "invalid revision"})
+			return
+		}
+		release, err := deps.Store.GetRelease(ctx, revision)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if release == nil {
+			c.JSON(404, gin.H{"error": "release not found"})
+			return
+		}
+		c.Header("Cache-Control", "public, max-age=300")
+		c.Data(200, "application/json; charset=utf-8", release.Content)
+	})
+
+	router.GET("/api/v1/releases/electron/manifest", func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		c.Data(200, "text/yaml; charset=utf-8", []byte("version: 0.0.0\n"))
+	})
+}
+
+// ---- user-config ----
+
+func registerUserConfigRoutes(router *gin.Engine, deps *Deps) {
+	router.GET(contracts.UserConfigAPIPath, func(c *gin.Context) {
+		ctx := c.Request.Context()
+		auth, err := authenticateDevice(ctx, deps, c)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if auth == nil {
+			c.JSON(401, fail(401, "凭据无效或已吊销"))
+			return
+		}
+		teams, err := deps.Store.ListTeamsForUser(ctx, auth.User.ID)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		var primary *store.TeamRecord
+		for i := range teams {
+			if teams[i].Team.DisabledAt == nil {
+				primary = &teams[i].Team
+				break
+			}
+		}
+		var models []store.PlatformModelRecord
+		if primary != nil {
+			models, err = deps.Store.ListModels(ctx, false)
+			if err != nil {
+				internalError(c, deps, err)
+				return
+			}
+		}
+		input := BuildUserConfigInput{
+			UserID:         auth.User.ID,
+			DeviceTokenID:  auth.Device.ID,
+			GatewayBaseURL: deps.Env.GatewayBaseURL,
+			GatewayAPI: gatewayAPI{
+				Type:    deps.Env.GatewayAPIType,
+				BaseURL: deps.Env.GatewayAPIBaseURL,
+			},
+		}
+		if primary != nil {
+			input.TeamID = primary.ID
+		}
+		for _, model := range models {
+			input.Models = append(input.Models, userConfigModel{
+				ModelID:                model.ModelID,
+				InputPricePerMtok:      model.InputPricePerMtok,
+				OutputPricePerMtok:     model.OutputPricePerMtok,
+				CacheReadPricePerMtok:  model.CacheReadPricePerMtok,
+				CacheWritePricePerMtok: model.CacheWritePricePerMtok,
+			})
+		}
+		if len(models) > 0 {
+			input.DefaultModelID = models[0].ModelID
+		}
+		envelope := buildUserConfigEnvelope(input)
+		if auth.PlaintextToken != "" {
+			envelope = withPlatformAccessToken(envelope, auth.PlaintextToken)
+		}
+		body, err := jsonMarshalNoHTML(map[string]any{"code": 0, "data": map[string]any{"envelope": envelope}})
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		sum := sha256Bytes(body)
+		etag := `"` + base64urlNoPad(sum[:])[:27] + `"`
+		if match := c.GetHeader("if-none-match"); match != "" {
+			for _, candidate := range splitHeaderList(match) {
+				if candidate == etag {
+					c.Header("etag", etag)
+					c.Header("cache-control", "private, no-cache")
+					c.Status(304)
+					return
+				}
+			}
+		}
+		c.Header("content-type", "application/json; charset=utf-8")
+		c.Header("etag", etag)
+		c.Header("cache-control", "private, no-cache")
+		c.Data(200, "application/json; charset=utf-8", body)
+	})
+}
+
+// ---- client-events(SSE) ----
+
+func registerClientEventRoutes(router *gin.Engine, deps *Deps) {
+	router.GET("/api/v1/client/events", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		auth, err := authenticateDevice(ctx, deps, c)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if auth == nil {
+			c.JSON(401, fail(401, "凭据无效或已吊销"))
+			return
+		}
+		streamCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		ch, unsubscribe := deps.ConfigEvents.Subscribe(streamCtx)
+		defer unsubscribe()
+
+		c.Header("content-type", "text/event-stream")
+		c.Header("cache-control", "no-cache")
+		c.Header("connection", "keep-alive")
+		c.Writer.WriteHeader(200)
+		c.Writer.Flush()
+		// 初始帧:hello + retry 建议。
+		if _, err := c.Writer.WriteString("retry: 5000\ndata: " + `{"type":"hello"}` + "\n\n"); err != nil {
+			return
+		}
+		c.Writer.Flush()
+
+		pending := []string{}
+		lastPing := time.Now()
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-streamCtx.Done():
+				return
+			case domains, ok := <-ch:
+				if !ok {
+					return
+				}
+				pending = mergeDomains(pending, domains)
+			case <-ticker.C:
+			}
+			if len(pending) > 0 {
+				payload, err := jsonMarshalNoHTML(map[string]any{"type": "config.changed", "domains": pending})
+				if err != nil {
+					return
+				}
+				if _, err := c.Writer.WriteString("event: config.changed\ndata: " + string(payload) + "\n\n"); err != nil {
+					return
+				}
+				c.Writer.Flush()
+				pending = []string{}
+			} else if time.Since(lastPing) >= 25*time.Second {
+				if _, err := c.Writer.WriteString("event: ping\ndata: \n\n"); err != nil {
+					return
+				}
+				c.Writer.Flush()
+				lastPing = time.Now()
+			}
+		}
+	})
+}
+
+func mergeDomains(pending, incoming []string) []string {
+	seen := make(map[string]struct{}, len(pending)+len(incoming))
+	out := make([]string, 0, len(pending)+len(incoming))
+	for _, domain := range append(append([]string{}, pending...), incoming...) {
+		if _, exists := seen[domain]; exists {
+			continue
+		}
+		seen[domain] = struct{}{}
+		out = append(out, domain)
+	}
+	return out
+}
+
+// ---- platform-auth(客户端 API + 浏览器页面) ----
+
+type loginFlowTTL = time.Duration
+
+const (
+	flowTTL         loginFlowTTL = 10 * time.Minute
+	pollIntervalSec              = 3
+)
+
+func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
+	router.POST("/api/v1/platform/auth/init", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		pollToken, ok := readPollToken(c)
+		if !ok || len(pollToken) < 32 {
+			c.JSON(400, fail(400, "缺少轮询凭据"))
+			return
+		}
+		body := map[string]any{}
+		if raw, err := io.ReadAll(c.Request.Body); err == nil && len(raw) > 0 {
+			var parsed any
+			if json.Unmarshal(raw, &parsed) == nil {
+				if obj, ok := parsed.(map[string]any); ok {
+					body = obj
+				} else {
+					// 与 zod 一致:非对象 body 直接拒绝(只有 JSON 解析失败才回落空对象)。
+					c.JSON(400, fail(400, "请求参数不合法"))
+					return
+				}
+			}
+		}
+		request, err := contracts.ParsePlatformAuthInitRequest(body)
+		if err != nil {
+			c.JSON(400, fail(400, "请求参数不合法"))
+			return
+		}
+		now := deps.Now()
+		flowID, err := contracts.RandomUUIDv4()
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		deviceName := "未知设备"
+		if request.DeviceName != nil {
+			deviceName = *request.DeviceName
+		}
+		platform := ""
+		if request.Platform != nil {
+			platform = *request.Platform
+		}
+		if err := deps.Store.CreateLoginFlow(ctx, store.LoginFlowRecord{
+			ID:             flowID,
+			PollTokenHash:  crypto.HashToken(pollToken),
+			Status:         store.FlowStatusPending,
+			DeviceName:     deviceName,
+			DevicePlatform: platform,
+			CreatedAt:      now,
+			ExpiresAt:      now.Add(flowTTL),
+		}); err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		authorizeURL := deps.Env.PublicAppOrigin + "/app/platform/login?flow_id=" + flowID
+		c.JSON(200, okData(gin.H{
+			"flow_id":           flowID,
+			"authorize_url":     authorizeURL,
+			"expires_at":        now.Add(flowTTL).Unix(),
+			"poll_interval_sec": pollIntervalSec,
+		}))
+	})
+
+	router.GET("/api/v1/platform/auth/poll/:flowId", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		pollToken, ok := readPollToken(c)
+		if !ok {
+			c.JSON(400, fail(400, "缺少轮询凭据"))
+			return
+		}
+		flowID := c.Param("flowId")
+		flow, err := deps.Store.GetLoginFlow(ctx, flowID)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if flow == nil {
+			c.JSON(404, fail(404, "登录流程不存在"))
+			return
+		}
+		if crypto.HashToken(pollToken) != flow.PollTokenHash {
+			c.JSON(403, fail(403, "轮询凭据不匹配"))
+			return
+		}
+		now := deps.Now()
+		if (flow.Status == store.FlowStatusPending || flow.Status == store.FlowStatusAuthorized) &&
+			!flow.ExpiresAt.After(now) {
+			if _, err := deps.Store.UpdateLoginFlow(ctx, flowID, store.UpdateLoginFlowPatch{Status: ptr(store.FlowStatusExpired)}); err != nil {
+				internalError(c, deps, err)
+				return
+			}
+			c.JSON(200, okData(gin.H{"status": "expired"}))
+			return
+		}
+		if _, err := deps.Store.UpdateLoginFlow(ctx, flowID, store.UpdateLoginFlowPatch{LastPolledAt: &now}); err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		switch flow.Status {
+		case store.FlowStatusPending:
+			c.JSON(200, okData(gin.H{"status": "pending"}))
+			return
+		case store.FlowStatusDenied:
+			c.JSON(200, okData(gin.H{"status": "denied"}))
+			return
+		case store.FlowStatusExpired:
+			c.JSON(200, okData(gin.H{"status": "expired"}))
+			return
+		}
+		if flow.Status != store.FlowStatusAuthorized || flow.UserID == "" {
+			c.JSON(200, okData(gin.H{"status": "consumed"}))
+			return
+		}
+		if deps.SecretBox == nil {
+			c.JSON(503, fail(503, "平台未配置 PLATFORM_SECRET_KEY，无法签发凭据"))
+			return
+		}
+		user, err := deps.Store.FindUserByID(ctx, flow.UserID)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if user == nil || user.DisabledAt != nil {
+			c.JSON(403, fail(403, "账号不可用"))
+			return
+		}
+		claimed, err := deps.Store.ConsumeLoginFlow(ctx, flowID, now)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if claimed == nil {
+			c.JSON(200, okData(gin.H{"status": "consumed"}))
+			return
+		}
+		token := crypto.GenerateDeviceToken()
+		tokenID, err := contracts.RandomUUIDv4()
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		ciphertext, err := deps.SecretBox.Encrypt(token)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if err := deps.Store.CreateDeviceToken(ctx, store.DeviceTokenRecord{
+			ID: tokenID, UserID: user.ID, Name: flow.DeviceName, Platform: flow.DevicePlatform,
+			TokenHash: crypto.HashToken(token), TokenCiphertext: ciphertext,
+			TokenHint: crypto.DeviceTokenHint(token), CreatedAt: now,
+		}); err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if _, err := deps.Store.UpdateLoginFlow(ctx, flowID, store.UpdateLoginFlowPatch{TokenID: &tokenID}); err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		teams, err := deps.Store.ListTeamsForUser(ctx, user.ID)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		teamRows := make([]any, 0, len(teams))
+		for _, entry := range teams {
+			teamRows = append(teamRows, gin.H{
+				"id": entry.Team.ID, "name": entry.Team.Name, "role": string(entry.Role),
+			})
+		}
+		c.JSON(200, okData(gin.H{
+			"status": "authorized",
+			"credentials": gin.H{
+				"token": token, "token_id": tokenID, "token_hint": crypto.DeviceTokenHint(token),
+			},
+			"user": gin.H{
+				"id": user.ID, "email": user.Email, "display_name": user.DisplayName,
+			},
+			"teams": teamRows,
+		}))
+	})
+
+	// ---- 浏览器页面 ----
+
+	router.GET("/app/platform/login", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		flowID := strings.TrimSpace(c.Query("flow_id"))
+		var flow *store.LoginFlowRecord
+		var err error
+		if flowID != "" {
+			flow, err = deps.Store.GetLoginFlow(ctx, flowID)
+			if err != nil {
+				internalError(c, deps, err)
+				return
+			}
+		}
+		if flow == nil {
+			c.Data(400, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+				Title: "链接无效", Message: "登录链接无效，请回到应用重新发起登录。", Tone: "error",
+			})))
+			return
+		}
+		if flow.Status == store.FlowStatusDenied {
+			c.Data(200, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+				Title: "已取消", Message: "本次登录已取消，可关闭本页面。",
+			})))
+			return
+		}
+		if flow.Status == store.FlowStatusConsumed || flow.Status == store.FlowStatusAuthorized {
+			c.Redirect(303, "/app/platform/authorized?flow_id="+flowID)
+			return
+		}
+		if !flow.ExpiresAt.After(deps.Now()) {
+			if flow.Status == store.FlowStatusPending {
+				if _, err := deps.Store.UpdateLoginFlow(ctx, flowID, store.UpdateLoginFlowPatch{Status: ptr(store.FlowStatusExpired)}); err != nil {
+					internalError(c, deps, err)
+					return
+				}
+			}
+			c.Data(410, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+				Title: "链接已过期", Message: "登录链接已过期，请回到应用重新发起登录。", Tone: "error",
+			})))
+			return
+		}
+		user, err := readSessionUser(ctx, deps, c)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if user == nil {
+			c.Data(200, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
+				FlowID: flowID, DeviceName: flow.DeviceName,
+			})))
+			return
+		}
+		c.Data(200, "text/html; charset=utf-8", []byte(renderAuthorizePage(authorizePageOptions{
+			FlowID: flowID, DeviceName: flow.DeviceName, DevicePlatform: flow.DevicePlatform, Email: user.Email,
+		})))
+	})
+
+	router.POST("/app/platform/login", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		_ = c.Request.ParseForm()
+		flowID := c.Request.FormValue("flow_id")
+		email := strings.TrimSpace(c.Request.FormValue("email"))
+		password := c.Request.FormValue("password")
+		var flow *store.LoginFlowRecord
+		var err error
+		if flowID != "" {
+			flow, err = deps.Store.GetLoginFlow(ctx, flowID)
+			if err != nil {
+				internalError(c, deps, err)
+				return
+			}
+		}
+		if flow == nil || flow.Status != store.FlowStatusPending || !flow.ExpiresAt.After(deps.Now()) {
+			c.Data(400, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+				Title: "链接无效", Message: "登录链接无效或已过期，请回到应用重新发起登录。", Tone: "error",
+			})))
+			return
+		}
+		allowed, err := deps.PlatformLoginLimiter.Allow(ctx, resolveLimiterClientIP(c)+":"+strings.ToLower(email))
+		if err != nil {
+			deps.Logger.Warn("登录限流不可用，按 fail-open 放行", "error", err)
+			allowed = true
+		}
+		if !allowed {
+			c.Data(429, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
+				FlowID: flowID, DeviceName: flow.DeviceName, Error: "尝试次数过多，请稍后再试。",
+			})))
+			return
+		}
+		var user *store.UserRecord
+		if email != "" {
+			user, err = deps.Store.FindUserByEmail(ctx, email)
+			if err != nil {
+				internalError(c, deps, err)
+				return
+			}
+		}
+		passwordOK := user != nil && user.DisabledAt == nil && crypto.VerifyPassword(password, user.PasswordHash)
+		if user == nil || !passwordOK {
+			c.Data(401, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
+				FlowID: flowID, DeviceName: flow.DeviceName, Error: "邮箱或密码不正确。", Email: email,
+			})))
+			return
+		}
+		if err := loginWithSession(ctx, deps, c, user.ID); err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		c.Redirect(303, "/app/platform/login?flow_id="+flowID)
+	})
+
+	router.POST("/app/platform/authorize", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		_ = c.Request.ParseForm()
+		flowID := c.Request.FormValue("flow_id")
+		decision := c.Request.FormValue("decision")
+		user, err := readSessionUser(ctx, deps, c)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if user == nil {
+			c.Redirect(303, "/app/platform/login?flow_id="+flowID)
+			return
+		}
+		var flow *store.LoginFlowRecord
+		if flowID != "" {
+			flow, err = deps.Store.GetLoginFlow(ctx, flowID)
+			if err != nil {
+				internalError(c, deps, err)
+				return
+			}
+		}
+		if flow == nil {
+			c.Data(400, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+				Title: "链接无效", Message: "登录链接无效，请回到应用重新发起登录。", Tone: "error",
+			})))
+			return
+		}
+		if flow.Status == store.FlowStatusAuthorized || flow.Status == store.FlowStatusConsumed {
+			c.Redirect(303, "/app/platform/authorized?flow_id="+flowID)
+			return
+		}
+		if flow.Status != store.FlowStatusPending || !flow.ExpiresAt.After(deps.Now()) {
+			c.Data(410, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+				Title: "链接已过期", Message: "登录链接已过期，请回到应用重新发起登录。", Tone: "error",
+			})))
+			return
+		}
+		if decision == "approve" {
+			now := deps.Now()
+			if _, err := deps.Store.UpdateLoginFlow(ctx, flowID, store.UpdateLoginFlowPatch{
+				Status: ptr(store.FlowStatusAuthorized), UserID: &user.ID, AuthorizedAt: &now,
+			}); err != nil {
+				internalError(c, deps, err)
+				return
+			}
+			c.Redirect(303, "/app/platform/authorized?flow_id="+flowID)
+			return
+		}
+		if _, err := deps.Store.UpdateLoginFlow(ctx, flowID, store.UpdateLoginFlowPatch{Status: ptr(store.FlowStatusDenied)}); err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		c.Data(200, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+			Title: "已取消", Message: "已取消本次授权，可关闭本页面。",
+		})))
+	})
+
+	router.GET("/app/platform/authorized", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		flowID := strings.TrimSpace(c.Query("flow_id"))
+		var flow *store.LoginFlowRecord
+		var err error
+		if flowID != "" {
+			flow, err = deps.Store.GetLoginFlow(ctx, flowID)
+			if err != nil {
+				internalError(c, deps, err)
+				return
+			}
+		}
+		if flow == nil || (flow.Status != store.FlowStatusAuthorized && flow.Status != store.FlowStatusConsumed) {
+			c.Data(200, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+				Title: "状态未知", Message: "授权状态未知，请回到应用查看登录结果。",
+			})))
+			return
+		}
+		c.Data(200, "text/html; charset=utf-8", []byte(renderAuthorizedPage(flowID, contracts.BuildPlatformDeepLinkCallbackURL(flowID))))
+	})
+}
+
+func readPollToken(c *gin.Context) (string, bool) {
+	header := strings.TrimSpace(c.GetHeader("authorization"))
+	if len(header) < 7 || !strings.EqualFold(header[:7], "bearer ") {
+		return "", false
+	}
+	token := strings.TrimSpace(header[7:])
+	if token == "" {
+		return "", false
+	}
+	return token, true
+}
+
+// resolveLimiterClientIP:cf-connecting-ip 优先,其次 XFF 首段,兜底 unknown(与 TS 一致)。
+func resolveLimiterClientIP(c *gin.Context) string {
+	if value := strings.TrimSpace(c.GetHeader("cf-connecting-ip")); value != "" {
+		return value
+	}
+	if xff := c.GetHeader("x-forwarded-for"); xff != "" {
+		if first := strings.TrimSpace(strings.Split(xff, ",")[0]); first != "" {
+			return first
+		}
+	}
+	return "unknown"
+}
+
+func ptr[T any](v T) *T { return &v }
+
+func splitHeaderList(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		out = append(out, strings.TrimSpace(part))
+	}
+	return out
+}
+
+// sha256Bytes/base64urlNoPad:ETag 计算用。
+func sha256Bytes(data []byte) [32]byte { return sha256.Sum256(data) }
+
+func base64urlNoPad(data []byte) string {
+	return base64.RawURLEncoding.EncodeToString(data)
+}
+
+func internalError(c *gin.Context, deps *Deps, err error) {
+	deps.Logger.Error("请求处理失败", "path", c.Request.URL.Path, "error", err)
+	c.JSON(500, fail(500, "服务器内部错误"))
+}
