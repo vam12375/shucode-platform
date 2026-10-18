@@ -1,8 +1,11 @@
 import { loadEnvFilesUpwards } from "@shucode-platform/db";
+import { parseTrustedProxyIps } from "./client-ip.js";
 
 export interface GatewayEnv {
   port: number;
   host: string;
+  /** 允许提供客户端 IP 的可信反代精确地址；省略时不信任任何转发头。 */
+  trustedProxyIps?: string[];
   databaseUrl: string | null;
   memoryDb: boolean;
   upstreamBaseUrl: string;
@@ -42,6 +45,7 @@ export function loadGatewayEnv(env: NodeJS.ProcessEnv = process.env): GatewayEnv
   return {
     port,
     host: env.HOST?.trim() || "0.0.0.0",
+    trustedProxyIps: parseTrustedProxyIps(env.GATEWAY_TRUSTED_PROXY_IPS),
     databaseUrl,
     memoryDb,
     upstreamBaseUrl: (env.UPSTREAM_BASE_URL?.trim() || "https://api.anthropic.com").replace(

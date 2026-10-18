@@ -16,6 +16,7 @@ import {
   type UserRecord,
 } from "@shucode-platform/db";
 import { Hono, type Context } from "hono";
+import { normalizeIp, resolveClientIp } from "./client-ip.js";
 import type { GatewayEnv } from "./env.js";
 import {
   createAnthropicSseUsageScanner,
@@ -261,6 +262,11 @@ function buildOpenAiResponsesSpec(): ProtocolSpec {
 
 export function createGatewayApp(deps: GatewayDeps): Hono {
   const app = new Hono();
+  const trustedProxyIps = new Set((deps.env.trustedProxyIps ?? []).map((value) => {
+    const ip = normalizeIp(value);
+    if (!ip) throw new Error("可信代理必须使用有效的 IPv4/IPv6 地址");
+    return ip;
+  }));
   const secretBox: SecretBox | null = deps.env.platformSecretKey
     ? createSecretBox(deps.env.platformSecretKey)
     : null;
@@ -274,7 +280,12 @@ export function createGatewayApp(deps: GatewayDeps): Hono {
   app.get("/v1/models", (c) => handleModelsRequest(c, deps));
 
   for (const spec of [buildAnthropicSpec(), buildOpenAiSpec(), buildOpenAiResponsesSpec()]) {
-    app.post(spec.routePath, (c) => handleProtocolRequest(c, deps, spec, secretBox));
+    app.post(spec.routePath, (c) => {
+      // app.request() 不提供 Node env，无法验证来源时不采信转发头。
+      const incoming = (c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined)?.incoming;
+      const clientIp = resolveClientIp(incoming?.socket?.remoteAddress, c.req.raw.headers, trustedProxyIps);
+      return handleProtocolRequest(c, deps, spec, secretBox, clientIp);
+    });
   }
 
   return app;
@@ -285,6 +296,7 @@ async function handleProtocolRequest(
   deps: GatewayDeps,
   spec: ProtocolSpec,
   secretBox: SecretBox | null,
+  clientIp: string | null,
 ): Promise<Response> {
   // ---- 鉴权（与 /v1/models 共用，错误形状跟随本路由协议） ----
   const auth = await authenticateGatewayRequest(deps, c, spec.errorResponse);
@@ -419,6 +431,7 @@ async function handleProtocolRequest(
     creditsMicro: computeUsageMicroCredits(usage, rates),
     status,
     errorType,
+    clientIp,
     latencyMs: deps.now() - startedAt,
     providerId: upstreamProviderId,
     createdAt: new Date(deps.now()).toISOString(),

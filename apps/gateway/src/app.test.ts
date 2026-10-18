@@ -108,6 +108,103 @@ describe("模型网关", () => {
     expect(usage[0]?.creditsMicro).toBe(10500);
   });
 
+  it.each([
+    ["198.51.100.20", "198.51.100.20"],
+    ["::ffff:198.51.100.20", "198.51.100.20"],
+    ["2001:db8::20", "2001:db8::20"],
+    ["::1234", "::1234"],
+    ["::ffff:0:203.0.113.7", "::ffff:0:cb00:7107"],
+    ["10.0.0.2", "10.0.0.2"],
+    ["127.0.0.1", "127.0.0.1"],
+    ["::1", "::1"],
+    ["fd00::2", "fd00::2"],
+  ])("用量记录：未配置可信代理时对端 %s 忽略伪造头", async (remoteAddress, expectedIp) => {
+    const { app, store, teamId } = await setup({
+      upstream: async () => new Response("{}", { status: 200 }),
+    });
+    const request = messageRequest({ model: "test-model", max_tokens: 100, messages: [] });
+    const res = await app.request(
+      "/v1/messages",
+      {
+        ...request,
+        headers: {
+          ...request.headers,
+          "x-forwarded-for": "203.0.113.7, 10.0.0.3",
+          "x-real-ip": "203.0.113.8",
+        },
+      },
+      { incoming: { socket: { remoteAddress } } },
+    );
+    expect(res.status).toBe(200);
+    const usage = await store.listUsage({ teamId });
+    expect(usage).toHaveLength(1);
+    expect(usage[0]?.clientIp).toBe(expectedIp);
+  });
+
+  it("用量记录：没有 TCP 对端时不采信转发头，也不返回 500", async () => {
+    const { app, store, teamId } = await setup({
+      upstream: async () => new Response("{}", { status: 200 }),
+    });
+    const request = messageRequest({ model: "test-model", max_tokens: 100, messages: [] });
+    const res = await app.request("/v1/messages", {
+      ...request,
+      headers: { ...request.headers, "x-forwarded-for": "203.0.113.7" },
+    });
+    expect(res.status).toBe(200);
+    const usage = await store.listUsage({ teamId });
+    expect(usage).toHaveLength(1);
+    expect(usage[0]?.clientIp).toBeNull();
+  });
+
+  it.each([
+    ["/v1/messages", false, false],
+    ["/v1/messages", true, false],
+    ["/v1/messages", false, true],
+    ["/v1/chat/completions", false, false],
+    ["/v1/chat/completions", true, false],
+    ["/v1/chat/completions", false, true],
+    ["/v1/responses", false, false],
+    ["/v1/responses", true, false],
+    ["/v1/responses", false, true],
+  ])("用量记录：可信代理 %s stream=%s failed=%s 保留校验后的 IP", async (path, stream, failed) => {
+    const { app, store, teamId } = await setup({
+      envOverride: { trustedProxyIps: ["10.0.0.2", "10.0.0.3"] },
+      upstream: async () => new Response(stream ? "data: {}\n\n" : "{}", { status: failed ? 502 : 200 }),
+    });
+    const request = messageRequest({ model: "test-model", max_tokens: 100, stream, messages: [], input: "hi" });
+    const res = await app.request(
+      path,
+      {
+        ...request,
+        headers: { ...request.headers, "x-forwarded-for": "192.0.2.99, 203.0.113.7, 10.0.0.3" },
+      },
+      { incoming: { socket: { remoteAddress: "::ffff:10.0.0.2" } } },
+    );
+    expect(res.status).toBe(failed ? 502 : 200);
+    await res.text();
+    const usage = await store.listUsage({ teamId });
+    expect(usage).toHaveLength(1);
+    expect(usage[0]?.clientIp).toBe("203.0.113.7");
+    expect(usage[0]?.status).toBe(failed ? "error" : "ok");
+  });
+
+  it("用量记录：非 mapped 的 ::ffff: IPv6 可信代理可正常启动并解析来源", async () => {
+    const { app, store, teamId } = await setup({
+      envOverride: { trustedProxyIps: ["::ffff:0:cb00:7107"] },
+      upstream: async () => new Response("{}", { status: 200 }),
+    });
+    const request = messageRequest({ model: "test-model", max_tokens: 100, messages: [] });
+    const res = await app.request(
+      "/v1/messages",
+      { ...request, headers: { ...request.headers, "x-forwarded-for": "198.51.100.20" } },
+      { incoming: { socket: { remoteAddress: "::ffff:0:203.0.113.7" } } },
+    );
+    expect(res.status).toBe(200);
+    const usage = await store.listUsage({ teamId });
+    expect(usage).toHaveLength(1);
+    expect(usage[0]?.clientIp).toBe("198.51.100.20");
+  });
+
   it("流式：透传 SSE 并取 message_delta 的累积输出结算", async () => {
     const sse = [
       'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":1000,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}',
