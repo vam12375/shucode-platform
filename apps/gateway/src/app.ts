@@ -347,10 +347,15 @@ async function handleProtocolRequest(
   if (model.upstreamProviderId) {
     const provider = await deps.store.getUpstreamProvider(model.upstreamProviderId);
     if (!provider || !provider.enabled) {
+      // 停用原因透明化：自动熔断（连续失败）与人工停用对管理员/客户端呈现不同语义。
+      const reason =
+        provider && !provider.enabled && provider.disabledMode === "auto"
+          ? `自动熔断（连续失败：${provider.autoDisabledReason ?? "上游异常"}）`
+          : "已手动停用";
       return spec.errorResponse(
         404,
         "not_found_error",
-        `模型绑定的上游供应商已停用或不存在：${model.modelId}`,
+        `模型绑定的上游供应商不可用（${reason}）：${model.modelId}`,
       );
     }
     // 阶段一同构透传：按「家族」校验（openai 家族包含 chat 与 responses 两个端点）。
@@ -487,6 +492,21 @@ async function handleProtocolRequest(
     clearTimeout(headerTimeout);
     deps.logger.warn("上游请求失败", { requestId, timedOut: upstreamTimedOut, error });
     await failWithUsage("error", upstreamTimedOut ? "upstream_timeout" : "upstream_unavailable");
+    // 绑定供应商的连接级失败计入自动熔断（New API 借鉴）：连续失败到阈值即自动停用，
+    // 人工停用的供应商不参与也不会被覆盖（存储层保证）。
+    if (upstreamProviderId && deps.env.providerAutoDisableThreshold > 0) {
+      const disabled = await deps.store.reportUpstreamFailure(
+        upstreamProviderId,
+        upstreamTimedOut ? "upstream_timeout" : "upstream_unavailable",
+        deps.env.providerAutoDisableThreshold,
+      );
+      if (disabled) {
+        deps.logger.warn("上游供应商连续失败，已自动停用", {
+          providerId: upstreamProviderId,
+          reason: upstreamTimedOut ? "upstream_timeout" : "upstream_unavailable",
+        });
+      }
+    }
     if (upstreamTimedOut) {
       return spec.errorResponse(504, "api_error", "上游响应超时，请稍后重试");
     }
@@ -498,6 +518,25 @@ async function handleProtocolRequest(
     const text = (await upstream.text().catch(() => "")).slice(0, MAX_UPSTREAM_ERROR_BYTES);
     deps.logger.warn("上游返回错误", { requestId, status: upstream.status });
     await failWithUsage("error", `upstream_${upstream.status}`);
+    // 只有「供应商自身故障」计入熔断：5xx 与鉴权失效（401/403）。404 等 4xx 多为
+    // 请求侧/映射问题，限流（429）是临时状态，均不应触发自动停用。
+    if (
+      upstreamProviderId &&
+      deps.env.providerAutoDisableThreshold > 0 &&
+      (upstream.status >= 500 || upstream.status === 401 || upstream.status === 403)
+    ) {
+      const disabled = await deps.store.reportUpstreamFailure(
+        upstreamProviderId,
+        `upstream_${upstream.status}`,
+        deps.env.providerAutoDisableThreshold,
+      );
+      if (disabled) {
+        deps.logger.warn("上游供应商连续失败，已自动停用", {
+          providerId: upstreamProviderId,
+          reason: `upstream_${upstream.status}`,
+        });
+      }
+    }
     if (!text) {
       return spec.errorResponse(upstream.status, "api_error", "upstream error");
     }
@@ -507,6 +546,11 @@ async function handleProtocolRequest(
         "content-type": upstream.headers.get("content-type") ?? "application/json",
       },
     });
+  }
+
+  // 成功转发到响应头即重置连续失败计数（响应体错误与幂等由结算链路处理）。
+  if (upstreamProviderId) {
+    await deps.store.reportUpstreamSuccess(upstreamProviderId);
   }
 
   // ---- 非流式：一次结算 ----

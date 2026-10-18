@@ -15,6 +15,11 @@ export interface GatewayEnv {
   upstreamTimeoutMs: number;
   /** 流式闲置超时（毫秒）：连续无字节即中断上游并释放额度预留。 */
   upstreamIdleTimeoutMs: number;
+  /**
+   * 供应商自动熔断阈值：绑定供应商的请求连续失败 N 次后自动停用（New API 借鉴）；
+   * 0 = 关闭自动熔断。人工停用的供应商不受影响。
+   */
+  providerAutoDisableThreshold: number;
   /** 与 api 共用的凭据密钥：解密 upstream_providers 密文；缺省时绑定供应商的前缀解析不可用。 */
   platformSecretKey: string | null;
 }
@@ -29,6 +34,16 @@ function readPositiveIntMs(env: NodeJS.ProcessEnv, name: string, fallback: numbe
   if (!raw) return fallback;
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name} 非法: ${env[name]}`);
+  }
+  return parsed;
+}
+
+function readNonNegativeInt(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const raw = env[name]?.trim();
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
     throw new Error(`${name} 非法: ${env[name]}`);
   }
   return parsed;
@@ -57,6 +72,7 @@ export function loadGatewayEnv(env: NodeJS.ProcessEnv = process.env): GatewayEnv
     // 超时保底：上游挂死不释放的预留会冻结团队额度，必须有时限兜底。
     upstreamTimeoutMs: readPositiveIntMs(env, "UPSTREAM_TIMEOUT_MS", 120_000),
     upstreamIdleTimeoutMs: readPositiveIntMs(env, "UPSTREAM_IDLE_TIMEOUT_MS", 60_000),
+    providerAutoDisableThreshold: readNonNegativeInt(env, "PROVIDER_AUTO_DISABLE_THRESHOLD", 3),
     platformSecretKey: env.PLATFORM_SECRET_KEY?.trim() || null,
   };
 }

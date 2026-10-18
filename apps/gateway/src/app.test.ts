@@ -19,6 +19,7 @@ const ENV: GatewayEnv = {
   anthropicVersion: "2023-06-01",
   upstreamTimeoutMs: 120_000,
   upstreamIdleTimeoutMs: 60_000,
+  providerAutoDisableThreshold: 0,
   platformSecretKey: null,
 };
 
@@ -663,6 +664,84 @@ describe("模型网关：多上游供应商", () => {
     );
     expect(respRes.status).toBe(200);
     expect(upstreamCalled).toBe(true);
+  });
+
+  it("连续失败自动熔断：到阈值自动停用且不再触达上游；手动恢复后成功重置计数", async () => {
+    let upstreamCalls = 0;
+    let unhealthy = true;
+    const { app, store } = await setup({
+      envOverride: { providerAutoDisableThreshold: 2 },
+      upstream: async () => {
+        upstreamCalls += 1;
+        return unhealthy
+          ? new Response("boom", { status: 503 })
+          : new Response(JSON.stringify({ choices: [], usage: {} }), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            });
+      },
+    });
+    const provider = await store.createUpstreamProvider({
+      name: "Flaky",
+      baseUrl: "https://flaky.test",
+      protocol: "openai-chat-completions",
+      apiKeyCiphertext: null,
+      apiKeyHint: null,
+    });
+    await store.upsertModel({
+      modelId: "flaky-model",
+      displayName: "Flaky",
+      inputPricePerMtok: "1",
+      outputPricePerMtok: "1",
+      upstreamProviderId: provider.id,
+    });
+
+    // 第 1 次失败：503 透传，计数 1，未熔断。
+    const first = await app.request(
+      "/v1/chat/completions",
+      messageRequest({ model: "flaky-model", max_tokens: 10, messages: [] }),
+    );
+    expect(first.status).toBe(503);
+    let live = await store.getUpstreamProvider(provider.id);
+    expect(live?.enabled).toBe(true);
+    expect(live?.consecutiveFailures).toBe(1);
+
+    // 第 2 次失败：达到阈值 → auto 停用，连续失败现场完整留存。
+    const second = await app.request(
+      "/v1/chat/completions",
+      messageRequest({ model: "flaky-model", max_tokens: 10, messages: [] }),
+    );
+    expect(second.status).toBe(503);
+    live = await store.getUpstreamProvider(provider.id);
+    expect(live?.enabled).toBe(false);
+    expect(live?.disabledMode).toBe("auto");
+    expect(live?.autoDisabledReason).toBe("upstream_503");
+
+    // 熔断后不再触达上游，错误信息说明是自动熔断。
+    const callsAtTrip = upstreamCalls;
+    const tripped = await app.request(
+      "/v1/chat/completions",
+      messageRequest({ model: "flaky-model", max_tokens: 10, messages: [] }),
+    );
+    expect(tripped.status).toBe(404);
+    expect(((await tripped.json()) as { error: { message: string } }).error.message).toContain(
+      "自动熔断",
+    );
+    expect(upstreamCalls).toBe(callsAtTrip);
+
+    // 管理员恢复 → 请求恢复走到成功路径，连续失败计数清零。
+    await store.updateUpstreamProvider(provider.id, { enabled: true });
+    const restored = await store.getUpstreamProvider(provider.id);
+    expect(restored?.disabledMode).toBeNull();
+    unhealthy = false;
+    const ok = await app.request(
+      "/v1/chat/completions",
+      messageRequest({ model: "flaky-model", max_tokens: 10, messages: [] }),
+    );
+    expect(ok.status).toBe(200);
+    live = await store.getUpstreamProvider(provider.id);
+    expect(live?.enabled).toBe(true);
+    expect(live?.consecutiveFailures).toBe(0);
   });
 });
 

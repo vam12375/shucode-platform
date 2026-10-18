@@ -24,3 +24,21 @@ describe("网关可信代理环境配置", () => {
     );
   });
 });
+
+describe("供应商自动熔断阈值", () => {
+  it("缺省阈值 3；0 允许显式关闭；负数与非数字明确报错", () => {
+    expect(loadGatewayEnv({}).providerAutoDisableThreshold).toBe(3);
+    expect(
+      loadGatewayEnv({ PROVIDER_AUTO_DISABLE_THRESHOLD: "0" }).providerAutoDisableThreshold,
+    ).toBe(0);
+    expect(
+      loadGatewayEnv({ PROVIDER_AUTO_DISABLE_THRESHOLD: "5" }).providerAutoDisableThreshold,
+    ).toBe(5);
+    expect(() => loadGatewayEnv({ PROVIDER_AUTO_DISABLE_THRESHOLD: "-1" })).toThrow(
+      "PROVIDER_AUTO_DISABLE_THRESHOLD",
+    );
+    expect(() => loadGatewayEnv({ PROVIDER_AUTO_DISABLE_THRESHOLD: "abc" })).toThrow(
+      "PROVIDER_AUTO_DISABLE_THRESHOLD",
+    );
+  });
+});
