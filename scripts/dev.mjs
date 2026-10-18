@@ -357,7 +357,7 @@ function pipeWithPrefix(stream, name, onLine) {
 function startService(service) {
   const child = spawn(service.command[0], service.command.slice(1), {
     cwd: ROOT,
-    env: { ...process.env, ...(service.env ?? {}) },
+    env: { ...process.env, ...service.env },
     // 独立进程组：Ctrl-C 时整组（make → docker run → go run / vite）都能收到信号。
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],

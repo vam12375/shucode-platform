@@ -9,6 +9,12 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.20.6] - 2026-10-18
+
+### 修复(开发脚本)
+
+- `scripts/dev.mjs` 移除 `startService` 环境变量展开中的空对象兜底（`...(service.env ?? {})` → `...service.env`），消除 oxlint `unicorn(no-useless-fallback-in-spread)` warning；`pnpm lint` 恢复 0 warnings / 0 errors。
+
 ## [0.20.5] - 2026-10-18
 
 ### 清理
