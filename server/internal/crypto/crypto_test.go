@@ -23,7 +23,7 @@ func loadVectors(t *testing.T) vectorsFile {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/vectors.json")
 	if err != nil {
-		t.Fatalf("读取向量文件(先在仓库根目录跑 node scripts/export-crypto-vectors.ts): %v", err)
+		t.Fatalf("读取冻结的互操作向量 testdata/vectors.json(迁移期由 TS 实现生成,勿手改): %v", err)
 	}
 	var v vectorsFile
 	if err := json.Unmarshal(raw, &v); err != nil {

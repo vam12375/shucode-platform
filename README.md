@@ -15,7 +15,7 @@ Shucode 客户端的多租户 SaaS 平台：平台账号登录、管理员控制
 | `server/internal/{ratelimit,events}` | 登录限流与配置事件总线（进程内 / Redis 双实现） |
 | `server/migrations`、`server/seeds` | 数据库迁移与种子内置配置 |
 | `apps/console` | 管理控制台（Vite + React）：「计量台」视觉语言，见 `design/design.md` |
-| `packages/contracts` | 与 Shucode 客户端对齐的契约（TS 源码，console 亦引用） |
+| `packages/contracts` | console 消费的信用点换算（`credits.ts`）；跨端 schema 的可执行镜像在 `server/internal/contracts` |
 
 ```text
 终端用户客户端                          平台
@@ -118,7 +118,7 @@ VITE_SHUCODE_BASE_URL=https://api.mendao.chat # Web 端
 
 ## 关键契约（不可轻改）
 
-- **用户级配置信封**与客户端 `ProviderProvisioningEnvelope` 同构，`packages/contracts/src/provisioning.ts` 是客户端对应文件的拷贝——两边必须一字不差；Go 侧镜像在 `server/internal/contracts`，由共享 fixtures 对齐测试保证。
+- **用户级配置信封**与客户端 `ProviderProvisioningEnvelope` 同构；权威源在 Shucode 客户端仓库，Go 侧镜像在 `server/internal/contracts`，由冻结 fixtures 对齐测试保证。
 - **网关设备 token 必须写入 provider 规则的 `config.access.apiKey`**：客户端 Registry 完整校验要求 Provider access 完整，缺 apiKey 时 Provider 会被整份丢弃（provider-not-found → 信封回滚）。
 - **偏好默认模型**：`defaultModelSelection` 只作"偏好"，客户端应用前会剥离并由 Registry 档位事实补全。
 - **下发协议默认 OpenAI chat**（`GATEWAY_API_TYPE`，baseUrl 带 `/v1` 前缀）：网关三条协议路由（chat / messages / responses）共享鉴权与额度管道；**模型目录中的模型名必须与上游真实模型名一致**，或用控制台的 `upstreamModel` 字段映射。

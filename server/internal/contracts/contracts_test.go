@@ -41,7 +41,7 @@ func loadFixtures(t *testing.T) fixturesFile {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/fixtures.json")
 	if err != nil {
-		t.Fatalf("读取契约 fixtures(先在仓库根目录跑 node scripts/export-contract-fixtures.ts): %v", err)
+		t.Fatalf("读取冻结的契约 fixtures(迁移期由 TS 实现生成,勿手改): %v", err)
 	}
 	var f fixturesFile
 	if err := json.Unmarshal(raw, &f); err != nil {

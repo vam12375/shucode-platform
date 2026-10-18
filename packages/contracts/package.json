@@ -3,21 +3,13 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./model-selection": "./src/model-selection.ts",
-    "./provisioning": "./src/provisioning.ts",
-    "./client-configs": "./src/client-configs.ts",
-    "./platform-auth": "./src/platform-auth.ts",
-    "./release": "./src/release.ts",
     "./credits": "./src/credits.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
-  "dependencies": {
-    "zod": "^4.6.5"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/node": "^25.5.0",
     "typescript": "^6.0.2",

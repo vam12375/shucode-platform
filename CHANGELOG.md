@@ -9,6 +9,17 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.20.2] - 2026-10-18
+
+### 清理
+
+- 删除重写遗留的无消费方 TS：`packages/contracts` 中仅保留 console 消费的 `credits.ts`（zod 依赖一并移除），删除 provisioning/platform-auth/client-configs/model-selection/release/index；`scripts/reference/` 与两个 fixtures 导出脚本删除（互操作向量与契约 fixtures 转为冻结测试资产，对齐测试继续生效）。
+- Go 测试提示与 AGENTS/README 同步更新：契约演进以客户端仓库 schema 为准同步 `server/internal/contracts` 与冻结 fixtures。
+
+### 文档
+
+- README 组成表与关键契约段同步上述边界。
+
 ## [0.20.1] - 2026-10-18
 
 ### 文档
