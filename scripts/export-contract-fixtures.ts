@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// 从 TS 实现(packages/contracts、packages/db)导出契约 fixtures,
+// 从 TS 参考实现(packages/contracts 与 scripts/reference)导出契约 fixtures,
 // 供 Go 侧 internal/contracts、internal/pricing、internal/credits 的对齐测试使用。
 // 运行:node scripts/export-contract-fixtures.ts(仓库根目录,Node 24+)。
 import { mkdirSync, writeFileSync } from "node:fs";
 import { platformDeviceTokenSchema, buildPlatformDeepLinkCallbackUrl, platformAuthInitRequestSchema } from "../packages/contracts/src/platform-auth.ts";
 import { buildClientConfigsEnvelope } from "../packages/contracts/src/client-configs.ts";
 import { parseBuiltinReleaseLoose, buildBuiltinReleaseDownloadUrl } from "../packages/contracts/src/release.ts";
-import { computePricingDocVersion } from "../packages/db/src/pricing-doc.ts";
+import { computePricingDocVersion } from "./reference/pricing-doc.ts";
 import {
   computeUsageMicroCredits,
   estimateMaxMicroCredits,

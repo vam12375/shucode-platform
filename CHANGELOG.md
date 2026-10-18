@@ -9,6 +9,23 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.20.0] - 2026-10-18
+
+### 变更(后端 Go 重构 M4:切换与清理)
+
+- **后端切换完成**:api / gateway / migrate / seed 全部由 Go 二进制承接,镜像 target(api/gateway/tools)与 ghcr 镜像名、compose 服务名与端口保持不变,服务器部署链路零改动。
+- Dockerfile 改为 Node(构建 console)→ Go(构建四二进制)→ alpine 运行时的三段结构;运行时镜像内置 ca-certificates/curl(健康检查)。
+- docker-compose:api 注入 `REDIS_URL=redis://redis:6379/0`(共享限流/事件总线)并依赖 redis 健康;migrate/seed 改跑 Go 命令;健康检查统一走 `/healthz`。
+- 迁移与种子目录移动:`packages/db/migrations` → `server/migrations`,`apps/api/seeds` → `server/seeds`;migrate/seed/api 默认路径同步。
+- 本地开发:`pnpm dev` 后端改为 `make -C server run-*`(golang 容器内 go run、端口映射回宿主、DSN 自动改写 host.docker.internal),console 仍由 vite 启动;`pnpm dev:memory` 语义不变;首次编译约数十秒(构建缓存卷命中后数秒)。
+- 删除 TypeScript 后端实现:`apps/api`、`apps/gateway`、`packages/db`(契约镜像与 fixtures 生成所需的三个 TS 参考实现保留在 `scripts/reference/`,仅供重新导出测试向量);pnpm workspace 收窄为 console + contracts。
+- CI 保持双口径:pnpm typecheck/test(console+contracts)+ Go gofmt/vet/test -race;`setup-go` 缓存 go.sum。
+
+### 验证
+
+- `docker compose build` → `up -d` 整栈真实冒烟:api/gateway 健康、console SPA 托管与 302、管理员登录与 teams、活动 Release、定价库、网关鉴权错误形状全部通过。
+- Go 全量 `-race` 测试(含 PG/Redis conformance 与跨实现对比)绿;pnpm typecheck/test 绿。
+
 ## [0.19.0] - 2026-10-18
 
 ### 新增(后端 Go 重构 M3:控制面 API)

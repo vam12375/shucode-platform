@@ -5,8 +5,10 @@
  *   pnpm dev          # 读取根目录 .env（缺失时从 .env.example 生成并填好 PLATFORM_SECRET_KEY）
  *   pnpm dev:memory   # 进程内存储，跳过 Postgres / 迁移 / 种子
  *
- * 每一步都可重复执行：已有 .env、已在监听的 Postgres、已应用的迁移、已存在的管理员都会自动跳过。
- * Ctrl-C 停止全部子进程（含 tsx watch / vite）。
+ * 后端(api/gateway/迁移/种子)通过 make -C server 在 golang:1.26 容器内 go run，
+ * 与服务器/CI 的构建口径一致;本机无需安装 Go。容器内访问宿主机 Postgres/Redis 时
+ * DSN 会改写为 host.docker.internal。console 仍由 vite 在宿主机跑。
+ * Ctrl-C 停止全部子进程（含 docker run / vite）。
  */
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -125,6 +127,44 @@ function isTruthy(value) {
   return normalized === "1" || normalized === "true" || normalized === "yes";
 }
 
+/** 容器内访问宿主机:localhost/127.0.0.1 改写为 host.docker.internal。 */
+function toDockerUrl(value) {
+  if (!value) {
+    return value;
+  }
+  return value
+    .replace(/@localhost([:/])/u, "@host.docker.internal$1")
+    .replace(/@127\.0\.0\.1([:/])/u, "@host.docker.internal$1");
+}
+
+/** 后端容器需要的环境(含 DSN 改写);空值不注入,避免覆盖容器内 .env 的默认值。 */
+function backendEnv(extra = {}) {
+  const base = {
+    DATABASE_URL: toDockerUrl(process.env.DATABASE_URL?.trim() ?? ""),
+    MEMORY_DB: process.env.MEMORY_DB ?? "",
+    PLATFORM_SECRET_KEY: process.env.PLATFORM_SECRET_KEY ?? "",
+    PUBLIC_API_ORIGIN: process.env.PUBLIC_API_ORIGIN ?? "",
+    PUBLIC_APP_ORIGIN: process.env.PUBLIC_APP_ORIGIN ?? "",
+    GATEWAY_BASE_URL: process.env.GATEWAY_BASE_URL ?? "",
+    GATEWAY_API_TYPE: process.env.GATEWAY_API_TYPE ?? "",
+    RELEASE_BASE_URL: process.env.RELEASE_BASE_URL ?? "",
+    COOKIE_DOMAIN: process.env.COOKIE_DOMAIN ?? "",
+    CONSOLE_DIST_DIR: process.env.CONSOLE_DIST_DIR ?? "",
+    PUBLIC_CONSOLE_ORIGIN: process.env.PUBLIC_CONSOLE_ORIGIN ?? "",
+    REDIS_URL: toDockerUrl(process.env.REDIS_URL?.trim() ?? ""),
+    UPSTREAM_BASE_URL: process.env.UPSTREAM_BASE_URL ?? "",
+    UPSTREAM_API_KEY: process.env.UPSTREAM_API_KEY ?? "",
+    UPSTREAM_TIMEOUT_MS: process.env.UPSTREAM_TIMEOUT_MS ?? "",
+    UPSTREAM_IDLE_TIMEOUT_MS: process.env.UPSTREAM_IDLE_TIMEOUT_MS ?? "",
+    GATEWAY_TRUSTED_PROXY_IPS: process.env.GATEWAY_TRUSTED_PROXY_IPS ?? "",
+    PROVIDER_AUTO_DISABLE_THRESHOLD: process.env.PROVIDER_AUTO_DISABLE_THRESHOLD ?? "",
+    SEED_ADMIN_EMAIL: process.env.SEED_ADMIN_EMAIL ?? "",
+    SEED_ADMIN_PASSWORD: process.env.SEED_ADMIN_PASSWORD ?? "",
+    ...extra,
+  };
+  return Object.fromEntries(Object.entries(base).filter(([, value]) => value !== ""));
+}
+
 // ---------- 进程与端口 ----------
 
 function tcpPing(host, port, timeoutMs = 800) {
@@ -216,9 +256,10 @@ async function ensurePostgres(databaseUrl) {
 }
 
 async function migrate() {
-  step("应用数据库迁移（pnpm migrate）");
+  step("应用数据库迁移（make -C server migrate）");
+  const env = { ...process.env, ...backendEnv() };
   for (let attempt = 1; attempt <= 10; attempt += 1) {
-    const result = await runCapture("pnpm", ["migrate"]);
+    const result = await runCapture("make", ["-C", "server", "migrate"], { env });
     process.stdout.write(result.stdout);
     if (result.ok) {
       return;
@@ -241,8 +282,8 @@ async function seed() {
   const configured = process.env.SEED_ADMIN_PASSWORD?.trim();
   const password = configured || DEFAULT_ADMIN_PASSWORD;
   step("载入种子数据（管理员 + 内置配置 + 默认模型目录）");
-  const result = await runCapture("pnpm", ["seed"], {
-    env: { ...process.env, SEED_ADMIN_PASSWORD: password },
+  const result = await runCapture("make", ["-C", "server", "seed"], {
+    env: { ...process.env, ...backendEnv({ SEED_ADMIN_PASSWORD: password }) },
   });
   process.stdout.write(result.stdout);
   if (!result.ok) {
@@ -314,9 +355,10 @@ function pipeWithPrefix(stream, name, onLine) {
 }
 
 function startService(service) {
-  const child = spawn("pnpm", [service.script], {
+  const child = spawn(service.command[0], service.command.slice(1), {
     cwd: ROOT,
-    // 独立进程组：Ctrl-C 时整组（pnpm → tsx watch / vite → 实际服务）都能收到信号。
+    env: { ...process.env, ...(service.env ?? {}) },
+    // 独立进程组：Ctrl-C 时整组（make → docker run → go run / vite）都能收到信号。
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -324,8 +366,8 @@ function startService(service) {
     if (shuttingDown) {
       return;
     }
-    // tsx watch 在子进程崩溃后仍驻留，端口冲突要靠日志识别，否则要等满就绪超时。
-    if (/EADDRINUSE/u.test(line)) {
+    // 容器/开发服务器端口冲突要靠日志识别，否则要等满就绪超时。
+    if (/EADDRINUSE|port is already allocated/iu.test(line)) {
       console.error(
         `\n${paint("error", "error:")} ${service.name} 端口被占用（${service.port}）：先停止占用进程，或在 .env 里换端口（PORT / GATEWAY_PORT）`,
       );
@@ -401,7 +443,8 @@ async function startAll({ memoryDb, seeded }) {
   const services = [
     {
       name: "api",
-      script: "dev:api",
+      command: ["make", "-C", "server", "run-api"],
+      env: backendEnv({ PORT: String(apiPort) }),
       port: apiPort,
       match: matchLocalUrl("api", apiPort),
       ready: false,
@@ -409,7 +452,8 @@ async function startAll({ memoryDb, seeded }) {
     },
     {
       name: "gateway",
-      script: "dev:gateway",
+      command: ["make", "-C", "server", "run-gateway"],
+      env: backendEnv({ PORT: String(apiPort), GATEWAY_PORT: String(gatewayPort) }),
       port: gatewayPort,
       match: matchLocalUrl("gateway", gatewayPort),
       ready: false,
@@ -417,7 +461,7 @@ async function startAll({ memoryDb, seeded }) {
     },
     {
       name: "console",
-      script: "dev:console",
+      command: ["pnpm", "dev:console"],
       port: consolePort,
       match: matchLocalUrl("console", consolePort),
       ready: false,
@@ -439,7 +483,8 @@ async function startAll({ memoryDb, seeded }) {
     startService(service);
   }
 
-  const deadline = Date.now() + 25_000;
+  // 首次运行需在容器内编译 Go 代码(模块/构建缓存卷命中后约数秒),给足 2 分钟。
+  const deadline = Date.now() + 120_000;
   while (Date.now() < deadline && services.some((service) => !service.ready)) {
     await sleep(300);
   }
@@ -447,7 +492,7 @@ async function startAll({ memoryDb, seeded }) {
     if (service.ready || (await tcpPing("127.0.0.1", service.port))) {
       continue;
     }
-    fail(`${service.name} 未在 25 秒内就绪（端口 ${service.port} 未监听，日志见上方输出）`);
+    fail(`${service.name} 未在 120 秒内就绪（端口 ${service.port} 未监听，日志见上方输出）`);
   }
 
   const byName = (name) => services.find((service) => service.name === name);

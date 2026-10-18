@@ -39,7 +39,7 @@ func TestPostgresStoreSuite(t *testing.T) {
 	}
 	migrationsDir := os.Getenv("TEST_MIGRATIONS_DIR")
 	if migrationsDir == "" {
-		migrationsDir = "../../../packages/db/migrations"
+		migrationsDir = "../../migrations"
 	}
 	store, closer := newPostgresForTest(t, baseURL, migrationsDir)
 	defer closer()

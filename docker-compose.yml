@@ -13,6 +13,8 @@ x-app-env: &app-env
   DATABASE_URL: postgres://mendao:mendao@postgres:5432/mendao
   # 防止 .env 里的 MEMORY_DB=1 让容器退回内存模式。
   MEMORY_DB: ""
+  # 共享限流与配置事件总线;网关不消费该变量。
+  REDIS_URL: redis://redis:6379/0
 
 services:
   postgres:
@@ -37,7 +39,7 @@ services:
   # 一次性任务：应用 migrations/*.sql（幂等）。
   migrate:
     build: { context: ., target: tools }
-    command: ["pnpm", "--filter", "@shucode-platform/db", "migrate"]
+    command: ["/app/migrate"]
     env_file:
       - path: .env
         required: false
@@ -50,7 +52,7 @@ services:
   # 一次性任务：管理员（SEED_ADMIN_PASSWORD）+ 种子内置配置 + 默认模型目录（幂等）。
   seed:
     build: { context: ., target: tools }
-    command: ["pnpm", "--filter", "@shucode-platform/api", "seed"]
+    command: ["/app/seed"]
     env_file:
       - path: .env
         required: false
@@ -75,14 +77,10 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://127.0.0.1:8787/api/v1/client/configs').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
-        ]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8787/healthz"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -103,14 +101,7 @@ services:
       migrate:
         condition: service_completed_successfully
     healthcheck:
-      # 无凭据请求应返回 401：只要不是 5xx 就说明服务在跑。
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://127.0.0.1:8788/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then((r) => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))",
-        ]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8788/healthz"]
       interval: 10s
       timeout: 5s
       retries: 12

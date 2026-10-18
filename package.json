@@ -17,11 +17,11 @@
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose rm -sf api gateway migrate seed redis",
     "docker:logs": "docker compose logs -f --tail=100 api gateway",
-    "dev:api": "pnpm --filter @shucode-platform/api dev",
-    "dev:gateway": "pnpm --filter @shucode-platform/gateway dev",
+    "dev:api": "make -C server run-api",
+    "dev:gateway": "make -C server run-gateway",
     "dev:console": "pnpm --filter @shucode-platform/console dev",
-    "migrate": "pnpm --filter @shucode-platform/db migrate",
-    "seed": "pnpm --filter @shucode-platform/api seed"
+    "migrate": "make -C server migrate",
+    "seed": "make -C server seed"
   },
   "devDependencies": {
     "oxlint": "^1.14.0",

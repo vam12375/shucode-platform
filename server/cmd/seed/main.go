@@ -19,8 +19,8 @@ import (
 )
 
 func main() {
-	migrationsDir := flag.String("dir", "packages/db/migrations", "迁移 SQL 目录")
-	seedFile := flag.String("seed-file", "apps/api/seeds/shucode-builtin.seed.json", "种子内置配置 JSON")
+	migrationsDir := flag.String("dir", "migrations", "迁移 SQL 目录")
+	seedFile := flag.String("seed-file", "seeds/shucode-builtin.seed.json", "种子内置配置 JSON")
 	flag.Parse()
 
 	platformenv.LoadEnvFilesUpwards(".")

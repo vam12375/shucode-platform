@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	migrationsDir := flag.String("dir", "packages/db/migrations", "迁移 SQL 目录")
+	migrationsDir := flag.String("dir", "migrations", "迁移 SQL 目录")
 	flag.Parse()
 
 	platformenv.LoadEnvFilesUpwards(".")
