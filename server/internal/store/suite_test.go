@@ -610,6 +610,16 @@ func testModels(t *testing.T, ctx context.Context, s PlatformStore) {
 	if err != nil || model.CacheReadPricePerMtok != "0.000000" || !model.Enabled || model.SortOrder != 0 {
 		t.Fatalf("新模型默认值不符: %v %+v", err, model)
 	}
+	if model.OffPeakMultiplier != "1.000000" {
+		t.Fatalf("空闲倍率默认应为 1: %+v", model)
+	}
+	offPeak := "0.500000"
+	if updated, err := s.UpsertModel(ctx, UpsertModelInput{
+		ModelID: "m-test", DisplayName: "M", InputPricePerMtok: "3", OutputPricePerMtok: "15",
+		OffPeakMultiplier: &offPeak,
+	}); err != nil || updated.OffPeakMultiplier != "0.500000" {
+		t.Fatalf("空闲倍率写入失败: %v %+v", err, updated)
+	}
 	// 绑定字段:缺省保持。
 	provider, _ := s.CreateUpstreamProvider(ctx, CreateUpstreamProviderInput{
 		Name: "prov-" + fmt.Sprint(time.Now().UnixNano()), BaseURL: "https://up.example.com", Protocol: ProtocolAnthropicMessages,

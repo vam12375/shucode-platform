@@ -318,6 +318,10 @@ func (s *memoryStore) UpsertModel(_ context.Context, input UpsertModelInput) (*P
 	if input.SortOrder != nil {
 		sortOrder = *input.SortOrder
 	}
+	offPeak := "1.000000"
+	if input.OffPeakMultiplier != nil {
+		offPeak = numeric6(*input.OffPeakMultiplier)
+	}
 	record := PlatformModelRecord{
 		ModelID:                input.ModelID,
 		DisplayName:            input.DisplayName,
@@ -327,6 +331,7 @@ func (s *memoryStore) UpsertModel(_ context.Context, input UpsertModelInput) (*P
 		OutputPricePerMtok:     numeric6(input.OutputPricePerMtok),
 		CacheReadPricePerMtok:  numeric6(cacheRead),
 		CacheWritePricePerMtok: numeric6(cacheWrite),
+		OffPeakMultiplier:      offPeak,
 		Enabled:                enabled,
 		SortOrder:              sortOrder,
 		CreatedAt:              existing.CreatedAt,

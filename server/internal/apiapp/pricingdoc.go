@@ -59,10 +59,20 @@ func normalizePricingEntry(raw any) *pricing.PricingEntry {
 	if !okCreation {
 		cacheCreation = "0.000000"
 	}
+	offPeak := ""
+	if rawMultiplier, exists := record["offPeakMultiplier"]; exists && rawMultiplier != nil && rawMultiplier != "" {
+		parsed, okMultiplier := price(rawMultiplier)
+		if !okMultiplier {
+			return nil
+		}
+		offPeak = parsed
+	}
+	currency, _ := trimmedOptional(record["currency"], 8)
 	return &pricing.PricingEntry{
 		ModelID: modelID, DisplayName: displayName,
 		InputCostPerMillion: input, OutputCostPerMillion: output,
 		CacheReadCostPerMillion: cacheRead, CacheCreationCostPerMillion: cacheCreation,
+		OffPeakMultiplier: offPeak, Currency: currency,
 	}
 }
 
@@ -98,6 +108,8 @@ func normalizeStoredEntries(entries []pricing.PricingEntry) []pricing.PricingEnt
 			"outputCostPerMillion":        entry.OutputCostPerMillion,
 			"cacheReadCostPerMillion":     entry.CacheReadCostPerMillion,
 			"cacheCreationCostPerMillion": entry.CacheCreationCostPerMillion,
+			"offPeakMultiplier":           entry.OffPeakMultiplier,
+			"currency":                    entry.Currency,
 		})
 		if normalized != nil {
 			out = append(out, *normalized)

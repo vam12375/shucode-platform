@@ -339,7 +339,10 @@ func (s *PostgresStore) GetMaxReleaseRevision(ctx context.Context) (*int64, erro
 
 // ---- models ----
 
-const modelCols = `model_id, display_name, upstream_model, upstream_provider_id::text, input_price_per_mtok::text, output_price_per_mtok::text, cache_read_price_per_mtok::text, cache_write_price_per_mtok::text, enabled, sort_order, created_at, updated_at`
+const modelCols = `model_id, display_name, upstream_model, upstream_provider_id::text,
+	input_price_per_mtok::text, output_price_per_mtok::text,
+	cache_read_price_per_mtok::text, cache_write_price_per_mtok::text,
+	off_peak_multiplier::text, enabled, sort_order, created_at, updated_at`
 
 func scanModel(rows pgx.Rows) (*PlatformModelRecord, error) {
 	var (
@@ -348,14 +351,19 @@ func scanModel(rows pgx.Rows) (*PlatformModelRecord, error) {
 		providerID *string
 		inP, outP  *string
 		crP, cwP   *string
+		offPeak    *string
 	)
-	if err := rows.Scan(&m.ModelID, &m.DisplayName, &upstream, &providerID, &inP, &outP, &crP, &cwP, &m.Enabled, &m.SortOrder, &m.CreatedAt, &m.UpdatedAt); err != nil {
+	if err := rows.Scan(&m.ModelID, &m.DisplayName, &upstream, &providerID, &inP, &outP, &crP, &cwP, &offPeak, &m.Enabled, &m.SortOrder, &m.CreatedAt, &m.UpdatedAt); err != nil {
 		return nil, err
 	}
 	m.UpstreamModel = derefString2(upstream)
 	m.UpstreamProviderID = derefString2(providerID)
 	m.InputPricePerMtok, m.OutputPricePerMtok = derefString2(inP), derefString2(outP)
 	m.CacheReadPricePerMtok, m.CacheWritePricePerMtok = derefString2(crP), derefString2(cwP)
+	m.OffPeakMultiplier = derefString2(offPeak)
+	if m.OffPeakMultiplier == "" {
+		m.OffPeakMultiplier = "1.000000"
+	}
 	return &m, nil
 }
 
@@ -409,25 +417,30 @@ func (s *PostgresStore) UpsertModel(ctx context.Context, input UpsertModelInput)
 	if input.SortOrder != nil {
 		sortOrder = *input.SortOrder
 	}
+	offPeak := "1"
+	if input.OffPeakMultiplier != nil {
+		offPeak = *input.OffPeakMultiplier
+	}
 	// upstreamModel / upstreamProviderId:缺省=保持、显式=覆盖(可为空串清除)。
 	rows, err := s.pool.Query(ctx, `
 		INSERT INTO platform_models (
 			model_id, display_name, upstream_model, upstream_provider_id,
 			input_price_per_mtok, output_price_per_mtok,
 			cache_read_price_per_mtok, cache_write_price_per_mtok,
-			enabled, sort_order
+			off_peak_multiplier, enabled, sort_order
 		) VALUES (
 			$1, $2, $3, $4::uuid,
-			$5::numeric, $6::numeric, $7::numeric, $8::numeric, $9, $10
+			$5::numeric, $6::numeric, $7::numeric, $8::numeric, $9::numeric, $10, $11
 		)
 		ON CONFLICT (model_id) DO UPDATE SET
 			display_name = EXCLUDED.display_name,
-			upstream_model = CASE WHEN $11::boolean THEN EXCLUDED.upstream_model ELSE platform_models.upstream_model END,
-			upstream_provider_id = CASE WHEN $12::boolean THEN EXCLUDED.upstream_provider_id ELSE platform_models.upstream_provider_id END,
+			upstream_model = CASE WHEN $12::boolean THEN EXCLUDED.upstream_model ELSE platform_models.upstream_model END,
+			upstream_provider_id = CASE WHEN $13::boolean THEN EXCLUDED.upstream_provider_id ELSE platform_models.upstream_provider_id END,
 			input_price_per_mtok = EXCLUDED.input_price_per_mtok,
 			output_price_per_mtok = EXCLUDED.output_price_per_mtok,
 			cache_read_price_per_mtok = EXCLUDED.cache_read_price_per_mtok,
 			cache_write_price_per_mtok = EXCLUDED.cache_write_price_per_mtok,
+			off_peak_multiplier = EXCLUDED.off_peak_multiplier,
 			enabled = EXCLUDED.enabled,
 			sort_order = EXCLUDED.sort_order,
 			updated_at = now()
@@ -435,7 +448,7 @@ func (s *PostgresStore) UpsertModel(ctx context.Context, input UpsertModelInput)
 		input.ModelID, input.DisplayName,
 		nullIfEmpty(input.UpstreamModel), nullIfEmpty(input.UpstreamProviderID),
 		input.InputPricePerMtok, input.OutputPricePerMtok, cacheRead, cacheWrite,
-		enabled, sortOrder,
+		offPeak, enabled, sortOrder,
 		input.ProvideUpstreamModel, input.ProvideUpstreamProviderID)
 	if err != nil {
 		return nil, err

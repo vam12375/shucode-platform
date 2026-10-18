@@ -9,7 +9,7 @@ Shucode 客户端的多租户 SaaS 平台：平台账号登录、管理员控制
 | 目录 | 说明 |
 | --- | --- |
 | `server/cmd/api` | 控制面：匿名客户端配置、平台设备登录流、用户级配置下发、管理控制台 API 与 `/console` 静态托管、SSE 配置事件 |
-| `server/cmd/gateway` | 模型网关：平台凭据鉴权 → 团队额度准入（预留）→ 透传上游（Anthropic messages / OpenAI chat / OpenAI responses）→ 按 usage 计量结算 |
+| `server/cmd/gateway` | 模型网关：平台凭据鉴权 → 团队 RPM/TPM/并发限流 → 额度预留（幂等）→ 渠道池调度/重试/故障转移 → 透传上游（Anthropic messages / OpenAI chat / OpenAI responses）→ 按 usage 计量结算 |
 | `server/internal/store` | 存储端口 + pgx(Postgres) 与内存双实现（`conformance` 测试保证同语义） |
 | `server/internal/{crypto,contracts,pricing,credits}` | 与 TS 契约逐位对齐的凭据/校验/计价镜像层（fixtures 对齐测试） |
 | `server/internal/{ratelimit,events}` | 登录限流与配置事件总线（进程内 / Redis 双实现） |
@@ -26,6 +26,18 @@ Shucode 客户端的多租户 SaaS 平台：平台账号登录、管理员控制
 模型请求（gateway provider）──→ gw /v1/chat/completions ──→ 上游供应商
 匿名拉取内置配置（≈1h）    ←────────  /api/v1/client/configs + Release JSON（CDN/对象存储）
 ```
+
+## 可靠性与运维
+
+- **渠道池**：控制台「模型目录 → 路由池」可为同一模型绑定多个供应商；网关按 `priority` 升序、同优先级按 `weight` 加权调度，流式开始前对网络错误/超时/429/5xx/401/403 自动重试下一个上游。自动熔断的供应商会被定时拨测并自动恢复，也可在「上游供应商」手动恢复调度。
+- **流控**：团队详情可配置 RPM / TPM / 并发上限；Redis 存在时跨实例共享，否则进程内回退。TPM 使用请求体估算 token（正文长度 / 4 + `max_tokens`）做准入保护。
+- **计费一致性**：每次请求先写 `quota_reservations`（`request_id` 唯一），结算时同事务扣回预留、写 usage 与小时汇总；超时预留由 sweeper 回收。重复 `x-request-id` 返回 409。
+- **运维大盘**：控制台「运维大盘」展示请求/成功率/P50/P95/P99/消费/活跃设备/未释放预留/供应商健康，支持告警规则与事件；`ALERT_WEBHOOK_URL` 可推送外部通知。
+- **用量**：支持 request ID 精确检索、CSV 导出与小时 rollup；全平台趋势优先读 `usage_hourly_rollups`，明细维度回退 `usage_records`。
+- **图表**：控制台使用 Recharts（费用趋势、缓存率趋势、模型分布、运维流量/消费），均带图例与 hover tooltip。
+- **人民币定价**：成本价库与模型售价均按 CNY 展示（1 credit = ¥1）；DeepSeek 使用官方人民币高峰价，空闲价 = 高峰价 × `offPeakMultiplier`（默认 0.5）。高峰窗口为北京时间周一至周五 09:00-12:00、14:00-18:00，法定节假日通过 `PEAK_HOURS_HOLIDAYS` 补充。
+
+相关环境变量（均可留空使用默认值）：`GATEWAY_MAX_ATTEMPTS`、`GATEWAY_RESERVATION_TTL_SEC`、`PROVIDER_PROBE_INTERVAL_SEC`、`PEAK_HOURS_HOLIDAYS`、`ALERT_WEBHOOK_URL`；详见 `.env.example`。
 
 ## 本地启动
 
