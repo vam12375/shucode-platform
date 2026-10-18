@@ -114,6 +114,17 @@ func newGatewayFixture(t *testing.T, patch func(env *Env, f *gatewayFixture)) *g
 	return f
 }
 
+func TestTrailingSlashNotRedirected(t *testing.T) {
+	f := newGatewayFixture(t, nil)
+	for _, path := range []string{"/healthz/", "/v1/models/"} {
+		rec := httptest.NewRecorder()
+		f.engine.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		if rec.Code != 404 {
+			t.Fatalf("%s 应 404(不跟随尾斜杠重定向): %d", path, rec.Code)
+		}
+	}
+}
+
 func ptr[T any](v T) *T { return &v }
 
 func (f *gatewayFixture) setHandler(handler http.HandlerFunc) {

@@ -213,6 +213,9 @@ func buildOpenAIResponsesSpec() protocolSpec {
 func New(deps Deps) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	app := gin.New()
+	// 与 TS 路由逐位兼容:Gin 默认会把未知路径的尾斜杠 301 到去斜杠版本,TS 直接 404。
+	app.RedirectTrailingSlash = false
+	app.RedirectFixedPath = false
 	app.Use(gin.CustomRecovery(func(c *gin.Context, err any) {
 		deps.Logger.Error("网关请求处理失败", "path", c.Request.URL.Path, "error", err)
 		anthropicError(c, 500, "api_error", "网关内部错误")

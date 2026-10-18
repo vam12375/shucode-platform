@@ -29,6 +29,9 @@ var staticMime = map[string]string{
 func New(deps *Deps) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
+	// 与 TS 路由逐位兼容:Gin 默认会把未知路径的尾斜杠 301 到去斜杠版本,TS 直接 404。
+	router.RedirectTrailingSlash = false
+	router.RedirectFixedPath = false
 	router.Use(gin.CustomRecovery(func(c *gin.Context, err any) {
 		deps.Logger.Error("请求处理失败", "path", c.Request.URL.Path, "error", err)
 		c.JSON(500, fail(500, "服务器内部错误"))

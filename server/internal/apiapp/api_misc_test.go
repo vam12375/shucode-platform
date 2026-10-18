@@ -36,6 +36,15 @@ func TestHealthzAndStaticHosting(t *testing.T) {
 		t.Fatalf("healthz 不符: %d %s", health.Code, health.Body.String())
 	}
 
+	// TS 路由对尾斜杠直接 404,不能继承 Gin 默认的 301 去斜杠重定向。
+	for _, path := range []string{"/healthz/", "/n/configs/"} {
+		trailing := httptest.NewRecorder()
+		engine.ServeHTTP(trailing, httptest.NewRequest("GET", path, nil))
+		if trailing.Code != 404 {
+			t.Fatalf("%s 应 404(不跟随尾斜杠重定向): %d", path, trailing.Code)
+		}
+	}
+
 	redirect := httptest.NewRecorder()
 	engine.ServeHTTP(redirect, httptest.NewRequest("GET", "/console", nil))
 	if redirect.Code != 302 || redirect.Header().Get("location") != "/console/" {

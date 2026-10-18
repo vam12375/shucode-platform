@@ -9,6 +9,13 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.20.3] - 2026-10-18
+
+### 修复(API/网关)
+
+- API 与网关显式关闭 Gin 的 `RedirectTrailingSlash`/`RedirectFixedPath`，与 TS 路由逐位对齐：`/healthz/`、`/n/configs/`、`/v1/models/` 等尾斜杠路径返回 404，不再 301 去斜杠。
+- 补回归测试：API `/healthz/`、`/n/configs/`；网关 `/healthz/`、`/v1/models/`。
+
 ## [0.20.2] - 2026-10-18
 
 ### 清理
