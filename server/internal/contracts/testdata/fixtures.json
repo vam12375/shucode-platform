@@ -1,0 +1,382 @@
+{
+  "pricingVersions": [
+    {
+      "entries": [],
+      "version": "prc_4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d"
+    },
+    {
+      "entries": [
+        {
+          "modelId": "claude-sonnet-4-5",
+          "displayName": "Claude Sonnet 4.5",
+          "inputCostPerMillion": "3",
+          "outputCostPerMillion": "15",
+          "cacheReadCostPerMillion": "0.3",
+          "cacheCreationCostPerMillion": "3.75"
+        },
+        {
+          "modelId": "claude-haiku-4-5",
+          "displayName": "Claude Haiku 4.5",
+          "inputCostPerMillion": "1",
+          "outputCostPerMillion": "5",
+          "cacheReadCostPerMillion": "0.1",
+          "cacheCreationCostPerMillion": "1.25"
+        }
+      ],
+      "version": "prc_97afeb902ec289e1ab043774abcf528764e47b2c"
+    },
+    {
+      "entries": [
+        {
+          "modelId": "GLM-4.7",
+          "displayName": "中文模型 ✓",
+          "inputCostPerMillion": "0.5",
+          "outputCostPerMillion": "2",
+          "cacheReadCostPerMillion": "0.05",
+          "cacheCreationCostPerMillion": "0.5"
+        },
+        {
+          "modelId": "claude-haiku-4-5",
+          "displayName": "Haiku",
+          "inputCostPerMillion": "1",
+          "outputCostPerMillion": "5",
+          "cacheReadCostPerMillion": "0.1",
+          "cacheCreationCostPerMillion": "1.25"
+        },
+        {
+          "modelId": "gpt-5.2-turbo",
+          "displayName": "GPT",
+          "inputCostPerMillion": "10",
+          "outputCostPerMillion": "40",
+          "cacheReadCostPerMillion": "2.5",
+          "cacheCreationCostPerMillion": "12.5"
+        },
+        {
+          "modelId": "claude-sonnet-4-5",
+          "displayName": "Sonnet",
+          "inputCostPerMillion": "3",
+          "outputCostPerMillion": "15",
+          "cacheReadCostPerMillion": "0.3",
+          "cacheCreationCostPerMillion": "3.75"
+        }
+      ],
+      "version": "prc_ff49fb63bc4d527b28aa9140ae6f035bfaa530e4"
+    }
+  ],
+  "builtinReleases": [
+    {
+      "input": {
+        "schemaVersion": 1,
+        "revision": 3,
+        "config": {
+          "providerConfigRules": {
+            "templateRules": [],
+            "providerRules": [
+              {
+                "id": "x"
+              }
+            ]
+          },
+          "modelConfigRules": null
+        },
+        "extraTop": "passthrough ✓"
+      },
+      "ok": true,
+      "revision": 3,
+      "error": null
+    },
+    {
+      "input": null,
+      "ok": false,
+      "revision": null,
+      "error": "内置配置结构不正确：root (invalid_type)"
+    },
+    {
+      "input": {
+        "revision": 3,
+        "config": {
+          "providerConfigRules": {
+            "templateRules": [],
+            "providerRules": []
+          }
+        }
+      },
+      "ok": false,
+      "revision": null,
+      "error": "内置配置结构不正确：schemaVersion (invalid_value)"
+    },
+    {
+      "input": {
+        "schemaVersion": 2,
+        "revision": 3,
+        "config": {
+          "providerConfigRules": {
+            "templateRules": [],
+            "providerRules": []
+          }
+        }
+      },
+      "ok": false,
+      "revision": null,
+      "error": "内置配置结构不正确：schemaVersion (invalid_value)"
+    },
+    {
+      "input": {
+        "schemaVersion": 1,
+        "revision": -1,
+        "config": {
+          "providerConfigRules": {
+            "templateRules": [],
+            "providerRules": []
+          }
+        }
+      },
+      "ok": false,
+      "revision": null,
+      "error": "内置配置结构不正确：revision (too_small)"
+    },
+    {
+      "input": {
+        "schemaVersion": 1,
+        "revision": 1.5,
+        "config": {
+          "providerConfigRules": {
+            "templateRules": [],
+            "providerRules": []
+          }
+        }
+      },
+      "ok": false,
+      "revision": null,
+      "error": "内置配置结构不正确：revision (invalid_type)"
+    },
+    {
+      "input": {
+        "schemaVersion": 1,
+        "revision": 3,
+        "config": {}
+      },
+      "ok": false,
+      "revision": null,
+      "error": "内置配置结构不正确：config.providerConfigRules (invalid_type)"
+    },
+    {
+      "input": {
+        "schemaVersion": 1,
+        "revision": 3,
+        "config": {
+          "providerConfigRules": {
+            "templateRules": "no"
+          }
+        }
+      },
+      "ok": false,
+      "revision": null,
+      "error": "内置配置结构不正确：config.providerConfigRules.templateRules (invalid_type)"
+    }
+  ],
+  "deviceTokens": [
+    {
+      "token": "mdp_AbCdEfGh1234567890_-",
+      "valid": false
+    },
+    {
+      "token": "mdp_short",
+      "valid": false
+    },
+    {
+      "token": "mdpx",
+      "valid": false
+    },
+    {
+      "token": "MDP_UPPER-CASE_1234",
+      "valid": false
+    },
+    {
+      "token": "mdp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "valid": true
+    }
+  ],
+  "deepLinks": [
+    {
+      "flowId": "abc-flow-uuid-0001",
+      "url": "zcode://platform/callback?flow_id=abc-flow-uuid-0001"
+    },
+    {
+      "flowId": "流量参数 ✓ &=?",
+      "url": "zcode://platform/callback?flow_id=%E6%B5%81%E9%87%8F%E5%8F%82%E6%95%B0%20%E2%9C%93%20%26%3D%3F"
+    }
+  ],
+  "downloadUrls": [
+    {
+      "base": "https://api.example.com",
+      "revision": 3,
+      "url": "https://api.example.com/api/v1/releases/builtin/3.json"
+    },
+    {
+      "base": "https://api.example.com/",
+      "revision": 0,
+      "url": "https://api.example.com/api/v1/releases/builtin/0.json"
+    },
+    {
+      "base": "https://api.example.com///",
+      "revision": 12,
+      "url": "https://api.example.com/api/v1/releases/builtin/12.json"
+    }
+  ],
+  "configsEnvelopes": [
+    {
+      "input": {},
+      "output": {
+        "code": 0,
+        "data": {
+          "configs": {}
+        }
+      }
+    },
+    {
+      "input": {
+        "help": {
+          "feedback_url": "https://example.com"
+        },
+        "builtinReleaseUrl": "https://api.example.com/",
+        "forceUpdateMinimalVersion": "1.2.3",
+        "pluginStoreOrder": [
+          "a",
+          null
+        ]
+      },
+      "output": {
+        "code": 0,
+        "data": {
+          "configs": {
+            "feedbackUrl": {
+              "feedback_url": "https://example.com"
+            },
+            "builtin_provider_config_json": "https://api.example.com/",
+            "forceUpdate": {
+              "minimalVersion": "1.2.3"
+            },
+            "pluginStoreOrder": [
+              "a",
+              null
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "initRequests": [
+    {
+      "body": {},
+      "ok": true
+    },
+    {
+      "body": {
+        "device_name": "  笔记本  ",
+        "platform": "darwin"
+      },
+      "ok": true
+    },
+    {
+      "body": {
+        "unknown": 1
+      },
+      "ok": false
+    },
+    {
+      "body": {
+        "device_name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "ok": false
+    },
+    {
+      "body": {
+        "device_name": null
+      },
+      "ok": false
+    }
+  ],
+  "credits": {
+    "format": [
+      {
+        "micro": 0,
+        "s": "0.000000"
+      },
+      {
+        "micro": 1234567,
+        "s": "1.234567"
+      },
+      {
+        "micro": -1500,
+        "s": "-0.001500"
+      }
+    ],
+    "parse": [
+      {
+        "v": "0.000000",
+        "micro": 0
+      },
+      {
+        "v": "1000.000000",
+        "micro": 1000000000
+      },
+      {
+        "v": "0.1",
+        "micro": 100000
+      },
+      {
+        "v": "3.75",
+        "micro": 3750000
+      },
+      {
+        "v": "123.456789",
+        "micro": 123456789
+      }
+    ],
+    "usage": [
+      {
+        "usage": {
+          "inputTokens": 1000,
+          "outputTokens": 500,
+          "cacheReadTokens": 200,
+          "cacheCreationTokens": 80
+        },
+        "rates": {
+          "inputPerMtok": 3,
+          "outputPerMtok": 15,
+          "cacheReadPerMtok": 0.3,
+          "cacheWritePerMtok": 3.75
+        },
+        "micro": 10860
+      },
+      {
+        "usage": {
+          "inputTokens": 1,
+          "outputTokens": 1,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0
+        },
+        "rates": {
+          "inputPerMtok": 0.1,
+          "outputPerMtok": 0.1,
+          "cacheReadPerMtok": 0,
+          "cacheWritePerMtok": 0
+        },
+        "micro": 0
+      }
+    ],
+    "estimate": [
+      {
+        "maxTokens": 8192,
+        "rate": 15,
+        "micro": 122880
+      },
+      {
+        "maxTokens": -5,
+        "rate": 15,
+        "micro": 0
+      }
+    ]
+  }
+}
