@@ -92,6 +92,8 @@ postgres（healthcheck 就绪）→ migrate（一次性，应用 migrations/*.sq
 
 种子说明：`SEED_ADMIN_PASSWORD` 为空且管理员不存在时只打印提示（不创建管理员），内置配置与模型目录仍会载入并保持幂等；生产环境建议在 `.env` 设好一次性口令后再执行，或改由控制台邀请成员。
 
+用量中的客户端 IP 默认只取 TCP 对端，忽略所有转发头；端口直连无需额外配置。使用可信反代时，才在 `.env` 设置 `GATEWAY_TRUSTED_PROXY_IPS` 为网关实际看到的代理精确 IP（逗号分隔，支持 IPv4/IPv6，不支持 CIDR/通配符）。仅这些对端提供的 `X-Forwarded-For` 会按链从右向左解析，遇到首个非可信地址即停止；没有 XFF 时才接受经校验的 `X-Real-IP`。反代须覆盖转发头或在 XFF 追加实际对端地址，并限制其入口访问；不要仅因地址属于私网或 Docker 网桥就信任它。Docker Desktop / NAT 若已丢失原始源地址，显示的可能是网桥地址，此配置不能凭空恢复客户端 IP。
+
 旧的手工部署方式（不用容器）仍可用：`pnpm build`（console 产物在 `apps/console/dist`），设置 `CONSOLE_DIST_DIR` 由 API 以 `/console` 路径托管；或把产物托管到 `console.mendao.chat` 并设置 `PUBLIC_CONSOLE_ORIGIN`（已内置带凭据 CORS）。
 
 ## 域名与对客端
