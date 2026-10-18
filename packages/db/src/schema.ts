@@ -153,6 +153,7 @@ export const usageRecords = pgTable(
     creditsMicro: bigint("credits_micro", { mode: "number" }).notNull().default(0),
     status: text("status").notNull(),
     errorType: text("error_type"),
+    clientIp: text("client_ip"),
     latencyMs: integer("latency_ms"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

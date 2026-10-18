@@ -164,6 +164,7 @@ function mapUsage(row: Row): UsageRecord {
     creditsMicro: num(row.credits_micro),
     status: str(row.status) as UsageRecord["status"],
     errorType: strNullable(row.error_type),
+    clientIp: strNullable(row.client_ip),
     latencyMs: numNullable(row.latency_ms),
     providerId: strNullable(row.provider_id),
     createdAt: iso(row.created_at),
@@ -577,13 +578,13 @@ export function createPostgresStore(databaseUrl: string): PlatformStore {
         INSERT INTO usage_records (
           id, request_id, user_id, team_id, device_token_id, model, upstream_model,
           input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-          credits_micro, status, error_type, latency_ms, provider_id, created_at
+          credits_micro, status, error_type, client_ip, latency_ms, provider_id, created_at
         ) VALUES (
           ${record.id}::uuid, ${record.requestId}, ${record.userId}::uuid, ${record.teamId}::uuid,
           ${record.deviceTokenId}::uuid, ${record.model}, ${record.upstreamModel},
           ${record.inputTokens}, ${record.outputTokens}, ${record.cacheReadTokens},
           ${record.cacheCreationTokens}, ${record.creditsMicro}, ${record.status},
-          ${record.errorType}, ${record.latencyMs}, ${record.providerId}::uuid, ${record.createdAt}::timestamptz
+          ${record.errorType}, ${record.clientIp}, ${record.latencyMs}, ${record.providerId}::uuid, ${record.createdAt}::timestamptz
         )
       `;
     },
@@ -666,13 +667,13 @@ export function createPostgresStore(databaseUrl: string): PlatformStore {
           INSERT INTO usage_records (
             id, request_id, user_id, team_id, device_token_id, model, upstream_model,
             input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-            credits_micro, status, error_type, latency_ms, provider_id, created_at
+            credits_micro, status, error_type, client_ip, latency_ms, provider_id, created_at
           ) VALUES (
             ${record.id}::uuid, ${record.requestId}, ${record.userId}::uuid, ${record.teamId}::uuid,
             ${record.deviceTokenId}::uuid, ${record.model}, ${record.upstreamModel},
             ${record.inputTokens}, ${record.outputTokens}, ${record.cacheReadTokens},
             ${record.cacheCreationTokens}, ${record.creditsMicro}, ${record.status},
-            ${record.errorType}, ${record.latencyMs}, ${record.providerId}::uuid, ${record.createdAt}::timestamptz
+            ${record.errorType}, ${record.clientIp}, ${record.latencyMs}, ${record.providerId}::uuid, ${record.createdAt}::timestamptz
           )
         `;
       });

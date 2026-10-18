@@ -149,6 +149,8 @@ export interface UsageRecord {
   creditsMicro: number;
   status: UsageStatus;
   errorType: string | null;
+  /** 客户端 IP：默认取 TCP 对端，仅显式可信反代可提供转发头；未知为 null。 */
+  clientIp: string | null;
   latencyMs: number | null;
   createdAt: string;
 }
