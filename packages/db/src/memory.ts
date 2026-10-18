@@ -1,22 +1,35 @@
 import { formatMicroCredits, parseCreditsToMicro } from "@shucode-platform/contracts/credits";
 import { randomId } from "./crypto.js";
 import { hashPassword } from "./passwords.js";
+import {
+  MODEL_PRICING_KV_KEY,
+  computePricingDocVersion,
+  EMPTY_PRICING_VERSION,
+  parsePricingDoc,
+} from "./pricing-doc.js";
 import type {
+  AdminAuditLogView,
   DeviceTokenRecord,
   LoginFlowRecord,
   PlatformModelRecord,
   PlatformStore,
+  PricingDocSnapshot,
   ReleaseRecord,
   SessionRecord,
   TeamMemberView,
+  TeamQuotaAdjustmentView,
   TeamRecord,
   TeamWithUsage,
   UpstreamProviderRecord,
   UsageAggregateRow,
   UsageFilter,
   UsageRecord,
+  UsageSeriesRow,
   UserRecord,
 } from "./ports.js";
+
+/** 上海墙钟固定 UTC+8（无夏令时）：时间桶按此偏移切分，与 Postgres 实现的 AT TIME ZONE 对齐。 */
+const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 export interface MemoryStoreOptions {
   /** 无 Postgres 的本地体验模式：预置管理员/成员/演示团队与两个模型。 */
@@ -44,6 +57,8 @@ export async function createMemoryStore(
   const providers = new Map<string, UpstreamProviderRecord>();
   const config = new Map<string, unknown>();
   const usage: UsageRecord[] = [];
+  const auditLogs: AdminAuditLogView[] = [];
+  const quotaAdjustments: Array<TeamQuotaAdjustmentView & { teamId: string }> = [];
 
   function memberKey(teamId: string, userId: string): string {
     return `${teamId}:${userId}`;
@@ -368,6 +383,17 @@ export async function createMemoryStore(
         anthropicVersion: input.anthropicVersion ?? null,
         timeoutMs: input.timeoutMs ?? null,
         enabled: input.enabled ?? true,
+        disabledMode: null,
+        autoDisabledAt: null,
+        autoDisabledReason: null,
+        consecutiveFailures: 0,
+        lastTestAt: null,
+        lastTestOk: null,
+        lastTestKind: null,
+        lastTestStatus: null,
+        lastTestLatencyMs: null,
+        lastTestModel: null,
+        lastTestDetail: null,
         createdAt: nowIso(),
       };
       providers.set(record.id, record);
@@ -389,11 +415,115 @@ export async function createMemoryStore(
       if (Object.prototype.hasOwnProperty.call(patch, "timeoutMs")) {
         provider.timeoutMs = patch.timeoutMs ?? null;
       }
-      if (patch.enabled !== undefined) provider.enabled = patch.enabled;
+      if (patch.enabled !== undefined) {
+        // 语义与 Postgres 实现一致：人工停用不覆盖 auto 现场；重新启用即清除全部停用现场。
+        if (patch.enabled) {
+          provider.enabled = true;
+          provider.disabledMode = null;
+          provider.autoDisabledAt = null;
+          provider.autoDisabledReason = null;
+          provider.consecutiveFailures = 0;
+        } else {
+          provider.enabled = false;
+          if (provider.disabledMode !== "auto") provider.disabledMode = "manual";
+        }
+      }
       return provider;
     },
     async deleteUpstreamProvider(id) {
       return providers.delete(id);
+    },
+    async recordProviderTestResult(id, result) {
+      const provider = providers.get(id);
+      if (!provider) return;
+      provider.lastTestAt = nowIso();
+      provider.lastTestOk = result.ok;
+      provider.lastTestKind = result.kind;
+      provider.lastTestStatus = result.status;
+      provider.lastTestLatencyMs = result.latencyMs;
+      provider.lastTestModel = result.model;
+      provider.lastTestDetail = result.detail;
+    },
+    async reportUpstreamFailure(id, reason, threshold) {
+      // 无 await 的同步段：与 Postgres 的单语句原子更新语义一致。
+      const provider = providers.get(id);
+      if (!provider || !provider.enabled) return false;
+      provider.consecutiveFailures += 1;
+      if (threshold > 0 && provider.consecutiveFailures >= threshold) {
+        provider.enabled = false;
+        provider.disabledMode = "auto";
+        provider.autoDisabledAt = nowIso();
+        provider.autoDisabledReason = reason;
+        return true;
+      }
+      return false;
+    },
+    async reportUpstreamSuccess(id) {
+      const provider = providers.get(id);
+      if (provider) provider.consecutiveFailures = 0;
+    },
+
+    // ---- model pricing（内容版本乐观锁） ----
+    async getModelPricing(): Promise<PricingDocSnapshot | null> {
+      return parsePricingDoc(config.get(MODEL_PRICING_KV_KEY));
+    },
+    async saveModelPricing(entries, expectedVersion): Promise<PricingDocSnapshot | null> {
+      const current = parsePricingDoc(config.get(MODEL_PRICING_KV_KEY));
+      const currentVersion = current ? current.version : EMPTY_PRICING_VERSION;
+      if (currentVersion !== expectedVersion) return null;
+      config.set(MODEL_PRICING_KV_KEY, { entries });
+      return { entries, version: computePricingDocVersion(entries) };
+    },
+
+    // ---- admin audit（审计 + 团队额度调整流水） ----
+    async insertAuditLog(entry) {
+      auditLogs.push({
+        id: randomId(),
+        actorUserId: entry.actorUserId,
+        action: entry.action,
+        targetType: entry.targetType,
+        targetId: entry.targetId,
+        detail: entry.detail,
+        createdAt: nowIso(),
+        actorEmail:
+          (entry.actorUserId && users.get(entry.actorUserId)?.email) ?? null,
+      });
+    },
+    async listAuditLogs(filter) {
+      const limit = Math.min(Math.max(filter.limit ?? 50, 1), 500);
+      return auditLogs
+        .filter((log) => {
+          if (filter.actorUserId && log.actorUserId !== filter.actorUserId) return false;
+          if (filter.cursorCreatedAt && filter.cursorId) {
+            const compare = log.createdAt.localeCompare(filter.cursorCreatedAt);
+            if (compare > 0) return false;
+            if (compare === 0 && log.id >= filter.cursorId) return false;
+          }
+          return true;
+        })
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, limit);
+    },
+    async insertQuotaAdjustment(entry) {
+      quotaAdjustments.push({
+        id: randomId(),
+        teamId: entry.teamId,
+        action: entry.action,
+        oldQuotaCredits: entry.oldQuotaCredits,
+        newQuotaCredits: entry.newQuotaCredits,
+        oldUnlimited: entry.oldUnlimited,
+        newUnlimited: entry.newUnlimited,
+        createdAt: nowIso(),
+        actorEmail:
+          (entry.actorUserId && users.get(entry.actorUserId)?.email) ?? null,
+      });
+    },
+    async listQuotaAdjustments(teamId, limit = 10): Promise<TeamQuotaAdjustmentView[]> {
+      return quotaAdjustments
+        .filter((row) => row.teamId === teamId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, Math.min(Math.max(limit, 1), 100))
+        .map(({ teamId: _teamId, ...row }) => row);
     },
 
     // ---- config kv ----
@@ -424,15 +554,57 @@ export async function createMemoryStore(
           requests: 0,
           inputTokens: 0,
           outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
           creditsMicro: 0,
+          latencyMsSum: 0,
         };
         row.requests += 1;
         row.inputTokens += record.inputTokens;
         row.outputTokens += record.outputTokens;
+        row.cacheReadTokens += record.cacheReadTokens;
+        row.cacheCreationTokens += record.cacheCreationTokens;
         row.creditsMicro += record.creditsMicro;
+        if (record.latencyMs !== null) row.latencyMsSum += record.latencyMs;
         grouped.set(record.model, row);
       }
       return [...grouped.values()].sort((a, b) => b.creditsMicro - a.creditsMicro);
+    },
+
+    // 与 Postgres 实现同语义：桶边界按上海墙钟（UTC+8）切，空桶不返回、按桶起点升序。
+    async aggregateUsageSeries(filter, granularity) {
+      const bucket = (record: UsageRecord): string => {
+        const shifted = new Date(
+          new Date(record.createdAt).getTime() + SHANGHAI_OFFSET_MS,
+        ).toISOString();
+        return granularity === "hour"
+          ? `${shifted.slice(0, 13)}:00:00`
+          : `${shifted.slice(0, 10)}T00:00:00`;
+      };
+      const grouped = new Map<string, UsageSeriesRow>();
+      for (const record of usage) {
+        if (!matchesFilter(record, filter)) continue;
+        const key = bucket(record);
+        const row = grouped.get(key) ?? {
+          bucketStart: key,
+          requests: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          creditsMicro: 0,
+          latencyMsSum: 0,
+        };
+        row.requests += 1;
+        row.inputTokens += record.inputTokens;
+        row.outputTokens += record.outputTokens;
+        row.cacheReadTokens += record.cacheReadTokens;
+        row.cacheCreationTokens += record.cacheCreationTokens;
+        row.creditsMicro += record.creditsMicro;
+        if (record.latencyMs !== null) row.latencyMsSum += record.latencyMs;
+        grouped.set(key, row);
+      }
+      return [...grouped.values()].sort((a, b) => a.bucketStart.localeCompare(b.bucketStart));
     },
 
     // ---- quota ----
@@ -484,6 +656,9 @@ export async function createMemoryStore(
 function matchesFilter(record: UsageRecord, filter: UsageFilter): boolean {
   if (filter.teamId && record.teamId !== filter.teamId) return false;
   if (filter.userId && record.userId !== filter.userId) return false;
+  if (filter.model && record.model !== filter.model) return false;
+  if (filter.providerId && record.providerId !== filter.providerId) return false;
+  if (filter.status && record.status !== filter.status) return false;
   if (filter.from && record.createdAt < filter.from) return false;
   if (filter.to && record.createdAt > filter.to) return false;
   // 游标：排除排在游标行（含同刻同行）之前页已交付的记录，镜像 Postgres 的

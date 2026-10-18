@@ -1,10 +1,17 @@
 import { formatMicroCredits } from "@shucode-platform/contracts/credits";
 import postgres from "postgres";
+import {
+  MODEL_PRICING_KV_KEY,
+  computePricingDocVersion,
+  EMPTY_PRICING_VERSION,
+  parsePricingDoc,
+} from "./pricing-doc.js";
 import type {
   DeviceTokenRecord,
   LoginFlowRecord,
   PlatformModelRecord,
   PlatformStore,
+  PricingDocSnapshot,
   ReleaseRecord,
   SessionRecord,
   TeamMemberView,
@@ -144,6 +151,20 @@ function mapProvider(row: Row): UpstreamProviderRecord {
     anthropicVersion: strNullable(row.anthropic_version),
     timeoutMs: numNullable(row.timeout_ms),
     enabled: row.enabled === true,
+    disabledMode:
+      row.disabled_mode === "manual" || row.disabled_mode === "auto"
+        ? (row.disabled_mode as "manual" | "auto")
+        : null,
+    autoDisabledAt: isoNullable(row.auto_disabled_at),
+    autoDisabledReason: strNullable(row.auto_disabled_reason),
+    consecutiveFailures: num(row.consecutive_failures ?? 0),
+    lastTestAt: isoNullable(row.last_test_at),
+    lastTestOk: row.last_test_ok === null ? null : row.last_test_ok === true,
+    lastTestKind: strNullable(row.last_test_kind),
+    lastTestStatus: numNullable(row.last_test_status),
+    lastTestLatencyMs: numNullable(row.last_test_latency_ms),
+    lastTestModel: strNullable(row.last_test_model),
+    lastTestDetail: strNullable(row.last_test_detail),
     createdAt: iso(row.created_at),
   };
 }
@@ -557,6 +578,143 @@ export function createPostgresStore(databaseUrl: string): PlatformStore {
       const rows = await sql`DELETE FROM upstream_providers WHERE id = ${id}::uuid RETURNING id`;
       return rows.length > 0;
     },
+    async recordProviderTestResult(id, result) {
+      await sql`
+        UPDATE upstream_providers SET
+          last_test_at = ${new Date().toISOString()}::timestamptz,
+          last_test_ok = ${result.ok},
+          last_test_kind = ${result.kind},
+          last_test_status = ${result.status},
+          last_test_latency_ms = ${result.latencyMs},
+          last_test_model = ${result.model},
+          last_test_detail = ${result.detail}
+        WHERE id = ${id}::uuid
+      `;
+    },
+    async reportUpstreamFailure(id, reason, threshold) {
+      // 单语句原子「计数 + 条件熔断」：并发失败不会漏计，也不会越过人工停用的行。
+      const rows = await sql`
+        UPDATE upstream_providers SET
+          consecutive_failures = consecutive_failures + 1,
+          enabled = CASE WHEN consecutive_failures + 1 >= ${threshold} THEN false ELSE enabled END,
+          disabled_mode = CASE
+            WHEN consecutive_failures + 1 >= ${threshold} THEN 'auto'
+            ELSE disabled_mode END,
+          auto_disabled_at = CASE
+            WHEN consecutive_failures + 1 >= ${threshold} THEN now()
+            ELSE auto_disabled_at END,
+          auto_disabled_reason = CASE
+            WHEN consecutive_failures + 1 >= ${threshold} THEN ${reason}
+            ELSE auto_disabled_reason END
+        WHERE id = ${id}::uuid AND enabled
+        RETURNING disabled_mode
+      `;
+      return (rows[0] as Row | undefined)?.disabled_mode === "auto";
+    },
+    async reportUpstreamSuccess(id) {
+      await sql`
+        UPDATE upstream_providers SET consecutive_failures = 0 WHERE id = ${id}::uuid
+      `;
+    },
+
+    // ---- model pricing（内容版本乐观锁） ----
+    async getModelPricing() {
+      const rows = await sql`SELECT value FROM platform_config WHERE key = ${MODEL_PRICING_KV_KEY} LIMIT 1`;
+      const row = rows[0] as Row | undefined;
+      return row ? parsePricingDoc(row.value) : null;
+    },
+    async saveModelPricing(entries, expectedVersion) {
+      const version = computePricingDocVersion(entries);
+      return sql.begin(async (tx) => {
+        // advising 锁 + FOR UPDATE：读版本、比版本、写文档在同一临界区，
+        // 内容版本即锁依据（旧 KV 数据无 version 列也不影响，版本按内容现算）。
+        await tx`SELECT pg_advisory_xact_lock(hashtext(${MODEL_PRICING_KV_KEY}))`;
+        const rows = await tx`
+          SELECT value FROM platform_config WHERE key = ${MODEL_PRICING_KV_KEY} FOR UPDATE
+        `;
+        const row = rows[0] as Row | undefined;
+        const current = row ? parsePricingDoc(row.value) : null;
+        const currentVersion = current ? current.version : EMPTY_PRICING_VERSION;
+        if (currentVersion !== expectedVersion) return null;
+        await tx`
+          INSERT INTO platform_config (key, value, updated_at)
+          VALUES (${MODEL_PRICING_KV_KEY}, ${tx.json({ entries } as never)}, now())
+          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+        `;
+        return { entries, version };
+      }) as Promise<PricingDocSnapshot | null>;
+    },
+
+    // ---- admin audit（审计 + 团队额度调整流水） ----
+    async insertAuditLog(entry) {
+      await sql`
+        INSERT INTO admin_audit_logs (actor_user_id, action, target_type, target_id, detail)
+        VALUES (
+          ${entry.actorUserId}::uuid, ${entry.action},
+          ${entry.targetType}, ${entry.targetId}, ${sql.json(entry.detail as never)}
+        )
+      `;
+    },
+    async listAuditLogs(filter) {
+      const limit = Math.min(Math.max(filter.limit ?? 50, 1), 500);
+      const actorUserId = filter.actorUserId ?? null;
+      const cursorCreatedAt = filter.cursorCreatedAt ?? null;
+      const cursorId = filter.cursorId ?? null;
+      const rows = await sql`
+        SELECT a.*, u.email AS actor_email
+        FROM admin_audit_logs a
+        LEFT JOIN users u ON u.id = a.actor_user_id
+        WHERE (${actorUserId}::uuid IS NULL OR a.actor_user_id = ${actorUserId}::uuid)
+          AND (
+            ${cursorCreatedAt}::timestamptz IS NULL
+            OR (a.created_at, a.id) < (${cursorCreatedAt}::timestamptz, ${cursorId}::uuid)
+          )
+        ORDER BY a.created_at DESC
+        LIMIT ${limit}
+      `;
+      return rows.map((row) => ({
+        id: str((row as Row).id),
+        actorUserId: strNullable((row as Row).actor_user_id),
+        action: str((row as Row).action),
+        targetType: strNullable((row as Row).target_type),
+        targetId: strNullable((row as Row).target_id),
+        detail: (row as Row).detail,
+        createdAt: iso((row as Row).created_at),
+        actorEmail: strNullable((row as Row).actor_email),
+      }));
+    },
+    async insertQuotaAdjustment(entry) {
+      await sql`
+        INSERT INTO team_quota_adjustments (
+          team_id, actor_user_id, action,
+          old_quota_credits, new_quota_credits, old_unlimited, new_unlimited
+        ) VALUES (
+          ${entry.teamId}::uuid, ${entry.actorUserId}::uuid, ${entry.action},
+          ${entry.oldQuotaCredits}::numeric, ${entry.newQuotaCredits}::numeric,
+          ${entry.oldUnlimited}, ${entry.newUnlimited}
+        )
+      `;
+    },
+    async listQuotaAdjustments(teamId, limit = 10) {
+      const rows = await sql`
+        SELECT q.*, u.email AS actor_email
+        FROM team_quota_adjustments q
+        LEFT JOIN users u ON u.id = q.actor_user_id
+        WHERE q.team_id = ${teamId}::uuid
+        ORDER BY q.created_at DESC
+        LIMIT ${Math.min(Math.max(limit, 1), 100)}
+      `;
+      return rows.map((row) => ({
+        id: str((row as Row).id),
+        action: str((row as Row).action),
+        oldQuotaCredits: str((row as Row).old_quota_credits),
+        newQuotaCredits: str((row as Row).new_quota_credits),
+        oldUnlimited: (row as Row).old_unlimited === true,
+        newUnlimited: (row as Row).new_unlimited === true,
+        createdAt: iso((row as Row).created_at),
+        actorEmail: strNullable((row as Row).actor_email),
+      }));
+    },
 
     // ---- config kv ----
     async getConfigValue(key) {
@@ -594,6 +752,9 @@ export function createPostgresStore(databaseUrl: string): PlatformStore {
       const to = filter.to ?? null;
       const teamId = filter.teamId ?? null;
       const userId = filter.userId ?? null;
+      const model = filter.model ?? null;
+      const providerId = filter.providerId ?? null;
+      const status = filter.status ?? null;
       const cursorCreatedAt = filter.cursorCreatedAt ?? null;
       const cursorId = filter.cursorId ?? null;
       const rows = await sql`
@@ -602,6 +763,9 @@ export function createPostgresStore(databaseUrl: string): PlatformStore {
           AND (${to}::timestamptz IS NULL OR created_at <= ${to}::timestamptz)
           AND (${teamId}::uuid IS NULL OR team_id = ${teamId}::uuid)
           AND (${userId}::uuid IS NULL OR user_id = ${userId}::uuid)
+          AND (${model}::text IS NULL OR model = ${model})
+          AND (${providerId}::uuid IS NULL OR provider_id = ${providerId}::uuid)
+          AND (${status}::text IS NULL OR status = ${status})
           AND (
             ${cursorCreatedAt}::timestamptz IS NULL
             OR (created_at, id) < (${cursorCreatedAt}::timestamptz, ${cursorId}::uuid)
@@ -616,18 +780,27 @@ export function createPostgresStore(databaseUrl: string): PlatformStore {
       const to = filter.to ?? null;
       const teamId = filter.teamId ?? null;
       const userId = filter.userId ?? null;
+      const model = filter.model ?? null;
+      const providerId = filter.providerId ?? null;
+      const status = filter.status ?? null;
       const rows = await sql`
         SELECT
           model,
           count(*)::int AS requests,
           COALESCE(sum(input_tokens), 0)::bigint AS input_tokens,
           COALESCE(sum(output_tokens), 0)::bigint AS output_tokens,
-          COALESCE(sum(credits_micro), 0)::bigint AS credits_micro
+          COALESCE(sum(cache_read_tokens), 0)::bigint AS cache_read_tokens,
+          COALESCE(sum(cache_creation_tokens), 0)::bigint AS cache_creation_tokens,
+          COALESCE(sum(credits_micro), 0)::bigint AS credits_micro,
+          COALESCE(sum(latency_ms), 0)::bigint AS latency_ms_sum
         FROM usage_records
         WHERE (${from}::timestamptz IS NULL OR created_at >= ${from}::timestamptz)
           AND (${to}::timestamptz IS NULL OR created_at <= ${to}::timestamptz)
           AND (${teamId}::uuid IS NULL OR team_id = ${teamId}::uuid)
           AND (${userId}::uuid IS NULL OR user_id = ${userId}::uuid)
+          AND (${model}::text IS NULL OR model = ${model})
+          AND (${providerId}::uuid IS NULL OR provider_id = ${providerId}::uuid)
+          AND (${status}::text IS NULL OR status = ${status})
         GROUP BY model
         ORDER BY credits_micro DESC
       `;
@@ -636,7 +809,57 @@ export function createPostgresStore(databaseUrl: string): PlatformStore {
         requests: num((row as Row).requests),
         inputTokens: num((row as Row).input_tokens),
         outputTokens: num((row as Row).output_tokens),
+        cacheReadTokens: num((row as Row).cache_read_tokens),
+        cacheCreationTokens: num((row as Row).cache_creation_tokens),
         creditsMicro: num((row as Row).credits_micro),
+        latencyMsSum: num((row as Row).latency_ms_sum),
+      }));
+    },
+
+    // 时间桶按上海墙钟切：created_at 转到 Asia/Shanghai 后 date_trunc，
+    // to_char 输出 naive 串（不带时区），与展示端「上海时间」语义一致。
+    async aggregateUsageSeries(filter, granularity) {
+      const field = granularity === "hour" ? "hour" : "day";
+      const from = filter.from ?? null;
+      const to = filter.to ?? null;
+      const teamId = filter.teamId ?? null;
+      const userId = filter.userId ?? null;
+      const model = filter.model ?? null;
+      const providerId = filter.providerId ?? null;
+      const status = filter.status ?? null;
+      const rows = await sql`
+        SELECT
+          to_char(
+            date_trunc(${field}, created_at AT TIME ZONE 'Asia/Shanghai'),
+            'YYYY-MM-DD"T"HH24:MI:SS'
+          ) AS bucket_start,
+          count(*)::int AS requests,
+          COALESCE(sum(input_tokens), 0)::bigint AS input_tokens,
+          COALESCE(sum(output_tokens), 0)::bigint AS output_tokens,
+          COALESCE(sum(cache_read_tokens), 0)::bigint AS cache_read_tokens,
+          COALESCE(sum(cache_creation_tokens), 0)::bigint AS cache_creation_tokens,
+          COALESCE(sum(credits_micro), 0)::bigint AS credits_micro,
+          COALESCE(sum(latency_ms), 0)::bigint AS latency_ms_sum
+        FROM usage_records
+        WHERE (${from}::timestamptz IS NULL OR created_at >= ${from}::timestamptz)
+          AND (${to}::timestamptz IS NULL OR created_at <= ${to}::timestamptz)
+          AND (${teamId}::uuid IS NULL OR team_id = ${teamId}::uuid)
+          AND (${userId}::uuid IS NULL OR user_id = ${userId}::uuid)
+          AND (${model}::text IS NULL OR model = ${model})
+          AND (${providerId}::uuid IS NULL OR provider_id = ${providerId}::uuid)
+          AND (${status}::text IS NULL OR status = ${status})
+        GROUP BY bucket_start
+        ORDER BY bucket_start ASC
+      `;
+      return rows.map((row) => ({
+        bucketStart: str((row as Row).bucket_start),
+        requests: num((row as Row).requests),
+        inputTokens: num((row as Row).input_tokens),
+        outputTokens: num((row as Row).output_tokens),
+        cacheReadTokens: num((row as Row).cache_read_tokens),
+        cacheCreationTokens: num((row as Row).cache_creation_tokens),
+        creditsMicro: num((row as Row).credits_micro),
+        latencyMsSum: num((row as Row).latency_ms_sum),
       }));
     },
 

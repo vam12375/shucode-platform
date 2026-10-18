@@ -8,6 +8,10 @@
  * - 数值一律用定点字符串（numeric(18,6) 口径），micro-credits 用 number。
  */
 
+import type { ModelPricingEntry, PricingDocSnapshot } from "./pricing-doc.js";
+
+export type { ModelPricingEntry, PricingDocSnapshot } from "./pricing-doc.js";
+
 export type UserRole = "admin" | "member";
 export type TeamMemberRole = "owner" | "member";
 export type LoginFlowStatus = "pending" | "authorized" | "consumed" | "expired" | "denied";
@@ -35,6 +39,23 @@ export interface UpstreamProviderRecord {
   /** 可空：留空回落网关全局 UPSTREAM_TIMEOUT_MS / UPSTREAM_IDLE_TIMEOUT_MS。 */
   timeoutMs: number | null;
   enabled: boolean;
+  /**
+   * 停用原因（New API 借鉴）：manual = 管理员操作；auto = 网关连续失败熔断。
+   * enabled=true 时为 null。自动熔断不得覆盖人工停用决定。
+   */
+  disabledMode: "manual" | "auto" | null;
+  autoDisabledAt: string | null;
+  autoDisabledReason: string | null;
+  consecutiveFailures: number;
+  /** 最近一次控制台发起的「连通/推理测试」结果（原样落库，密钥不落库）。 */
+  lastTestAt: string | null;
+  lastTestOk: boolean | null;
+  lastTestKind: string | null;
+  lastTestStatus: number | null;
+  lastTestLatencyMs: number | null;
+  /** null = 只测了连通鉴权，未做模型推理探测。 */
+  lastTestModel: string | null;
+  lastTestDetail: string | null;
   createdAt: string;
 }
 
@@ -46,6 +67,50 @@ export interface UserRecord {
   role: UserRole;
   disabledAt: string | null;
   createdAt: string;
+}
+
+/** 控制台「连通/推理测试」结果，由 recordProviderTestResult 原样落库。 */
+export interface ProviderTestOutcome {
+  ok: boolean;
+  /** ok / auth / not_found / rate_limited / timeout / network / upstream_error。 */
+  kind: string;
+  /** 上游 HTTP 状态；网络类失败为 null。 */
+  status: number | null;
+  latencyMs: number;
+  /** null = 只测了连通鉴权，未做模型推理探测。 */
+  model: string | null;
+  detail: string | null;
+}
+
+export interface AdminAuditLogView {
+  id: string;
+  actorUserId: string | null;
+  action: string;
+  targetType: string | null;
+  targetId: string | null;
+  detail: unknown;
+  createdAt: string;
+  actorEmail: string | null;
+}
+
+export interface TeamQuotaAdjustmentView {
+  id: string;
+  action: string;
+  oldQuotaCredits: string;
+  newQuotaCredits: string;
+  oldUnlimited: boolean;
+  newUnlimited: boolean;
+  createdAt: string;
+  actorEmail: string | null;
+}
+
+export interface AuditLogFilter {
+  /** 默认 50，最大 500。 */
+  limit?: number;
+  /** 与 listUsage 相同的 (created_at, id) 游标元组。 */
+  cursorCreatedAt?: string;
+  cursorId?: string;
+  actorUserId?: string;
 }
 
 export interface SessionRecord {
@@ -160,6 +225,11 @@ export interface UsageFilter {
   to?: string;
   teamId?: string;
   userId?: string;
+  /** 精确匹配记录的模型名（平台模型 ID，非上游模型名）。 */
+  model?: string;
+  /** 精确匹配请求命中的上游供应商；不提供 = 不过滤（无法筛「未绑定回落 env」，见下）。 */
+  providerId?: string;
+  status?: UsageStatus;
   /** listUsage 专用，默认 50，最大 500。 */
   limit?: number;
   /**
@@ -176,7 +246,33 @@ export interface UsageAggregateRow {
   requests: number;
   inputTokens: number;
   outputTokens: number;
+  /**
+   * 缓存读命中 token：与 inputTokens（新输入）互斥，不入 input。
+   * 缓存率 = cacheReadTokens / (inputTokens + cacheReadTokens + cacheCreationTokens)。
+   */
+  cacheReadTokens: number;
+  /** 缓存创建 token（首写，按缓存写价计）：计入总 prompt 口径但不计命中。 */
+  cacheCreationTokens: number;
   creditsMicro: number;
+  /** 已记录延迟的毫秒总和（latency_ms 为 null 的不计入）；平均耗时 = latencyMsSum / requests。 */
+  latencyMsSum: number;
+}
+
+export type UsageSeriesGranularity = "day" | "hour";
+
+export interface UsageSeriesRow {
+  /**
+   * 时间桶起点，上海墙钟（UTC+8）的 naive 串：天 = "YYYY-MM-DDT00:00:00"，
+   * 小时 = "YYYY-MM-DDTHH:00:00"。不带时区后缀，展示端直接按墙钟解读。
+   */
+  bucketStart: string;
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  creditsMicro: number;
+  latencyMsSum: number;
 }
 
 export interface PlatformStore {
@@ -311,6 +407,47 @@ export interface PlatformStore {
     },
   ): Promise<UpstreamProviderRecord | null>;
   deleteUpstreamProvider(id: string): Promise<boolean>;
+  /** 控制台测试结果原样落库（last_test_* 列），供运行台判断上游可用性。 */
+  recordProviderTestResult(id: string, result: ProviderTestOutcome): Promise<void>;
+  /**
+   * 网关上游失败熔断：连续失败计数 +1；达到 threshold（>0）时原子转「auto 停用」。
+   * 只作用于 enabled 的供应商（人工停用不参与、不被覆盖）；返回本次是否触发停用。
+   */
+  reportUpstreamFailure(id: string, reason: string, threshold: number): Promise<boolean>;
+  /** 成功重置连续失败计数（不改变 enabled / disabled_mode）。 */
+  reportUpstreamSuccess(id: string): Promise<void>;
+
+  // ---- model pricing（内容版本乐观锁，文档存于 config KV） ----
+  getModelPricing(): Promise<PricingDocSnapshot | null>;
+  /**
+   * 整表保存：expectedVersion 与当前文档内容版本一致才写入；
+   * 不一致返回 null（冲突），调用方提示刷新而非静默覆盖他人修改。
+   */
+  saveModelPricing(
+    entries: ModelPricingEntry[],
+    expectedVersion: string,
+  ): Promise<PricingDocSnapshot | null>;
+
+  // ---- admin audit（管理动作审计 + 团队额度调整流水） ----
+  insertAuditLog(entry: {
+    actorUserId: string | null;
+    action: string;
+    targetType: string | null;
+    targetId: string | null;
+    detail: unknown;
+  }): Promise<void>;
+  listAuditLogs(filter: AuditLogFilter): Promise<AdminAuditLogView[]>;
+  insertQuotaAdjustment(entry: {
+    teamId: string;
+    actorUserId: string | null;
+    action: string;
+    oldQuotaCredits: string;
+    newQuotaCredits: string;
+    oldUnlimited: boolean;
+    newUnlimited: boolean;
+  }): Promise<void>;
+  /** 团队页展示用：最近 limit（默认 10）条调整记录，含操作者邮箱。 */
+  listQuotaAdjustments(teamId: string, limit?: number): Promise<TeamQuotaAdjustmentView[]>;
 
   // ---- config kv ----
   getConfigValue(key: string): Promise<unknown | null>;
@@ -320,6 +457,14 @@ export interface PlatformStore {
   insertUsage(record: UsageRecord): Promise<void>;
   listUsage(filter: UsageFilter): Promise<UsageRecord[]>;
   aggregateUsage(filter: UsageFilter): Promise<UsageAggregateRow[]>;
+  /**
+   * 按时间桶聚合用量（趋势图口径）：桶边界按上海墙钟（UTC+8）切分，
+   * 空桶不返回（由前端按序补零）。granularity 缺省按天。
+   */
+  aggregateUsageSeries(
+    filter: UsageFilter,
+    granularity: UsageSeriesGranularity,
+  ): Promise<UsageSeriesRow[]>;
 
   // ---- quota（Gateway 临界区） ----
   tryReserveQuota(teamId: string, micro: number): Promise<boolean>;
