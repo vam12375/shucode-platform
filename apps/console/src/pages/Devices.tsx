@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { Chip, Notice } from "../components/StatusChip.js";
+import { formatShanghaiTime } from "../time.js";
 
 interface DeviceRow {
   id: string;
@@ -103,8 +104,8 @@ export function DevicesPage() {
                   </td>
                   <td>{device.userEmail}</td>
                   <td className="num">…{device.hint}</td>
-                  <td className="num">{device.lastUsedAt ? device.lastUsedAt.replace("T", " ").slice(0, 19) : "从未"}</td>
-                  <td>{device.revokedAt ? <Chip tone="stop">已吊销</Chip> : <Chip>有效</Chip>}</td>
+                  <td className="num">{device.lastUsedAt ? formatShanghaiTime(device.lastUsedAt) : "从未"}</td>
+                  <td>{device.revokedAt ? <Chip tone="stop">已吊销</Chip> : <Chip tone="ok">有效</Chip>}</td>
                   <td>
                     <div className="form-row" style={{ justifyContent: "flex-end" }}>
                       {device.revokedAt ? null : (

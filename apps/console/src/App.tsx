@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState, type ReactNode } from "reac
 import { api, navigate } from "./api.js";
 import { DialogHost, ToastHost } from "./components/Feedback.js";
 import { ReadoutRail } from "./components/ReadoutRail.js";
+import { AuditPage } from "./pages/Audit.js";
 import { ConfigPage } from "./pages/ConfigPage.js";
 import { DevicesPage } from "./pages/Devices.js";
 import { LoginPage } from "./pages/Login.js";
@@ -12,6 +13,7 @@ import { ReleasesPage } from "./pages/Releases.js";
 import { TeamDetailPage } from "./pages/TeamDetail.js";
 import { TeamsPage } from "./pages/Teams.js";
 import { UsagePage } from "./pages/Usage.js";
+import { UiLibraryPage } from "./pages/UiLibrary.js";
 import { UsersPage } from "./pages/Users.js";
 
 export interface AdminUser {
@@ -27,6 +29,7 @@ const NAV_GROUPS = [
     items: [
       { path: "/teams", label: "团队" },
       { path: "/users", label: "用户" },
+      { path: "/audit", label: "审计日志" },
     ],
   },
   {
@@ -145,8 +148,14 @@ export function App() {
     case "usage":
       page = <UsagePage />;
       break;
+    case "ui":
+      page = <UiLibraryPage />;
+      break;
     case "users":
       page = <UsersPage currentUserId={user.id} />;
+      break;
+    case "audit":
+      page = <AuditPage />;
       break;
     case "teams":
       page = param ? <TeamDetailPage teamId={param} /> : <TeamsPage />;
@@ -181,6 +190,12 @@ export function App() {
             </Fragment>
           ))}
         </nav>
+        <div className="side-ref">
+          <p className="nav-group">参考</p>
+          <a href="#/ui" className={section === "ui" ? "nav-item active" : "nav-item"}>
+            UI 组件库
+          </a>
+        </div>
         <div className="side-foot">
           <div className="user-card">
             <div className="user-card-top">

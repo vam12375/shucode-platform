@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api } from "../api.js";
+import { api, type ApiError } from "../api.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { EditableCell } from "../components/EditableCell.js";
 import { Notice } from "../components/StatusChip.js";
@@ -20,6 +20,12 @@ interface PricingEntry {
   outputCostPerMillion: string;
   cacheReadCostPerMillion: string;
   cacheCreationCostPerMillion: string;
+}
+
+/** GET / PUT 都携带内容版本；PUT 版本不符时后端返回 409（他人已修改）。 */
+interface PricingDoc {
+  entries: PricingEntry[];
+  version: string;
 }
 
 interface PricingDraft {
@@ -51,6 +57,8 @@ function toDraft(entry: PricingEntry): PricingDraft {
 
 export function PricingPage() {
   const [entries, setEntries] = useState<PricingEntry[]>([]);
+  // 当前文档内容版本：保存时携带给后端做乐观锁比对（他人先改则 409）。
+  const [version, setVersion] = useState("");
   const [drafts, setDrafts] = useState<Record<string, PricingDraft>>({});
   const [add, setAdd] = useState({ ...EMPTY_ADD });
   const [pasteText, setPasteText] = useState("");
@@ -62,8 +70,9 @@ export function PricingPage() {
 
   const load = useCallback(async () => {
     try {
-      const data = await api<{ entries: PricingEntry[] }>("/model-pricing");
+      const data = await api<PricingDoc>("/model-pricing");
       setEntries(data.entries);
+      setVersion(data.version);
       setDrafts(
         Object.fromEntries(data.entries.map((entry) => [entry.modelId, toDraft(entry)])),
       );
@@ -77,21 +86,28 @@ export function PricingPage() {
     void load();
   }, [load]);
 
-  // 全量替换式保存：条目编辑/增删后整表 PUT，后端负责归一化与去重。
+  // 全量替换式保存：前端整表 PUT + expectedVersion；版本冲突（他人已改）时不静默覆盖，
+  // 提示后自动重载服务端最新值，当前未保存的编辑丢弃。
   const saveList = async (next: PricingEntry[], successMessage: string): Promise<void> => {
     setBusy(true);
     try {
-      const result = await api<{ entries: PricingEntry[] }>("/model-pricing", {
+      const result = await api<PricingDoc>("/model-pricing", {
         method: "PUT",
-        body: JSON.stringify({ entries: next }),
+        body: JSON.stringify({ entries: next, expectedVersion: version }),
       });
       setEntries(result.entries);
+      setVersion(result.version);
       setDrafts(
         Object.fromEntries(result.entries.map((entry) => [entry.modelId, toDraft(entry)])),
       );
       toastOk(successMessage, "已保存");
     } catch (saveError) {
-      toastErr(saveError instanceof Error ? saveError.message : "保存失败", "保存失败");
+      if ((saveError as ApiError).code === 409) {
+        toastErr("定价库已被他人修改，已为你刷新到最新值", "保存未生效");
+        await load();
+      } else {
+        toastErr(saveError instanceof Error ? saveError.message : "保存失败", "保存失败");
+      }
     } finally {
       setBusy(false);
     }

@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { Select } from "../components/Select.js";
 import { Chip, Notice } from "../components/StatusChip.js";
+import { formatShanghaiTime } from "../time.js";
 
 interface ProviderRow {
   id: string;
@@ -10,11 +11,52 @@ interface ProviderRow {
   baseUrl: string;
   protocol: "openai-chat-completions" | "openai-responses" | "anthropic-messages";
   enabled: boolean;
+  disabledMode: "manual" | "auto" | null;
+  autoDisabledAt: string | null;
+  autoDisabledReason: string | null;
+  consecutiveFailures: number;
+  lastTestAt: string | null;
+  lastTestOk: boolean | null;
+  lastTestKind: string | null;
+  lastTestStatus: number | null;
+  lastTestLatencyMs: number | null;
+  lastTestModel: string | null;
+  lastTestDetail: string | null;
   hasKey: boolean;
   apiKeyHint: string | null;
   anthropicVersion: string | null;
   timeoutMs: number | null;
   createdAt: string;
+}
+
+/** /console/api/providers/:id/test 的返回：kind 为服务端归类的失败原因。 */
+interface ProviderTestResult {
+  ok: boolean;
+  kind: "ok" | "auth" | "not_found" | "rate_limited" | "timeout" | "network" | "upstream_error";
+  status?: number;
+  latencyMs: number;
+  detail?: string;
+}
+
+function testKindLabel(kind: string | null): string {
+  switch (kind) {
+    case "auth":
+      return "密钥无效或未授权";
+    case "not_found":
+      return "模型不存在或路径不正确";
+    case "rate_limited":
+      return "上游限流";
+    case "timeout":
+      return "连接或响应超时";
+    case "network":
+      return "无法连接上游";
+    case "upstream_error":
+      return "上游错误";
+    case "ok":
+      return "通过";
+    default:
+      return "测试未通过";
+  }
 }
 
 function protocolLabel(protocol: ProviderRow["protocol"]): string {
@@ -28,8 +70,7 @@ export function ProvidersPage() {
   const [providers, setProviders] = useState<ProviderRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({
+  const [editingId, setEditingId] = useState<string | null>(null);  const [form, setForm] = useState({
     name: "",
     baseUrl: "",
     protocol: "openai-chat-completions" as ProviderRow["protocol"],
@@ -152,6 +193,41 @@ export function ProvidersPage() {
     }
   };
 
+  // 运行台动作：留空只验证可达性与鉴权；填模型名则真实发一次最小推理请求，
+  // 验证「模型真的可调用」——获取列表成功不等于推理可用。
+  const testProvider = async (provider: ProviderRow): Promise<void> => {
+    const answer = await confirmDialog({
+      k: "供应商测试",
+      title: `测试「${provider.name}」`,
+      message:
+        "留空只验证连通与鉴权；填写上游模型名会真实发送一次最小推理请求（可能产生极少量上游费用）。",
+      confirmText: "开始测试",
+      input: { label: "探测模型（可选）", placeholder: "上游模型名，留空只测连通" },
+    });
+    if (!answer.confirmed) return;
+    const model = answer.value.trim();
+    setBusy(true);
+    try {
+      const data = await api<ProviderTestResult>(`/providers/${provider.id}/test`, {
+        method: "POST",
+        body: JSON.stringify(model ? { model } : {}),
+      });
+      // 结果已由后端落库（最近测试列），重载列表即见；失败同时给出行内 Toast。
+      await load();
+      if (data.ok) {
+        toastOk(`「${provider.name}」测试通过 · ${data.latencyMs} ms`, "测试成功");
+      } else {
+        const label = testKindLabel(data.kind);
+        const suffix = data.status ? `（HTTP ${data.status}）` : "";
+        toastErr(`「${provider.name}」${label}${suffix}`, "测试未通过");
+      }
+    } catch (actionError) {
+      toastErr(actionError instanceof Error ? actionError.message : "测试失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div>
       <header className="page-head">
@@ -252,6 +328,7 @@ export function ProvidersPage() {
                 <th scope="col">API 格式</th>
                 <th scope="col">Key</th>
                 <th scope="col">状态</th>
+                <th scope="col">最近测试</th>
                 <th scope="col" aria-label="操作" />
               </tr>
             </thead>
@@ -263,9 +340,49 @@ export function ProvidersPage() {
                     <td className="num">{provider.baseUrl}</td>
                     <td>{protocolLabel(provider.protocol)}</td>
                     <td>{provider.hasKey ? <code>…{provider.apiKeyHint}</code> : <span className="readout">未配置</span>}</td>
-                    <td>{provider.enabled ? <Chip>生效</Chip> : <Chip tone="mute">停用</Chip>}</td>
+                    <td>
+                      {provider.enabled ? (
+                        <Chip tone="ok">生效</Chip>
+                      ) : provider.disabledMode === "auto" ? (
+                        <span className="form-row" style={{ alignItems: "baseline" }}>
+                          <Chip tone="stop">自动停用</Chip>
+                          <span className="readout">
+                            {provider.autoDisabledReason ?? "连续失败"} · {provider.consecutiveFailures} 连败
+                          </span>
+                        </span>
+                      ) : (
+                        <Chip tone="mute">手动停用</Chip>
+                      )}
+                    </td>
+                    <td>
+                      {provider.lastTestAt === null ? (
+                        <span className="readout">未测</span>
+                      ) : (
+                        <span
+                          className="form-row"
+                          style={{ alignItems: "baseline" }}
+                          title={provider.lastTestDetail ?? undefined}
+                        >
+                          <Chip tone={provider.lastTestOk ? "ok" : "stop"}>
+                            {provider.lastTestOk ? "通过" : testKindLabel(provider.lastTestKind)}
+                          </Chip>
+                          <span className="readout">
+                            {formatShanghaiTime(provider.lastTestAt).slice(5, 16)} ·{" "}
+                            {provider.lastTestLatencyMs ?? "?"} ms
+                            {provider.lastTestModel ? ` · ${provider.lastTestModel}` : " · 仅连通"}
+                          </span>
+                        </span>
+                      )}
+                    </td>
                     <td>
                       <div className="form-row" style={{ justifyContent: "flex-end" }}>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          disabled={busy}
+                          onClick={() => void testProvider(provider)}
+                        >
+                          测试
+                        </button>
                         <button
                           className="btn btn-ghost btn-sm"
                           disabled={busy}
@@ -295,7 +412,7 @@ export function ProvidersPage() {
                   </tr>
                   {expandedModels === provider.id ? (
                     <tr>
-                      <td colSpan={6}>
+                      <td colSpan={7}>
                         <div className="form-row">
                           {(fetchedModels[provider.id] ?? []).map((modelId) => (
                             <Chip key={modelId} tone="mute">
@@ -313,7 +430,7 @@ export function ProvidersPage() {
               ))}
               {providers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="readout">
+                  <td colSpan={7} className="readout">
                     还没有供应商，接入一家试试（如 DeepSeek：https://api.deepseek.com）。
                   </td>
                 </tr>

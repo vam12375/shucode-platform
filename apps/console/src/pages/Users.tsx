@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { Select } from "../components/Select.js";
 import { Chip, Notice } from "../components/StatusChip.js";
+import { formatShanghaiDate } from "../time.js";
 
 interface UserRow {
   id: string;
@@ -198,8 +199,8 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
                   <td>{user.email}</td>
                   <td>{user.displayName}</td>
                   <td>{user.role === "admin" ? "管理员" : "成员"}</td>
-                  <td>{user.disabledAt ? <Chip tone="mute">已禁用</Chip> : <Chip>正常</Chip>}</td>
-                  <td className="num">{user.createdAt.replace("T", "").slice(0, 10)}</td>
+                  <td>{user.disabledAt ? <Chip tone="mute">已禁用</Chip> : <Chip tone="ok">正常</Chip>}</td>
+                  <td className="num">{formatShanghaiDate(user.createdAt)}</td>
                   <td>
                     <div className="form-row" style={{ justifyContent: "flex-end" }}>
                       {user.id === currentUserId ? (

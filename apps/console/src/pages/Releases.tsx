@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { toastErr, toastOk } from "../components/Feedback.js";
 import { Chip, Notice } from "../components/StatusChip.js";
+import { formatShanghaiTime } from "../time.js";
 
 interface ReleaseRow {
   revision: number;
@@ -129,8 +130,8 @@ export function ReleasesPage() {
               {releases.map((release) => (
                 <tr key={release.revision}>
                   <td className="num">R{release.revision}</td>
-                  <td className="num">{release.publishedAt.replace("T", " ").slice(0, 19)}</td>
-                  <td>{release.isActive ? <Chip>生效中</Chip> : <Chip tone="mute">历史</Chip>}</td>
+                  <td className="num">{formatShanghaiTime(release.publishedAt)}</td>
+                  <td>{release.isActive ? <Chip tone="ok">生效中</Chip> : <Chip tone="mute">历史</Chip>}</td>
                   <td>
                     <div className="form-row" style={{ justifyContent: "flex-end" }}>
                       {release.isActive ? null : (

@@ -3,7 +3,8 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api } from "../api.js";
 import { toastErr, toastOk } from "../components/Feedback.js";
 import { Gauge } from "../components/Gauge.js";
-import { Chip, Notice } from "../components/StatusChip.js";
+import { Chip, Notice, type ChipTone } from "../components/StatusChip.js";
+import { formatShanghaiDate } from "../time.js";
 
 interface TeamRow {
   id: string;
@@ -18,13 +19,13 @@ interface TeamRow {
 
 const HOT_RATIO = 0.9;
 
-/** 按「成功率状态」取印章语义：不限 → mute，近额 → hot，其余 → 生效。 */
-function statusChip(team: TeamRow): { tone?: "hot" | "stop" | "mute"; label: string } {
+/** 按「成功率状态」取印章语义：不限 → mute，近额 → hot，其余 → ok 生效。 */
+function statusChip(team: TeamRow): { tone?: ChipTone; label: string } {
   if (team.unlimited) return { tone: "mute", label: "不限" };
   const quota = Number.parseFloat(team.quotaCredits) || 0;
   const used = Number.parseFloat(team.usedCredits) || 0;
   const ratio = quota > 0 ? Math.min(used / quota, 1) : 0;
-  return ratio >= HOT_RATIO ? { tone: "hot", label: "近额" } : { label: "生效" };
+  return ratio >= HOT_RATIO ? { tone: "hot", label: "近额" } : { tone: "ok", label: "生效" };
 }
 
 export function TeamsPage() {
@@ -157,7 +158,7 @@ export function TeamsPage() {
                     <td>
                       <Chip tone={status.tone}>{status.label}</Chip>
                     </td>
-                    <td className="num">{team.createdAt.replace("T", "").slice(0, 10)}</td>
+                    <td className="num">{formatShanghaiDate(team.createdAt)}</td>
                   </tr>
                 );
               })}

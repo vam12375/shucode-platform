@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { api } from "../api.js";
+import { shanghaiDateOf } from "../time.js";
 import { useCountUp } from "./Gauge.js";
 
 interface UsageAggregate {
@@ -37,11 +38,6 @@ const EMPTY: RailData = {
   revision: null,
 };
 
-function localDate(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
 function sumAggregates(rows: UsageAggregate[]): { requests: number; creditsMicro: number } {
   return rows.reduce(
     (sum, row) => ({ requests: sum.requests + row.requests, creditsMicro: sum.creditsMicro + row.creditsMicro }),
@@ -51,8 +47,9 @@ function sumAggregates(rows: UsageAggregate[]): { requests: number; creditsMicro
 
 async function loadRail(): Promise<RailData> {
   const now = new Date();
-  const today = localDate(now);
-  const start = localDate(new Date(now.getTime() - 13 * 86_400_000));
+  // 「今日」按上海墙钟取日界，与后端对 from/to 的 +8 解读一致。
+  const today = shanghaiDateOf(now);
+  const start = shanghaiDateOf(new Date(now.getTime() - 13 * 86_400_000));
   const [todayUsage, windowUsage, devicesRes, releasesRes] = await Promise.all([
     api<{ aggregates: UsageAggregate[] }>(`/usage?from=${today}T00:00:00&to=${today}T23:59:59`),
     api<{ aggregates: UsageAggregate[] }>(`/usage?from=${start}T00:00:00&to=${today}T23:59:59`),

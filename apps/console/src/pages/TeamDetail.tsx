@@ -6,7 +6,8 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { Gauge } from "../components/Gauge.js";
-import { Chip, Notice } from "../components/StatusChip.js";
+import { Chip, Notice, type ChipTone } from "../components/StatusChip.js";
+import { formatShanghaiTime } from "../time.js";
 
 interface TeamDetail {
   team: {
@@ -39,14 +40,24 @@ interface TeamDetail {
     createdAt: string;
   }>;
   recentUsageNextCursor: string | null;
+  quotaAdjustments: Array<{
+    id: string;
+    action: string;
+    oldQuotaCredits: string;
+    newQuotaCredits: string;
+    oldUnlimited: boolean;
+    newUnlimited: boolean;
+    createdAt: string;
+    actorEmail: string | null;
+  }>;
 }
 
 function credits(micro: number): string {
   return formatCreditsDisplay(micro / MICRO_CREDITS_PER_CREDIT);
 }
 
-function statusChip(status: string): { tone?: "hot" | "stop" | "mute"; label: string } {
-  if (status === "ok") return { label: "成功" };
+function statusChip(status: string): { tone?: ChipTone; label: string } {
+  if (status === "ok") return { tone: "ok", label: "成功" };
   if (status === "aborted") return { tone: "hot", label: "中断" };
   return { tone: "stop", label: "错误" };
 }
@@ -131,7 +142,7 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
     );
   }
 
-  const { team, members, aggregates, recentUsage } = detail;
+  const { team, members, aggregates, recentUsage, quotaAdjustments } = detail;
   const used = Number.parseFloat(team.usedCredits) || 0;
   const reserved = Number.parseFloat(team.reservedCredits) || 0;
   const quotaValue = Number.parseFloat(team.quotaCredits) || 0;
@@ -212,6 +223,52 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
           <p className="readout" style={{ margin: 0, marginTop: 10 }}>
             已用 {formatCreditsDisplay(used)} · 预留 {formatCreditsDisplay(reserved)} CR。额度扣减发生在模型网关，页面展示为实时汇总。
           </p>
+        </div>
+      </section>
+
+      <section className="pane d1">
+        <div className="pane-h">
+          <h2>额度变更记录</h2>
+          <span className="readout">最近 {quotaAdjustments.length} 条 · 含前后快照</span>
+        </div>
+        <div className="pane-b flush table-scroll">
+          <table className="table">
+            <thead>
+              <tr>
+                <th scope="col">时间</th>
+                <th scope="col">操作者</th>
+                <th scope="col">额度变化</th>
+                <th scope="col">不限额度</th>
+              </tr>
+            </thead>
+            <tbody>
+              {quotaAdjustments.map((row) => (
+                <tr key={row.id}>
+                  <td className="num">{formatShanghaiTime(row.createdAt)}</td>
+                  <td>{row.actorEmail ?? "—"}</td>
+                  <td className="num">
+                    {row.oldQuotaCredits} → {row.newQuotaCredits}
+                  </td>
+                  <td>
+                    {row.oldUnlimited === row.newUnlimited ? (
+                      <span className="readout">{row.newUnlimited ? "是" : "否"}</span>
+                    ) : (
+                      <Chip tone={row.newUnlimited ? "hot" : undefined}>
+                        {row.oldUnlimited ? "是 → 否" : "否 → 是"}
+                      </Chip>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {quotaAdjustments.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="readout">
+                    暂无调整记录。
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -386,7 +443,7 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
                 const status = statusChip(record.status);
                 return (
                   <tr key={record.id}>
-                    <td className="num">{record.createdAt.replace("T", " ").slice(0, 19)}</td>
+                    <td className="num">{formatShanghaiTime(record.createdAt)}</td>
                     <td>{record.model}</td>
                     <td>
                       <Chip tone={status.tone}>{status.label}</Chip>
