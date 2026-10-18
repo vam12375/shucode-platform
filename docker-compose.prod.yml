@@ -19,21 +19,26 @@ services:
       - "127.0.0.1:5432:5432"
 
   migrate:
+    # 生产只拉 ghcr 镜像：清除 base 里的 build 段，否则 compose pull 会跳过该服务并提示必须先 build。
+    build: !reset null
     image: ghcr.io/vam12375/shucode-platform/tools:latest
     environment:
       <<: *prod-database-url
 
   seed:
+    build: !reset null
     image: ghcr.io/vam12375/shucode-platform/tools:latest
     environment:
       <<: *prod-database-url
 
   api:
+    build: !reset null
     image: ghcr.io/vam12375/shucode-platform/api:latest
     environment:
       <<: *prod-database-url
 
   gateway:
+    build: !reset null
     image: ghcr.io/vam12375/shucode-platform/gateway:latest
     environment:
       <<: *prod-database-url

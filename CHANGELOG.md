@@ -9,6 +9,13 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.20.4] - 2026-10-18
+
+### 修复(部署)
+
+- `docker-compose.prod.yml` 为 api/gateway/migrate/seed 增加 `build: !reset null`，清除 base compose 的构建段：服务器 `docker compose pull` 只拉 ghcr 镜像，不再提示必须先 build。
+- 本地不带 prod 覆写的 `docker compose up -d` 不受影响，仍按 Dockerfile 构建。
+
 ## [0.20.3] - 2026-10-18
 
 ### 修复(API/网关)
