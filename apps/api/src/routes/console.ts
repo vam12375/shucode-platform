@@ -4,12 +4,13 @@ import {
   deviceTokenHint,
   hashPassword,
   verifyPassword,
+  type UpstreamProviderRecord,
   type UserRecord,
 } from "@shucode-platform/db";
 import type { Context, Hono } from "hono";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
-import { loadPricingEntries, MODEL_PRICING_KV_KEY, type ModelPricingEntry } from "../services/model-pricing.js";
+import { loadPricingDoc, loadPricingEntries, type ModelPricingEntry } from "../services/model-pricing.js";
 import { createRateLimiter } from "../services/rate-limit.js";
 import { loginWithSession, logoutSession, readSessionUser } from "../services/sessions.js";
 
@@ -54,6 +55,8 @@ async function readJsonBody(c: Context): Promise<unknown> {
 
 const CURSOR_SEPARATOR = "~";
 
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
 /** 翻页游标：上一页最后一条记录的 createdAt 与 id；对客户端保持不透明、原样回传。 */
 function encodeUsageCursor(record: { createdAt: string; id: string }): string {
   return `${record.createdAt}${CURSOR_SEPARATOR}${record.id}`;
@@ -66,8 +69,7 @@ function decodeUsageCursor(cursor: string | undefined): { createdAt: string; id:
   const createdAt = cursor.slice(0, separatorIndex);
   const id = cursor.slice(separatorIndex + 1);
   const isoShape = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/u;
-  const uuidShape = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
-  if (!isoShape.test(createdAt) || !uuidShape.test(id)) return null;
+  if (!isoShape.test(createdAt) || !UUID_SHAPE.test(id)) return null;
   return { createdAt, id };
 }
 
@@ -97,6 +99,32 @@ const providerInput = z.object({
   enabled: z.boolean().optional(),
 });
 
+/** 供应商探测超时上限：独立于模型列表探测；provider.timeout_ms 更短则尊重它。 */
+const PROVIDER_TEST_TIMEOUT_MS = 30_000;
+
+/**
+ * 按协议构造最小推理探测请求。路径与网关同口径：base_url 是协议根，/v1 由平台拼接。
+ * max_output_tokens 最小值 16 是 Responses API 的硬约束。
+ */
+function providerProbeRequest(
+  protocol: (typeof UPSTREAM_PROVIDER_PROTOCOLS)[number],
+  model: string,
+): { path: string; body: unknown } {
+  if (protocol === "openai-chat-completions") {
+    return {
+      path: "/v1/chat/completions",
+      body: { model, messages: [{ role: "user", content: "ping" }], max_tokens: 1, stream: false },
+    };
+  }
+  if (protocol === "openai-responses") {
+    return { path: "/v1/responses", body: { model, input: "ping", max_output_tokens: 16 } };
+  }
+  return {
+    path: "/v1/messages",
+    body: { model, max_tokens: 1, messages: [{ role: "user", content: "ping" }] },
+  };
+}
+
 // 模型定价库条目：每 1M token 价格（USD 口径，与平台 credit/1M token 同值）。
 const pricingEntryInput = z.object({
   modelId: z.string().trim().min(1).max(120),
@@ -115,6 +143,31 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
   async function requireAdmin(c: Context): Promise<UserRecord | null> {
     const user = await readSessionUser(context, c);
     return user && user.role === "admin" ? user : null;
+  }
+
+  /**
+   * 管理动作审计（New API 借鉴）：谁、对谁、做了什么。
+   * detail 只放元数据（字段名/数量/ID），凭据、密码、请求正文与上游错误原文永不入审计；
+   * 写失败只告警不阻塞主操作（与网关失败兜底路径一致）。
+   */
+  async function audit(
+    actor: UserRecord,
+    action: string,
+    targetType: string | null,
+    targetId: string | null,
+    detail: Record<string, unknown> = {},
+  ): Promise<void> {
+    try {
+      await context.store.insertAuditLog({
+        actorUserId: actor.id,
+        action,
+        targetType,
+        targetId,
+        detail,
+      });
+    } catch (error) {
+      context.logger.warn("审计写入失败", { action, error });
+    }
   }
 
   // ---- auth ----
@@ -203,7 +256,7 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
       return c.json({ code: 400, msg: "分页游标不合法" }, 400);
     }
     // 多取一条探测下一页，records 只交付 limit 条。
-    const [members, aggregates, usagePage] = await Promise.all([
+    const [members, aggregates, usagePage, quotaAdjustments] = await Promise.all([
       context.store.listMembers(teamId),
       context.store.aggregateUsage({ teamId }),
       context.store.listUsage({
@@ -213,6 +266,7 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
           ? { cursorCreatedAt: decodedUsageCursor.createdAt, cursorId: decodedUsageCursor.id }
           : {}),
       }),
+      context.store.listQuotaAdjustments(teamId, 10),
     ]);
     const hasMore = usagePage.length > 50;
     const recentUsage = hasMore ? usagePage.slice(0, 50) : usagePage;
@@ -229,6 +283,7 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
         aggregates,
         recentUsage,
         recentUsageNextCursor: hasMore && last ? encodeUsageCursor(last) : null,
+        quotaAdjustments,
       },
     });
   });
@@ -244,7 +299,15 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
       })
       .safeParse(await readJsonBody(c));
     if (!parsed.success) return c.json({ code: 400, msg: "请求参数不合法" }, 400);
-    const team = await context.store.updateTeam(c.req.param("id"), {
+    const teamId = c.req.param("id");
+    // 额度调整流水（New API 借鉴：人工调额有前后快照可对账）：旧值先读、之后与新旧入账。
+    // 注意 memory 实现返回原地引用，必须在 update 前把标量快照取走，不能持有记录引用。
+    const previousTeam = await context.store.getTeam(teamId);
+    if (!previousTeam) return c.json({ code: 404, msg: "团队不存在" }, 404);
+    const previousQuota = previousTeam.quotaCredits;
+    const previousUnlimited = previousTeam.unlimited;
+    const previousName = previousTeam.name;
+    const team = await context.store.updateTeam(teamId, {
       ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
       ...(parsed.data.quotaCredits !== undefined
         ? { quotaCredits: parsed.data.quotaCredits }
@@ -252,6 +315,20 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
       ...(parsed.data.unlimited !== undefined ? { unlimited: parsed.data.unlimited } : {}),
     });
     if (!team) return c.json({ code: 404, msg: "团队不存在" }, 404);
+    if (parsed.data.quotaCredits !== undefined || parsed.data.unlimited !== undefined) {
+      await context.store.insertQuotaAdjustment({
+        teamId,
+        actorUserId: admin.id,
+        action: "set_quota",
+        oldQuotaCredits: previousQuota,
+        newQuotaCredits: team.quotaCredits,
+        oldUnlimited: previousUnlimited,
+        newUnlimited: team.unlimited,
+      });
+    }
+    if (parsed.data.name !== undefined && parsed.data.name !== previousName) {
+      await audit(admin, "team.update", "team", team.id, { fields: ["name"] });
+    }
     context.configEvents.emit("teams");
     return c.json({ code: 0, data: { team } });
   });
@@ -313,6 +390,7 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
         displayName: parsed.data.displayName,
         role: parsed.data.role ?? "member",
       });
+      await audit(admin, "user.create", "user", user.id, { role: user.role });
       return c.json({ code: 0, data: { user: publicUser(user) } });
     } catch (error) {
       return c.json(
@@ -361,6 +439,7 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
       context.logger.info("吊销用户登录态", { userId: user.id, by: admin.email, revokedDevices });
     }
     context.logger.info("更新用户", { userId: user.id, by: admin.email });
+    await audit(admin, "user.update", "user", user.id, { fields: Object.keys(patch) });
     return c.json({ code: 0, data: { user: publicUser(user) } });
   });
 
@@ -419,6 +498,7 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
       await context.store.activateRelease(revision);
       release = { revision };
       context.logger.info("发布 Built-in Release", { revision, by: admin.email });
+      await audit(admin, "release.publish", "release", String(revision));
       context.configEvents.emit("releases");
     } catch (error) {
       return c.json(
@@ -438,6 +518,7 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
       : null;
     if (!release) return c.json({ code: 404, msg: "Release 不存在" }, 404);
     context.configEvents.emit("releases");
+    await audit(admin, "release.activate", "release", String(release.revision));
     return c.json({ code: 0, data: { revision: release.revision } });
   });
 
@@ -482,6 +563,7 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
       sortOrder: parsed.data.sortOrder ?? 0,
     });
     context.configEvents.emit("models");
+    await audit(admin, "model.upsert", "model", model.modelId, { displayName: model.displayName });
     return c.json({ code: 0, data: { model } });
   });
 
@@ -538,6 +620,11 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
       by: admin.email,
     });
     if (created.length > 0) context.configEvents.emit("models");
+    await audit(admin, "model.import", "provider", provider.id, {
+      created: created.length,
+      priced: priced.length,
+      skipped: skipped.length,
+    });
     return c.json({ code: 0, data: { created, priced, skipped } });
   });
 
@@ -547,29 +634,30 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
     const removed = await context.store.deleteModel(c.req.param("modelId"));
     if (!removed) return c.json({ code: 404, msg: "模型不存在" }, 404);
     context.configEvents.emit("models");
+    await audit(admin, "model.delete", "model", c.req.param("modelId"));
     return c.json({ code: 0 });
   });
 
   // ---- upstream providers（多上游，按需配置） ----
 
-  function publicProvider(record: {
-    id: string;
-    name: string;
-    baseUrl: string;
-    protocol: string;
-    enabled: boolean;
-    apiKeyHint: string | null;
-    apiKeyCiphertext: string | null;
-    anthropicVersion: string | null;
-    timeoutMs: number | null;
-    createdAt: string;
-  }) {
+  function publicProvider(record: UpstreamProviderRecord) {
     return {
       id: record.id,
       name: record.name,
       baseUrl: record.baseUrl,
       protocol: record.protocol,
       enabled: record.enabled,
+      disabledMode: record.disabledMode,
+      autoDisabledAt: record.autoDisabledAt,
+      autoDisabledReason: record.autoDisabledReason,
+      consecutiveFailures: record.consecutiveFailures,
+      lastTestAt: record.lastTestAt,
+      lastTestOk: record.lastTestOk,
+      lastTestKind: record.lastTestKind,
+      lastTestStatus: record.lastTestStatus,
+      lastTestLatencyMs: record.lastTestLatencyMs,
+      lastTestModel: record.lastTestModel,
+      lastTestDetail: record.lastTestDetail,
       apiKeyHint: record.apiKeyHint,
       hasKey: record.apiKeyCiphertext !== null,
       anthropicVersion: record.anthropicVersion,
@@ -619,6 +707,10 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
         enabled: data.enabled ?? true,
       });
       context.logger.info("创建上游供应商", { providerId: provider.id, by: admin.email });
+      await audit(admin, "provider.create", "provider", provider.id, {
+        name: provider.name,
+        protocol: provider.protocol,
+      });
       context.configEvents.emit("providers");
       return c.json({ code: 0, data: { provider: publicProvider(provider) } });
     } catch (error) {
@@ -654,6 +746,7 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
     });
     if (!provider) return c.json({ code: 404, msg: "供应商不存在" }, 404);
     context.logger.info("更新上游供应商", { providerId: provider.id, by: admin.email });
+    await audit(admin, "provider.update", "provider", provider.id, { fields: Object.keys(data) });
     context.configEvents.emit("providers");
     return c.json({ code: 0, data: { provider: publicProvider(provider) } });
   });
@@ -662,9 +755,13 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
     const admin = await requireAdmin(c);
     if (!admin) return c.json({ code: 401, msg: "需要管理员登录" }, 401);
     // 绑定该供应商的模型会自动解绑定并回落 env 单上游（FK ON DELETE SET NULL）。
+    const existing = await context.store.getUpstreamProvider(c.req.param("id"));
     const removed = await context.store.deleteUpstreamProvider(c.req.param("id"));
     if (!removed) return c.json({ code: 404, msg: "供应商不存在" }, 404);
     context.logger.info("删除上游供应商", { providerId: c.req.param("id"), by: admin.email });
+    await audit(admin, "provider.delete", "provider", c.req.param("id"), {
+      name: existing?.name ?? null,
+    });
     context.configEvents.emit("providers");
     return c.json({ code: 0 });
   });
@@ -730,22 +827,162 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
     return c.json({ code: 0, data: { models } });
   });
 
+  // 供应商连通/推理测试：真实打一次上游（key 只在后端解密使用，不落日志、不出接口）。
+  // 不带 model：GET /v1/models，只验证可达性与鉴权；带 model：按协议发一次最小推理，
+  // 验证「模型真的可调用」——获取列表成功不等于推理可用。
+  app.post("/console/api/providers/:id/test", async (c) => {
+    const admin = await requireAdmin(c);
+    if (!admin) return c.json({ code: 401, msg: "需要管理员登录" }, 401);
+    const provider = await context.store.getUpstreamProvider(c.req.param("id"));
+    if (!provider) return c.json({ code: 404, msg: "供应商不存在" }, 404);
+    const parsed = z
+      .object({ model: z.string().trim().min(1).max(200).optional() })
+      .safeParse(await readJsonBody(c));
+    if (!parsed.success) return c.json({ code: 400, msg: "请求参数不合法" }, 400);
+    const probeModel = parsed.data.model ?? null;
+
+    let apiKey: string | null = null;
+    if (provider.apiKeyCiphertext) {
+      if (!context.secretBox) {
+        return c.json({ code: 500, msg: "平台密钥未配置，无法解密该供应商的 API Key" }, 500);
+      }
+      try {
+        apiKey = context.secretBox.decrypt(provider.apiKeyCiphertext);
+      } catch {
+        return c.json({ code: 500, msg: "供应商 API Key 解密失败（PLATFORM_SECRET_KEY 是否更换过？）" }, 500);
+      }
+    }
+
+    // 鉴权头与网关 buildUpstreamRequest 同口径：openai 家族 Bearer；anthropic x-api-key + anthropic-version。
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (provider.protocol === "anthropic-messages") {
+      if (apiKey) headers["x-api-key"] = apiKey;
+      headers["anthropic-version"] = provider.anthropicVersion ?? ANTHROPIC_VERSION_FALLBACK;
+    } else if (apiKey) {
+      headers["authorization"] = `Bearer ${apiKey}`;
+    }
+
+    let url: string;
+    let body: string | undefined;
+    if (probeModel) {
+      const probe = providerProbeRequest(provider.protocol, probeModel);
+      url = `${provider.baseUrl}${probe.path}`;
+      body = JSON.stringify(probe.body);
+    } else {
+      url = `${provider.baseUrl}/v1/models`;
+    }
+
+    const startedAt = Date.now();
+    // 测试结果落库（0006 迁移的 last_test_* 列）：控制台刷新即可看到最近一次可用性，
+    // 不再只依赖会话内状态。detail 是上游错误原文截断，不含任何凭据。
+    const persistOutcome = async (outcome: {
+      ok: boolean;
+      kind: string;
+      status: number | null;
+      latencyMs: number;
+      detail: string | null;
+    }): Promise<void> => {
+      try {
+        await context.store.recordProviderTestResult(provider.id, {
+          ok: outcome.ok,
+          kind: outcome.kind,
+          status: outcome.status,
+          latencyMs: outcome.latencyMs,
+          model: probeModel,
+          detail: outcome.detail,
+        });
+      } catch (error) {
+        context.logger.warn("供应商测试结果落库失败", { providerId: provider.id, error });
+      }
+      await audit(admin, "provider.test", "provider", provider.id, {
+        ok: outcome.ok,
+        kind: outcome.kind,
+      });
+    };
+
+    let upstream: Response;
+    try {
+      upstream = await fetch(url, {
+        method: body ? "POST" : "GET",
+        headers,
+        ...(body ? { body } : {}),
+        signal: AbortSignal.timeout(
+          Math.min(provider.timeoutMs ?? PROVIDER_TEST_TIMEOUT_MS, PROVIDER_TEST_TIMEOUT_MS),
+        ),
+      });
+    } catch (error) {
+      // AbortSignal.timeout 的到期错误 name 为 TimeoutError，与其余网络故障分开归类。
+      const timedOut = error instanceof Error && error.name === "TimeoutError";
+      const latencyMs = Date.now() - startedAt;
+      context.logger.warn("供应商测试失败", {
+        providerId: provider.id,
+        withModel: probeModel !== null,
+        timedOut,
+        latencyMs,
+        by: admin.email,
+      });
+      const outcome = { ok: false, kind: timedOut ? "timeout" : "network", status: null, latencyMs, detail: null };
+      await persistOutcome(outcome);
+      return c.json({ code: 0, data: outcome });
+    }
+    const latencyMs = Date.now() - startedAt;
+    if (!upstream.ok) {
+      const detail = (await upstream.text().catch(() => "")).slice(0, 300);
+      const kind =
+        upstream.status === 401 || upstream.status === 403
+          ? "auth"
+          : upstream.status === 404
+            ? "not_found"
+            : upstream.status === 429
+              ? "rate_limited"
+              : "upstream_error";
+      context.logger.info("供应商测试未通过", {
+        providerId: provider.id,
+        withModel: probeModel !== null,
+        kind,
+        status: upstream.status,
+        by: admin.email,
+      });
+      const outcome = { ok: false, kind, status: upstream.status, latencyMs, detail };
+      await persistOutcome(outcome);
+      return c.json({ code: 0, data: outcome });
+    }
+    context.logger.info("供应商测试通过", {
+      providerId: provider.id,
+      withModel: probeModel !== null,
+      latencyMs,
+      by: admin.email,
+    });
+    const outcome = { ok: true, kind: "ok", status: upstream.status, latencyMs, detail: null };
+    await persistOutcome(outcome);
+    return c.json({ code: 0, data: outcome });
+  });
+
   // ---- model pricing（模型定价库：cc-switch / models.dev 口径） ----
 
   app.get("/console/api/model-pricing", async (c) => {
     const admin = await requireAdmin(c);
     if (!admin) return c.json({ code: 401, msg: "需要管理员登录" }, 401);
-    const entries = await loadPricingEntries(context.store);
-    return c.json({ code: 0, data: { entries } });
+    const doc = await loadPricingDoc(context.store);
+    return c.json({ code: 0, data: doc });
   });
 
-  // 全量替换保存（前端编辑后整表提交）；modelId 重复时以后一条为准。
+  // 全量替换保存（前端整表提交 + expectedVersion 乐观锁）；modelId 重复时以后一条为准。
+  // 版本冲突返回 409：另一个管理员改过定价，前端提示刷新，不静默覆盖。
   app.put("/console/api/model-pricing", async (c) => {
     const admin = await requireAdmin(c);
     if (!admin) return c.json({ code: 401, msg: "需要管理员登录" }, 401);
-    const parsed = pricingPayload.safeParse(await readJsonBody(c));
+    const parsed = z
+      .object({
+        entries: pricingPayload.shape.entries,
+        expectedVersion: z.string().trim().min(1).max(64),
+      })
+      .safeParse(await readJsonBody(c));
     if (!parsed.success) {
-      return c.json({ code: 400, msg: "请求参数不合法（条目需含模型 ID、显示名与非负价格）" }, 400);
+      return c.json(
+        { code: 400, msg: "请求参数不合法（条目需含模型 ID、显示名与非负价格，并携带 expectedVersion）" },
+        400,
+      );
     }
     const byId = new Map<string, ModelPricingEntry>();
     for (const raw of parsed.data.entries) {
@@ -759,9 +996,13 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
       });
     }
     const entries = [...byId.values()];
-    await context.store.setConfigValue(MODEL_PRICING_KV_KEY, { entries });
+    const saved = await context.store.saveModelPricing(entries, parsed.data.expectedVersion);
+    if (!saved) {
+      return c.json({ code: 409, msg: "定价库已被他人修改，请刷新页面后重试" }, 409);
+    }
     context.logger.info("更新模型定价库", { entries: entries.length, by: admin.email });
-    return c.json({ code: 0, data: { entries } });
+    await audit(admin, "pricing.update", null, null, { entries: entries.length });
+    return c.json({ code: 0, data: { entries: saved.entries, version: saved.version } });
   });
 
   // ---- config ----
@@ -808,10 +1049,23 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
     if (cursor && !decodedCursor) {
       return c.json({ code: 400, msg: "分页游标不合法" }, 400);
     }
+    // 诊断筛选：状态白名单 + 供应商 ID 必须是 UUID，避免把脏参数透传进存储层。
+    const statusQuery = c.req.query("status");
+    if (statusQuery && statusQuery !== "ok" && statusQuery !== "error" && statusQuery !== "aborted") {
+      return c.json({ code: 400, msg: "status 只支持 ok / error / aborted" }, 400);
+    }
+    const providerIdQuery = c.req.query("providerId");
+    if (providerIdQuery && !UUID_SHAPE.test(providerIdQuery)) {
+      return c.json({ code: 400, msg: "providerId 不合法" }, 400);
+    }
     const baseFilter = {
       ...(c.req.query("teamId") ? { teamId: c.req.query("teamId")! } : {}),
       ...(c.req.query("from") ? { from: c.req.query("from")! } : {}),
       ...(c.req.query("to") ? { to: c.req.query("to")! } : {}),
+      ...(c.req.query("userId") ? { userId: c.req.query("userId")! } : {}),
+      ...(c.req.query("model") ? { model: c.req.query("model")! } : {}),
+      ...(providerIdQuery ? { providerId: providerIdQuery } : {}),
+      ...(statusQuery ? { status: statusQuery as "ok" | "error" | "aborted" } : {}),
     };
     const pageFilter = {
       ...baseFilter,
@@ -835,6 +1089,42 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
         nextCursor: hasMore && last ? encodeUsageCursor(last) : null,
       },
     });
+  });
+
+  // 趋势图口径的时间桶聚合：粒度白名单 + 小时粒度限制范围 ≤ 31 天，防止桶数失控。
+  app.get("/console/api/usage/series", async (c) => {
+    const admin = await requireAdmin(c);
+    if (!admin) return c.json({ code: 401, msg: "需要管理员登录" }, 401);
+    const granularity = c.req.query("granularity") === "hour" ? "hour" : "day";
+    const fromQuery = c.req.query("from");
+    const toQuery = c.req.query("to");
+    if (granularity === "hour" && fromQuery && toQuery) {
+      // from/to 是本地时间的 naive 串，此处只用于估算范围长度，统一按 UTC 解析即可。
+      const spanMs =
+        Date.parse(`${toQuery.replace(" ", "T")}Z`) - Date.parse(`${fromQuery.replace(" ", "T")}Z`);
+      if (Number.isFinite(spanMs) && spanMs > 31 * 86_400_000) {
+        return c.json({ code: 400, msg: "小时粒度最多查询 31 天范围" }, 400);
+      }
+    }
+    const statusQuery = c.req.query("status");
+    if (statusQuery && statusQuery !== "ok" && statusQuery !== "error" && statusQuery !== "aborted") {
+      return c.json({ code: 400, msg: "status 只支持 ok / error / aborted" }, 400);
+    }
+    const providerIdQuery = c.req.query("providerId");
+    if (providerIdQuery && !UUID_SHAPE.test(providerIdQuery)) {
+      return c.json({ code: 400, msg: "providerId 不合法" }, 400);
+    }
+    const filter = {
+      ...(c.req.query("teamId") ? { teamId: c.req.query("teamId")! } : {}),
+      ...(fromQuery ? { from: fromQuery } : {}),
+      ...(toQuery ? { to: toQuery } : {}),
+      ...(c.req.query("userId") ? { userId: c.req.query("userId")! } : {}),
+      ...(c.req.query("model") ? { model: c.req.query("model")! } : {}),
+      ...(providerIdQuery ? { providerId: providerIdQuery } : {}),
+      ...(statusQuery ? { status: statusQuery as "ok" | "error" | "aborted" } : {}),
+    };
+    const series = await context.store.aggregateUsageSeries(filter, granularity);
+    return c.json({ code: 0, data: { series } });
   });
 
   // ---- devices ----
@@ -868,7 +1158,40 @@ export function registerConsoleRoutes(app: Hono, context: AppContext): void {
     if (!device) return c.json({ code: 404, msg: "设备不存在" }, 404);
     await context.store.revokeDeviceToken(device.id, new Date(context.now()).toISOString());
     context.logger.info("吊销设备凭据", { deviceId: device.id, by: admin.email });
+    await audit(admin, "device.revoke", "device", device.id);
     context.configEvents.emit("devices");
     return c.json({ code: 0 });
+  });
+
+  // ---- audit ----
+
+  // 管理动作审计查询：与 usage 相同的 (created_at, id) 游标翻页；复用其编解码。
+  app.get("/console/api/audit", async (c) => {
+    const admin = await requireAdmin(c);
+    if (!admin) return c.json({ code: 401, msg: "需要管理员登录" }, 401);
+    const limitRaw = Number.parseInt(c.req.query("limit") ?? "", 10);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 500) : 50;
+    const cursor = c.req.query("cursor");
+    const decodedCursor = decodeUsageCursor(cursor);
+    if (cursor && !decodedCursor) {
+      return c.json({ code: 400, msg: "分页游标不合法" }, 400);
+    }
+    const logs = await context.store.listAuditLogs({
+      limit: limit + 1,
+      ...(c.req.query("actorUserId") ? { actorUserId: c.req.query("actorUserId")! } : {}),
+      ...(decodedCursor
+        ? { cursorCreatedAt: decodedCursor.createdAt, cursorId: decodedCursor.id }
+        : {}),
+    });
+    const hasMore = logs.length > limit;
+    const page = hasMore ? logs.slice(0, limit) : logs;
+    const last = page[page.length - 1];
+    return c.json({
+      code: 0,
+      data: {
+        logs: page,
+        nextCursor: hasMore && last ? encodeUsageCursor(last) : null,
+      },
+    });
   });
 }

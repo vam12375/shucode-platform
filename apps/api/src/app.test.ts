@@ -199,6 +199,318 @@ describe("平台设备登录流", () => {
   });
 });
 
+describe("审计日志与团队额度流水", () => {
+  async function login(app: ReturnType<typeof createApp>): Promise<string> {
+    const res = await app.request("/console/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "admin@mendao.chat", password: "mendao-admin" }),
+    });
+    expect(res.status).toBe(200);
+    return res.headers.get("set-cookie")?.split(";")[0] ?? "";
+  }
+
+  it("供应商增删留审计；团队额度调整有前后快照与操作者", async () => {
+    const context = await createTestContext();
+    const app = createApp(context);
+    const cookie = await login(app);
+
+    // 供应商创建 → 更新（停用）→ 删除：三步都应留痕。
+    const createRes = await app.request("/console/api/providers", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ name: "AuditP", baseUrl: "https://audit.test" }),
+    });
+    const providerId = ((await createRes.json()) as { data: { provider: { id: string } } }).data
+      .provider.id;
+    await app.request(`/console/api/providers/${providerId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ enabled: false }),
+    });
+    const deleteRes = await app.request(`/console/api/providers/${providerId}`, {
+      method: "DELETE",
+      headers: { cookie },
+    });
+    expect(deleteRes.status).toBe(200);
+
+    // 团队额度调整：创建 10 → 改 20；调整流水保留 old/new 与 unlimited 状态。
+    const teamRes = await app.request("/console/api/teams", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ name: "审计团队", quotaCredits: "10" }),
+    });
+    const teamId = ((await teamRes.json()) as { data: { team: { id: string } } }).data.team.id;
+    const patchRes = await app.request(`/console/api/teams/${teamId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ quotaCredits: "20", unlimited: true }),
+    });
+    expect(patchRes.status).toBe(200);
+
+    const teamDetail = await app.request(`/console/api/teams/${teamId}`, { headers: { cookie } });
+    const detailBody = (await teamDetail.json()) as {
+      data: {
+        quotaAdjustments: Array<{
+          oldQuotaCredits: string;
+          newQuotaCredits: string;
+          oldUnlimited: boolean;
+          newUnlimited: boolean;
+          actorEmail: string | null;
+        }>;
+      };
+    };
+    expect(detailBody.data.quotaAdjustments).toHaveLength(1);
+    const adjustment = detailBody.data.quotaAdjustments[0];
+    expect(adjustment?.oldQuotaCredits).toBe("10.000000");
+    expect(adjustment?.newQuotaCredits).toBe("20.000000");
+    expect(adjustment?.oldUnlimited).toBe(false);
+    expect(adjustment?.newUnlimited).toBe(true);
+    expect(adjustment?.actorEmail).toBe("admin@mendao.chat");
+
+    // 审计接口：时间倒序，包含供应商三步动作，操作者为管理员邮箱。
+    const auditRes = await app.request("/console/api/audit", { headers: { cookie } });
+    expect(auditRes.status).toBe(200);
+    const auditBody = (await auditRes.json()) as {
+      data: { logs: Array<{ action: string; actorEmail: string | null; targetId: string | null }> };
+    };
+    const actions = auditBody.data.logs.map((log) => log.action);
+    expect(actions).toContain("provider.create");
+    expect(actions).toContain("provider.update");
+    expect(actions).toContain("provider.delete");
+    const deleted = auditBody.data.logs.find((log) => log.action === "provider.delete");
+    expect(deleted?.targetId).toBe(providerId);
+    expect(deleted?.actorEmail).toBe("admin@mendao.chat");
+
+    // 未登录 401。
+    expect((await app.request("/console/api/audit")).status).toBe(401);
+  });
+});
+
+describe("用量诊断筛选", () => {
+  async function login(app: ReturnType<typeof createApp>): Promise<string> {
+    const res = await app.request("/console/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "admin@mendao.chat", password: "mendao-admin" }),
+    });
+    expect(res.status).toBe(200);
+    return res.headers.get("set-cookie")?.split(";")[0] ?? "";
+  }
+
+  it("usage 接口透传 model/status（含聚合联动）并拒绝非法参数", async () => {
+    const context = await createTestContext();
+    const app = createApp(context);
+    const cookie = await login(app);
+    const team = (await context.store.listTeams())[0]?.team;
+    const member = await context.store.findUserByEmail("member@mendao.chat");
+    if (!team || !member) throw new Error("演示种子缺失");
+
+    const base = {
+      id: randomId(),
+      userId: member.id,
+      teamId: team.id,
+      deviceTokenId: null,
+      upstreamModel: "m-a",
+      providerId: null,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      creditsMicro: 1000,
+      errorType: null,
+      clientIp: null,
+      latencyMs: 3,
+    };
+    await context.store.insertUsage({
+      ...base,
+      requestId: "t-ok",
+      model: "m-a",
+      status: "ok",
+      createdAt: new Date(Date.UTC(2026, 9, 15, 12, 0, 1)).toISOString(),
+    });
+    await context.store.insertUsage({
+      ...base,
+      id: randomId(),
+      requestId: "t-err",
+      model: "m-a",
+      status: "error",
+      errorType: "upstream_502",
+      createdAt: new Date(Date.UTC(2026, 9, 15, 12, 0, 2)).toISOString(),
+    });
+
+    // model + status 组合：只剩错误那条，聚合同步收窄。
+    const res = await app.request("/console/api/usage?model=m-a&status=error", {
+      headers: { cookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      data: { aggregates: Array<{ requests: number }>; records: Array<{ requestId: string; errorType: string | null }> };
+    };
+    expect(body.data.records.map((record) => record.requestId)).toEqual(["t-err"]);
+    expect(body.data.records[0]?.errorType).toBe("upstream_502");
+    expect(body.data.aggregates).toHaveLength(1);
+    expect(body.data.aggregates[0]?.requests).toBe(1);
+
+    // 无筛选时两条都在。
+    const all = await app.request("/console/api/usage", { headers: { cookie } });
+    expect(((await all.json()) as { data: { records: unknown[] } }).data.records).toHaveLength(2);
+
+    // 非法 status / providerId 直接 400，不透传进存储层。
+    expect((await app.request("/console/api/usage?status=weird", { headers: { cookie } })).status).toBe(400);
+    expect(
+      (await app.request("/console/api/usage?providerId=not-a-uuid", { headers: { cookie } })).status,
+    ).toBe(400);
+    expect((await app.request("/console/api/usage", { headers: {} })).status).toBe(401);
+  });
+});
+
+describe("供应商连通/推理测试", () => {
+  async function login(app: ReturnType<typeof createApp>): Promise<string> {
+    const res = await app.request("/console/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "admin@mendao.chat", password: "mendao-admin" }),
+    });
+    expect(res.status).toBe(200);
+    return res.headers.get("set-cookie")?.split(";")[0] ?? "";
+  }
+
+  it("带模型按协议最小推理探测；鉴权头与网关同口径；失败归类且密钥不外泄", async () => {
+    const context = await createTestContext();
+    const app = createApp(context);
+    const cookie = await login(app);
+
+    const createRes = await app.request("/console/api/providers", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        name: "DeepSeek",
+        baseUrl: "https://api.deepseek.com",
+        apiKey: "sk-test-1234",
+        protocol: "openai-chat-completions",
+      }),
+    });
+    expect(createRes.status).toBe(200);
+    const providerId = ((await createRes.json()) as { data: { provider: { id: string } } }).data.provider.id;
+
+    // 1. 真实最小推理：POST chat/completions + Bearer key，max_tokens=1。
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content: "pong" } }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const okRes = await app.request(`/console/api/providers/${providerId}/test`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ model: "deepseek-chat" }),
+    });
+    expect(okRes.status).toBe(200);
+    const okBody = (await okRes.json()) as {
+      data: { ok: boolean; kind: string; latencyMs: number; status?: number };
+    };
+    expect(okBody.data.ok).toBe(true);
+    expect(okBody.data.kind).toBe("ok");
+    expect(okBody.data.latencyMs).toBeTypeOf("number");
+    const [calledUrl, calledInit] = fetchMock.mock.calls[0] ?? [];
+    expect(String(calledUrl)).toBe("https://api.deepseek.com/v1/chat/completions");
+    expect(((calledInit?.headers ?? {}) as Record<string, string>).authorization).toBe("Bearer sk-test-1234");
+    const sentBody = JSON.parse(String(calledInit?.body)) as {
+      model: string;
+      max_tokens: number;
+      stream: boolean;
+    };
+    expect(sentBody.model).toBe("deepseek-chat");
+    expect(sentBody.max_tokens).toBe(1);
+    expect(sentBody.stream).toBe(false);
+
+    // 2. 401 → 归类 auth；明文密钥不出现在响应里。
+    fetchMock.mockImplementation(
+      async () => new Response(JSON.stringify({ error: "bad key" }), { status: 401 }),
+    );
+    const authRes = await app.request(`/console/api/providers/${providerId}/test`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({}),
+    });
+    expect(authRes.status).toBe(200);
+    const authBody = (await authRes.json()) as { data: { ok: boolean; kind: string; status?: number; detail?: string } };
+    expect(authBody.data.ok).toBe(false);
+    expect(authBody.data.kind).toBe("auth");
+    expect(authBody.data.status).toBe(401);
+    expect(JSON.stringify(authBody)).not.toContain("sk-test-1234");
+
+    // 测试结果已落库（0006 的 last_test_* 列），控制台刷新列表即见最近可用性。
+    const afterAuth = await context.store.getUpstreamProvider(providerId);
+    expect(afterAuth?.lastTestOk).toBe(false);
+    expect(afterAuth?.lastTestKind).toBe("auth");
+    expect(afterAuth?.lastTestStatus).toBe(401);
+    expect(afterAuth?.lastTestLatencyMs).toBeTypeOf("number");
+    expect(afterAuth?.lastTestModel).toBeNull();
+
+    // 3. 不带模型 = 只测连通鉴权：GET /v1/models。
+    fetchMock.mockImplementation(
+      async () => new Response(JSON.stringify({ data: [] }), { status: 200 }),
+    );
+    await app.request(`/console/api/providers/${providerId}/test`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({}),
+    });
+    const [connUrl, connInit] = fetchMock.mock.calls[fetchMock.mock.calls.length - 1] ?? [];
+    expect(String(connUrl)).toBe("https://api.deepseek.com/v1/models");
+    expect((connInit as { method?: string } | undefined)?.method ?? "GET").toBe("GET");
+
+    // 4. anthropic 协议：POST /v1/messages + x-api-key + anthropic-version。
+    const anthropicCreate = await app.request("/console/api/providers", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        name: "AnthropicHost",
+        baseUrl: "https://anthropic.test",
+        protocol: "anthropic-messages",
+        anthropicVersion: "2023-06-01",
+        apiKey: "sk-ant-test",
+      }),
+    });
+    const anthropicId = ((await anthropicCreate.json()) as { data: { provider: { id: string } } }).data.provider.id;
+    await app.request(`/console/api/providers/${anthropicId}/test`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ model: "claude-sonnet-4-5" }),
+    });
+    const [anthropicUrl, anthropicInit] = fetchMock.mock.calls[fetchMock.mock.calls.length - 1] ?? [];
+    expect(String(anthropicUrl)).toBe("https://anthropic.test/v1/messages");
+    const anthropicHeaders = (anthropicInit?.headers ?? {}) as Record<string, string>;
+    expect(anthropicHeaders["x-api-key"]).toBe("sk-ant-test");
+    expect(anthropicHeaders["anthropic-version"]).toBe("2023-06-01");
+
+    // 5. 供应商不存在 404；未登录 401。
+    expect(
+      (
+        await app.request("/console/api/providers/ffffffff-ffff-ffff-ffff-ffffffffffff/test", {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie },
+          body: JSON.stringify({}),
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await app.request(`/console/api/providers/${providerId}/test`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({}),
+        })
+      ).status,
+    ).toBe(401);
+    vi.unstubAllGlobals();
+  });
+});
+
 describe("公开客户端配置与 Release", () => {
   it("/api/v1/client/configs 返回兼容信封；http 环境不下发内置配置地址", async () => {
     const context = await createTestContext();
@@ -589,7 +901,7 @@ describe("上游供应商（多上游）", () => {
 });
 
 describe("模型定价库", () => {
-  it("默认种子可读；PUT 更新后导入按模型 ID 自动带价", async () => {
+  it("默认种子可读（带内容版本）；PUT 乐观锁更新，过期版本 409；导入按模型 ID 自动带价", async () => {
     const context = await createTestContext();
     const app = createApp(context);
     const consoleLogin = await app.request("/console/api/auth/login", {
@@ -599,19 +911,23 @@ describe("模型定价库", () => {
     });
     const cookie = consoleLogin.headers.get("set-cookie")?.split(";")[0] ?? "";
 
-    // 首次 GET 用内置默认（cc-switch 口径）初始化。
+    // 首次 GET 用内置默认（cc-switch 口径）初始化，并返回内容版本。
     const listRes = await app.request("/console/api/model-pricing", { headers: { cookie } });
     expect(listRes.status).toBe(200);
-    const list = (await listRes.json()) as { data: { entries: Array<{ modelId: string; inputCostPerMillion: string }> } };
+    const list = (await listRes.json()) as {
+      data: { version: string; entries: Array<{ modelId: string; inputCostPerMillion: string }> };
+    };
     expect(list.data.entries.length).toBeGreaterThan(50);
+    expect(list.data.version.startsWith("prc_")).toBe(true);
     const deepseek = list.data.entries.find((entry) => entry.modelId === "deepseek-flash");
     expect(deepseek?.inputCostPerMillion).toBe("0.150000");
 
-    // PUT：全量替换 + 价格归一（缺省缓存字段补 0）。
+    // PUT：全量替换 + 价格归一（缺省缓存字段补 0）+ 乐观锁版本。
     const putRes = await app.request("/console/api/model-pricing", {
       method: "PUT",
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({
+        expectedVersion: list.data.version,
         entries: [
           {
             modelId: "auto-price-model",
@@ -623,8 +939,42 @@ describe("模型定价库", () => {
       }),
     });
     expect(putRes.status).toBe(200);
-    const putBody = (await putRes.json()) as { data: { entries: Array<{ cacheReadCostPerMillion: string }> } };
+    const putBody = (await putRes.json()) as {
+      data: { version: string; entries: Array<{ cacheReadCostPerMillion: string }> };
+    };
+    expect(putBody.data.version.startsWith("prc_")).toBe(true);
+    expect(putBody.data.version).not.toBe(list.data.version);
     expect(putBody.data.entries[0]?.cacheReadCostPerMillion).toBe("0.000000");
+
+    // 用旧版本再保存 → 409（他人已修改），不静默覆盖。
+    const staleRes = await app.request("/console/api/model-pricing", {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        expectedVersion: list.data.version,
+        entries: [
+          { modelId: "auto-price-model", displayName: "Stale", inputCostPerMillion: "9", outputCostPerMillion: "9" },
+        ],
+      }),
+    });
+    expect(staleRes.status).toBe(409);
+    const preserved = await context.store.getModel("auto-price-model");
+    expect(preserved).toBeNull(); // 409 路径不应写入任何东西
+
+    // 新版本继续保存成功（写-读闭环）。
+    const fresh = await app.request("/console/api/model-pricing", { headers: { cookie } });
+    const freshBody = (await fresh.json()) as { data: { version: string } };
+    const reSave = await app.request("/console/api/model-pricing", {
+      method: "PUT",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({
+        expectedVersion: freshBody.data.version,
+        entries: [
+          { modelId: "auto-price-model", displayName: "Auto Model", inputCostPerMillion: "2", outputCostPerMillion: "4" },
+        ],
+      }),
+    });
+    expect(reSave.status).toBe(200);
 
     // 导入命中定价库：自动带价并绑定供应商，默认停用。
     const provider = await context.store.createUpstreamProvider({
@@ -648,8 +998,8 @@ describe("模型定价库", () => {
     expect(model?.upstreamModel).toBe("auto-price-model");
     expect(model?.upstreamProviderId).toBe(provider.id);
     expect(model?.enabled).toBe(false);
-    expect(model?.inputPricePerMtok).toBe("1.500000");
-    expect(model?.outputPricePerMtok).toBe("3.000000");
+    expect(model?.inputPricePerMtok).toBe("2.000000");
+    expect(model?.outputPricePerMtok).toBe("4.000000");
 
     // 未登录 401。
     expect((await app.request("/console/api/model-pricing")).status).toBe(401);

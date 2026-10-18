@@ -1,5 +1,10 @@
 import { readFile } from "node:fs/promises";
-import type { PlatformStore } from "@shucode-platform/db";
+import {
+  computePricingDocVersion,
+  type ModelPricingEntry,
+  type PlatformStore,
+  type PricingDocSnapshot,
+} from "@shucode-platform/db";
 
 /**
  * 模型定价库（口径对齐 cc-switch 的 model-pricing.json / models.dev 同步）：
@@ -8,18 +13,13 @@ import type { PlatformStore } from "@shucode-platform/db";
  * 存储：platform_config KV（key=model_pricing_v1）里的可编辑副本；
  * 首次访问用内置默认资产（apps/api/src/assets/default-model-pricing.json）初始化。
  * 管理台「模型定价库」页与「模型目录」导入/添加时按 modelId 自动带价。
+ *
+ * 并发保护（New API 借鉴）：文档带内容版本，PUT 走存储层乐观锁，
+ * 版本不符返回 409 提示刷新 —— 多管理员同时编辑不再静默互覆盖。
  */
 
-export const MODEL_PRICING_KV_KEY = "model_pricing_v1";
-
-export interface ModelPricingEntry {
-  modelId: string;
-  displayName: string;
-  inputCostPerMillion: string;
-  outputCostPerMillion: string;
-  cacheReadCostPerMillion: string;
-  cacheCreationCostPerMillion: string;
-}
+export { MODEL_PRICING_KV_KEY } from "@shucode-platform/db";
+export type { ModelPricingEntry, PricingDocSnapshot } from "@shucode-platform/db";
 
 /** 数字/字符串价格归一成 toFixed(6) 字符串；非法或缺关键字段返回 null。 */
 export function normalizePricingEntry(raw: unknown): ModelPricingEntry | null {
@@ -60,20 +60,28 @@ async function loadDefaultPricingEntries(): Promise<ModelPricingEntry[]> {
   return defaultEntries;
 }
 
-/** 读取定价库：KV 无副本（或损坏）时用内置默认初始化。 */
-export async function loadPricingEntries(store: PlatformStore): Promise<ModelPricingEntry[]> {
-  const stored = await store.getConfigValue(MODEL_PRICING_KV_KEY);
-  const storedEntries =
-    stored && typeof stored === "object" && Array.isArray((stored as { entries?: unknown }).entries)
-      ? (stored as { entries: unknown[] }).entries
-      : null;
-  if (storedEntries) {
-    const entries = storedEntries
-      .map(normalizePricingEntry)
-      .filter((entry): entry is ModelPricingEntry => entry !== null);
-    if (entries.length > 0) return entries;
+function normalizeStored(stored: ModelPricingEntry[]): ModelPricingEntry[] {
+  return stored
+    .map((entry) => normalizePricingEntry(entry))
+    .filter((entry): entry is ModelPricingEntry => entry !== null);
+}
+
+/** 读取定价库：KV 无副本（或为空/损坏）时用内置默认初始化；返回条目与内容版本。 */
+export async function loadPricingDoc(store: PlatformStore): Promise<PricingDocSnapshot> {
+  const stored = await store.getModelPricing();
+  if (stored) {
+    const entries = normalizeStored(stored.entries);
+    if (entries.length > 0) return { entries, version: computePricingDocVersion(entries) };
   }
   const seeded = await loadDefaultPricingEntries();
-  await store.setConfigValue(MODEL_PRICING_KV_KEY, { entries: seeded });
-  return seeded;
+  // 空文档（EMPTY 版本）作为首次写入的前置；并发初始化时保存失败说明别处已写入，
+  // 以库中现状为准，不覆盖。
+  const saved = await store.saveModelPricing(seeded, computePricingDocVersion([]));
+  const finalEntries = saved ? saved.entries : normalizeStored((await store.getModelPricing())?.entries ?? []);
+  return { entries: finalEntries, version: computePricingDocVersion(finalEntries) };
+}
+
+/** 兼容旧调用方（模型导入带价）：只要条目。 */
+export async function loadPricingEntries(store: PlatformStore): Promise<ModelPricingEntry[]> {
+  return (await loadPricingDoc(store)).entries;
 }
