@@ -9,6 +9,32 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.17.0] - 2026-10-18
+
+### 新增(后端 Go 重构 M1:存储与横切设施)
+
+- `internal/store`:PlatformStore 端口(55 方法)的 pgx 与内存双实现,SQL 语义逐条移植自 `packages/db/src/postgres.ts`;内存实现以值拷贝提供 PG 快照语义,修复 TS 内存库的原地引用别名陷阱。
+- 一致性测试:内存套件、Postgres 套件(自建/自删 scratch 库并应用同一份迁移)、跨实现对比(明细/聚合/时区分桶/游标翻页输出现逐字节一致),含 100 并发额度预留恰好成功 50 次的 -race 临界区测试。
+- `cmd/migrate` / `cmd/seed`:接管迁移器(platform_migrations 账本,与 TS 迁移结果 schema/账目完全一致)与种子(管理员、种子 Release revision 31、默认模型,二次执行幂等)。
+- `internal/ratelimit`:登录限流滑动窗口,进程内与 Redis(ZSET+Lua 原子窗口)双实现;Redis 故障 fail-open。
+- `internal/events`:配置变更事件总线,300ms 合并域并集广播;进程内与 Redis pub/sub 双实现(跨实例 fan-out,自建订阅不丢本实例事件)。
+- `internal/platformenv`:env 文件向上查找(不覆盖已有值)、slog JSON 日志、MEMORY_DB 口径。
+
+### 修正(TS 双实现发现的既有缺陷,Go 两实现已统一)
+
+- 供应商熔断 `PROVIDER_AUTO_DISABLE_THRESHOLD=0` 在 TS Postgres 实现下会「首败即熔断」,与文档「0=关闭」不符;Go 两实现按文档语义修正。
+- `reportUpstreamFailure` 的返回值在 TS Postgres 实现下会被历史 auto 标记污染;Go 改以「本次调用是否触发停用」判定。
+
+## [0.16.0] - 2026-10-18
+
+### 新增(后端 Go 重构 M1:凭据与契约镜像层)
+
+- `internal/crypto`:SecretBox(AES-256-GCM `v1.iv.ct.tag`)、scrypt 口令哈希与 token 形态的 Go 实现,TS→Go 与 Go→TS 双向互操作验证通过(存量密文/口令可读,新写入同格式)。
+- `internal/contracts`:zod 契约镜像(设备 token/flow-id、init 请求 strict 解析、登录流轮询形状、公开配置信封、Release 宽松校验含 zod issue code 文案、deep link encodeURIComponent),由 TS 导出的 fixtures 对齐测试夹紧。
+- `internal/pricing`:定价文档内容版本哈希(stable 六字段固定键序),与 TS 输出逐字节一致,避免定价乐观锁误报 409。
+- `internal/credits`:micro-credits 整型计价与 Math.round 语义复刻。
+- `scripts/export-crypto-vectors.ts` / `scripts/export-contract-fixtures.ts`:TS→Go 对齐用例导出脚本。
+
 ## [0.15.0] - 2026-10-18
 
 ### 新增(基建)
