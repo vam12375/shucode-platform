@@ -5,22 +5,37 @@ import { Select } from "../components/Select.js";
 import { Chip, Notice } from "../components/StatusChip.js";
 import { formatShanghaiDate } from "../time.js";
 
+type UserRole = "root" | "admin" | "user";
+
 interface UserRow {
   id: string;
   email: string;
   displayName: string;
-  role: "admin" | "member";
+  role: UserRole;
   disabledAt: string | null;
   createdAt: string;
 }
 
-export function UsersPage({ currentUserId }: { currentUserId: string }) {
+const ROLE_LABEL: Record<UserRole, string> = {
+  root: "超级管理员",
+  admin: "管理员",
+  user: "用户",
+};
+
+export function UsersPage({
+  currentUserId,
+  currentUserRole,
+}: {
+  currentUserId: string;
+  currentUserRole: UserRole;
+}) {
+  const isRoot = currentUserRole === "root";
   const [users, setUsers] = useState<UserRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"member" | "admin">("member");
+  const [role, setRole] = useState<"admin" | "user">("user");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -57,29 +72,62 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
     await run(async () => {
       await api("/users", {
         method: "POST",
-        body: JSON.stringify({ email, displayName, password, role }),
+        body: JSON.stringify({ email, displayName, password, role: isRoot ? role : "user" }),
       });
       setEmail("");
       setDisplayName("");
       setPassword("");
-      setRole("member");
+      setRole("user");
     }, `已创建用户 ${createdEmail}`);
   };
 
-  const setPasswordFor = async (user: UserRow): Promise<void> => {
+  const setPasswordFor = async (user: UserRow, isSelf: boolean): Promise<void> => {
+    const minLength = user.role === "root" ? 12 : 8;
     const answer = await confirmDialog({
-      k: "重置密码",
+      k: isSelf ? "修改密码" : "重置密码",
       title: `为 ${user.email} 设置新密码`,
-      message: "重置后该用户全部后台会话与设备凭据立即吊销，需重新登录。",
-      confirmText: "重置",
+      message: isSelf
+        ? "修改后当前登录会话也会失效，需要使用新密码重新登录。"
+        : "重置后该用户全部后台会话与设备凭据立即吊销，需重新登录。",
+      confirmText: isSelf ? "修改" : "重置",
       danger: true,
-      input: { label: "新密码", type: "password", placeholder: "至少 8 位", minLength: 8 },
+      input: {
+        label: "新密码",
+        type: "password",
+        placeholder: `至少 ${minLength} 位`,
+        minLength,
+      },
     });
     if (!answer.confirmed) return;
     await run(
       () =>
         api(`/users/${user.id}`, { method: "PATCH", body: JSON.stringify({ password: answer.value }) }),
-      `已重置 ${user.email} 的密码`,
+      isSelf ? "密码已更新，请重新登录" : `已重置 ${user.email} 的密码`,
+    );
+    if (isSelf) {
+      window.location.reload();
+    }
+  };
+
+  const changeRole = async (user: UserRow, nextRole: "admin" | "user"): Promise<void> => {
+    const promoting = nextRole === "admin";
+    const answer = await confirmDialog({
+      k: promoting ? "设为管理员" : "降为普通用户",
+      title: `将 ${user.email} ${promoting ? "设为管理员" : "降为普通用户"}？`,
+      message: promoting
+        ? "该用户将获得控制台管理权限，但创建/升降管理员仍仅限超级管理员。"
+        : "降级后该用户全部后台会话与设备凭据立即吊销，且不能再登录控制台。",
+      confirmText: promoting ? "设为管理员" : "降级",
+      danger: !promoting,
+    });
+    if (!answer.confirmed) return;
+    await run(
+      () =>
+        api(`/users/${user.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ role: nextRole }),
+        }),
+      `已将 ${user.email} ${promoting ? "设为管理员" : "降为普通用户"}`,
     );
   };
 
@@ -108,7 +156,7 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
         </div>
       </header>
       <p className="readout" style={{ margin: 0, marginBottom: 18 }}>
-        平台账号供成员登录客户端与控制台；禁用后即时生效（登录、user-config、网关请求全部 401）。
+        平台账号供成员登录客户端与控制台；超级管理员唯一且不可禁用/降级，普通管理员只能管理普通用户。
       </p>
 
       {error ? (
@@ -154,22 +202,24 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
               required
               minLength={8}
             />
-            <Select
-              ariaLabel="角色"
-              style={{ width: 110 }}
-              value={role}
-              onChange={(value) => setRole(value as "member" | "admin")}
-              options={[
-                { value: "member", label: "成员" },
-                { value: "admin", label: "管理员" },
-              ]}
-            />
+            {isRoot ? (
+              <Select
+                ariaLabel="角色"
+                style={{ width: 110 }}
+                value={role}
+                onChange={(value) => setRole(value as "admin" | "user")}
+                options={[
+                  { value: "user", label: "用户" },
+                  { value: "admin", label: "管理员" },
+                ]}
+              />
+            ) : null}
             <button className="btn" type="submit" disabled={busy}>
               创建用户
             </button>
           </form>
           <p className="readout" style={{ margin: 0, marginTop: 10 }}>
-            创建后还需在「团队」页把用户加入团队才会有额度归属。
+            创建后还需在「团队」页把用户加入团队才会有额度归属。超级管理员账号只能首次初始化创建。
           </p>
         </div>
       </section>
@@ -194,59 +244,91 @@ export function UsersPage({ currentUserId }: { currentUserId: string }) {
               </tr>
             </thead>
             <tbody>
-              {(users ?? []).map((user) => (
-                <tr key={user.id}>
-                  <td>{user.email}</td>
-                  <td>{user.displayName}</td>
-                  <td>{user.role === "admin" ? "管理员" : "成员"}</td>
-                  <td>{user.disabledAt ? <Chip tone="mute">已禁用</Chip> : <Chip tone="ok">正常</Chip>}</td>
-                  <td className="num">{formatShanghaiDate(user.createdAt)}</td>
-                  <td>
-                    <div className="form-row" style={{ justifyContent: "flex-end" }}>
-                      {user.id === currentUserId ? (
-                        <span className="readout">当前登录</span>
-                      ) : (
-                        <>
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            disabled={busy}
-                            onClick={() => void setPasswordFor(user)}
-                          >
-                            重置密码
-                          </button>
-                          {user.disabledAt ? (
+              {(users ?? []).map((user) => {
+                const isSelf = user.id === currentUserId;
+                const canManage = isRoot
+                  ? user.role !== "root"
+                  : user.role === "user" && !isSelf;
+                return (
+                  <tr key={user.id}>
+                    <td>{user.email}</td>
+                    <td>{user.displayName}</td>
+                    <td>{ROLE_LABEL[user.role]}</td>
+                    <td>
+                      {user.disabledAt ? <Chip tone="mute">已禁用</Chip> : <Chip tone="ok">正常</Chip>}
+                    </td>
+                    <td className="num">{formatShanghaiDate(user.createdAt)}</td>
+                    <td>
+                      <div className="form-row" style={{ justifyContent: "flex-end" }}>
+                        {isSelf ? (
+                          <>
+                            <span className="readout">当前登录</span>
                             <button
                               className="btn btn-ghost btn-sm"
                               disabled={busy}
-                              onClick={() =>
-                                void run(
-                                  () =>
-                                    api(`/users/${user.id}`, {
-                                      method: "PATCH",
-                                      body: JSON.stringify({ disabled: false }),
-                                    }),
-                                  `已启用 ${user.email}`,
-                                )
-                              }
+                              onClick={() => void setPasswordFor(user, true)}
                             >
-                              启用
+                              修改密码
                             </button>
-                          ) : (
+                          </>
+                        ) : user.role === "root" ? (
+                          <span className="readout">受保护</span>
+                        ) : canManage ? (
+                          <>
                             <button
-                              className="btn btn-danger btn-sm"
+                              className="btn btn-ghost btn-sm"
                               disabled={busy}
-                              onClick={() => void disableUser(user)}
+                              onClick={() => void setPasswordFor(user, false)}
                             >
-                              禁用
+                              重置密码
                             </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {users && users.length === 0 ? (
+                            {isRoot ? (
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                disabled={busy}
+                                onClick={() =>
+                                  void changeRole(user, user.role === "admin" ? "user" : "admin")
+                                }
+                              >
+                                {user.role === "admin" ? "降为普通用户" : "设为管理员"}
+                              </button>
+                            ) : null}
+                            {user.disabledAt ? (
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                disabled={busy}
+                                onClick={() =>
+                                  void run(
+                                    () =>
+                                      api(`/users/${user.id}`, {
+                                        method: "PATCH",
+                                        body: JSON.stringify({ disabled: false }),
+                                      }),
+                                    `已启用 ${user.email}`,
+                                  )
+                                }
+                              >
+                                启用
+                              </button>
+                            ) : (
+                              <button
+                                className="btn btn-danger btn-sm"
+                                disabled={busy}
+                                onClick={() => void disableUser(user)}
+                              >
+                                禁用
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <span className="readout">无权操作</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {users !== null && users.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="readout">
                     还没有用户。

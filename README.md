@@ -53,11 +53,11 @@ pnpm dev              # 一条命令：Postgres/Redis → 迁移 → 种子 → 
 
 1. 读取根目录 `.env`；缺失时从 `.env.example` 生成并填入随机 `PLATFORM_SECRET_KEY`
 2. `DATABASE_URL` 指向本机且端口未监听时 `docker compose up -d postgres redis`
-3. 应用迁移（`make -C server migrate`）、载入种子（管理员 + 内置配置 + 默认模型目录）
+3. 应用迁移（`make -C server migrate`）、载入种子（内置配置 + 默认模型目录）
 4. 启动 api / gateway / console。api 与 gateway 在 `golang:1.26` 容器内 `go run`（端口映射回宿主，DSN 自动改写 `host.docker.internal`）；console 由 vite 在宿主机跑。首次编译约数十秒，命中构建缓存卷后数秒
 
 结束时打印访问地址：控制台 `http://localhost:5177/console/`、控制面 `http://localhost:8787`、网关 `http://localhost:8788`。
-管理员默认 `admin@mendao.chat / mendao-admin`（本地默认口令，可在 `.env` 设置 `SEED_ADMIN_PASSWORD` 覆盖；已有管理员时不会重置）。
+首次打开控制台会进入超级管理员初始化页：root 全库唯一，账号与口令只以 scrypt 哈希写入数据库，不读 `.env`；存量部署升级时最早创建的可用管理员会自动提升为 root（沿用原密码）。
 
 不用数据库的体验模式（进程内存储，内置演示数据）：
 
@@ -65,7 +65,7 @@ pnpm dev              # 一条命令：Postgres/Redis → 迁移 → 种子 → 
 pnpm dev:memory       # 跳过 Postgres/迁移/种子
 ```
 
-演示账号：`admin@mendao.chat / mendao-admin`（控制台，管理员）、`member@mendao.chat / mendao-member`（成员）。演示团队额度 1000 credit。
+演示账号：`admin@mendao.chat / mendao-admin`（控制台，超级管理员 root）、`member@mendao.chat / mendao-member`（普通用户 user）。演示团队额度 1000 credit。
 
 单独调试：`pnpm dev:api` / `pnpm dev:gateway` / `pnpm dev:console`；手工执行各步骤：
 
@@ -73,7 +73,7 @@ pnpm dev:memory       # 跳过 Postgres/迁移/种子
 docker compose up -d postgres redis
 cp .env.example .env            # 填 DATABASE_URL、PLATFORM_SECRET_KEY 等
 pnpm migrate                    # 应用 server/migrations/*.sql
-SEED_ADMIN_PASSWORD=... pnpm seed
+pnpm seed                       # 内置配置 + 默认模型目录（root 由控制台初始化）
 pnpm dev:api
 pnpm dev:gateway
 pnpm dev:console
@@ -89,11 +89,13 @@ pnpm docker:up          # = docker compose up -d --build
 ```text
 postgres + redis（healthcheck 就绪）
   → migrate（一次性，应用 server/migrations/*.sql）
-  → seed（一次性，管理员 + 内置配置 + 默认模型目录）
+  → seed（一次性，内置配置 + 默认模型目录；root 由控制台首次初始化）
   → api + gateway（常驻，unless-stopped）
 ```
 
 镜像由根目录 `Dockerfile` 多阶段构建：Node 构建 console 产物 → Go 静态编译 api/gateway/migrate/seed → alpine 运行时（含 ca-certificates/curl）。console 产物并入 api 镜像以 `/console` 托管；compose 为 api 注入 `REDIS_URL`（共享限流与配置事件总线）。
+
+首次部署请在对外放行前打开控制台完成 root 初始化；初始化接口在 root 存在后自动关闭。
 
 | 项 | 说明 |
 | --- | --- |
@@ -105,7 +107,7 @@ postgres + redis（healthcheck 就绪）
 | 停止 | `pnpm docker:down`（停 api / gateway / redis 与一次性容器，保留 Postgres 数据卷） |
 | 日志 | `pnpm docker:logs`；`docker compose ps -a` 查看健康状态（migrate / seed 显示已退出属正常） |
 
-种子说明：`SEED_ADMIN_PASSWORD` 为空且管理员不存在时只打印提示（不创建管理员），内置配置与模型目录仍会载入并保持幂等。
+种子说明：seed 只负责内置配置与模型目录（幂等），不再创建管理员账号；root 首次初始化在控制台完成，账号口令只以哈希入库，`.env` 中不再有 root 凭据。控制台角色分为 `root`（唯一超级管理员）、`admin`（普通管理员，只能管理普通用户）与 `user`（普通用户，只能登录客户端）。
 
 用量中的客户端 IP 默认只取 TCP 对端，忽略所有转发头；端口直连无需额外配置。使用可信反代时，才在 `.env` 设置 `GATEWAY_TRUSTED_PROXY_IPS` 为网关实际看到的代理精确 IP（逗号分隔，支持 IPv4/IPv6，不支持 CIDR/通配符）。仅这些对端提供的 `X-Forwarded-For` 会按链从右向左解析，遇到首个非可信地址即停止；没有 XFF 时才接受经校验的 `X-Real-IP`。反代须覆盖转发头或在 XFF 追加实际对端地址，并限制其入口访问；不要仅因地址属于私网或 Docker 网桥就信任它。
 

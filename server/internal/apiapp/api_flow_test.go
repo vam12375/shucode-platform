@@ -55,9 +55,18 @@ type upstreamHit struct {
 }
 
 func newAPIFixture(t *testing.T) *apiFixture {
+	return newAPIFixtureWithSeed(t, true)
+}
+
+// newAPIEmptyFixture:不带演示账号的库，用于首次 root 初始化测试。
+func newAPIEmptyFixture(t *testing.T) *apiFixture {
+	return newAPIFixtureWithSeed(t, false)
+}
+
+func newAPIFixtureWithSeed(t *testing.T, demoSeed bool) *apiFixture {
 	t.Helper()
 	ctx := context.Background()
-	mem, err := store.NewMemoryStore(ctx, store.MemoryOptions{DemoSeed: true})
+	mem, err := store.NewMemoryStore(ctx, store.MemoryOptions{DemoSeed: demoSeed})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +352,7 @@ func TestUserManagement(t *testing.T) {
 	}
 
 	createRec := f.do("POST", "/console/api/users", adminCookie,
-		`{"email":"alice@mendao.chat","password":"alice-password","displayName":"Alice","role":"member"}`)
+		`{"email":"alice@mendao.chat","password":"alice-password","displayName":"Alice","role":"user"}`)
 	if createRec.Code != 200 {
 		t.Fatalf("创建用户: %d %s", createRec.Code, createRec.Body.String())
 	}
@@ -386,7 +395,7 @@ func TestUserManagement(t *testing.T) {
 	if rec := patchUser(adminID, `{"disabled":true}`); rec.Code != 400 {
 		t.Fatalf("禁用自己应 400: %d", rec.Code)
 	}
-	if rec := patchUser(adminID, `{"role":"member"}`); rec.Code != 400 {
+	if rec := patchUser(adminID, `{"role":"user"}`); rec.Code != 400 {
 		t.Fatalf("改自己角色应 400: %d", rec.Code)
 	}
 	// 未登录 / 目标不存在。
@@ -615,4 +624,124 @@ func (r *sseReader) readUntil(t *testing.T, needle string) string {
 	}
 	t.Fatalf("等待 %q 超时,已收到: %q", needle, r.buffer)
 	return ""
+}
+
+func TestRootSetup(t *testing.T) {
+	f := newAPIEmptyFixture(t)
+
+	status := dataOf(t, f.do("GET", "/console/api/setup/status", "", ""))
+	if status["rootInitialized"] != false {
+		t.Fatalf("空库不应已初始化: %v", status)
+	}
+	// 弱口令拒绝。
+	if rec := f.do("POST", "/console/api/setup/root", "",
+		`{"email":"root@mendao.chat","displayName":"Root","password":"short"}`); rec.Code != 400 {
+		t.Fatalf("短口令应 400: %d %s", rec.Code, rec.Body.String())
+	}
+	rec := f.do("POST", "/console/api/setup/root", "",
+		`{"email":"root@mendao.chat","displayName":"Root","password":"root-password-123"}`)
+	if rec.Code != 200 {
+		t.Fatalf("初始化 root: %d %s", rec.Code, rec.Body.String())
+	}
+	user := dataOf(t, rec)["user"].(map[string]any)
+	if user["role"] != "root" {
+		t.Fatalf("初始化账号应为 root: %v", user)
+	}
+	cookie := sessionCookie(rec)
+	if cookie == "" {
+		t.Fatal("初始化后应直接登录")
+	}
+	// root 只能创建一次。
+	if rec := f.do("POST", "/console/api/setup/root", "",
+		`{"email":"root2@mendao.chat","displayName":"Root2","password":"root-password-456"}`); rec.Code != 409 {
+		t.Fatalf("二次初始化应 409: %d %s", rec.Code, rec.Body.String())
+	}
+	status = dataOf(t, f.do("GET", "/console/api/setup/status", "", ""))
+	if status["rootInitialized"] != true {
+		t.Fatalf("初始化后状态应为 true: %v", status)
+	}
+	// 初始化口令可正常登录控制台。
+	login := f.do("POST", "/console/api/auth/login", "",
+		`{"email":"root@mendao.chat","password":"root-password-123"}`)
+	if login.Code != 200 {
+		t.Fatalf("root 登录: %d %s", login.Code, login.Body.String())
+	}
+	users := dataOf(t, f.do("GET", "/console/api/users", cookie, ""))["users"].([]any)
+	if len(users) != 1 || users[0].(map[string]any)["role"] != "root" {
+		t.Fatalf("root 清单不符: %v", users)
+	}
+}
+
+func TestRootRoleHierarchy(t *testing.T) {
+	f := newAPIFixture(t)
+	rootCookie := f.loginAdmin()
+	rootID := dataOf(t, f.do("GET", "/console/api/auth/me", rootCookie, ""))["user"].(map[string]any)["id"].(string)
+
+	// root 创建普通管理员与普通用户。
+	createAdmin := f.do("POST", "/console/api/users", rootCookie,
+		`{"email":"ops@mendao.chat","password":"ops-password","displayName":"Ops","role":"admin"}`)
+	if createAdmin.Code != 200 {
+		t.Fatalf("root 创建 admin: %d %s", createAdmin.Code, createAdmin.Body.String())
+	}
+	opsID := dataOf(t, createAdmin)["user"].(map[string]any)["id"].(string)
+	createAdmin2 := f.do("POST", "/console/api/users", rootCookie,
+		`{"email":"ops2@mendao.chat","password":"ops2-password","displayName":"Ops2","role":"admin"}`)
+	if createAdmin2.Code != 200 {
+		t.Fatalf("root 创建 admin2: %d %s", createAdmin2.Code, createAdmin2.Body.String())
+	}
+	ops2ID := dataOf(t, createAdmin2)["user"].(map[string]any)["id"].(string)
+	// root 不能通过用户接口创建第二个 root。
+	if rec := f.do("POST", "/console/api/users", rootCookie,
+		`{"email":"root2@mendao.chat","password":"root2-password","displayName":"Root2","role":"root"}`); rec.Code != 400 {
+		t.Fatalf("创建 root 角色应 400: %d", rec.Code)
+	}
+
+	opsLogin := f.do("POST", "/console/api/auth/login", "",
+		`{"email":"ops@mendao.chat","password":"ops-password"}`)
+	opsCookie := sessionCookie(opsLogin)
+	if opsCookie == "" {
+		t.Fatalf("admin 登录失败: %d %s", opsLogin.Code, opsLogin.Body.String())
+	}
+	// 普通管理员不能创建管理员，只能创建普通用户。
+	if rec := f.do("POST", "/console/api/users", opsCookie,
+		`{"email":"bad-admin@mendao.chat","password":"bad-admin-password","displayName":"Bad","role":"admin"}`); rec.Code != 403 {
+		t.Fatalf("admin 创建管理员应 403: %d %s", rec.Code, rec.Body.String())
+	}
+	createUser := f.do("POST", "/console/api/users", opsCookie,
+		`{"email":"alice@mendao.chat","password":"alice-password","displayName":"Alice","role":"user"}`)
+	if createUser.Code != 200 {
+		t.Fatalf("admin 创建用户: %d %s", createUser.Code, createUser.Body.String())
+	}
+	aliceID := dataOf(t, createUser)["user"].(map[string]any)["id"].(string)
+	// 普通管理员不能操作 root/其他管理员，也不能改角色。
+	if rec := f.do("PATCH", "/console/api/users/"+rootID, opsCookie, `{"password":"hacked-password"}`); rec.Code != 403 {
+		t.Fatalf("admin 改 root 应 403: %d", rec.Code)
+	}
+	if rec := f.do("PATCH", "/console/api/users/"+ops2ID, opsCookie, `{"disabled":true}`); rec.Code != 403 {
+		t.Fatalf("admin 禁用其他管理员应 403: %d", rec.Code)
+	}
+	if rec := f.do("PATCH", "/console/api/users/"+aliceID, opsCookie, `{"role":"admin"}`); rec.Code != 403 {
+		t.Fatalf("admin 改角色应 403: %d", rec.Code)
+	}
+	if rec := f.do("PATCH", "/console/api/users/"+opsID, opsCookie, `{"role":"user"}`); rec.Code != 400 {
+		t.Fatalf("admin 改自己角色应 400: %d", rec.Code)
+	}
+	// 普通管理员可以管理普通用户。
+	if rec := f.do("PATCH", "/console/api/users/"+aliceID, opsCookie, `{"disabled":true}`); rec.Code != 200 {
+		t.Fatalf("admin 禁用用户: %d %s", rec.Code, rec.Body.String())
+	}
+	// root 可以升降普通用户角色。
+	if rec := f.do("PATCH", "/console/api/users/"+aliceID, rootCookie, `{"role":"admin"}`); rec.Code != 200 {
+		t.Fatalf("root 提升用户: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do("PATCH", "/console/api/users/"+aliceID, rootCookie, `{"role":"user"}`); rec.Code != 200 {
+		t.Fatalf("root 降级用户: %d %s", rec.Code, rec.Body.String())
+	}
+	// root 不能被降级或禁用。
+	if rec := f.do("PATCH", "/console/api/users/"+rootID, rootCookie, `{"role":"user"}`); rec.Code != 400 {
+		t.Fatalf("root 降级自己应 400: %d", rec.Code)
+	}
+	if rec := f.do("PATCH", "/console/api/users/"+rootID, rootCookie, `{"disabled":true}`); rec.Code != 400 {
+		t.Fatalf("root 禁用自己应 400: %d", rec.Code)
+	}
 }

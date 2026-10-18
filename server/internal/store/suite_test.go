@@ -36,7 +36,7 @@ func runSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 
 func mustUser(t *testing.T, ctx context.Context, s PlatformStore, email string) *UserRecord {
 	t.Helper()
-	u, err := s.CreateUser(ctx, UserInput{Email: email, PasswordHash: "scrypt$x", DisplayName: "测试", Role: RoleMember})
+	u, err := s.CreateUser(ctx, UserInput{Email: email, PasswordHash: "scrypt$x", DisplayName: "测试", Role: RoleUser})
 	if err != nil {
 		t.Fatalf("建用户 %s: %v", email, err)
 	}
@@ -48,10 +48,10 @@ func testUsers(t *testing.T, ctx context.Context, s PlatformStore) {
 	if u.Email != "alice@test.local" {
 		t.Fatalf("建档邮箱应 trim+降写: %q", u.Email)
 	}
-	if _, err := s.CreateUser(ctx, UserInput{Email: "alice@test.local", PasswordHash: "x", DisplayName: "x", Role: RoleMember}); !errors.Is(err, ErrEmailTaken) {
+	if _, err := s.CreateUser(ctx, UserInput{Email: "alice@test.local", PasswordHash: "x", DisplayName: "x", Role: RoleUser}); !errors.Is(err, ErrEmailTaken) {
 		t.Fatalf("重复邮箱应返回 ErrEmailTaken: %v", err)
 	}
-	if _, err := s.CreateUser(ctx, UserInput{Email: "ALICE@TEST.LOCAL", PasswordHash: "x", DisplayName: "x", Role: RoleMember}); !errors.Is(err, ErrEmailTaken) {
+	if _, err := s.CreateUser(ctx, UserInput{Email: "ALICE@TEST.LOCAL", PasswordHash: "x", DisplayName: "x", Role: RoleUser}); !errors.Is(err, ErrEmailTaken) {
 		t.Fatalf("大小写不同也算重复: %v", err)
 	}
 	found, err := s.FindUserByEmail(ctx, "alice@test.local")
@@ -68,7 +68,7 @@ func testUsers(t *testing.T, ctx context.Context, s PlatformStore) {
 	// patch:仅显式字段生效;HasDisabled 区分「缺省」与「显式启用」。
 	rename := "改名"
 	updated, err := s.UpdateUser(ctx, u.ID, UpdateUserPatch{DisplayName: &rename})
-	if err != nil || updated.DisplayName != "改名" || updated.Role != RoleMember {
+	if err != nil || updated.DisplayName != "改名" || updated.Role != RoleUser {
 		t.Fatalf("改名 patch: %v %+v", err, updated)
 	}
 	disabledAt := time.Now().UTC().Truncate(time.Millisecond)
@@ -87,6 +87,41 @@ func testUsers(t *testing.T, ctx context.Context, s PlatformStore) {
 	users, _ := s.ListUsers(ctx)
 	if len(users) == 0 || users[0].CreatedAt.After(users[len(users)-1].CreatedAt) {
 		t.Fatal("用户列表应按创建时间升序")
+	}
+	// root 全库唯一、不可禁用/降级；root 自己改显示名不受影响。
+	root, err := s.CreateUser(ctx, UserInput{
+		Email: "root@test.local", PasswordHash: "scrypt$x", DisplayName: "Root", Role: RoleRoot,
+	})
+	if err != nil {
+		t.Fatalf("建 root: %v", err)
+	}
+	if foundRoot, err := s.FindRootUser(ctx); err != nil || foundRoot == nil || foundRoot.ID != root.ID {
+		t.Fatalf("find root: %v %+v", err, foundRoot)
+	}
+	if _, err := s.CreateUser(ctx, UserInput{
+		Email: "root2@test.local", PasswordHash: "x", DisplayName: "Root2", Role: RoleRoot,
+	}); !errors.Is(err, ErrRootUserExists) {
+		t.Fatalf("第二个 root 应返回 ErrRootUserExists: %v", err)
+	}
+	promote := RoleRoot
+	if _, err := s.UpdateUser(ctx, u.ID, UpdateUserPatch{Role: &promote}); !errors.Is(err, ErrRootUserExists) {
+		t.Fatalf("把他人提升为 root 应返回 ErrRootUserExists: %v", err)
+	}
+	demote := RoleAdmin
+	if _, err := s.UpdateUser(ctx, root.ID, UpdateUserPatch{Role: &demote}); !errors.Is(err, ErrRootUserProtected) {
+		t.Fatalf("降级 root 应返回 ErrRootUserProtected: %v", err)
+	}
+	if _, err := s.UpdateUser(ctx, root.ID, UpdateUserPatch{
+		HasDisabled: true, DisabledAt: &disabledAt,
+	}); !errors.Is(err, ErrRootUserProtected) {
+		t.Fatalf("禁用 root 应返回 ErrRootUserProtected: %v", err)
+	}
+	rootName := "Root Renamed"
+	if updated, err := s.UpdateUser(ctx, root.ID, UpdateUserPatch{DisplayName: &rootName}); err != nil || updated.DisplayName != rootName {
+		t.Fatalf("root 改显示名: %v %+v", err, updated)
+	}
+	if got, _ := s.FindRootUser(ctx); got == nil || got.Role != RoleRoot || got.DisabledAt != nil {
+		t.Fatalf("root 保护失败: %+v", got)
 	}
 	if u2, _ := s.UpdateUser(ctx, "00000000-0000-4000-8000-000000000000", UpdateUserPatch{}); u2 != nil {
 		t.Fatal("不存在的用户应返回 nil")

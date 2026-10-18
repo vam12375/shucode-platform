@@ -1,6 +1,6 @@
-// 种子:镜像 apps/api/src/seed-cli.ts。
-// 创建管理员(SEED_ADMIN_EMAIL/SEED_ADMIN_PASSWORD,口令空则跳过)、
-// 载入种子内置配置(无活动 Release 时)、模型目录为空时写两条演示模型。可重复执行。
+// 种子:载入种子内置配置(无活动 Release 时)、模型目录为空时写两条演示模型。
+// root 账号不在此创建：由控制台首次初始化写入数据库（口令只以 scrypt 哈希落库，不读 .env）。
+// 可重复执行。
 package main
 
 import (
@@ -12,7 +12,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/vam12375/shucode-platform/server/internal/crypto"
 	"github.com/vam12375/shucode-platform/server/internal/platformenv"
 	"github.com/vam12375/shucode-platform/server/internal/seed"
 	"github.com/vam12375/shucode-platform/server/internal/store"
@@ -25,7 +24,7 @@ func main() {
 
 	platformenv.LoadEnvFilesUpwards(".")
 	if platformenv.Truthy(os.Getenv("MEMORY_DB")) {
-		fmt.Println("MEMORY_DB=1 无需种子:本地体验模式已内置演示数据(admin@mendao.chat / mendao-admin)")
+		fmt.Println("MEMORY_DB=1 无需种子:本地体验模式已内置演示数据(admin@mendao.chat / mendao-admin, root)")
 		return
 	}
 	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
@@ -54,31 +53,14 @@ func main() {
 	}
 	defer st.Dispose(ctx)
 
-	adminEmail := strings.TrimSpace(os.Getenv("SEED_ADMIN_EMAIL"))
-	if adminEmail == "" {
-		adminEmail = "admin@mendao.chat"
-	}
-	adminPassword := strings.TrimSpace(os.Getenv("SEED_ADMIN_PASSWORD"))
-	existing, err := st.FindUserByEmail(ctx, adminEmail)
+	root, err := st.FindRootUser(ctx)
 	if err != nil {
 		fail(err)
 	}
-	switch {
-	case existing != nil:
-		fmt.Printf("管理员已存在: %s\n", adminEmail)
-	case adminPassword == "":
-		fmt.Printf("未创建管理员:请设置 SEED_ADMIN_PASSWORD 后重试(目标邮箱 %s)\n", adminEmail)
-	default:
-		hash, err := crypto.HashPassword(adminPassword)
-		if err != nil {
-			fail(err)
-		}
-		if _, err := st.CreateUser(ctx, store.UserInput{
-			Email: adminEmail, PasswordHash: hash, DisplayName: "平台管理员", Role: store.RoleAdmin,
-		}); err != nil {
-			fail(err)
-		}
-		fmt.Printf("管理员已创建: %s\n", adminEmail)
+	if root == nil {
+		fmt.Println("尚未初始化超级管理员：首次打开控制台会进入 root 初始化页")
+	} else {
+		fmt.Printf("超级管理员已存在: %s\n", root.Email)
 	}
 
 	if err := seed.EnsureSeedRelease(ctx, st, *seedFile); err != nil {

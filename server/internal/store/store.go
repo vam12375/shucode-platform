@@ -12,6 +12,8 @@ type PlatformStore interface {
 	// ---- users ----
 	FindUserByEmail(ctx context.Context, email string) (*UserRecord, error)
 	FindUserByID(ctx context.Context, id string) (*UserRecord, error)
+	// FindRootUser:返回唯一超级管理员；未初始化时为 nil。
+	FindRootUser(ctx context.Context) (*UserRecord, error)
 	CreateUser(ctx context.Context, input UserInput) (*UserRecord, error)
 	ListUsers(ctx context.Context) ([]UserRecord, error)
 	// UpdateUser:patch 语义与 TS 完全一致——未提供的字段保持原值;
@@ -157,4 +159,6 @@ var (
 	ErrTeamNameTaken     = errors.New("团队名已存在")
 	ErrReleaseTaken      = errors.New("Release revision 已存在")
 	ErrProviderNameTaken = errors.New("供应商名已存在")
+	ErrRootUserExists    = errors.New("超级管理员已存在")
+	ErrRootUserProtected = errors.New("超级管理员不能被禁用或降级")
 )

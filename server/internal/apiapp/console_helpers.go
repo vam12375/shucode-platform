@@ -33,13 +33,14 @@ func readObjectBody(c *gin.Context) (map[string]any, bool) {
 	return obj, ok
 }
 
+// requireAdmin:控制台最低门槛是普通管理员；root 拥有全部管理员权限。
 func requireAdmin(ctx context.Context, deps *Deps, c *gin.Context) (*store.UserRecord, bool) {
 	user, err := readSessionUser(ctx, deps, c)
 	if err != nil {
 		internalError(c, deps, err)
 		return nil, false
 	}
-	if user == nil || user.Role != store.RoleAdmin {
+	if user == nil || (user.Role != store.RoleRoot && user.Role != store.RoleAdmin) {
 		c.JSON(401, fail(401, "需要管理员登录"))
 		return nil, false
 	}

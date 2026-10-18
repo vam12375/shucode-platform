@@ -64,7 +64,7 @@ export function LoginPage({ onLogin }: { onLogin: (user: AdminUser) => void }) {
         <button className="btn" type="submit" disabled={busy}>
           {busy ? "登录中…" : "登录"}
         </button>
-        <p className="login-foot">仅限平台管理员 · ADMIN ONLY</p>
+        <p className="login-foot">仅限超级管理员与管理员 · STAFF ONLY</p>
       </form>
     </div>
   );

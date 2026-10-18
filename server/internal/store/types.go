@@ -12,8 +12,10 @@ import (
 type UserRole string
 
 const (
-	RoleAdmin  UserRole = "admin"
-	RoleMember UserRole = "member"
+	// RoleRoot:全库唯一的超级管理员，只能由首次初始化创建，不能通过用户管理接口授予。
+	RoleRoot  UserRole = "root"
+	RoleAdmin UserRole = "admin"
+	RoleUser  UserRole = "user"
 )
 
 type TeamMemberRole string

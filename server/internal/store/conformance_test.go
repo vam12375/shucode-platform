@@ -60,13 +60,13 @@ func TestCrossImplParity(t *testing.T) {
 
 	ctx := context.Background()
 	member, err := pg.CreateUser(ctx, UserInput{
-		Email: "parity@test.local", PasswordHash: "x", DisplayName: "P", Role: RoleMember,
+		Email: "parity@test.local", PasswordHash: "x", DisplayName: "P", Role: RoleUser,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := mem.CreateUser(ctx, UserInput{
-		Email: "parity@test.local", PasswordHash: "x", DisplayName: "P", Role: RoleMember,
+		Email: "parity@test.local", PasswordHash: "x", DisplayName: "P", Role: RoleUser,
 	}); err != nil {
 		t.Fatal(err)
 	}

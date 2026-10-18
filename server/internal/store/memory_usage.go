@@ -460,14 +460,14 @@ func (s *memoryStore) seedDemo(ctx context.Context) error {
 	}
 	admin, err := s.CreateUser(ctx, UserInput{
 		Email: "admin@mendao.chat", PasswordHash: adminHash,
-		DisplayName: "平台管理员", Role: RoleAdmin,
+		DisplayName: "平台超级管理员", Role: RoleRoot,
 	})
 	if err != nil {
 		return err
 	}
 	member, err := s.CreateUser(ctx, UserInput{
 		Email: "member@mendao.chat", PasswordHash: memberHash,
-		DisplayName: "演示成员", Role: RoleMember,
+		DisplayName: "演示成员", Role: RoleUser,
 	})
 	if err != nil {
 		return err

@@ -107,9 +107,27 @@ func (s *memoryStore) FindUserByID(_ context.Context, id string) (*UserRecord, e
 	return nil, nil
 }
 
+func (s *memoryStore) FindRootUser(_ context.Context) (*UserRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, user := range s.users {
+		if user.Role == RoleRoot {
+			return cloneUser(&user), nil
+		}
+	}
+	return nil, nil
+}
+
 func (s *memoryStore) CreateUser(_ context.Context, input UserInput) (*UserRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if input.Role == RoleRoot {
+		for _, user := range s.users {
+			if user.Role == RoleRoot {
+				return nil, ErrRootUserExists
+			}
+		}
+	}
 	email := strings.ToLower(strings.TrimSpace(input.Email))
 	for _, user := range s.users {
 		if strings.ToLower(user.Email) == email {
@@ -145,6 +163,25 @@ func (s *memoryStore) UpdateUser(_ context.Context, id string, patch UpdateUserP
 	user, ok := s.users[id]
 	if !ok {
 		return nil, nil
+	}
+	effectiveRole := user.Role
+	if patch.Role != nil {
+		effectiveRole = *patch.Role
+	}
+	disabling := patch.HasDisabled && patch.DisabledAt != nil
+	if user.Role == RoleRoot &&
+		((patch.Role != nil && *patch.Role != RoleRoot) || disabling) {
+		return nil, ErrRootUserProtected
+	}
+	if effectiveRole == RoleRoot && user.Role != RoleRoot {
+		for otherID, other := range s.users {
+			if otherID != id && other.Role == RoleRoot {
+				return nil, ErrRootUserExists
+			}
+		}
+	}
+	if effectiveRole == RoleRoot && disabling {
+		return nil, ErrRootUserProtected
 	}
 	if patch.HasDisabled {
 		user.DisabledAt = patch.DisabledAt

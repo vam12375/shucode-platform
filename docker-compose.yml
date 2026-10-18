@@ -49,7 +49,7 @@ services:
         condition: service_healthy
     restart: "no"
 
-  # 一次性任务：管理员（SEED_ADMIN_PASSWORD）+ 种子内置配置 + 默认模型目录（幂等）。
+  # 一次性任务：种子内置配置 + 默认模型目录（幂等）；root 由控制台首次初始化创建。
   seed:
     build: { context: ., target: tools }
     command: ["/app/seed"]

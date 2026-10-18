@@ -64,7 +64,7 @@ func newGatewayFixture(t *testing.T, patch func(env *Env, f *gatewayFixture)) *g
 	t.Cleanup(f.upstream.Close)
 
 	user, err := mem.CreateUser(ctx, store.UserInput{
-		Email: "gw@test.local", PasswordHash: "x", DisplayName: "网关用户", Role: store.RoleMember,
+		Email: "gw@test.local", PasswordHash: "x", DisplayName: "网关用户", Role: store.RoleUser,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -256,7 +256,7 @@ func TestAuthFailures(t *testing.T) {
 	// 无团队。
 	f3 := newGatewayFixture(t, nil)
 	lonely, _ := f3.store.CreateUser(context.Background(), store.UserInput{
-		Email: "lonely@test.local", PasswordHash: "x", DisplayName: "L", Role: store.RoleMember,
+		Email: "lonely@test.local", PasswordHash: "x", DisplayName: "L", Role: store.RoleUser,
 	})
 	lonelyToken := crypto.GenerateDeviceToken()
 	_ = f3.store.CreateDeviceToken(context.Background(), store.DeviceTokenRecord{

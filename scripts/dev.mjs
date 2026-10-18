@@ -18,9 +18,9 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const DEFAULT_ADMIN_EMAIL = "admin@mendao.chat";
-/** 与内存模式的演示口令一致，仅用于本地开发；.env 的 SEED_ADMIN_PASSWORD 优先。 */
-const DEFAULT_ADMIN_PASSWORD = "mendao-admin";
+/** 仅内存体验模式内置的演示 root；Postgres 模式的 root 由控制台首次初始化创建。 */
+const DEMO_ROOT_EMAIL = "admin@mendao.chat";
+const DEMO_ROOT_PASSWORD = "mendao-admin";
 /** 服务在日志里报告就绪的判断：api/gateway 打印“已启动”，vite 打印 Local 地址。 */
 // oxlint-disable-next-line no-control-regex -- 这里就是要匹配终端颜色转义序列
 const ANSI = /\u001b\[[0-9;]*m/gu;
@@ -158,8 +158,6 @@ function backendEnv(extra = {}) {
     UPSTREAM_IDLE_TIMEOUT_MS: process.env.UPSTREAM_IDLE_TIMEOUT_MS ?? "",
     GATEWAY_TRUSTED_PROXY_IPS: process.env.GATEWAY_TRUSTED_PROXY_IPS ?? "",
     PROVIDER_AUTO_DISABLE_THRESHOLD: process.env.PROVIDER_AUTO_DISABLE_THRESHOLD ?? "",
-    SEED_ADMIN_EMAIL: process.env.SEED_ADMIN_EMAIL ?? "",
-    SEED_ADMIN_PASSWORD: process.env.SEED_ADMIN_PASSWORD ?? "",
     ...extra,
   };
   return Object.fromEntries(Object.entries(base).filter(([, value]) => value !== ""));
@@ -278,19 +276,16 @@ async function migrate() {
 }
 
 async function seed() {
-  const email = process.env.SEED_ADMIN_EMAIL?.trim() || DEFAULT_ADMIN_EMAIL;
-  const configured = process.env.SEED_ADMIN_PASSWORD?.trim();
-  const password = configured || DEFAULT_ADMIN_PASSWORD;
-  step("载入种子数据（管理员 + 内置配置 + 默认模型目录）");
+  step("载入种子数据（内置配置 + 默认模型目录）");
   const result = await runCapture("make", ["-C", "server", "seed"], {
-    env: { ...process.env, ...backendEnv({ SEED_ADMIN_PASSWORD: password }) },
+    env: { ...process.env, ...backendEnv() },
   });
   process.stdout.write(result.stdout);
   if (!result.ok) {
     process.stderr.write(result.stderr);
     fail("种子数据失败");
   }
-  return { email, password, isDefaultPassword: !configured };
+  return true;
 }
 
 // ---------- 子进程管理 ----------
@@ -506,12 +501,9 @@ async function startAll({ memoryDb, seeded }) {
     "────────────────────────────────────────────────",
   ];
   if (memoryDb) {
-    lines.push(` 演示账号    ${DEFAULT_ADMIN_EMAIL} / ${DEFAULT_ADMIN_PASSWORD}（内存模式内置）`);
+    lines.push(` 演示 root   ${DEMO_ROOT_EMAIL} / ${DEMO_ROOT_PASSWORD}（内存模式内置）`);
   } else if (seeded) {
-    const note = seeded.isDefaultPassword
-      ? "（本地默认口令，可在 .env 设置 SEED_ADMIN_PASSWORD 覆盖）"
-      : "";
-    lines.push(` 管理员账号  ${seeded.email} / ${seeded.password}${note}`);
+    lines.push(" 超级管理员  首次打开控制台按引导创建；已有 root 则用原密码登录");
   }
   lines.push(" 按 Ctrl-C 停止全部");
   console.log(paint("step", lines.join("\n")));

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -48,6 +49,33 @@ func uniqueViolation(err error) bool {
 }
 
 func queryErrNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
+
+// 用户写操作违反约束时翻译为端口语义错误；root 唯一索引与普通邮箱唯一索引必须区分。
+func translateCreateUserError(err error, email string) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		switch {
+		case pgErr.Code == "23505" && pgErr.ConstraintName == "users_single_root":
+			return ErrRootUserExists
+		case pgErr.Code == "23505":
+			return fmt.Errorf("%w: %s", ErrEmailTaken, strings.ToLower(strings.TrimSpace(email)))
+		}
+	}
+	return err
+}
+
+func translateUpdateUserError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		switch {
+		case pgErr.Code == "23505" && pgErr.ConstraintName == "users_single_root":
+			return ErrRootUserExists
+		case pgErr.Code == "23514" && pgErr.ConstraintName == "users_root_enabled":
+			return ErrRootUserProtected
+		}
+	}
+	return err
+}
 
 // ---- users ----
 
@@ -91,6 +119,19 @@ func (s *PostgresStore) FindUserByID(ctx context.Context, id string) (*UserRecor
 	return scanUser(rows)
 }
 
+func (s *PostgresStore) FindRootUser(ctx context.Context) (*UserRecord, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT `+userCols+` FROM users WHERE role = 'root' LIMIT 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	return scanUser(rows)
+}
+
 func (s *PostgresStore) CreateUser(ctx context.Context, input UserInput) (*UserRecord, error) {
 	rows, err := s.pool.Query(ctx, `
 		INSERT INTO users (email, password_hash, display_name, role)
@@ -98,19 +139,13 @@ func (s *PostgresStore) CreateUser(ctx context.Context, input UserInput) (*UserR
 		RETURNING `+userCols,
 		input.Email, input.PasswordHash, input.DisplayName, string(input.Role))
 	if err != nil {
-		if uniqueViolation(err) {
-			return nil, fmt.Errorf("%w: %s", ErrEmailTaken, strings.ToLower(strings.TrimSpace(input.Email)))
-		}
-		return nil, err
+		return nil, translateCreateUserError(err, input.Email)
 	}
 	defer rows.Close()
 	if !rows.Next() {
 		// pgx 把唯一约束错误延迟到 rows.Err(),必须在 Next() 之后翻译。
 		if err := rows.Err(); err != nil {
-			if uniqueViolation(err) {
-				return nil, fmt.Errorf("%w: %s", ErrEmailTaken, strings.ToLower(strings.TrimSpace(input.Email)))
-			}
-			return nil, err
+			return nil, translateCreateUserError(err, input.Email)
 		}
 		return nil, nil
 	}
@@ -135,7 +170,45 @@ func (s *PostgresStore) ListUsers(ctx context.Context) ([]UserRecord, error) {
 }
 
 func (s *PostgresStore) UpdateUser(ctx context.Context, id string, patch UpdateUserPatch) (*UserRecord, error) {
-	rows, err := s.pool.Query(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// 行锁把「判定 root 保护 → 写入」串行化；root 唯一/不可禁用再由 DB 约束兜底。
+	var currentRole string
+	if err := tx.QueryRow(ctx,
+		`SELECT role FROM users WHERE id = $1::uuid FOR UPDATE`, id).Scan(&currentRole); err != nil {
+		if queryErrNoRows(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	effectiveRole := currentRole
+	if patch.Role != nil {
+		effectiveRole = string(*patch.Role)
+	}
+	disabling := patch.HasDisabled && patch.DisabledAt != nil
+	if currentRole == string(RoleRoot) &&
+		((patch.Role != nil && *patch.Role != RoleRoot) || disabling) {
+		return nil, ErrRootUserProtected
+	}
+	if effectiveRole == string(RoleRoot) && currentRole != string(RoleRoot) {
+		var otherRoot bool
+		if err := tx.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM users WHERE role = 'root' AND id <> $1::uuid)`, id).Scan(&otherRoot); err != nil {
+			return nil, err
+		}
+		if otherRoot {
+			return nil, ErrRootUserExists
+		}
+	}
+	if effectiveRole == string(RoleRoot) && disabling {
+		return nil, ErrRootUserProtected
+	}
+
+	rows, err := tx.Query(ctx, `
 		UPDATE users SET
 			display_name = COALESCE($2, display_name),
 			password_hash = COALESCE($3, password_hash),
@@ -146,13 +219,25 @@ func (s *PostgresStore) UpdateUser(ctx context.Context, id string, patch UpdateU
 		id, patch.DisplayName, patch.PasswordHash, nullableRole(patch.Role),
 		patch.HasDisabled, nullableTime(patch.DisabledAt))
 	if err != nil {
+		return nil, translateUpdateUserError(err)
+	}
+	if !rows.Next() {
+		err := rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, translateUpdateUserError(err)
+		}
+		return nil, nil
+	}
+	user, err := scanUser(rows)
+	rows.Close()
+	if err != nil {
+		return nil, translateUpdateUserError(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	if !rows.Next() {
-		return nil, rows.Err()
-	}
-	return scanUser(rows)
+	return user, nil
 }
 
 // ---- sessions ----

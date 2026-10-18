@@ -2,6 +2,7 @@ package apiapp
 
 import (
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -14,10 +15,90 @@ import (
 	"github.com/vam12375/shucode-platform/server/internal/store"
 )
 
-// console.ts 的镜像:全部位于 /console/api/*,要求 admin 角色的会话。
+// console.ts 的镜像:全部位于 /console/api/*,要求 admin/root 角色的会话；
+// 用户角色升降级只允许 root（见用户管理路由）。
+
+// root 首次初始化口令下限：超级管理员口令比普通用户更严格。
+const rootPasswordMinLen = 12
 
 func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 	group := router.Group("/console/api")
+
+	// ---- setup ----
+	// root 只能创建一次且凭据只以 scrypt 哈希入库；初始化完成后两个接口都不再允许写入。
+
+	group.GET("/setup/status", func(c *gin.Context) {
+		root, err := deps.Store.FindRootUser(c.Request.Context())
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		c.Header("cache-control", "no-store")
+		c.JSON(200, okData(gin.H{"rootInitialized": root != nil}))
+	})
+
+	group.POST("/setup/root", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		c.Header("cache-control", "no-store")
+		root, err := deps.Store.FindRootUser(ctx)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if root != nil {
+			c.JSON(409, fail(409, "系统已完成初始化，请直接登录"))
+			return
+		}
+		if deps.ConsoleLoginLimiter != nil {
+			allowed, limitErr := deps.ConsoleLoginLimiter.Allow(ctx, resolveLimiterClientIP(c)+":root-setup")
+			if limitErr != nil {
+				deps.Logger.Warn("初始化限流不可用，按 fail-open 放行", "error", limitErr)
+				allowed = true
+			}
+			if !allowed {
+				c.JSON(429, fail(429, "尝试次数过多，请稍后再试"))
+				return
+			}
+		}
+		body, ok := readObjectBody(c)
+		if !ok {
+			c.JSON(400, fail(400, "请求参数不合法"))
+			return
+		}
+		email, okEmail := trimmedRequired(body["email"], 3, 1<<30)
+		displayName, okName := trimmedRequired(body["displayName"], 1, 80)
+		password, okPassword := body["password"].(string)
+		if !okEmail || !emailShape(email) || !okName || !okPassword ||
+			len(password) < rootPasswordMinLen || len(password) > 200 {
+			c.JSON(400, fail(400, "请求参数不合法（超级管理员密码至少 12 位）"))
+			return
+		}
+		hash, err := crypto.HashPassword(password)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		user, err := deps.Store.CreateUser(ctx, store.UserInput{
+			Email: email, PasswordHash: hash, DisplayName: displayName, Role: store.RoleRoot,
+		})
+		if err != nil {
+			switch {
+			case errors.Is(err, store.ErrRootUserExists):
+				c.JSON(409, fail(409, "系统已完成初始化，请直接登录"))
+			case errors.Is(err, store.ErrEmailTaken):
+				c.JSON(409, fail(409, "该邮箱已存在"))
+			default:
+				internalError(c, deps, err)
+			}
+			return
+		}
+		writeAudit(ctx, deps, user, "root.setup", "user", user.ID, nil)
+		if err := loginWithSession(ctx, deps, c, user.ID); err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		c.JSON(200, okData(gin.H{"user": toPublicUser(user), "rootInitialized": true}))
+	})
 
 	// ---- auth ----
 
@@ -54,7 +135,8 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
-		if user == nil || user.DisabledAt != nil || user.Role != store.RoleAdmin ||
+		if user == nil || user.DisabledAt != nil ||
+			(user.Role != store.RoleRoot && user.Role != store.RoleAdmin) ||
 			!crypto.VerifyPassword(password, user.PasswordHash) {
 			c.JSON(401, fail(401, "邮箱或密码不正确"))
 			return
@@ -431,14 +513,19 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(400, fail(400, "请求参数不合法（密码至少 8 位）"))
 			return
 		}
-		role := store.RoleMember
+		role := store.RoleUser
 		if raw, exists := body["role"]; exists {
 			roleStr, okRole := raw.(string)
-			if !okRole || (roleStr != "admin" && roleStr != "member") {
+			if !okRole || (roleStr != "admin" && roleStr != "user") {
 				c.JSON(400, fail(400, "请求参数不合法（密码至少 8 位）"))
 				return
 			}
 			role = store.UserRole(roleStr)
+		}
+		// 普通管理员只能创建普通用户；root 不可通过用户管理接口授予。
+		if role == store.RoleAdmin && admin.Role != store.RoleRoot {
+			c.JSON(403, fail(403, "只有超级管理员可以创建管理员"))
+			return
 		}
 		hash, err := crypto.HashPassword(password)
 		if err != nil {
@@ -449,7 +536,11 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			Email: email, PasswordHash: hash, DisplayName: displayName, Role: role,
 		})
 		if err != nil {
-			c.JSON(409, fail(409, err.Error()))
+			if errors.Is(err, store.ErrEmailTaken) {
+				c.JSON(409, fail(409, err.Error()))
+				return
+			}
+			internalError(c, deps, err)
 			return
 		}
 		writeAudit(ctx, deps, admin, "user.create", "user", user.ID, map[string]any{"role": string(user.Role)})
@@ -505,7 +596,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 		}
 		if raw, exists := body["role"]; exists {
 			roleStr, okRole := raw.(string)
-			if !okRole || (roleStr != "admin" && roleStr != "member") {
+			if !okRole || (roleStr != "admin" && roleStr != "user") {
 				c.JSON(400, fail(400, "请求参数不合法（密码至少 8 位）"))
 				return
 			}
@@ -514,10 +605,50 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			auditFields = append(auditFields, "role")
 		}
 		targetID := c.Param("id")
-		// 自我保护:避免管理员禁用/降级自己导致无人可管理控制台。
-		if targetID == admin.ID && (hasDisabled && disabledVal || role != nil) {
+		target, err := deps.Store.FindUserByID(ctx, targetID)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if target == nil {
+			c.JSON(404, fail(404, "用户不存在"))
+			return
+		}
+		isSelf := target.ID == admin.ID
+		// 自我保护:任何人都不能禁用自己或变更自己的角色。
+		if isSelf && (hasDisabled && disabledVal || role != nil) {
 			c.JSON(400, fail(400, "不能禁用自己的账号或变更自己的角色"))
 			return
+		}
+		// root 账号只能由自己改密码/显示名；不能被禁用、降级或由他人操作。
+		if target.Role == store.RoleRoot {
+			if !isSelf {
+				c.JSON(403, fail(403, "不能操作超级管理员账号"))
+				return
+			}
+			if hasDisabled {
+				c.JSON(400, fail(400, "超级管理员不能被禁用"))
+				return
+			}
+			if role != nil {
+				c.JSON(400, fail(400, "超级管理员不能被降级"))
+				return
+			}
+		}
+		if hasPassword && target.Role == store.RoleRoot && len(password) < rootPasswordMinLen {
+			c.JSON(400, fail(400, "超级管理员密码至少 12 位"))
+			return
+		}
+		// 普通管理员只能管理普通用户；创建/升降管理员是 root 专属。
+		if admin.Role != store.RoleRoot {
+			if !isSelf && target.Role != store.RoleUser {
+				c.JSON(403, fail(403, "管理员只能管理普通用户"))
+				return
+			}
+			if role != nil {
+				c.JSON(403, fail(403, "只有超级管理员可以调整角色"))
+				return
+			}
 		}
 		patch := store.UpdateUserPatch{DisplayName: displayName, Role: role}
 		if hasDisabled {
@@ -537,7 +668,14 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 		}
 		user, err := deps.Store.UpdateUser(ctx, targetID, patch)
 		if err != nil {
-			internalError(c, deps, err)
+			switch {
+			case errors.Is(err, store.ErrRootUserProtected):
+				c.JSON(400, fail(400, "超级管理员不能被禁用或降级"))
+			case errors.Is(err, store.ErrRootUserExists):
+				c.JSON(409, fail(409, "超级管理员已存在"))
+			default:
+				internalError(c, deps, err)
+			}
 			return
 		}
 		if user == nil {

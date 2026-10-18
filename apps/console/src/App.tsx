@@ -11,6 +11,7 @@ import { OpsPage } from "./pages/Ops.js";
 import { PricingPage } from "./pages/Pricing.js";
 import { ProvidersPage } from "./pages/Providers.js";
 import { ReleasesPage } from "./pages/Releases.js";
+import { RootSetupPage } from "./pages/RootSetup.js";
 import { TeamDetailPage } from "./pages/TeamDetail.js";
 import { TeamsPage } from "./pages/Teams.js";
 import { UsagePage } from "./pages/Usage.js";
@@ -21,7 +22,7 @@ export interface AdminUser {
   id: string;
   email: string;
   displayName: string;
-  role?: "admin" | "member";
+  role?: "root" | "admin" | "user";
 }
 
 const NAV_GROUPS = [
@@ -94,14 +95,30 @@ function splitRoute(route: string): [string, string] {
 
 export function App() {
   const [user, setUser] = useState<AdminUser | null | undefined>(undefined);
+  const [setupRequired, setSetupRequired] = useState(false);
   const [route, setRoute] = useState(() => normalizeHash(window.location.hash));
   const [ready, setReady] = useState(false);
   useAutoHideScrollbars();
 
   useEffect(() => {
+    let cancelled = false;
     api<{ user: AdminUser }>("/auth/me")
-      .then((data) => setUser(data.user))
-      .catch(() => setUser(null));
+      .then((data) => {
+        if (!cancelled) setUser(data.user);
+      })
+      .catch(async () => {
+        if (cancelled) return;
+        setUser(null);
+        try {
+          const status = await api<{ rootInitialized: boolean }>("/setup/status");
+          if (!cancelled) setSetupRequired(!status.rootInitialized);
+        } catch {
+          // 状态接口不可用时保留普通登录页，不把控制台卡在初始化页。
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -125,6 +142,16 @@ export function App() {
     return <div className="center">加载中…</div>;
   }
   if (!user) {
+    if (setupRequired) {
+      return (
+        <RootSetupPage
+          onSetup={(next) => {
+            setUser(next);
+            setSetupRequired(false);
+          }}
+        />
+      );
+    }
     return <LoginPage onLogin={setUser} />;
   }
 
@@ -159,7 +186,7 @@ export function App() {
       page = <UiLibraryPage />;
       break;
     case "users":
-      page = <UsersPage currentUserId={user.id} />;
+      page = <UsersPage currentUserId={user.id} currentUserRole={user.role ?? "user"} />;
       break;
     case "audit":
       page = <AuditPage />;
@@ -214,7 +241,7 @@ export function App() {
                   {user.displayName || user.email}
                 </span>
                 <span className="user-mail" title={user.email}>
-                  {user.role === "admin" ? "管理员 · " : ""}
+                  {user.role === "root" ? "超级管理员 · " : user.role === "admin" ? "管理员 · " : ""}
                   {user.email}
                 </span>
               </div>
