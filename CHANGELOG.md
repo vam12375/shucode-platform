@@ -9,6 +9,21 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.15.0] - 2026-10-18
+
+### 新增(基建)
+
+- 新增 `server/` Go 模块骨架(Go 1.26 + Gin,`cmd/{api,gateway,migrate,seed}` 占位):后端 Go 全面重写启动,权威计划 `specs/go-rewrite.md`(本地文档)。重构期间 TS 全栈保持可运行,M4 才切换。
+- `server/Makefile` 全 Docker 工具链:`golang:1.26` 容器 + 模块/构建缓存卷,默认 `GOPROXY` 走 goproxy.cn(可用环境变量覆盖);本机无需安装 Go,与服务器/CI 构建口径一致。
+- CI `check` job 新增 Go 检查:setup-go 1.26 + gofmt + go vet + `go test -race ./...`。
+- Dockerfile 新增 `go-builder` 多阶段(静态编译四个二进制;M4 切换时由 api/gateway/tools target 引用,本轮未被引用)。
+- docker-compose 新增 `redis:7-alpine`(限流共享窗口与配置事件 pub/sub 用途,应用侧 `REDIS_URL` 未设时自动回退进程内实现)。
+
+### 变更
+
+- `pnpm docker:down` 一并移除 redis 容器。
+- `mise.toml` 声明 `go = "1.26"`(仓库口径;本机开发走 Makefile 的 Docker 工具链,本地安装 Go 为可选)。
+
 ## [0.14.0] - 2026-10-18
 
 ### 新增（管理控制台）

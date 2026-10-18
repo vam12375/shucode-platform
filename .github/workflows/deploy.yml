@@ -35,6 +35,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+      # Go 后端(server/,specs/go-rewrite.md):与本地 server/Makefile 的容器口径同版本。
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: server/go.sum
+      - name: Go 检查(gofmt + vet + test)
+        run: |
+          cd server
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go vet ./...
+          go test -race ./...
 
   build:
     needs: check

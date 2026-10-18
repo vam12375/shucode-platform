@@ -15,7 +15,7 @@
     "dev": "node scripts/dev.mjs",
     "dev:memory": "node scripts/dev.mjs --memory",
     "docker:up": "docker compose up -d --build",
-    "docker:down": "docker compose rm -sf api gateway migrate seed",
+    "docker:down": "docker compose rm -sf api gateway migrate seed redis",
     "docker:logs": "docker compose logs -f --tail=100 api gateway",
     "dev:api": "pnpm --filter @shucode-platform/api dev",
     "dev:gateway": "pnpm --filter @shucode-platform/gateway dev",

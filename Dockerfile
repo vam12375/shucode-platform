@@ -35,3 +35,13 @@ FROM base AS gateway
 COPY --chown=node:node . .
 EXPOSE 8788
 CMD ["pnpm", "--filter", "@shucode-platform/gateway", "start"]
+
+# Go 后端工具链构建阶段(M4 切换时由 api/gateway/tools target 改为引用这里):
+# 静态二进制,与服务器/CI 的部署口径一致。M0 与 M1 过渡期仅预验证编译,尚无人引用。
+FROM golang:1.26-alpine AS go-builder
+WORKDIR /src
+ENV CGO_ENABLED=0
+COPY server/go.mod server/go.sum ./
+RUN go mod download
+COPY server/ ./
+RUN go build -trimpath -ldflags "-s -w" -o /out/ ./cmd/api ./cmd/gateway ./cmd/migrate ./cmd/seed

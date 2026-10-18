@@ -1,3 +1,5 @@
 [tools]
 node = "24.14.0"
 pnpm = "10.33.2"
+# 本机用 server/Makefile 的 Docker 工具链即可;此条是仓库口径声明(编辑器 LSP 可选)。
+go = "1.26"

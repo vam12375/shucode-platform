@@ -117,5 +117,18 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  # 限流共享窗口与配置事件 pub/sub;应用侧 REDIS_URL 未设时自动回退进程内实现(specs/go-rewrite.md §4)。
+  redis:
+    image: redis:7-alpine
+    # 数据可再生(限流窗口/事件),不落盘不保活,故障即重建。
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 5s
+    restart: unless-stopped
+
 volumes:
   mendao-pg:
