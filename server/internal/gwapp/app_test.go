@@ -1,0 +1,687 @@
+package gwapp
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+
+	"github.com/vam12375/shucode-platform/server/internal/crypto"
+	"github.com/vam12375/shucode-platform/server/internal/store"
+)
+
+type gatewayFixture struct {
+	t        *testing.T
+	store    store.PlatformStore
+	engine   *gin.Engine
+	env      *Env
+	upstream *httptest.Server
+
+	mu       sync.Mutex
+	handler  http.HandlerFunc
+	lastReq  *http.Request
+	lastBody []byte
+
+	token  string
+	userID string
+	teamID string
+}
+
+func newGatewayFixture(t *testing.T, patch func(env *Env, f *gatewayFixture)) *gatewayFixture {
+	t.Helper()
+	ctx := context.Background()
+	mem, err := store.NewMemoryStore(ctx, store.MemoryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := &gatewayFixture{t: t, store: mem}
+	f.handler = func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}
+
+	f.upstream = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		f.mu.Lock()
+		f.lastReq = r.Clone(context.Background())
+		f.lastBody = body
+		handler := f.handler
+		f.mu.Unlock()
+		handler(w, r)
+	}))
+	t.Cleanup(f.upstream.Close)
+
+	user, err := mem.CreateUser(ctx, store.UserInput{
+		Email: "gw@test.local", PasswordHash: "x", DisplayName: "网关用户", Role: store.RoleMember,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	team, err := mem.CreateTeam(ctx, store.CreateTeamInput{Name: "网关团队", QuotaCredits: "100.000000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.AddMember(ctx, team.ID, user.ID, store.MemberRoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	f.token = crypto.GenerateDeviceToken()
+	if err := mem.CreateDeviceToken(ctx, store.DeviceTokenRecord{
+		ID: uuid.NewString(), UserID: user.ID, Name: "测试设备",
+		TokenHash: crypto.HashToken(f.token), TokenCiphertext: "v1.a.b.c", TokenHint: "abcd",
+		CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mem.UpsertModel(ctx, store.UpsertModelInput{
+		ModelID: "claude-sonnet-4-5", DisplayName: "Claude Sonnet 4.5",
+		InputPricePerMtok: "3", OutputPricePerMtok: "15",
+		CacheReadPricePerMtok: ptr("0.3"), CacheWritePricePerMtok: ptr("3.75"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f.userID, f.teamID = user.ID, team.ID
+
+	f.env = &Env{
+		Port: 0, Host: "127.0.0.1",
+		TrustedProxyIPs: []string{"10.0.0.2"},
+		UpstreamBaseURL: f.upstream.URL, UpstreamAPIKey: "upstream-key",
+		AnthropicVersion:  "2023-06-01",
+		UpstreamTimeoutMs: 5_000, UpstreamIdleTimeoutMs: 1_000,
+		ProviderAutoDisableThreshold: 3,
+	}
+	if patch != nil {
+		patch(f.env, f)
+	}
+	f.engine = New(Deps{
+		Store: f.store, Env: f.env, Now: time.Now,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		HTTPClient: &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return fmt.Errorf("redirect blocked")
+		}},
+		Trusted: NewTrustedProxies(f.env.TrustedProxyIPs),
+	})
+	return f
+}
+
+func ptr[T any](v T) *T { return &v }
+
+func (f *gatewayFixture) setHandler(handler http.HandlerFunc) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.handler = handler
+}
+
+func (f *gatewayFixture) upstreamRequest() (*http.Request, []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lastReq, f.lastBody
+}
+
+func (f *gatewayFixture) do(method, path, token string, body string) *httptest.ResponseRecorder {
+	f.t.Helper()
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	if token != "" {
+		req.Header.Set("authorization", "Bearer "+token)
+	}
+	if body != "" {
+		req.Header.Set("content-type", "application/json")
+	}
+	rec := httptest.NewRecorder()
+	f.engine.ServeHTTP(rec, req)
+	return rec
+}
+
+func (f *gatewayFixture) usageRecords() []store.UsageRecord {
+	f.t.Helper()
+	records, err := f.store.ListUsage(context.Background(), store.UsageFilter{TeamID: f.teamID})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return records
+}
+
+func (f *gatewayFixture) team() *store.TeamRecord {
+	f.t.Helper()
+	team, err := f.store.GetTeam(context.Background(), f.teamID)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return team
+}
+
+func assertAnthropicError(t *testing.T, rec *httptest.ResponseRecorder, status int, typ string) {
+	t.Helper()
+	if rec.Code != status {
+		t.Fatalf("状态码: got %d want %d, body=%s", rec.Code, status, rec.Body.String())
+	}
+	var body struct {
+		Type  string `json:"type"`
+		Error struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("错误体不是 JSON: %s", rec.Body.String())
+	}
+	if body.Type != "error" || body.Error.Type != typ || body.Error.Message == "" {
+		t.Fatalf("错误体形状不符: %s", rec.Body.String())
+	}
+}
+
+func assertOpenAIError(t *testing.T, rec *httptest.ResponseRecorder, status int, typ string) {
+	t.Helper()
+	if rec.Code != status {
+		t.Fatalf("状态码: got %d want %d, body=%s", rec.Code, status, rec.Body.String())
+	}
+	var body struct {
+		Error struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("错误体不是 JSON: %s", rec.Body.String())
+	}
+	if body.Error.Type != typ || body.Error.Message == "" {
+		t.Fatalf("错误体形状不符: %s", rec.Body.String())
+	}
+}
+
+func TestHealthz(t *testing.T) {
+	f := newGatewayFixture(t, nil)
+	rec := f.do("GET", "/healthz", "", "")
+	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != `{"ok":true}` {
+		t.Fatalf("healthz: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAuthFailures(t *testing.T) {
+	f := newGatewayFixture(t, nil)
+	// 缺凭据(anthropic 错误形状)。
+	assertAnthropicError(t, f.do("POST", "/v1/messages", "", `{}`), 401, "authentication_error")
+	// 无效凭据。
+	assertAnthropicError(t, f.do("POST", "/v1/messages", "mdp_invalid", `{}`), 401, "authentication_error")
+	// openai 路由错误形状。
+	rec := f.do("POST", "/v1/chat/completions", "", `{}`)
+	if rec.Code != 401 {
+		t.Fatalf("openai 路由缺凭据应 401: %d", rec.Code)
+	}
+	var openaiBody struct {
+		Error struct {
+			Type string `json:"type"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &openaiBody); err != nil || openaiBody.Error.Type != "authentication_error" {
+		t.Fatalf("openai 错误形状不符: %s", rec.Body.String())
+	}
+	// 已吊销凭据。
+	ctx := context.Background()
+	device, _ := f.store.FindDeviceTokenByHash(ctx, crypto.HashToken(f.token))
+	if err := f.store.RevokeDeviceToken(ctx, device.ID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	assertAnthropicError(t, f.do("POST", "/v1/messages", f.token, `{}`), 401, "authentication_error")
+	// 账号禁用。
+	f2 := newGatewayFixture(t, nil)
+	disabledAt := time.Now()
+	if _, err := f2.store.UpdateUser(context.Background(), f2.userID, store.UpdateUserPatch{HasDisabled: true, DisabledAt: &disabledAt}); err != nil {
+		t.Fatal(err)
+	}
+	assertAnthropicError(t, f2.do("POST", "/v1/messages", f2.token, `{}`), 403, "permission_error")
+	// 无团队。
+	f3 := newGatewayFixture(t, nil)
+	lonely, _ := f3.store.CreateUser(context.Background(), store.UserInput{
+		Email: "lonely@test.local", PasswordHash: "x", DisplayName: "L", Role: store.RoleMember,
+	})
+	lonelyToken := crypto.GenerateDeviceToken()
+	_ = f3.store.CreateDeviceToken(context.Background(), store.DeviceTokenRecord{
+		ID: uuid.NewString(), UserID: lonely.ID, Name: "d",
+		TokenHash: crypto.HashToken(lonelyToken), TokenCiphertext: "x", TokenHint: "0000", CreatedAt: time.Now(),
+	})
+	assertAnthropicError(t, f3.do("POST", "/v1/messages", lonelyToken, `{}`), 403, "permission_error")
+}
+
+func TestModelValidation(t *testing.T) {
+	f := newGatewayFixture(t, nil)
+	// 缺 model 字段。
+	assertAnthropicError(t, f.do("POST", "/v1/messages", f.token, `{}`), 400, "invalid_request_error")
+	// 非法 JSON / 非对象。
+	assertAnthropicError(t, f.do("POST", "/v1/messages", f.token, `{oops`), 400, "invalid_request_error")
+	assertAnthropicError(t, f.do("POST", "/v1/messages", f.token, `[1,2]`), 400, "invalid_request_error")
+	// 未知模型。
+	assertAnthropicError(t, f.do("POST", "/v1/messages", f.token, `{"model":"nope"}`), 404, "not_found_error")
+	// 停用模型。
+	disabled := false
+	if _, err := f.store.UpsertModel(context.Background(), store.UpsertModelInput{
+		ModelID: "claude-sonnet-4-5", DisplayName: "x", InputPricePerMtok: "3",
+		OutputPricePerMtok: "15", Enabled: &disabled,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertAnthropicError(t, f.do("POST", "/v1/messages", f.token, `{"model":"claude-sonnet-4-5"}`), 404, "not_found_error")
+}
+
+func TestQuotaExhausted(t *testing.T) {
+	f := newGatewayFixture(t, nil)
+	zero := "0.000000"
+	if _, err := f.store.UpdateTeam(context.Background(), f.teamID, store.UpdateTeamPatch{QuotaCredits: &zero}); err != nil {
+		t.Fatal(err)
+	}
+	rec := f.do("POST", "/v1/messages", f.token, `{"model":"claude-sonnet-4-5"}`)
+	assertAnthropicError(t, rec, 429, "rate_limit_error")
+	if req, _ := f.upstreamRequest(); req != nil {
+		t.Fatal("额度不足不应请求上游")
+	}
+	if len(f.usageRecords()) != 0 {
+		t.Fatal("额度不足不应写 usage")
+	}
+}
+
+func TestNonStreamSuccess(t *testing.T) {
+	f := newGatewayFixture(t, nil)
+	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"msg_1","usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":20,"cache_creation_input_tokens":5}}`))
+	})
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4-5","max_tokens":8192,"stream":false}`))
+	req.Header.Set("authorization", "Bearer "+f.token)
+	req.Header.Set("x-request-id", "req-abc")
+	req.Header.Set("x-forwarded-for", "203.0.113.9")
+	req.Header.Set("anthropic-beta", "beta-1")
+	rec := httptest.NewRecorder()
+	// 让 TCP 对端成为可信代理,验证 XFF 采集。
+	req.RemoteAddr = "10.0.0.2:12345"
+	engine := f.engine
+	engine.ServeHTTP(rec, req)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"msg_1"`) {
+		t.Fatalf("透传失败: %d %s", rec.Code, rec.Body.String())
+	}
+	upReq, upBody := f.upstreamRequest()
+	if upReq == nil {
+		t.Fatal("上游未被调用")
+	}
+	if upReq.Header.Get("x-api-key") != "upstream-key" {
+		t.Fatalf("上游鉴权头应为平台 key: %q", upReq.Header.Get("x-api-key"))
+	}
+	if upReq.Header.Get("authorization") != "" {
+		t.Fatal("客户端的平台凭据不得外发")
+	}
+	if upReq.Header.Get("anthropic-beta") != "beta-1" {
+		t.Fatal("anthropic-beta 应透传")
+	}
+	var sentBody map[string]any
+	_ = json.Unmarshal(upBody, &sentBody)
+	if sentBody["model"] != "claude-sonnet-4-5" {
+		t.Fatalf("上游 model 不符: %v", sentBody["model"])
+	}
+	// 结算:100*3 + 50*15 + 20*0.3 + 5*3.75 = 300+750+6+18.75 = 1074.75 micro → 1075
+	records := f.usageRecords()
+	if len(records) != 1 {
+		t.Fatalf("应有一条 usage: %d", len(records))
+	}
+	record := records[0]
+	if record.RequestID != "req-abc" || record.Status != store.UsageStatusOk ||
+		record.InputTokens != 100 || record.OutputTokens != 50 ||
+		record.CacheReadTokens != 20 || record.CacheCreationTokens != 5 ||
+		record.CreditsMicro != 1075 || record.ClientIP != "203.0.113.9" ||
+		record.LatencyMs == nil {
+		t.Fatalf("usage 记录不符: %+v", record)
+	}
+	if team := f.team(); team.UsedCredits != "0.001075" || team.ReservedCredits != "0.000000" {
+		t.Fatalf("额度结算不符: used=%s reserved=%s", team.UsedCredits, team.ReservedCredits)
+	}
+}
+
+func TestUpstreamErrorPassthroughAndRelease(t *testing.T) {
+	f := newGatewayFixture(t, nil)
+	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(500)
+		_, _ = w.Write([]byte(`{"error":"boom"}`))
+	})
+	rec := f.do("POST", "/v1/messages", f.token, `{"model":"claude-sonnet-4-5"}`)
+	if rec.Code != 500 || !strings.Contains(rec.Body.String(), "boom") {
+		t.Fatalf("上游错误应原样透传: %d %s", rec.Code, rec.Body.String())
+	}
+	records := f.usageRecords()
+	if len(records) != 1 || records[0].Status != store.UsageStatusError || records[0].ErrorType != "upstream_500" {
+		t.Fatalf("失败 usage 不符: %+v", records)
+	}
+	if team := f.team(); team.ReservedCredits != "0.000000" || team.UsedCredits != "0.000000" {
+		t.Fatalf("失败应释放预留: reserved=%s used=%s", team.ReservedCredits, team.UsedCredits)
+	}
+}
+
+func TestUpstreamTimeout(t *testing.T) {
+	f := newGatewayFixture(t, func(env *Env, _ *gatewayFixture) {
+		env.UpstreamTimeoutMs = 50
+	})
+	f.setHandler(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(2 * time.Second):
+		case <-r.Context().Done():
+		}
+	})
+	rec := f.do("POST", "/v1/messages", f.token, `{"model":"claude-sonnet-4-5"}`)
+	assertAnthropicError(t, rec, 504, "api_error")
+	records := f.usageRecords()
+	if len(records) != 1 || records[0].ErrorType != "upstream_timeout" {
+		t.Fatalf("超时 usage 不符: %+v", records)
+	}
+	if team := f.team(); team.ReservedCredits != "0.000000" {
+		t.Fatal("超时应释放预留")
+	}
+}
+
+func TestUpstreamRedirectRejected(t *testing.T) {
+	f := newGatewayFixture(t, nil)
+	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("location", "/elsewhere")
+		w.WriteHeader(302)
+	})
+	rec := f.do("POST", "/v1/messages", f.token, `{"model":"claude-sonnet-4-5"}`)
+	assertAnthropicError(t, rec, 502, "api_error")
+	records := f.usageRecords()
+	if len(records) != 1 || records[0].ErrorType != "upstream_unavailable" {
+		t.Fatalf("重定向应按连接失败记录: %+v", records)
+	}
+}
+
+func TestFuseCounting(t *testing.T) {
+	ctx := context.Background()
+	f := newGatewayFixture(t, nil)
+	provider, err := f.store.CreateUpstreamProvider(ctx, store.CreateUpstreamProviderInput{
+		Name: "fuse-provider", BaseURL: f.upstream.URL, Protocol: store.ProtocolAnthropicMessages,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.UpsertModel(ctx, store.UpsertModelInput{
+		ModelID: "claude-sonnet-4-5", DisplayName: "x", InputPricePerMtok: "3", OutputPricePerMtok: "15",
+		ProvideUpstreamProviderID: true, UpstreamProviderID: provider.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// 429(限流)不计入熔断。
+	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(429)
+		_, _ = w.Write([]byte(`{"error":"rate"}`))
+	})
+	for i := 0; i < 2; i++ {
+		f.do("POST", "/v1/messages", f.token, `{"model":"claude-sonnet-4-5"}`)
+	}
+	got, _ := f.store.GetUpstreamProvider(ctx, provider.ID)
+	if got.ConsecutiveFailures != 0 || !got.Enabled {
+		t.Fatalf("429 不应计入熔断: %+v", got)
+	}
+	// 500 计入:连续 3 次自动停用。
+	f.mu.Lock()
+	f.handler = func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(500)
+		_, _ = w.Write([]byte(`{"error":"boom"}`))
+	}
+	f.mu.Unlock()
+	for i := 0; i < 3; i++ {
+		f.do("POST", "/v1/messages", f.token, `{"model":"claude-sonnet-4-5"}`)
+	}
+	got, _ = f.store.GetUpstreamProvider(ctx, provider.ID)
+	if got.Enabled || got.DisabledMode != "auto" || got.AutoDisabledReason != "upstream_500" {
+		t.Fatalf("熔断现场不符: %+v", got)
+	}
+	// 熔断后请求被拒(供应商不可用,404)。
+	assertAnthropicError(t, f.do("POST", "/v1/messages", f.token, `{"model":"claude-sonnet-4-5"}`), 404, "not_found_error")
+}
+
+func TestProviderBindingAndKey(t *testing.T) {
+	ctx := context.Background()
+	key := "qv3YmS8XKg0SdoLJc1TzW7tQe4pXbUcHnMhR9IyAL2k="
+	box, err := crypto.NewSecretBox(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext, err := box.Encrypt("provider-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newGatewayFixture(t, func(env *Env, f *gatewayFixture) {
+		env.PlatformSecretKey = key
+	})
+	// fixture 的 engine 在 patch 之后构建;补 SecretBox 需要重建 engine。
+	secretBox, _ := crypto.NewSecretBox(key)
+	f.engine = New(Deps{
+		Store: f.store, Env: f.env, Now: time.Now,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		HTTPClient: &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return fmt.Errorf("redirect blocked")
+		}},
+		Trusted: NewTrustedProxies(f.env.TrustedProxyIPs), SecretBox: secretBox,
+	})
+	provider, err := f.store.CreateUpstreamProvider(ctx, store.CreateUpstreamProviderInput{
+		Name: "bound-provider", BaseURL: f.upstream.URL, Protocol: store.ProtocolAnthropicMessages,
+		APIKeyCiphertext: ciphertext, APIKeyHint: "cret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.UpsertModel(ctx, store.UpsertModelInput{
+		ModelID: "claude-sonnet-4-5", DisplayName: "x", InputPricePerMtok: "3", OutputPricePerMtok: "15",
+		ProvideUpstreamProviderID: true, UpstreamProviderID: provider.ID,
+		ProvideUpstreamModel: true, UpstreamModel: "real-upstream-model",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"usage":{"input_tokens":1,"output_tokens":1}}`))
+	})
+	rec := f.do("POST", "/v1/messages", f.token, `{"model":"claude-sonnet-4-5"}`)
+	if rec.Code != 200 {
+		t.Fatalf("绑定供应商转发失败: %d %s", rec.Code, rec.Body.String())
+	}
+	upReq, upBody := f.upstreamRequest()
+	if upReq.Header.Get("x-api-key") != "provider-secret" {
+		t.Fatalf("应使用供应商解密后的 key: %q", upReq.Header.Get("x-api-key"))
+	}
+	var sent map[string]any
+	_ = json.Unmarshal(upBody, &sent)
+	if sent["model"] != "real-upstream-model" {
+		t.Fatalf("upstreamModel 映射失败: %v", sent["model"])
+	}
+	records := f.usageRecords()
+	if len(records) != 1 || records[0].ProviderID != provider.ID {
+		t.Fatalf("usage 应带供应商维度: %+v", records)
+	}
+	// 无 PLATFORM_SECRET_KEY 时绑定密文供应商 → 500。
+	f2 := newGatewayFixture(t, nil)
+	provider2, _ := f2.store.CreateUpstreamProvider(ctx, store.CreateUpstreamProviderInput{
+		Name: "no-key-provider", BaseURL: f2.upstream.URL, Protocol: store.ProtocolAnthropicMessages,
+		APIKeyCiphertext: ciphertext,
+	})
+	_, _ = f2.store.UpsertModel(ctx, store.UpsertModelInput{
+		ModelID: "claude-sonnet-4-5", DisplayName: "x", InputPricePerMtok: "3", OutputPricePerMtok: "15",
+		ProvideUpstreamProviderID: true, UpstreamProviderID: provider2.ID,
+	})
+	assertAnthropicError(t, f2.do("POST", "/v1/messages", f2.token, `{"model":"claude-sonnet-4-5"}`), 500, "api_error")
+}
+
+func TestProviderProtocolMismatch(t *testing.T) {
+	ctx := context.Background()
+	f := newGatewayFixture(t, nil)
+	provider, _ := f.store.CreateUpstreamProvider(ctx, store.CreateUpstreamProviderInput{
+		Name: "anthropic-provider", BaseURL: f.upstream.URL, Protocol: store.ProtocolAnthropicMessages,
+	})
+	_, _ = f.store.UpsertModel(ctx, store.UpsertModelInput{
+		ModelID: "claude-sonnet-4-5", DisplayName: "x", InputPricePerMtok: "3", OutputPricePerMtok: "15",
+		ProvideUpstreamProviderID: true, UpstreamProviderID: provider.ID,
+	})
+	assertOpenAIError(t, f.do("POST", "/v1/chat/completions", f.token, `{"model":"claude-sonnet-4-5"}`), 404, "not_found_error")
+	// Responses 专用供应商不接受 chat。
+	responsesProvider, _ := f.store.CreateUpstreamProvider(ctx, store.CreateUpstreamProviderInput{
+		Name: "responses-provider", BaseURL: f.upstream.URL, Protocol: store.ProtocolOpenAIResponses,
+	})
+	_, _ = f.store.UpsertModel(ctx, store.UpsertModelInput{
+		ModelID: "claude-sonnet-4-5", DisplayName: "x", InputPricePerMtok: "3", OutputPricePerMtok: "15",
+		ProvideUpstreamProviderID: true, UpstreamProviderID: responsesProvider.ID,
+	})
+	assertOpenAIError(t, f.do("POST", "/v1/chat/completions", f.token, `{"model":"claude-sonnet-4-5"}`), 404, "not_found_error")
+	// 该供应商走 /v1/responses 可以正常转发。
+	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"usage":{"input_tokens":1,"output_tokens":1}}`))
+	})
+	if rec := f.do("POST", "/v1/responses", f.token, `{"model":"claude-sonnet-4-5"}`); rec.Code != 200 {
+		t.Fatalf("responses 供应商转发失败: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestModelsList(t *testing.T) {
+	f := newGatewayFixture(t, nil)
+	rec := f.do("GET", "/v1/models", f.token, "")
+	if rec.Code != 200 {
+		t.Fatalf("models 列表失败: %d", rec.Code)
+	}
+	var body struct {
+		Object string `json:"object"`
+		Data   []struct {
+			ID      string `json:"id"`
+			Object  string `json:"object"`
+			Created int64  `json:"created"`
+			Owner   string `json:"owned_by"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Object != "list" || len(body.Data) != 1 || body.Data[0].ID != "claude-sonnet-4-5" ||
+		body.Data[0].Object != "model" || body.Data[0].Owner != "mendao-platform" || body.Data[0].Created <= 0 {
+		t.Fatalf("models 形状不符: %s", rec.Body.String())
+	}
+}
+
+func TestStreamingSuccessAndUsage(t *testing.T) {
+	f := newGatewayFixture(t, nil)
+	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		frames := []string{
+			"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+			"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":50,\"prompt_tokens_details\":{\"cached_tokens\":40}}}\n\n",
+			"data: [DONE]\n\n",
+		}
+		for _, frame := range frames {
+			_, _ = w.Write([]byte(frame))
+			flusher.Flush()
+		}
+	})
+	rec := f.do("POST", "/v1/chat/completions", f.token, `{"model":"claude-sonnet-4-5","stream":true}`)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"content":"hi"`) {
+		t.Fatalf("流式透传失败: %d %s", rec.Code, rec.Body.String())
+	}
+	// 注入 include_usage。
+	_, upBody := f.upstreamRequest()
+	if !strings.Contains(string(upBody), `"include_usage":true`) {
+		t.Fatalf("流式应注入 include_usage: %s", upBody)
+	}
+	records := f.usageRecords()
+	if len(records) != 1 || records[0].Status != store.UsageStatusOk {
+		t.Fatalf("流式结算失败: %+v", records)
+	}
+	if records[0].InputTokens != 60 || records[0].OutputTokens != 50 || records[0].CacheReadTokens != 40 {
+		t.Fatalf("流式 usage 不符: %+v", records[0])
+	}
+}
+
+func TestStreamingClientAbort(t *testing.T) {
+	f := newGatewayFixture(t, nil)
+	f.setHandler(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		for i := 0; i < 100; i++ {
+			_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n"))
+			flusher.Flush()
+			select {
+			case <-time.After(20 * time.Millisecond):
+			case <-r.Context().Done():
+				return
+			}
+		}
+	})
+	server := httptest.NewServer(f.engine)
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req, _ := http.NewRequestWithContext(ctx, "POST", server.URL+"/v1/chat/completions",
+		bytes.NewReader([]byte(`{"model":"claude-sonnet-4-5","stream":true}`)))
+	req.Header.Set("authorization", "Bearer "+f.token)
+	req.Header.Set("content-type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 64)
+	_, _ = resp.Body.Read(buf)
+	cancel()
+	_ = resp.Body.Close()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		records := f.usageRecords()
+		if len(records) == 1 {
+			if records[0].Status != store.UsageStatusAborted || records[0].ErrorType != "client_aborted" {
+				t.Fatalf("中断应记录 aborted: %+v", records[0])
+			}
+			if team := f.team(); team.ReservedCredits != "0.000000" {
+				t.Fatalf("中断后预留应释放: %s", team.ReservedCredits)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("客户端中断后未写入 usage 记录")
+}
+
+func TestStreamingIdleTimeout(t *testing.T) {
+	f := newGatewayFixture(t, func(env *Env, _ *gatewayFixture) {
+		env.UpstreamIdleTimeoutMs = 80
+	})
+	f.setHandler(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n"))
+		w.(http.Flusher).Flush()
+		select {
+		case <-time.After(2 * time.Second):
+		case <-r.Context().Done():
+		}
+	})
+	rec := f.do("POST", "/v1/chat/completions", f.token, `{"model":"claude-sonnet-4-5","stream":true}`)
+	if rec.Code != 200 {
+		t.Fatalf("流式头应已返回: %d", rec.Code)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		records := f.usageRecords()
+		if len(records) == 1 {
+			if records[0].Status != store.UsageStatusError || records[0].ErrorType != "upstream_idle_timeout" {
+				t.Fatalf("空闲超时记录不符: %+v", records[0])
+			}
+			if team := f.team(); team.ReservedCredits != "0.000000" {
+				t.Fatalf("空闲超时应释放预留: %s", team.ReservedCredits)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("空闲超时后未写入 usage 记录")
+}

@@ -9,6 +9,17 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.18.0] - 2026-10-18
+
+### 新增(后端 Go 重构 M2:模型网关)
+
+- `internal/gwapp`:Go 版模型网关,与 `apps/gateway/src/app.ts` 逐行为对齐——三协议(anthropic messages / openai chat / openai responses)同一条管道:设备凭据鉴权 → 模型校验 → 上游解析(绑定供应商优先/回落 env) → 额度原子预留 → 透传转发 → usage 结算。
+- 错误形状、状态码与文案逐字对齐;客户端平台凭据不外发;`upstreamModel` 映射;供应商密文解密(PLATFORM_SECRET_KEY 缺失/解密失败各自 500 文案);供应商家族校验与 Responses 专用供应商拒绝 chat。
+- 超时语义对齐:header/总时限覆盖连接(非流式覆盖响应体),流式响应头后切换空闲看门狗;上游重定向拒绝跟随;失败/超时/中断一律释放预留并写失败账本。
+- 流式:SSE 边透传边采集 usage(三协议扫描器、1MB 帧缓冲上限、坏帧 dropped 计数),结束按最终 usage 结算;客户端中断按 aborted 记录;空闲超时按 upstream_idle_timeout 记录。
+- 熔断:5xx/401/403 与连接级失败计数,`PROVIDER_AUTO_DISABLE_THRESHOLD` 达阈值自动停用并透出原因;429/404 不计数;成功转发即清零。
+- `cmd/gateway`:启动装配(内存模式=空库仅冒烟、Postgres 模式、SecretBox、优雅退出),与 TS 入口日志语义一致。
+
 ## [0.17.0] - 2026-10-18
 
 ### 新增(后端 Go 重构 M1:存储与横切设施)
