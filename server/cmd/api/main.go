@@ -144,6 +144,11 @@ func main() {
 		logger.Error("种子失败", "error", err)
 	}
 
+	runCtx, stopBackground := context.WithCancel(ctx)
+	defer stopBackground()
+	apiapp.StartAlertEvaluator(runCtx, deps, time.Minute)
+	apiapp.StartReservationSweeper(runCtx, deps, time.Minute)
+
 	engine := apiapp.New(deps)
 	addr := fmt.Sprintf("%s:%d", env.Host, env.Port)
 	server := &http.Server{Addr: addr, Handler: engine}
@@ -166,6 +171,7 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_ = server.Shutdown(shutdownCtx)
+	stopBackground()
 	bus.Close()
 	if redisClient != nil {
 		_ = redisClient.Close()

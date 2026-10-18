@@ -104,8 +104,8 @@ export function TeamsPage() {
             <input
               className="input num"
               style={{ width: 150 }}
-              placeholder="额度 credit"
-              aria-label="额度 credit"
+              placeholder="额度 ¥"
+              aria-label="额度 ¥"
               value={quota}
               onChange={(event) => setQuota(event.target.value)}
             />
@@ -114,7 +114,7 @@ export function TeamsPage() {
             </button>
           </form>
           <p className="readout" style={{ margin: 0, marginTop: 10 }}>
-            额度以 credit 计（按模型单价折算）；团队成员共享同一额度池。
+            额度以人民币计（1 credit = ¥1，按模型单价折算）；团队成员共享同一额度池。
           </p>
         </div>
       </section>
@@ -174,7 +174,7 @@ export function TeamsPage() {
               <tr>
                 <td>合计 · {rows.length} 个团队</td>
                 <td className="num">{totalMembers}</td>
-                <td colSpan={2}>已用 {formatCreditsDisplay(totalUsed)} CR</td>
+                <td colSpan={2}>已用 ¥{formatCreditsDisplay(totalUsed)}</td>
                 <td />
               </tr>
             </tfoot>

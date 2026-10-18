@@ -9,6 +9,40 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.21.0] - 2026-10-18
+
+### 新增(网关可靠性)
+
+- 渠道池：新增 `upstream_routes`，一个模型可绑定多个上游供应商；网关按 `priority` 升序、同优先级按 `weight` 加权调度，流式响应开始前对网络错误/超时/408/429/5xx/401/403 自动重试下一个上游。
+- 自动恢复：定时探测自动熔断的供应商（`GET /v1/models`），恢复后重新纳入调度；控制台「上游供应商」增加「恢复调度」按钮。
+- 网关不再静默回落：已配置路由池但全部不可用时，返回明确的 404，而不是把请求发到 env 默认上游。
+
+### 新增(流控与计费)
+
+- 团队级 RPM/TPM/并发限制（`teams.rpm_limit` / `tpm_limit` / `concurrency_limit`），Redis 共享计数、进程内回退，超限返回 429 + `Retry-After`；控制台团队详情可编辑。
+- 额度预留状态机：新增 `quota_reservations`，`request_id` 唯一；重复请求返回 409，预留/结算/释放/过期四态可对账。
+- 预留回收：api/gateway 启动 sweeper，定期回收超时未结算预留；`GATEWAY_RESERVATION_TTL_SEC` 可配。
+- 计费幂等：`SettleReservation` 在同一事务内完成预留扣回、usage 落库与小时汇总，重复结算幂等。
+
+### 新增(运维与用量)
+
+- 运维大盘 `/console/api/ops/*`：QPS/请求数、成功率、P50/P95/P99、消费、活跃设备、未释放预留、供应商健康；控制台新增「运维大盘」页面（Recharts 交互图表 + hover tooltip）。
+- 告警规则与事件：`admin_alert_rules` / `admin_alert_events`，支持错误率、P95 延迟、未释放预留、窗口消费、上游错误数；可配 `ALERT_WEBHOOK_URL` 推送。
+- 用量导出：`GET /console/api/usage/export` 按当前筛选导出 CSV（UTF-8 BOM，Excel 友好）。
+- 用量检索：`requestId` 精确过滤；控制台用量页新增 request ID 输入框与导出按钮。
+- 小时 rollup：新增 `usage_hourly_rollups`，全平台趋势优先读汇总表；明细维度仍回退 `usage_records`。
+
+### 变更(控制台图表)
+
+- 引入 Recharts 替换纯 CSS 柱状图：费用趋势（柱 + 请求数折线）、缓存率趋势（面积 + 命中率折线）、模型分布环形图，均带图例、坐标轴与 hover tooltip。
+- 用量趋势默认值改为「今天 + 按小时」（`apps/console/src/pages/Usage.tsx`）。
+
+### 迁移与配置
+
+- 新增迁移 `0008_platform_ops.sql`：路由池、团队流控列、预留表、小时汇总表与回填、request_id/供应商/状态索引、告警表。
+- 新增环境变量：`GATEWAY_MAX_ATTEMPTS`、`GATEWAY_RESERVATION_TTL_SEC`、`PROVIDER_PROBE_INTERVAL_SEC`、`ALERT_WEBHOOK_URL`（`.env.example` 已同步）。
+- 新增 Go 测试：渠道路由/故障转移、RPM 限流、重复 request_id、预留状态机、rollup 与 ops/告警 conformance；Postgres conformance 已在本地库验证。
+
 ## [0.20.6] - 2026-10-18
 
 ### 修复(开发脚本)

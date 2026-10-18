@@ -17,6 +17,9 @@ interface TeamDetail {
     usedCredits: string;
     reservedCredits: string;
     unlimited: boolean;
+    rpmLimit: number;
+    tpmLimit: number;
+    concurrencyLimit: number;
   };
   members: Array<{
     user: { id: string; email: string; displayName: string };
@@ -67,6 +70,9 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [quota, setQuota] = useState("");
   const [unlimited, setUnlimited] = useState(false);
+  const [rpmLimit, setRpmLimit] = useState("0");
+  const [tpmLimit, setTpmLimit] = useState("0");
+  const [concurrencyLimit, setConcurrencyLimit] = useState("0");
   const [memberEmail, setMemberEmail] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -76,6 +82,9 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
       setDetail(data);
       setQuota(data.team.quotaCredits);
       setUnlimited(data.team.unlimited);
+      setRpmLimit(String(data.team.rpmLimit ?? 0));
+      setTpmLimit(String(data.team.tpmLimit ?? 0));
+      setConcurrencyLimit(String(data.team.concurrencyLimit ?? 0));
       setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "加载失败");
@@ -159,7 +168,7 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
           <h1>{team.name}</h1>
         </div>
         <span className="readout m0">
-          共 {totalRequests.toLocaleString("en-US")} 次请求 · {credits(totalCredits)} CR
+          共 {totalRequests.toLocaleString("en-US")} 次请求 · ¥{credits(totalCredits)}
         </span>
       </header>
 
@@ -187,8 +196,8 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
               style={{ width: 160 }}
               value={quota}
               onChange={(event) => setQuota(event.target.value)}
-              placeholder="额度 credit"
-              aria-label="额度 credit"
+              placeholder="额度 ¥"
+              aria-label="额度 ¥"
               disabled={unlimited}
             />
             <label className="form-row" style={{ gap: 8 }}>
@@ -221,7 +230,71 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
             </button>
           </div>
           <p className="readout" style={{ margin: 0, marginTop: 10 }}>
-            已用 {formatCreditsDisplay(used)} · 预留 {formatCreditsDisplay(reserved)} CR。额度扣减发生在模型网关，页面展示为实时汇总。
+            已用 ¥{formatCreditsDisplay(used)} · 预留 ¥{formatCreditsDisplay(reserved)}。额度扣减发生在模型网关，页面展示为实时汇总。
+          </p>
+        </div>
+      </section>
+
+      <section className="pane d1">
+        <div className="pane-h">
+          <h2>网关流控</h2>
+          <span className="readout">0 = 不限制 · 由网关执行</span>
+        </div>
+        <div className="pane-b">
+          <div className="form-row">
+            <label className="form-row" style={{ gap: 6 }}>
+              <span className="readout">RPM</span>
+              <input
+                className="input num"
+                style={{ width: 120 }}
+                value={rpmLimit}
+                onChange={(event) => setRpmLimit(event.target.value)}
+                aria-label="每分钟请求数上限"
+              />
+            </label>
+            <label className="form-row" style={{ gap: 6 }}>
+              <span className="readout">TPM</span>
+              <input
+                className="input num"
+                style={{ width: 140 }}
+                value={tpmLimit}
+                onChange={(event) => setTpmLimit(event.target.value)}
+                aria-label="每分钟 Token 上限"
+              />
+            </label>
+            <label className="form-row" style={{ gap: 6 }}>
+              <span className="readout">并发</span>
+              <input
+                className="input num"
+                style={{ width: 110 }}
+                value={concurrencyLimit}
+                onChange={(event) => setConcurrencyLimit(event.target.value)}
+                aria-label="并发请求上限"
+              />
+            </label>
+            <button
+              className="btn"
+              disabled={busy}
+              onClick={() =>
+                void run(
+                  () =>
+                    api(`/teams/${teamId}`, {
+                      method: "PATCH",
+                      body: JSON.stringify({
+                        rpmLimit: Number.parseInt(rpmLimit, 10) || 0,
+                        tpmLimit: Number.parseInt(tpmLimit, 10) || 0,
+                        concurrencyLimit: Number.parseInt(concurrencyLimit, 10) || 0,
+                      }),
+                    }),
+                  "已保存流控设置",
+                )
+              }
+            >
+              保存流控
+            </button>
+          </div>
+          <p className="readout" style={{ margin: 0, marginTop: 10 }}>
+            RPM/TPM 按分钟窗口计数，并发按在途请求数计数；超限返回 429。TPM 使用请求体估算 token（正文长度 / 4 + max_tokens），用于准入保护。
           </p>
         </div>
       </section>
@@ -377,7 +450,7 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
                   输出 Token
                 </th>
                 <th scope="col" className="num">
-                  费用（CR）
+                  费用（¥）
                 </th>
               </tr>
             </thead>

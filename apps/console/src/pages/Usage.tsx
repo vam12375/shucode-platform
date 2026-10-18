@@ -2,8 +2,15 @@ import {
   MICRO_CREDITS_PER_CREDIT,
   formatCreditsDisplay,
 } from "@shucode-platform/contracts/credits";
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api.js";
+import {
+  ComposedTrendChart,
+  ModelDonutChart,
+  type ChartDatum,
+  type ChartSeries,
+} from "../components/charts.js";
+import { toastErr } from "../components/Feedback.js";
 import { formatPct } from "../components/Gauge.js";
 import { Select } from "../components/Select.js";
 import { Chip, Notice, type ChipTone } from "../components/StatusChip.js";
@@ -32,6 +39,22 @@ interface ModelOption {
   modelId: string;
   displayName: string;
   enabled: boolean;
+  inputPricePerMtok: string;
+  outputPricePerMtok: string;
+  cacheReadPricePerMtok: string;
+  cacheWritePricePerMtok: string;
+  offPeakMultiplier: string;
+}
+
+/** 成本价库条目：币种随条目；空币种按历史 USD 处理。 */
+interface CostPricingEntry {
+  modelId: string;
+  inputCostPerMillion: string;
+  outputCostPerMillion: string;
+  cacheReadCostPerMillion: string;
+  cacheCreationCostPerMillion: string;
+  offPeakMultiplier?: string;
+  currency?: string;
 }
 
 interface DeviceOption {
@@ -90,6 +113,7 @@ interface UsageRecordRow {
 
 interface DayPoint {
   date: string;
+  requests: number;
   creditsMicro: number;
   /** 当日缓存读命中 token 总量。 */
   cacheReadTokens: number;
@@ -108,6 +132,20 @@ const DAY = 86_400_000;
 
 function credits(micro: number): string {
   return formatCreditsDisplay(micro / MICRO_CREDITS_PER_CREDIT);
+}
+
+/** 成本价库的金额展示：币种随条目；空币种按 USD（历史）处理。 */
+function money(value: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currency || "USD",
+      currencyDisplay: "narrowSymbol",
+      maximumFractionDigits: 4,
+    }).format(value);
+  } catch {
+    return `${value.toFixed(4)} ${currency || "USD"}`;
+  }
 }
 
 function statusChip(status: string): { tone?: ChipTone; label: string } {
@@ -205,17 +243,20 @@ export function UsagePage() {
   const [filterModel, setFilterModel] = useState("");
   const [filterProviderId, setFilterProviderId] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [filterRequestId, setFilterRequestId] = useState("");
   const [providers, setProviders] = useState<ProviderOption[]>([]);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [devices, setDevices] = useState<DeviceOption[]>([]);
+  const [costPricing, setCostPricing] = useState<CostPricingEntry[]>([]);
   const [detail, setDetail] = useState<UsageRecordRow | null>(null);
   const [aggregates, setAggregates] = useState<AggregateRow[]>([]);
   const [records, setRecords] = useState<UsageRecordRow[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [moreLoading, setMoreLoading] = useState(false);
   const [days, setDays] = useState<DayPoint[]>([]);
-  const [chartPreset, setChartPreset] = useState<ChartPreset>("14d");
-  const [chartGranularity, setChartGranularity] = useState<ChartGranularity>("day");
+  // 默认按小时看当天走势；大范围（>7 天）切预设时仍会自动回落按天。
+  const [chartPreset, setChartPreset] = useState<ChartPreset>("today");
+  const [chartGranularity, setChartGranularity] = useState<ChartGranularity>("hour");
   const [donutBy, setDonutBy] = useState<"tokens" | "credits">("tokens");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -223,18 +264,20 @@ export function UsagePage() {
   useEffect(() => {
     void (async () => {
       try {
-        const [teamData, userData, providerData, modelData, deviceData] = await Promise.all([
+        const [teamData, userData, providerData, modelData, deviceData, pricingData] = await Promise.all([
           api<{ teams: TeamOption[] }>("/teams"),
           api<{ users: UserOption[] }>("/users"),
           api<{ providers: ProviderOption[] }>("/providers"),
           api<{ models: ModelOption[] }>("/models?includeDisabled=1"),
           api<{ devices: DeviceOption[] }>("/devices"),
+          api<{ entries: CostPricingEntry[] }>("/model-pricing").catch(() => ({ entries: [] })),
         ]);
         setTeams(teamData.teams);
         setUserEmails(new Map(userData.users.map((user) => [user.id, user.email])));
         setProviders(providerData.providers);
         setModelOptions(modelData.models);
         setDevices(deviceData.devices);
+        setCostPricing(pricingData.entries);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "加载失败");
       }
@@ -247,7 +290,9 @@ export function UsagePage() {
     void (async () => {
       const { from, to } = presetRange(chartPreset);
       const keys = buildBucketKeys(from, to, chartGranularity);
-      const zeroed = new Map(keys.map((key) => [key, { date: key, creditsMicro: 0, cacheReadTokens: 0, promptTokens: 0 }]));
+      const zeroed = new Map(
+        keys.map((key) => [key, { date: key, requests: 0, creditsMicro: 0, cacheReadTokens: 0, promptTokens: 0 }]),
+      );
       const query = new URLSearchParams({
         from,
         to: `${to}T23:59:59`,
@@ -258,6 +303,7 @@ export function UsagePage() {
         for (const row of data.series) {
           const bucket = zeroed.get(row.bucketStart);
           if (!bucket) continue;
+          bucket.requests = row.requests;
           bucket.creditsMicro = row.creditsMicro;
           bucket.cacheReadTokens = row.cacheReadTokens;
           bucket.promptTokens = row.inputTokens + row.cacheReadTokens + row.cacheCreationTokens;
@@ -267,8 +313,8 @@ export function UsagePage() {
     })();
   }, [chartPreset, chartGranularity]);
 
-  const fetchUsage = useCallback(
-    (cursor: string | null) => {
+  const usageParams = useCallback(
+    (cursor?: string) => {
       const params = new URLSearchParams();
       if (teamId) params.set("teamId", teamId);
       if (from) params.set("from", `${from}T00:00:00`);
@@ -277,11 +323,38 @@ export function UsagePage() {
       if (filterModel) params.set("model", filterModel);
       if (filterProviderId) params.set("providerId", filterProviderId);
       if (filterStatus) params.set("status", filterStatus);
+      if (filterRequestId.trim()) params.set("requestId", filterRequestId.trim());
       if (cursor) params.set("cursor", cursor);
+      return params;
+    },
+    [teamId, from, to, filterUserId, filterModel, filterProviderId, filterStatus, filterRequestId],
+  );
+
+  const fetchUsage = useCallback(
+    (cursor: string | null) => {
+      const params = usageParams(cursor ?? undefined);
       return api<UsagePageData>(`/usage${params.size > 0 ? `?${params.toString()}` : ""}`);
     },
-    [teamId, from, to, filterUserId, filterModel, filterProviderId, filterStatus],
+    [usageParams],
   );
+
+  const exportUsage = useCallback(async (): Promise<void> => {
+    const params = usageParams();
+    const response = await fetch(`/console/api/usage/export${params.size > 0 ? `?${params.toString()}` : ""}`, {
+      credentials: "include",
+    });
+    if (!response.ok) {
+      toastErr(`导出失败 (${response.status})`, "导出失败");
+      return;
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `usage-${new Date().toISOString().slice(0, 19).replaceAll(":", "")}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, [usageParams]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -330,6 +403,84 @@ export function UsagePage() {
   const avgLatencyS =
     totalLatencyMs > 0 && totalRequests > 0 ? totalLatencyMs / totalRequests / 1000 : null;
 
+  // 按当前模型售价重算的区间估算（全高峰 ~ 全空闲）。
+  // 账单本身是请求发生时的实扣，历史记录不随调价回写；这里只做口径对照。
+  const currentPriceEstimate = useMemo(() => {
+    let peakMicro = 0;
+    let offPeakMicro = 0;
+    let missingModels = 0;
+    for (const row of aggregates) {
+      const model = modelOptions.find((item) => item.modelId === row.model);
+      if (!model) {
+        const hasUsage =
+          row.inputTokens + row.outputTokens + row.cacheReadTokens + row.cacheCreationTokens + row.creditsMicro > 0;
+        if (hasUsage) missingModels += 1;
+        continue;
+      }
+      const price = (value: string) => Number.parseFloat(value) || 0;
+      const micro =
+        row.inputTokens * price(model.inputPricePerMtok) +
+        row.outputTokens * price(model.outputPricePerMtok) +
+        row.cacheReadTokens * price(model.cacheReadPricePerMtok) +
+        row.cacheCreationTokens * price(model.cacheWritePricePerMtok);
+      peakMicro += micro;
+      const multiplier = price(model.offPeakMultiplier) || 1;
+      offPeakMicro += micro * (multiplier > 0 ? multiplier : 1);
+    }
+    return {
+      peak: peakMicro / MICRO_CREDITS_PER_CREDIT,
+      offPeak: offPeakMicro / MICRO_CREDITS_PER_CREDIT,
+      missingModels,
+    };
+  }, [aggregates, modelOptions]);
+
+  // 成本估算：按成本价库逐模型计算（币种随条目），不做 USD→CNY 折算。
+  const costEstimate = useMemo(() => {
+    const price = (value: string | undefined) => Number.parseFloat(value ?? "") || 0;
+    const rows = aggregates.map((row) => {
+      const entry = costPricing.find((item) => item.modelId === row.model);
+      if (!entry) {
+        return {
+          model: row.model,
+          currency: "",
+          inputCost: 0,
+          outputCost: 0,
+          cacheCost: 0,
+          peak: 0,
+          offPeak: 0,
+          missing: true,
+        };
+      }
+      const inputCost = (row.inputTokens * price(entry.inputCostPerMillion)) / 1_000_000;
+      const outputCost = (row.outputTokens * price(entry.outputCostPerMillion)) / 1_000_000;
+      const cacheCost =
+        (row.cacheReadTokens * price(entry.cacheReadCostPerMillion) +
+          row.cacheCreationTokens * price(entry.cacheCreationCostPerMillion)) /
+        1_000_000;
+      const peak = inputCost + outputCost + cacheCost;
+      const multiplier = price(entry.offPeakMultiplier) || 1;
+      return {
+        model: row.model,
+        currency: entry.currency || "USD",
+        inputCost,
+        outputCost,
+        cacheCost,
+        peak,
+        offPeak: peak * (multiplier > 0 ? multiplier : 1),
+        missing: false,
+      };
+    });
+    const totals = new Map<string, { peak: number; offPeak: number }>();
+    for (const row of rows) {
+      if (row.missing) continue;
+      const current = totals.get(row.currency) ?? { peak: 0, offPeak: 0 };
+      current.peak += row.peak;
+      current.offPeak += row.offPeak;
+      totals.set(row.currency, current);
+    }
+    return { rows, totals: [...totals.entries()] };
+  }, [aggregates, costPricing]);
+
   // 趋势图当前范围（上海墙钟），预设/粒度切换后随 days 一起刷新。
   const chartRange = useMemo(() => presetRange(chartPreset), [chartPreset]);
   const presetLabel = CHART_PRESETS.find((item) => item.value === chartPreset)?.label ?? "";
@@ -366,18 +517,66 @@ export function UsagePage() {
     return best;
   }, [teams]);
 
-  const maxDay = days.reduce((max, day) => Math.max(max, day.creditsMicro), 0);
-  const yStops = [1, 0.75, 0.5, 0.25, 0].map((k) =>
-    (maxDay * k / MICRO_CREDITS_PER_CREDIT).toLocaleString("en-US", { maximumFractionDigits: 2 }),
-  );
-
   // 缓存率图整体口径：分母用同一批趋势数据的 prompt token。
   const chartCacheRead = days.reduce((sum, day) => sum + day.cacheReadTokens, 0);
   const chartCachePrompt = days.reduce((sum, day) => sum + day.promptTokens, 0);
   const chartCacheRate = cacheRate(chartCacheRead, chartCachePrompt);
 
-  // x 轴标签：天 = MM-DD；小时 = HH 点。桶多时隔步显示，防止重叠。
-  const labelStep = Math.max(1, Math.ceil(days.length / 16));
+  const bucketLabel = (date: string): string =>
+    chartGranularity === "day" ? date.slice(5, 10) : date.slice(11, 16);
+
+  const costTrend: ChartDatum[] = days.map((day) => ({
+    label: bucketLabel(day.date),
+    credits: day.creditsMicro / MICRO_CREDITS_PER_CREDIT,
+    requests: day.requests,
+  }));
+  const costSeries: ChartSeries[] = [
+    {
+      key: "credits",
+      label: "费用 (¥)",
+      color: "var(--amber)",
+      kind: "bar",
+      format: (value) => value.toLocaleString("en-US", { maximumFractionDigits: 4 }),
+      axisFormat: (value) => value.toLocaleString("en-US", { maximumFractionDigits: 2 }),
+    },
+    {
+      key: "requests",
+      label: "请求数",
+      color: "var(--ink)",
+      kind: "line",
+      axis: "right",
+      format: (value) => Math.round(value).toLocaleString("en-US"),
+      axisFormat: (value) => Math.round(value).toLocaleString("en-US"),
+    },
+  ];
+
+  const cacheTrend: ChartDatum[] = days.map((day) => {
+    const rate = cacheRate(day.cacheReadTokens, day.promptTokens);
+    return {
+      label: bucketLabel(day.date),
+      cacheRead: day.cacheReadTokens,
+      hitRate: rate === null ? null : rate * 100,
+    };
+  });
+  const cacheSeries: ChartSeries[] = [
+    {
+      key: "cacheRead",
+      label: "缓存读 token",
+      color: "var(--amber)",
+      kind: "area",
+      format: (value) => compactToken(value),
+      axisFormat: (value) => compactToken(value),
+    },
+    {
+      key: "hitRate",
+      label: "命中率",
+      color: "var(--info)",
+      kind: "line",
+      axis: "right",
+      format: (value) => `${value.toFixed(1)}%`,
+      axisFormat: (value) => `${Math.round(value)}%`,
+    },
+  ];
 
   // 详情弹窗的设备显示：名称 + 客户端上报的系统；凭据已删除时回退 ID 前缀。
   const deviceLabel = (deviceTokenId: string | null): string => {
@@ -395,7 +594,7 @@ export function UsagePage() {
           <h1>用量</h1>
         </div>
         <p className="readout m0">
-          共 {totalRequests.toLocaleString("en-US")} 次请求 · {credits(totalCredits)} CR
+          共 {totalRequests.toLocaleString("en-US")} 次请求 · ¥{credits(totalCredits)}
         </p>
       </header>
 
@@ -425,16 +624,16 @@ export function UsagePage() {
             {compactToken(totalInputTokens + totalOutputTokens + totalCacheTokens)}
             <span className="unit">tok</span>
           </p>
-          <p className="stat-sub">
+          <p className="stat-sub" title="缓存命中按缓存读单价计费，通常远低于输入价">
             输入 {compactToken(totalInputTokens)} · 输出 {compactToken(totalOutputTokens)} · 缓存{" "}
-            {compactToken(totalCacheTokens)}
+            {compactToken(totalCacheTokens)}（按缓存价）
           </p>
         </div>
         <div className="stat-card">
           <p className="stat-label">总消费</p>
           <p className="stat-value stat-amber">
             {credits(totalCredits)}
-            <span className="unit">CR</span>
+            <span className="unit">¥</span>
           </p>
           <p className="stat-sub">网关计量 · 团队账单口径</p>
         </div>
@@ -447,6 +646,17 @@ export function UsagePage() {
           <p className="stat-sub">{avgLatencyS === null ? "范围内暂无带延迟记录" : "成功请求均值"}</p>
         </div>
       </section>
+
+      <p className="readout" style={{ margin: "0 0 18px" }}>
+        计费口径：总消费为请求发生时实扣，历史记录不随调价回写；缓存命中按缓存读单价计费，通常远低于输入价。
+        按当前模型售价估算：¥
+        {currentPriceEstimate.offPeak.toLocaleString("en-US", { maximumFractionDigits: 4 })}（全空闲）~ ¥
+        {currentPriceEstimate.peak.toLocaleString("en-US", { maximumFractionDigits: 4 })}（全高峰）
+        {currentPriceEstimate.missingModels > 0
+          ? `；${currentPriceEstimate.missingModels} 个模型未配置售价，未计入估算`
+          : ""}
+        。
+      </p>
 
       <section className="pane">
         <div className="pane-b">
@@ -506,6 +716,14 @@ export function UsagePage() {
                 { value: "aborted", label: "中断" },
               ]}
             />
+            <input
+              className="input"
+              style={{ width: 210 }}
+              value={filterRequestId}
+              onChange={(event) => setFilterRequestId(event.target.value)}
+              placeholder="request ID"
+              aria-label="按 request ID 筛选"
+            />
             <label className="form-row" style={{ gap: 6 }}>
               <span className="readout">从</span>
               <input className="input" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
@@ -516,6 +734,9 @@ export function UsagePage() {
             </label>
             <button className="btn btn-ghost" type="button" disabled={loading} onClick={() => void load()}>
               刷新
+            </button>
+            <button className="btn btn-ghost" type="button" onClick={() => void exportUsage()}>
+              导出 CSV
             </button>
           </div>
         </div>
@@ -550,42 +771,17 @@ export function UsagePage() {
               ]}
             />
             <span className="readout">
-              {chartRange.from} ~ {chartRange.to} · 单位 CR
+              {chartRange.from} ~ {chartRange.to} · 单位 ¥
             </span>
           </div>
         </div>
         <div className="pane-b">
-          <div className="chart">
-            <div className="chart-y" aria-hidden="true">
-              {yStops.map((stop, index) => (
-                <span key={index}>{stop}</span>
-              ))}
-            </div>
-            <div className="chart-main">
-              <div className="chart-plot">
-                <div className="bars">
-                  {days.map((day, index) => (
-                    <div
-                      key={day.date}
-                      className={index === days.length - 1 ? "bar today" : "bar"}
-                      style={{ "--h": `${maxDay > 0 ? (day.creditsMicro / maxDay) * 100 : 0}%` } as CSSProperties}
-                    />
-                  ))}
-                </div>
-              </div>
-              <div className="chart-x" aria-hidden="true">
-                {days.map((day, index) => (
-                  <span key={day.date} className="chart-x-label">
-                    {index % labelStep === 0
-                      ? chartGranularity === "day"
-                        ? day.date.slice(5, 10)
-                        : day.date.slice(11, 16)
-                      : ""}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
+          <ComposedTrendChart
+            data={costTrend}
+            series={costSeries}
+            height={280}
+            emptyText="所选范围暂无费用数据。"
+          />
         </div>
       </section>
 
@@ -599,42 +795,12 @@ export function UsagePage() {
           </span>
         </div>
         <div className="pane-b">
-          <div className="chart">
-            <div className="chart-y" aria-hidden="true">
-              <span>100%</span>
-              <span>75%</span>
-              <span>50%</span>
-              <span>25%</span>
-              <span>0</span>
-            </div>
-            <div className="chart-main">
-              <div className="chart-plot">
-                <div className="bars">
-                  {days.map((day, index) => {
-                    const rate = cacheRate(day.cacheReadTokens, day.promptTokens);
-                    return (
-                      <div
-                        key={day.date}
-                        className={index === days.length - 1 ? "bar today" : "bar"}
-                        style={{ "--h": `${rate === null ? 0 : rate * 100}%` } as CSSProperties}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="chart-x" aria-hidden="true">
-                {days.map((day, index) => (
-                  <span key={day.date}>
-                    {index % labelStep === 0
-                      ? chartGranularity === "day"
-                        ? day.date.slice(5, 10)
-                        : day.date.slice(11, 16)
-                      : ""}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
+          <ComposedTrendChart
+            data={cacheTrend}
+            series={cacheSeries}
+            height={240}
+            emptyText="所选范围暂无 prompt 数据。"
+          />
         </div>
       </section>
 
@@ -665,30 +831,13 @@ export function UsagePage() {
         <div className="pane-b donut-wrap">
           {donutSegments.total > 0 ? (
             <>
-              <div
-                className="donut-ring"
-                role="img"
-                aria-label={`按${donutBy === "tokens" ? "Token" : "实际消费"}的模型分布`}
-                style={{
-                  background: `conic-gradient(${(() => {
-                    let acc = 0;
-                    return donutSegments.segments
-                      .map((segment, index) => {
-                        const from = (acc / donutSegments.total) * 100;
-                        acc += segment.value;
-                        const to = (acc / donutSegments.total) * 100;
-                        return `var(--donut-color-${(index % 6) + 1}) ${from}% ${to}%`;
-                      })
-                      .join(", ");
-                  })()})`,
-                }}
-              >
-                <div className="donut-hole">
-                  <span className="donut-total">{compactToken(donutSegments.total)}</span>
-                  <span className="donut-total-unit">
-                    {donutBy === "tokens" ? "tok" : "CR"}
-                  </span>
-                </div>
+              <div style={{ width: 280, flex: "0 0 auto" }} role="img" aria-label={`按${donutBy === "tokens" ? "Token" : "实际消费"}的模型分布`}>
+                <ModelDonutChart
+                  segments={donutSegments.segments}
+                  total={donutSegments.total}
+                  totalUnit={donutBy === "tokens" ? "tok" : "¥"}
+                  formatValue={(value) => (donutBy === "tokens" ? compactToken(value) : credits(value))}
+                />
               </div>
               <ul className="donut-legend">
                 {donutSegments.segments.map((segment, index) => (
@@ -736,7 +885,7 @@ export function UsagePage() {
                   缓存命中率
                 </th>
                 <th scope="col" className="num">
-                  费用（CR）
+                  费用（¥）
                 </th>
               </tr>
             </thead>
@@ -789,6 +938,64 @@ export function UsagePage() {
                   </td>
                   <td className="num">{credits(totalCredits)}</td>
                 </tr>
+              </tfoot>
+            ) : null}
+          </table>
+        </div>
+      </section>
+
+      <section className="pane d1">
+        <div className="pane-h">
+          <h2>成本估算</h2>
+          <span className="readout">按成本价库 · 币种随条目 · USD 不折算</span>
+        </div>
+        <div className="pane-b flush table-scroll">
+          <table className="table">
+            <thead>
+              <tr>
+                <th scope="col">模型</th>
+                <th scope="col">币种</th>
+                <th scope="col" className="num">输入成本</th>
+                <th scope="col" className="num">输出成本</th>
+                <th scope="col" className="num">缓存成本</th>
+                <th scope="col" className="num">合计（高峰 / 空闲）</th>
+              </tr>
+            </thead>
+            <tbody>
+              {costEstimate.rows.map((row) => (
+                <tr key={row.model}>
+                  <td>{row.model}</td>
+                  <td>{row.missing ? "—" : row.currency}</td>
+                  <td className="num">{row.missing ? "—" : money(row.inputCost, row.currency)}</td>
+                  <td className="num">{row.missing ? "—" : money(row.outputCost, row.currency)}</td>
+                  <td className="num">{row.missing ? "—" : money(row.cacheCost, row.currency)}</td>
+                  <td className="num">
+                    {row.missing
+                      ? "未配置成本价"
+                      : `${money(row.peak, row.currency)} / ${money(row.offPeak, row.currency)}`}
+                  </td>
+                </tr>
+              ))}
+              {costEstimate.rows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="readout">所选范围内暂无用量。</td>
+                </tr>
+              ) : null}
+            </tbody>
+            {costEstimate.totals.length > 0 ? (
+              <tfoot>
+                {costEstimate.totals.map(([currency, total]) => (
+                  <tr key={currency}>
+                    <td>合计 · {currency}</td>
+                    <td>{currency}</td>
+                    <td className="num" />
+                    <td className="num" />
+                    <td className="num" />
+                    <td className="num">
+                      {money(total.peak, currency)} / {money(total.offPeak, currency)}
+                    </td>
+                  </tr>
+                ))}
               </tfoot>
             ) : null}
           </table>
@@ -918,7 +1125,7 @@ export function UsagePage() {
                     {detail.cacheReadTokens.toLocaleString("en-US")} /{" "}
                     {detail.cacheCreationTokens.toLocaleString("en-US")}
                   </DetailRow>
-                  <DetailRow k="费用">{credits(detail.creditsMicro)} CR</DetailRow>
+                  <DetailRow k="费用">¥{credits(detail.creditsMicro)}</DetailRow>
                   <DetailRow k="延迟">{detail.latencyMs === null ? "—" : `${detail.latencyMs} ms`}</DetailRow>
                   <DetailRow k="客户端 IP">{detail.clientIp ?? "—"}</DetailRow>
                 </>

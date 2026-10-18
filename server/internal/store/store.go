@@ -78,6 +78,14 @@ type PlatformStore interface {
 	// 只作用于 enabled 行,返回本次是否触发停用。
 	ReportUpstreamFailure(ctx context.Context, id, reason string, threshold int64) (bool, error)
 	ReportUpstreamSuccess(ctx context.Context, id string) error
+	// RecoverUpstreamProvider:仅自动熔断的供应商可自动恢复；手动停用保持停用。
+	RecoverUpstreamProvider(ctx context.Context, id string, at time.Time) (bool, error)
+
+	// ---- upstream routes(渠道池) ----
+	ListUpstreamRoutes(ctx context.Context, modelID string, includeDisabled bool) ([]UpstreamRouteRecord, error)
+	CreateUpstreamRoute(ctx context.Context, input CreateUpstreamRouteInput) (*UpstreamRouteRecord, error)
+	UpdateUpstreamRoute(ctx context.Context, id string, patch UpdateUpstreamRoutePatch) (*UpstreamRouteRecord, error)
+	DeleteUpstreamRoute(ctx context.Context, id string) (bool, error)
 
 	// ---- model pricing(内容版本乐观锁,KV 承载) ----
 	GetModelPricing(ctx context.Context) (*PricingDocSnapshot, error)
@@ -96,11 +104,37 @@ type PlatformStore interface {
 	// ---- usage ----
 	InsertUsage(ctx context.Context, record UsageRecord) error
 	ListUsage(ctx context.Context, filter UsageFilter) ([]UsageRecord, error)
+	// ListUsageForExport:导出专用，允许超过列表默认 500 条上限。
+	ListUsageForExport(ctx context.Context, filter UsageFilter, max int64) ([]UsageRecord, error)
 	AggregateUsage(ctx context.Context, filter UsageFilter) ([]UsageAggregateRow, error)
 	// 时间桶按上海墙钟(UTC+8)切分;空桶不返回,按桶起点升序。
+	// 无维度过滤时优先读小时 rollup，带维度过滤时回退明细。
 	AggregateUsageSeries(ctx context.Context, filter UsageFilter, granularity UsageSeriesGranularity) ([]UsageSeriesRow, error)
 
 	// ---- quota(Gateway 临界区) ----
+	// 原子「检查 + 预留 + 幂等占位」:request_id 重复返回 duplicate。
+	ReserveQuota(ctx context.Context, input ReserveQuotaInput) (ReserveResult, error)
+	// SettleReservation:同事务完成预留状态、团队额度与 usage 落库；重复结算幂等。
+	SettleReservation(ctx context.Context, reservationID string, record UsageRecord) error
+	// ReleaseReservationByID:仅 reserved 状态可释放，释放团队预留。
+	ReleaseReservationByID(ctx context.Context, reservationID string, at time.Time) error
+	// ExpireStaleReservations:回收过期预留，返回本次回收条数。
+	ExpireStaleReservations(ctx context.Context, before time.Time) (int64, error)
+	ListOpenReservations(ctx context.Context, limit int64) ([]QuotaReservationRecord, error)
+
+	// ---- ops / alerts ----
+	OpsOverview(ctx context.Context, since time.Time) (*OpsOverview, error)
+	OpsSeries(ctx context.Context, since time.Time, bucketMinutes int64) ([]OpsSeriesPoint, error)
+	ListAlertRules(ctx context.Context) ([]AlertRuleRecord, error)
+	UpsertAlertRule(ctx context.Context, input UpsertAlertRuleInput) (*AlertRuleRecord, error)
+	DeleteAlertRule(ctx context.Context, id string) (bool, error)
+	OpenAlertEventForRule(ctx context.Context, ruleID string) (*AlertEventRecord, error)
+	InsertAlertEvent(ctx context.Context, rule AlertRuleRecord, value, message string, at time.Time) (*AlertEventRecord, error)
+	ResolveAlertEvent(ctx context.Context, id string, at time.Time) (bool, error)
+	ResolveOpenAlertEventsForRule(ctx context.Context, ruleID string, at time.Time) (int64, error)
+	ListAlertEvents(ctx context.Context, status string, limit int64) ([]AlertEventRecord, error)
+
+	// ---- legacy quota helpers(旧调用方/测试保留) ----
 	// 原子「检查 + 预留」:disabled_at 为空且(unlimited 或配额足够)时加入预留。
 	TryReserveQuota(ctx context.Context, teamID string, micro int64) (bool, error)
 	// 结算与账本写入必须同事务:预留转实扣 + usage 落库。

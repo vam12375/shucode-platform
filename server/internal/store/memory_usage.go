@@ -191,6 +191,9 @@ func (s *memoryStore) SetConfigValue(_ context.Context, key string, value []byte
 func (s *memoryStore) InsertUsage(_ context.Context, record UsageRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if record.ID == "" {
+		record.ID = uuid.NewString()
+	}
 	s.usage = append(s.usage, record)
 	return nil
 }
@@ -310,6 +313,9 @@ func usageMatches(record UsageRecord, filter UsageFilter) bool {
 	if filter.Status != "" && record.Status != filter.Status {
 		return false
 	}
+	if filter.RequestID != "" && record.RequestID != filter.RequestID {
+		return false
+	}
 	if filter.From != nil && record.CreatedAt.Before(*filter.From) {
 		return false
 	}
@@ -396,6 +402,9 @@ func (s *memoryStore) TryReserveQuota(_ context.Context, teamID string, micro in
 func (s *memoryStore) SettleUsage(_ context.Context, record UsageRecord, reservedMicro int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if record.ID == "" {
+		record.ID = uuid.NewString()
+	}
 	if team, ok := s.teams[record.TeamID]; ok {
 		reserved, err := credits.ParseCreditsToMicro(team.ReservedCredits)
 		if err != nil {

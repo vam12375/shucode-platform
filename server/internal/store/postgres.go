@@ -197,14 +197,16 @@ func (s *PostgresStore) DeleteSessionsForUser(ctx context.Context, userID string
 
 // ---- teams ----
 
-const teamCols = `id::text, name, quota_credits::text, used_credits::text, reserved_credits::text, unlimited, created_at, disabled_at`
+const teamCols = `id::text, name, quota_credits::text, used_credits::text, reserved_credits::text, unlimited,
+	rpm_limit, tpm_limit, concurrency_limit, created_at, disabled_at`
 
 func scanTeamTeamRow(rows pgx.Rows) (*TeamRecord, error) {
 	var (
 		t                TeamRecord
 		quota, used, res *string
 	)
-	if err := rows.Scan(&t.ID, &t.Name, &quota, &used, &res, &t.Unlimited, &t.CreatedAt, &t.DisabledAt); err != nil {
+	if err := rows.Scan(&t.ID, &t.Name, &quota, &used, &res, &t.Unlimited,
+		&t.RPMLimit, &t.TPMLimit, &t.ConcurrencyLimit, &t.CreatedAt, &t.DisabledAt); err != nil {
 		return nil, err
 	}
 	t.QuotaCredits, t.UsedCredits, t.ReservedCredits = derefString2(quota), derefString2(used), derefString2(res)
@@ -257,7 +259,8 @@ func (s *PostgresStore) GetTeam(ctx context.Context, id string) (*TeamRecord, er
 
 func (s *PostgresStore) ListTeams(ctx context.Context) ([]TeamWithUsage, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT t.id::text, t.name, t.quota_credits::text, t.used_credits::text, t.reserved_credits::text, t.unlimited, t.created_at, t.disabled_at,
+		SELECT t.id::text, t.name, t.quota_credits::text, t.used_credits::text, t.reserved_credits::text, t.unlimited,
+			t.rpm_limit, t.tpm_limit, t.concurrency_limit, t.created_at, t.disabled_at,
 			(SELECT count(*)::int FROM team_members m WHERE m.team_id = t.id) AS member_count
 		FROM teams t
 		ORDER BY t.created_at ASC`)
@@ -274,7 +277,8 @@ func (s *PostgresStore) ListTeams(ctx context.Context) ([]TeamWithUsage, error) 
 			reserved    *string
 			memberCount int64
 		)
-		if err := rows.Scan(&team.ID, &team.Name, &quota, &used, &reserved, &team.Unlimited, &team.CreatedAt, &team.DisabledAt, &memberCount); err != nil {
+		if err := rows.Scan(&team.ID, &team.Name, &quota, &used, &reserved, &team.Unlimited,
+			&team.RPMLimit, &team.TPMLimit, &team.ConcurrencyLimit, &team.CreatedAt, &team.DisabledAt, &memberCount); err != nil {
 			return nil, err
 		}
 		team.QuotaCredits, team.UsedCredits, team.ReservedCredits = derefString2(quota), derefString2(used), derefString2(reserved)
@@ -289,10 +293,14 @@ func (s *PostgresStore) UpdateTeam(ctx context.Context, id string, patch UpdateT
 			name = COALESCE($2, name),
 			quota_credits = COALESCE($3::numeric, quota_credits),
 			unlimited = COALESCE($4::boolean, unlimited),
+			rpm_limit = COALESCE($7::integer, rpm_limit),
+			tpm_limit = COALESCE($8::integer, tpm_limit),
+			concurrency_limit = COALESCE($9::integer, concurrency_limit),
 			disabled_at = CASE WHEN $5::boolean THEN $6::timestamptz ELSE disabled_at END
 		WHERE id = $1::uuid
 		RETURNING `+teamCols,
-		id, patch.Name, patch.QuotaCredits, patch.Unlimited, patch.HasDisabled, nullableTime(patch.DisabledAt))
+		id, patch.Name, patch.QuotaCredits, patch.Unlimited, patch.HasDisabled, nullableTime(patch.DisabledAt),
+		patch.RPMLimit, patch.TPMLimit, patch.ConcurrencyLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +358,8 @@ func (s *PostgresStore) RemoveMember(ctx context.Context, teamID, userID string)
 func (s *PostgresStore) ListTeamsForUser(ctx context.Context, userID string) ([]TeamMembership, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT m.role AS member_role,
-			t.id::text, t.name, t.quota_credits::text, t.used_credits::text, t.reserved_credits::text, t.unlimited, t.created_at, t.disabled_at
+			t.id::text, t.name, t.quota_credits::text, t.used_credits::text, t.reserved_credits::text, t.unlimited,
+			t.rpm_limit, t.tpm_limit, t.concurrency_limit, t.created_at, t.disabled_at
 		FROM team_members m
 		JOIN teams t ON t.id = m.team_id
 		WHERE m.user_id = $1::uuid
@@ -368,7 +377,8 @@ func (s *PostgresStore) ListTeamsForUser(ctx context.Context, userID string) ([]
 			used     *string
 			reserved *string
 		)
-		if err := rows.Scan(&role, &member.ID, &member.Name, &quota, &used, &reserved, &member.Unlimited, &member.CreatedAt, &member.DisabledAt); err != nil {
+		if err := rows.Scan(&role, &member.ID, &member.Name, &quota, &used, &reserved, &member.Unlimited,
+			&member.RPMLimit, &member.TPMLimit, &member.ConcurrencyLimit, &member.CreatedAt, &member.DisabledAt); err != nil {
 			return nil, err
 		}
 		member.QuotaCredits, member.UsedCredits, member.ReservedCredits = derefString2(quota), derefString2(used), derefString2(reserved)

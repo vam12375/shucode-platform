@@ -72,6 +72,7 @@ func New(deps *Deps) *gin.Engine {
 	registerPublicRoutes(router, deps)
 	registerConsoleRoutes(router, deps)
 	registerConsoleOpsRoutes(router, deps)
+	registerConsoleOpsExtRoutes(router, deps)
 	return router
 }
 

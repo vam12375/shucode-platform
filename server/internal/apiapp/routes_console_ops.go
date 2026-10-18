@@ -2,6 +2,7 @@ package apiapp
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -595,6 +596,21 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 				}
 				cacheCreation = parsed
 			}
+			offPeak := ""
+			if rawMultiplier, exists := record["offPeakMultiplier"]; exists && rawMultiplier != nil && rawMultiplier != "" {
+				parsed, okPrice := parsePriceString(rawMultiplier)
+				if !okPrice {
+					c.JSON(400, fail(400, "offPeakMultiplier 必须是非负数"))
+					return
+				}
+				multiplier, err := strconv.ParseFloat(parsed, 64)
+				if err != nil || multiplier > 10 {
+					c.JSON(400, fail(400, "offPeakMultiplier 不能超过 10"))
+					return
+				}
+				offPeak = parsed
+			}
+			currency, _ := trimmedOptional(record["currency"], 8)
 			if _, exists := byID[modelID]; !exists {
 				order = append(order, modelID)
 			}
@@ -602,6 +618,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 				ModelID: modelID, DisplayName: displayName,
 				InputCostPerMillion: input, OutputCostPerMillion: output,
 				CacheReadCostPerMillion: cacheRead, CacheCreationCostPerMillion: cacheCreation,
+				OffPeakMultiplier: offPeak, Currency: currency,
 			}
 		}
 		entries := make([]pricing.PricingEntry, 0, len(order))
@@ -713,6 +730,13 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 			}
 			filter.ProviderID = providerRaw
 		}
+		if requestID := strings.TrimSpace(c.Query("requestId")); requestID != "" {
+			if len(requestID) > 200 {
+				c.JSON(400, fail(400, "requestId 过长"))
+				return filter, false, false
+			}
+			filter.RequestID = requestID
+		}
 		return filter, true, true
 	}
 
@@ -820,6 +844,49 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 			rows = append(rows, toPublicSeries(row))
 		}
 		c.JSON(200, okData(gin.H{"series": rows}))
+	})
+
+	group.GET("/usage/export", func(c *gin.Context) {
+		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+			return
+		}
+		ctx := c.Request.Context()
+		filter, okFilter, _ := parseUsageQueryFilter(c)
+		if !okFilter {
+			return
+		}
+		records, err := deps.Store.ListUsageForExport(ctx, filter, 100_000)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		filename := "usage-" + deps.Now().UTC().Format("20060102-150405") + ".csv"
+		c.Header("content-type", "text/csv; charset=utf-8")
+		c.Header("content-disposition", `attachment; filename="`+filename+`"`)
+		c.Header("cache-control", "no-store")
+		// Excel 识别 UTF-8 需要 BOM；避免中文表头乱码。
+		_, _ = c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
+		writer := csv.NewWriter(c.Writer)
+		_ = writer.Write([]string{
+			"时间(UTC)", "request_id", "用户ID", "团队ID", "设备ID", "模型", "上游模型", "供应商ID",
+			"输入Token", "输出Token", "缓存读", "缓存写", "费用microCR", "状态", "错误类型", "客户端IP", "延迟ms",
+		})
+		for i := range records {
+			record := records[i]
+			latency := ""
+			if record.LatencyMs != nil {
+				latency = strconv.FormatInt(*record.LatencyMs, 10)
+			}
+			_ = writer.Write([]string{
+				isoString(record.CreatedAt), record.RequestID, record.UserID, record.TeamID,
+				record.DeviceTokenID, record.Model, record.UpstreamModel, record.ProviderID,
+				strconv.FormatInt(record.InputTokens, 10), strconv.FormatInt(record.OutputTokens, 10),
+				strconv.FormatInt(record.CacheReadTokens, 10), strconv.FormatInt(record.CacheCreationTokens, 10),
+				strconv.FormatInt(record.CreditsMicro, 10), string(record.Status), record.ErrorType,
+				record.ClientIP, latency,
+			})
+		}
+		writer.Flush()
 	})
 
 	// ---- devices ----

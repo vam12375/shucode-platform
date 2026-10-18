@@ -157,6 +157,19 @@ export function ProvidersPage() {
     }
   };
 
+  const recoverProvider = async (provider: ProviderRow): Promise<void> => {
+    setBusy(true);
+    try {
+      await api(`/providers/${provider.id}/recover`, { method: "POST" });
+      await load();
+      toastOk(`已恢复「${provider.name}」的调度`, "已恢复");
+    } catch (actionError) {
+      toastErr(actionError instanceof Error ? actionError.message : "恢复失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const remove = async (provider: ProviderRow): Promise<void> => {
     const answer = await confirmDialog({
       k: "删除供应商",
@@ -390,6 +403,15 @@ export function ProvidersPage() {
                         >
                           获取模型列表
                         </button>
+                        {provider.disabledMode === "auto" && !provider.enabled ? (
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            disabled={busy}
+                            onClick={() => void recoverProvider(provider)}
+                          >
+                            恢复调度
+                          </button>
+                        ) : null}
                         <button
                           className="btn btn-ghost btn-sm"
                           disabled={busy}

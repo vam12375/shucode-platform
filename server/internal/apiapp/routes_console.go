@@ -274,6 +274,21 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			}
 			patch.Unlimited = &unlimited
 		}
+		for key, target := range map[string]**int64{
+			"rpmLimit": &patch.RPMLimit, "tpmLimit": &patch.TPMLimit, "concurrencyLimit": &patch.ConcurrencyLimit,
+		} {
+			raw, exists := body[key]
+			if !exists {
+				continue
+			}
+			number, okNumber := raw.(float64)
+			if !okNumber || number < 0 || number > 1_000_000 || number != float64(int64(number)) {
+				c.JSON(400, fail(400, key+" 必须是非负整数"))
+				return
+			}
+			value := int64(number)
+			*target = &value
+		}
 		teamID := c.Param("id")
 		// 额度调整流水:旧值必须在 update 之前取标量快照。
 		previousTeam, err := deps.Store.GetTeam(ctx, teamID)
@@ -305,8 +320,18 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 				return
 			}
 		}
+		changed := []string{}
 		if patch.Name != nil && *patch.Name != previousName {
-			writeAudit(ctx, deps, admin, "team.update", "team", team.ID, map[string]any{"fields": []string{"name"}})
+			changed = append(changed, "name")
+		}
+		if patch.RPMLimit != nil || patch.TPMLimit != nil || patch.ConcurrencyLimit != nil {
+			changed = append(changed, "limits")
+		}
+		if patch.QuotaCredits != nil || patch.Unlimited != nil {
+			changed = append(changed, "quota")
+		}
+		if len(changed) > 0 {
+			writeAudit(ctx, deps, admin, "team.update", "team", team.ID, map[string]any{"fields": changed})
 		}
 		deps.ConfigEvents.Emit(events.DomainTeams)
 		c.JSON(200, okData(gin.H{"team": toPublicTeam(team)}))
@@ -725,6 +750,20 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			}
 			cacheWrite = parsed
 		}
+		offPeak := "1.000000"
+		if raw, exists := body["offPeakMultiplier"]; exists {
+			parsed, okPrice := parsePriceString(raw)
+			if !okPrice {
+				c.JSON(400, fail(400, "offPeakMultiplier 必须是非负数"))
+				return
+			}
+			multiplier, err := strconv.ParseFloat(parsed, 64)
+			if err != nil || multiplier > 10 {
+				c.JSON(400, fail(400, "offPeakMultiplier 不能超过 10"))
+				return
+			}
+			offPeak = parsed
+		}
 		enabled := true
 		if raw, exists := body["enabled"]; exists {
 			parsed, okBool := boolValue(raw)
@@ -770,7 +809,8 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			ProvideUpstreamProviderID: true, UpstreamProviderID: providerID,
 			InputPricePerMtok: inputPrice, OutputPricePerMtok: outputPrice,
 			CacheReadPricePerMtok: &cacheRead, CacheWritePricePerMtok: &cacheWrite,
-			Enabled: &enabled, SortOrder: &sortOrder,
+			OffPeakMultiplier: &offPeak,
+			Enabled:           &enabled, SortOrder: &sortOrder,
 		})
 		if err != nil {
 			internalError(c, deps, err)

@@ -17,17 +17,21 @@ const ModelPricingKVKey = "model_pricing_v1"
 // PricingEntry 字段名与 TS ModelPricingEntry 一致;ExtraKeys 保留未知字段
 // (TS parsePricingDoc 是透传的 entries 对象数组,只有 6 个字段的子集参与版本计算)。
 type PricingEntry struct {
-	ModelID                     string         `json:"modelId"`
-	DisplayName                 string         `json:"displayName"`
-	InputCostPerMillion         string         `json:"inputCostPerMillion"`
-	OutputCostPerMillion        string         `json:"outputCostPerMillion"`
-	CacheReadCostPerMillion     string         `json:"cacheReadCostPerMillion"`
-	CacheCreationCostPerMillion string         `json:"cacheCreationCostPerMillion"`
-	Extra                       map[string]any `json:"-"`
+	ModelID                     string `json:"modelId"`
+	DisplayName                 string `json:"displayName"`
+	InputCostPerMillion         string `json:"inputCostPerMillion"`
+	OutputCostPerMillion        string `json:"outputCostPerMillion"`
+	CacheReadCostPerMillion     string `json:"cacheReadCostPerMillion"`
+	CacheCreationCostPerMillion string `json:"cacheCreationCostPerMillion"`
+	// OffPeakMultiplier:空闲时段相对高峰价的倍率（DeepSeek 为 0.5）；空/1 = 无空闲折扣。
+	OffPeakMultiplier string `json:"offPeakMultiplier,omitempty"`
+	// Currency:成本币种（CNY/USD）；空 = 历史 USD 参考。
+	Currency string         `json:"currency,omitempty"`
+	Extra    map[string]any `json:"-"`
 }
 
 func (e PricingEntry) MarshalJSON() ([]byte, error) {
-	m := make(map[string]any, 6+len(e.Extra))
+	m := make(map[string]any, 8+len(e.Extra))
 	for _, kv := range []struct {
 		k string
 		v string
@@ -40,6 +44,12 @@ func (e PricingEntry) MarshalJSON() ([]byte, error) {
 		{"cacheCreationCostPerMillion", e.CacheCreationCostPerMillion},
 	} {
 		m[kv.k] = kv.v
+	}
+	if e.OffPeakMultiplier != "" {
+		m["offPeakMultiplier"] = e.OffPeakMultiplier
+	}
+	if e.Currency != "" {
+		m["currency"] = e.Currency
 	}
 	for k, v := range e.Extra {
 		m[k] = v
@@ -66,6 +76,8 @@ func ComputeDocVersion(entries []PricingEntry) string {
 				Output:      e.OutputCostPerMillion,
 				CR:          e.CacheReadCostPerMillion,
 				CW:          e.CacheCreationCostPerMillion,
+				OffPeak:     e.OffPeakMultiplier,
+				Currency:    e.Currency,
 			},
 		})
 	}
@@ -97,6 +109,9 @@ type stableEntryJSON struct {
 	Output      string `json:"output"`
 	CR          string `json:"cr"`
 	CW          string `json:"cw"`
+	// 追加字段用 omitempty：旧条目（无空闲倍率/币种）序列化结果不变，保持冻结 fixtures 的哈希。
+	OffPeak  string `json:"offPeak,omitempty"`
+	Currency string `json:"currency,omitempty"`
 }
 
 func extractValues(stable []stableEntry) []stableEntryJSON {
@@ -151,12 +166,15 @@ func ParseDoc(value any) *Snapshot {
 			OutputCostPerMillion:        str("outputCostPerMillion"),
 			CacheReadCostPerMillion:     str("cacheReadCostPerMillion"),
 			CacheCreationCostPerMillion: str("cacheCreationCostPerMillion"),
+			OffPeakMultiplier:           str("offPeakMultiplier"),
+			Currency:                    str("currency"),
 		}
 		extra := make(map[string]any, len(entryObj)-2)
 		for k, v := range entryObj {
 			switch k {
 			case "modelId", "displayName", "inputCostPerMillion", "outputCostPerMillion",
-				"cacheReadCostPerMillion", "cacheCreationCostPerMillion":
+				"cacheReadCostPerMillion", "cacheCreationCostPerMillion",
+				"offPeakMultiplier", "currency":
 				continue
 			default:
 				extra[k] = v

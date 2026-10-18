@@ -3,7 +3,7 @@ import { api } from "../api.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { EditableCell } from "../components/EditableCell.js";
 import { Select } from "../components/Select.js";
-import { Notice } from "../components/StatusChip.js";
+import { Chip, Notice } from "../components/StatusChip.js";
 
 interface ModelRow {
   modelId: string;
@@ -14,6 +14,7 @@ interface ModelRow {
   outputPricePerMtok: string;
   cacheReadPricePerMtok: string;
   cacheWritePricePerMtok: string;
+  offPeakMultiplier: string;
   enabled: boolean;
   sortOrder: number;
 }
@@ -21,6 +22,17 @@ interface ModelRow {
 interface ProviderOption {
   id: string;
   name: string;
+  enabled: boolean;
+}
+
+interface RouteRow {
+  id: string;
+  modelId: string;
+  providerId: string;
+  providerName: string;
+  upstreamModel: string;
+  priority: number;
+  weight: number;
   enabled: boolean;
 }
 
@@ -32,6 +44,8 @@ interface PricingEntry {
   outputCostPerMillion: string;
   cacheReadCostPerMillion: string;
   cacheCreationCostPerMillion: string;
+  offPeakMultiplier?: string;
+  currency?: string;
 }
 
 interface DraftState {
@@ -42,6 +56,7 @@ interface DraftState {
   outputPricePerMtok: string;
   cacheReadPricePerMtok: string;
   cacheWritePricePerMtok: string;
+  offPeakMultiplier: string;
   enabled: boolean;
   sortOrder: string;
 }
@@ -55,9 +70,19 @@ function toDraft(model: ModelRow): DraftState {
     outputPricePerMtok: model.outputPricePerMtok,
     cacheReadPricePerMtok: model.cacheReadPricePerMtok,
     cacheWritePricePerMtok: model.cacheWritePricePerMtok,
+    offPeakMultiplier: model.offPeakMultiplier || "1.000000",
     enabled: model.enabled,
     sortOrder: String(model.sortOrder),
   };
+}
+
+/** 成本价展示：空闲价 = 高峰价 × 倍率。 */
+function formatCost(value: string, multiplier: string | undefined): string {
+  const price = Number.parseFloat(value) || 0;
+  const factor = Number.parseFloat(multiplier ?? "") || 1;
+  return factor === 1
+    ? price.toLocaleString("en-US", { maximumFractionDigits: 6 })
+    : `${price.toLocaleString("en-US", { maximumFractionDigits: 6 })} / ${(price * factor).toLocaleString("en-US", { maximumFractionDigits: 6 })}`;
 }
 
 export function ModelsPage() {
@@ -73,8 +98,16 @@ export function ModelsPage() {
   const [importModels, setImportModels] = useState<string[] | null>(null);
   const [importSelected, setImportSelected] = useState<Set<string>>(new Set());
   const [importBusy, setImportBusy] = useState(false);
+  // 渠道池：按模型维护多条上游路由（priority 越小越优先，同优先级按 weight 加权）。
+  const [routeModelId, setRouteModelId] = useState("");
+  const [routes, setRoutes] = useState<RouteRow[]>([]);
+  const [routeProviderId, setRouteProviderId] = useState("");
+  const [routeUpstreamModel, setRouteUpstreamModel] = useState("");
+  const [routePriority, setRoutePriority] = useState("100");
+  const [routeWeight, setRouteWeight] = useState("1");
+  const [routeBusy, setRouteBusy] = useState(false);
   // 点编辑单元格：同一时刻只编辑一格（Enter/失焦收起，Esc 还原草稿）。
-  type ModelsEditableField = "displayName" | "upstreamModel" | "inputPricePerMtok" | "outputPricePerMtok" | "cacheReadPricePerMtok" | "cacheWritePricePerMtok" | "sortOrder";
+  type ModelsEditableField = "displayName" | "upstreamModel" | "inputPricePerMtok" | "outputPricePerMtok" | "cacheReadPricePerMtok" | "cacheWritePricePerMtok" | "offPeakMultiplier" | "sortOrder";
   const [editingCell, setEditingCell] = useState<{ modelId: string; field: ModelsEditableField } | null>(null);
 
   const load = useCallback(async () => {
@@ -100,6 +133,83 @@ export function ModelsPage() {
     void load();
   }, [load]);
 
+  const loadRoutes = useCallback(async (modelId: string): Promise<void> => {
+    if (!modelId) {
+      setRoutes([]);
+      return;
+    }
+    try {
+      const data = await api<{ routes: RouteRow[] }>(`/models/${encodeURIComponent(modelId)}/routes`);
+      setRoutes(data.routes);
+    } catch (loadError) {
+      toastErr(loadError instanceof Error ? loadError.message : "路由加载失败");
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRoutes(routeModelId);
+  }, [routeModelId, loadRoutes]);
+
+  const addRoute = async (): Promise<void> => {
+    if (!routeModelId || !routeProviderId) return;
+    setRouteBusy(true);
+    try {
+      await api(`/models/${encodeURIComponent(routeModelId)}/routes`, {
+        method: "POST",
+        body: JSON.stringify({
+          providerId: routeProviderId,
+          upstreamModel: routeUpstreamModel.trim(),
+          priority: Number.parseInt(routePriority, 10) || 0,
+          weight: Number.parseInt(routeWeight, 10) || 1,
+        }),
+      });
+      setRouteProviderId("");
+      setRouteUpstreamModel("");
+      await loadRoutes(routeModelId);
+      toastOk("已添加路由", "已添加");
+    } catch (actionError) {
+      toastErr(actionError instanceof Error ? actionError.message : "添加路由失败");
+    } finally {
+      setRouteBusy(false);
+    }
+  };
+
+  const toggleRoute = async (route: RouteRow): Promise<void> => {
+    setRouteBusy(true);
+    try {
+      await api(`/routes/${route.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: !route.enabled }),
+      });
+      await loadRoutes(routeModelId);
+    } catch (actionError) {
+      toastErr(actionError instanceof Error ? actionError.message : "更新路由失败");
+    } finally {
+      setRouteBusy(false);
+    }
+  };
+
+  const deleteRoute = async (route: RouteRow): Promise<void> => {
+    const answer = await confirmDialog({
+      k: "删除路由",
+      title: `删除 ${route.providerName} 的路由？`,
+      message: "删除后该供应商不再参与此模型的调度；至少保留一条路由或模型自身的供应商绑定。",
+      confirmText: "删除",
+      danger: true,
+    });
+    if (!answer.confirmed) return;
+    setRouteBusy(true);
+    try {
+      await api(`/routes/${route.id}`, { method: "DELETE" });
+      await loadRoutes(routeModelId);
+      toastOk("已删除路由", "已删除");
+    } catch (actionError) {
+      toastErr(actionError instanceof Error ? actionError.message : "删除路由失败");
+    } finally {
+      setRouteBusy(false);
+    }
+  };
+
   const save = async (modelId: string): Promise<void> => {
     const draft = drafts[modelId];
     if (!draft) return;
@@ -115,6 +225,7 @@ export function ModelsPage() {
           outputPricePerMtok: draft.outputPricePerMtok,
           cacheReadPricePerMtok: draft.cacheReadPricePerMtok,
           cacheWritePricePerMtok: draft.cacheWritePricePerMtok,
+          offPeakMultiplier: draft.offPeakMultiplier || "1",
           enabled: draft.enabled,
           sortOrder: Number.parseInt(draft.sortOrder, 10) || 0,
         }),
@@ -233,6 +344,7 @@ export function ModelsPage() {
           displayName: pricing?.displayName ?? modelId,
           inputPricePerMtok: pricing?.inputCostPerMillion ?? "0",
           outputPricePerMtok: pricing?.outputCostPerMillion ?? "0",
+          offPeakMultiplier: pricing?.offPeakMultiplier ?? "1",
           ...(pricing
             ? {
                 cacheReadPricePerMtok: pricing.cacheReadCostPerMillion,
@@ -287,8 +399,9 @@ export function ModelsPage() {
             </button>
           </div>
           <p className="readout" style={{ margin: 0, marginTop: 10 }}>
-            价格单位：每 1M token 的 credit 数 · 上游模型留空按模型 ID 转发。模型清单随用户级配置下发到客户端；
-            命中「模型定价库」的模型在添加/导入时自动带价。
+            售价单位：¥ / 1M token（1 credit = ¥1）· 空闲倍率用于按北京时间高峰窗口自动打折 ·
+            上游模型留空按模型 ID 转发。模型卡片同时展示定价库里的成本价（只读），便于核对毛利。
+            DeepSeek 已按官方人民币价核对；其他模型若原为 USD 参考价，请按供应商人民币价目更新后再启用。
           </p>
           <div className="form-row" style={{ marginTop: 12 }}>
             <span className="readout">从上游导入：</span>
@@ -380,6 +493,7 @@ export function ModelsPage() {
           <div className="model-grid">
             {models.map((model) => {
               const draft = drafts[model.modelId] ?? toDraft(model);
+              const cost = pricingMap.get(model.modelId);
               return (
                 <article
                   key={model.modelId}
@@ -435,25 +549,39 @@ export function ModelsPage() {
                   </div>
                   <div className="model-card-row">
                     <label className="field">
-                      <span className="field-label">入价</span>
+                      <span className="field-label">售价·入（¥/1M）</span>
                       <EditableCell {...editableCellProps(model.modelId, "inputPricePerMtok", true)} />
                     </label>
                     <label className="field">
-                      <span className="field-label">出价</span>
+                      <span className="field-label">售价·出（¥/1M）</span>
                       <EditableCell {...editableCellProps(model.modelId, "outputPricePerMtok", true)} />
                     </label>
                     <label className="field">
-                      <span className="field-label">缓存读</span>
+                      <span className="field-label">售价·缓存读</span>
                       <EditableCell {...editableCellProps(model.modelId, "cacheReadPricePerMtok", true)} />
                     </label>
                     <label className="field">
-                      <span className="field-label">缓存写</span>
+                      <span className="field-label">售价·缓存写</span>
                       <EditableCell {...editableCellProps(model.modelId, "cacheWritePricePerMtok", true)} />
+                    </label>
+                    <label className="field" style={{ flex: "0.8 1 80px" }}>
+                      <span className="field-label">空闲倍率</span>
+                      <EditableCell {...editableCellProps(model.modelId, "offPeakMultiplier", true)} />
                     </label>
                     <label className="field" style={{ flex: "0.8 1 64px" }}>
                       <span className="field-label">排序</span>
                       <EditableCell {...editableCellProps(model.modelId, "sortOrder", true)} />
                     </label>
+                  </div>
+                  <div className="model-card-row">
+                    <span className="field-label" style={{ flex: "0 0 auto" }}>
+                      成本价（{cost?.currency || "USD（历史）"}，高峰 / 空闲）
+                    </span>
+                    <span className="readout" style={{ margin: 0 }}>
+                      {cost
+                        ? `入 ${formatCost(cost.inputCostPerMillion, cost.offPeakMultiplier)} · 出 ${formatCost(cost.outputCostPerMillion, cost.offPeakMultiplier)} · 缓存读 ${formatCost(cost.cacheReadCostPerMillion, cost.offPeakMultiplier)}`
+                        : "未在定价库中配置成本价"}
+                    </span>
                   </div>
                 </article>
               );
@@ -462,6 +590,130 @@ export function ModelsPage() {
               <div className="readout">还没有模型，先添加一个或从上方「从上游导入」批量建档。</div>
             ) : null}
           </div>
+        </div>
+      </section>
+
+      <section className="pane d2">
+        <div className="pane-h">
+          <h2>路由池</h2>
+          <span className="readout">同一模型多供应商容灾 · priority 小者优先</span>
+        </div>
+        <div className="pane-b">
+          <div className="form-row" style={{ marginBottom: 12 }}>
+            <Select
+              ariaLabel="选择模型"
+              style={{ width: 240 }}
+              value={routeModelId}
+              onChange={setRouteModelId}
+              options={[
+                { value: "", label: "选择模型…" },
+                ...models.map((model) => ({ value: model.modelId, label: model.displayName })),
+              ]}
+            />
+            <Select
+              ariaLabel="选择供应商"
+              style={{ width: 190 }}
+              value={routeProviderId}
+              onChange={setRouteProviderId}
+              options={[
+                { value: "", label: "选择供应商…" },
+                ...providers.map((provider) => ({
+                  value: provider.id,
+                  label: provider.enabled ? provider.name : `${provider.name}（已停用）`,
+                })),
+              ]}
+            />
+            <input
+              className="input"
+              style={{ width: 190 }}
+              value={routeUpstreamModel}
+              onChange={(event) => setRouteUpstreamModel(event.target.value)}
+              placeholder="上游模型（留空按模型 ID）"
+              aria-label="路由上游模型"
+            />
+            <input
+              className="input num"
+              style={{ width: 90 }}
+              value={routePriority}
+              onChange={(event) => setRoutePriority(event.target.value)}
+              placeholder="priority"
+              aria-label="路由优先级"
+            />
+            <input
+              className="input num"
+              style={{ width: 80 }}
+              value={routeWeight}
+              onChange={(event) => setRouteWeight(event.target.value)}
+              placeholder="weight"
+              aria-label="路由权重"
+            />
+            <button
+              className="btn"
+              type="button"
+              disabled={routeBusy || !routeModelId || !routeProviderId}
+              onClick={() => void addRoute()}
+            >
+              添加路由
+            </button>
+          </div>
+          {routeModelId ? (
+            <div className="table-scroll">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th scope="col">供应商</th>
+                    <th scope="col">上游模型</th>
+                    <th scope="col" className="num">优先级</th>
+                    <th scope="col" className="num">权重</th>
+                    <th scope="col">状态</th>
+                    <th scope="col" aria-label="操作" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {routes.map((route) => (
+                    <tr key={route.id}>
+                      <td>{route.providerName}</td>
+                      <td>{route.upstreamModel || "（按模型 ID）"}</td>
+                      <td className="num">{route.priority}</td>
+                      <td className="num">{route.weight}</td>
+                      <td>
+                        <Chip tone={route.enabled ? "ok" : "mute"}>{route.enabled ? "启用" : "停用"}</Chip>
+                      </td>
+                      <td>
+                        <div className="form-row" style={{ gap: 6 }}>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            type="button"
+                            disabled={routeBusy}
+                            onClick={() => void toggleRoute(route)}
+                          >
+                            {route.enabled ? "停用" : "启用"}
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            type="button"
+                            disabled={routeBusy}
+                            onClick={() => void deleteRoute(route)}
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {routes.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="readout">
+                        该模型还没有路由池，网关会回退到「模型清单」里绑定的单一供应商。
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="readout" style={{ margin: 0 }}>选择模型后管理其上游路由池。</p>
+          )}
         </div>
       </section>
     </div>

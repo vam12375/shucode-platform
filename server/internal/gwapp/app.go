@@ -23,6 +23,8 @@ import (
 	"github.com/vam12375/shucode-platform/server/internal/contracts"
 	"github.com/vam12375/shucode-platform/server/internal/credits"
 	"github.com/vam12375/shucode-platform/server/internal/crypto"
+	"github.com/vam12375/shucode-platform/server/internal/pricing"
+	"github.com/vam12375/shucode-platform/server/internal/ratelimit"
 	"github.com/vam12375/shucode-platform/server/internal/store"
 )
 
@@ -40,6 +42,8 @@ type Deps struct {
 	Logger     *slog.Logger
 	SecretBox  *crypto.SecretBox // PLATFORM_SECRET_KEY 缺省时为 nil(绑定供应商密文不可解析)
 	Trusted    trustedProxies
+	// RateLimiter 为 nil 时跳过团队级限流（测试/极简部署）。
+	RateLimiter *ratelimit.GatewayLimiter
 }
 
 type errorResponder func(c *gin.Context, status int, typ, message string)
@@ -294,7 +298,7 @@ func handleModelsRequest(c *gin.Context, deps Deps) {
 	c.JSON(200, gin.H{"object": "list", "data": data})
 }
 
-func priceRates(model *store.PlatformModelRecord) credits.ModelPriceRates {
+func priceRates(model *store.PlatformModelRecord, at time.Time, holidays map[string]bool) credits.ModelPriceRates {
 	parse := func(value string) float64 {
 		parsed, err := strconv.ParseFloat(value, 64)
 		if err != nil || parsed < 0 {
@@ -302,11 +306,16 @@ func priceRates(model *store.PlatformModelRecord) credits.ModelPriceRates {
 		}
 		return parsed
 	}
+	multiplier := 1.0
+	if parsed := parse(model.OffPeakMultiplier); parsed > 0 {
+		multiplier = parsed
+	}
+	factor := pricing.OffPeakMultiplierAt(at, multiplier, holidays)
 	return credits.ModelPriceRates{
-		InputPerMtok:      parse(model.InputPricePerMtok),
-		OutputPerMtok:     parse(model.OutputPricePerMtok),
-		CacheReadPerMtok:  parse(model.CacheReadPricePerMtok),
-		CacheWritePerMtok: parse(model.CacheWritePricePerMtok),
+		InputPerMtok:      parse(model.InputPricePerMtok) * factor,
+		OutputPerMtok:     parse(model.OutputPricePerMtok) * factor,
+		CacheReadPerMtok:  parse(model.CacheReadPricePerMtok) * factor,
+		CacheWritePerMtok: parse(model.CacheWritePricePerMtok) * factor,
 	}
 }
 
@@ -398,88 +407,12 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	}
 	stream := spec.isStream(body)
 	maxTokens := spec.readMaxTokens(body)
-	rates := priceRates(model)
-	upstreamModel := strings.TrimSpace(model.UpstreamModel)
-	if upstreamModel == "" {
-		upstreamModel = model.ModelID
-	}
+	rates := priceRates(model, deps.Now(), deps.Env.PeakHoursHolidays)
 
-	// ---- 解析上游目标:模型绑定的供应商优先;未绑定回落 env 单上游 ----
-	upstreamBaseURL := deps.Env.UpstreamBaseURL
-	upstreamAPIKey := deps.Env.UpstreamAPIKey
-	upstreamAnthropicVersion := deps.Env.AnthropicVersion
-	upstreamConnectTimeoutMs := deps.Env.UpstreamTimeoutMs
-	upstreamIdleTimeoutMs := deps.Env.UpstreamIdleTimeoutMs
-	upstreamProviderID := ""
-	if model.UpstreamProviderID != "" {
-		provider, err := deps.Store.GetUpstreamProvider(ctx, model.UpstreamProviderID)
-		if err != nil {
-			deps.Logger.Error("供应商查询失败", "error", err)
-			spec.errorResponse(c, 500, "api_error", "网关内部错误")
-			return
-		}
-		if provider == nil || !provider.Enabled {
-			reason := "已手动停用"
-			if provider != nil && !provider.Enabled && provider.DisabledMode == "auto" {
-				detail := provider.AutoDisabledReason
-				if detail == "" {
-					detail = "上游异常"
-				}
-				reason = "自动熔断（连续失败：" + detail + "）"
-			}
-			spec.errorResponse(c, 404, "not_found_error", "模型绑定的上游供应商不可用（"+reason+"）："+model.ModelID)
-			return
-		}
-		providerFamily := "openai"
-		if provider.Protocol == store.ProtocolAnthropicMessages {
-			providerFamily = "anthropic"
-		}
-		if providerFamily != spec.family {
-			spec.errorResponse(c, 404, "not_found_error",
-				"模型 "+model.ModelID+" 的上游协议（"+string(provider.Protocol)+"）与请求协议（"+spec.family+"）不一致")
-			return
-		}
-		if provider.Protocol == store.ProtocolOpenAIResponses && spec.upstreamPath == "/v1/chat/completions" {
-			spec.errorResponse(c, 404, "not_found_error",
-				"模型 "+model.ModelID+" 绑定的供应商按 Responses 协议接入，不支持 chat completions 请求")
-			return
-		}
-		if provider.APIKeyCiphertext != "" {
-			if deps.SecretBox == nil {
-				spec.errorResponse(c, 500, "api_error", "平台密钥未配置，无法解析上游凭据")
-				return
-			}
-			decrypted, err := deps.SecretBox.Decrypt(provider.APIKeyCiphertext)
-			if err != nil {
-				spec.errorResponse(c, 500, "api_error", "上游凭据解密失败（PLATFORM_SECRET_KEY 是否更换过？）")
-				return
-			}
-			upstreamAPIKey = decrypted
-		} else {
-			// 供应商未配密钥:不带鉴权头(如本地 ollama / 内网网关)。
-			upstreamAPIKey = ""
-		}
-		upstreamBaseURL = provider.BaseURL
-		if provider.AnthropicVersion != "" {
-			upstreamAnthropicVersion = provider.AnthropicVersion
-		}
-		if provider.TimeoutMs > 0 {
-			upstreamConnectTimeoutMs = provider.TimeoutMs
-			upstreamIdleTimeoutMs = provider.TimeoutMs
-		}
-		upstreamProviderID = provider.ID
-	}
-
-	// ---- 额度准入:原子预留,超限 429 ----
-	estimateMicro := credits.EstimateMaxMicroCredits(maxTokens, rates.OutputPerMtok)
-	reserved, err := deps.Store.TryReserveQuota(ctx, primary.ID, estimateMicro)
-	if err != nil {
-		deps.Logger.Error("额度预留失败", "error", err)
-		spec.errorResponse(c, 500, "api_error", "网关内部错误")
-		return
-	}
-	if !reserved {
-		spec.errorResponse(c, 429, "rate_limit_error", "团队额度已用尽，请联系团队管理员充值 / Team quota exhausted")
+	// ---- 解析上游目标：渠道池按 priority/weight 产出候选；无路由时兼容回退 ----
+	targets, routeErr := resolveTargets(ctx, deps, model, spec)
+	if routeErr != nil {
+		spec.errorResponse(c, routeErr.Status, routeErr.Type, routeErr.Message)
 		return
 	}
 
@@ -487,10 +420,70 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	if requestID == "" {
 		requestID, _ = contracts.RandomUUIDv4()
 	}
+
+	// ---- 团队级流控：RPM / TPM / 并发（0 = 不限） ----
+	if deps.RateLimiter != nil {
+		if primary.RPMLimit > 0 {
+			allowed, err := deps.RateLimiter.AllowRPM(ctx, primary.ID, primary.RPMLimit)
+			if err != nil {
+				deps.Logger.Warn("RPM 限流不可用，按 fail-open 放行", "error", err)
+			} else if !allowed {
+				c.Header("retry-after", "60")
+				spec.errorResponse(c, 429, "rate_limit_error", "团队请求频率超限（RPM），请稍后重试")
+				return
+			}
+		}
+		if primary.TPMLimit > 0 {
+			cost := estimateRequestTokens(body, maxTokens)
+			allowed, err := deps.RateLimiter.AllowTPM(ctx, primary.ID, primary.TPMLimit, cost)
+			if err != nil {
+				deps.Logger.Warn("TPM 限流不可用，按 fail-open 放行", "error", err)
+			} else if !allowed {
+				c.Header("retry-after", "60")
+				spec.errorResponse(c, 429, "rate_limit_error", "团队 Token 速率超限（TPM），请稍后重试")
+				return
+			}
+		}
+		if primary.ConcurrencyLimit > 0 {
+			release, acquired, err := deps.RateLimiter.AcquireConcurrency(ctx, primary.ID, primary.ConcurrencyLimit)
+			if err != nil {
+				deps.Logger.Warn("并发限流不可用，按 fail-open 放行", "error", err)
+			} else if !acquired {
+				c.Header("retry-after", "1")
+				spec.errorResponse(c, 429, "rate_limit_error", "团队并发请求超限，请稍后重试")
+				return
+			} else {
+				defer release()
+			}
+		}
+	}
+
+	// ---- 额度准入：预留状态机 + request_id 幂等 ----
+	estimateMicro := credits.EstimateMaxMicroCredits(maxTokens, rates.OutputPerMtok)
+	reservationID, _ := contracts.RandomUUIDv4()
+	reserveResult, err := deps.Store.ReserveQuota(ctx, store.ReserveQuotaInput{
+		ID: reservationID, TeamID: primary.ID, RequestID: requestID,
+		Micro: estimateMicro, TTL: deps.Env.ReservationTTL, CreatedAt: deps.Now(),
+	})
+	if err != nil {
+		deps.Logger.Error("额度预留失败", "error", err)
+		spec.errorResponse(c, 500, "api_error", "网关内部错误")
+		return
+	}
+	if reserveResult == store.ReserveDuplicate {
+		spec.errorResponse(c, 409, "invalid_request_error", "request_id 已存在，拒绝重复请求："+requestID)
+		return
+	}
+	if reserveResult != store.ReserveReserved {
+		spec.errorResponse(c, 429, "rate_limit_error", "团队额度已用尽，请联系团队管理员充值 / Team quota exhausted")
+		return
+	}
+
 	startedAt := deps.Now()
 	var settled atomic.Bool
+	lastTarget := targets[0]
 
-	buildUsageRecord := func(usage UsageCounts, status store.UsageStatus, errorType string) store.UsageRecord {
+	buildUsageRecord := func(target upstreamTarget, usage UsageCounts, status store.UsageStatus, errorType string) store.UsageRecord {
 		micro, err := credits.ComputeUsageMicroCredits(credits.UsageTokenCounts{
 			InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens,
 			CacheReadTokens: usage.CacheReadTokens, CacheCreationTokens: usage.CacheCreationTokens,
@@ -504,13 +497,13 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			TeamID:          primary.ID,
 			DeviceTokenID:   device.ID,
 			Model:           model.ModelID,
-			UpstreamModel:   upstreamModel,
+			UpstreamModel:   target.UpstreamModel,
 			InputTokens:     usage.InputTokens,
 			OutputTokens:    usage.OutputTokens,
 			CacheReadTokens: usage.CacheReadTokens, CacheCreationTokens: usage.CacheCreationTokens,
 			CreditsMicro: micro,
 			Status:       status,
-			ProviderID:   upstreamProviderID,
+			ProviderID:   target.ProviderID,
 			CreatedAt:    deps.Now(),
 		}
 		record.ID, _ = contracts.RandomUUIDv4()
@@ -523,205 +516,267 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		return record
 	}
 
-	failWithUsage := func(status store.UsageStatus, errorType string) {
+	settle := func(target upstreamTarget, usage UsageCounts, status store.UsageStatus, errorType string) {
 		if settled.Swap(true) {
 			return
 		}
-		if err := deps.Store.InsertUsage(ctx, buildUsageRecord(UsageCounts{}, status, errorType)); err != nil {
-			deps.Logger.Error("失败记录写入失败", "requestId", requestID, "error", err)
-		}
-		if err := deps.Store.ReleaseReservation(ctx, primary.ID, estimateMicro); err != nil {
-			deps.Logger.Error("额度释放失败", "requestId", requestID, "error", err)
+		if err := deps.Store.SettleReservation(ctx, reservationID, buildUsageRecord(target, usage, status, errorType)); err != nil {
+			deps.Logger.Error("结算写入失败", "requestId", requestID, "error", err)
 		}
 	}
 
-	reportFailure := func(reason string) {
-		if upstreamProviderID == "" || deps.Env.ProviderAutoDisableThreshold <= 0 {
+	failWithUsage := func(target upstreamTarget, status store.UsageStatus, errorType string) {
+		settle(target, UsageCounts{}, status, errorType)
+	}
+
+	reportFailure := func(providerID, reason string) {
+		if providerID == "" || deps.Env.ProviderAutoDisableThreshold <= 0 {
 			return
 		}
-		disabled, err := deps.Store.ReportUpstreamFailure(ctx, upstreamProviderID, reason, deps.Env.ProviderAutoDisableThreshold)
+		disabled, err := deps.Store.ReportUpstreamFailure(ctx, providerID, reason, deps.Env.ProviderAutoDisableThreshold)
 		if err != nil {
 			deps.Logger.Error("熔断计数失败", "error", err)
 			return
 		}
 		if disabled {
-			deps.Logger.Warn("上游供应商连续失败，已自动停用", "providerId", upstreamProviderID, "reason", reason)
+			deps.Logger.Warn("上游供应商连续失败，已自动停用", "providerId", providerID, "reason", reason)
 		}
 	}
 
-	// ---- 转发上游 ----
-	upstreamHeaders, upstreamBody := spec.buildUpstream(c.Request, body, upstreamModel, stream, upstreamAPIKey, upstreamAnthropicVersion)
-	upstreamURL := upstreamBaseURL + spec.upstreamPath
-	// 上游请求必须绑定带取消的 ctx:header 超时、空闲看门狗、客户端断连都靠它中断。
-	upstreamCtx, cancelUpstream := context.WithCancel(ctx)
-	defer cancelUpstream()
-	req, err := http.NewRequestWithContext(upstreamCtx, http.MethodPost, upstreamURL, bytes.NewReader(upstreamBody))
-	if err != nil {
-		deps.Logger.Error("构造上游请求失败", "error", err)
-		failWithUsage(store.UsageStatusError, "upstream_unavailable")
-		spec.errorResponse(c, 500, "api_error", "网关内部错误")
-		return
+	maxAttempts := deps.Env.MaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 3
 	}
-	for key, value := range upstreamHeaders {
-		req.Header.Set(key, value)
+	if int64(len(targets)) < maxAttempts {
+		maxAttempts = int64(len(targets))
 	}
 
-	var headerTimedOut atomic.Bool
-	headerTimer := time.AfterFunc(time.Duration(upstreamConnectTimeoutMs)*time.Millisecond, func() {
-		headerTimedOut.Store(true)
-		cancelUpstream()
-	})
+	var (
+		lastStatus      = 502
+		lastErrorType   = "upstream_unavailable"
+		lastMessage     = "上游供应商暂时不可用，请稍后重试"
+		lastBody        []byte
+		lastContentType = "application/json"
+	)
 
-	resp, err := deps.HTTPClient.Do(req)
-	if err != nil {
-		headerTimer.Stop()
-		deps.Logger.Warn("上游请求失败", "requestId", requestID, "timedOut", headerTimedOut.Load(), "error", err)
-		errorType := "upstream_unavailable"
-		if headerTimedOut.Load() {
-			errorType = "upstream_timeout"
+	for attempt := int64(0); attempt < maxAttempts; attempt++ {
+		target := targets[attempt]
+		lastTarget = target
+		upstreamConnectTimeoutMs := target.TimeoutMs
+		if upstreamConnectTimeoutMs <= 0 {
+			upstreamConnectTimeoutMs = deps.Env.UpstreamTimeoutMs
 		}
-		failWithUsage(store.UsageStatusError, errorType)
-		reportFailure(errorType)
-		if headerTimedOut.Load() {
-			spec.errorResponse(c, 504, "api_error", "上游响应超时，请稍后重试")
+		upstreamIdleTimeoutMs := target.TimeoutMs
+		if upstreamIdleTimeoutMs <= 0 {
+			upstreamIdleTimeoutMs = deps.Env.UpstreamIdleTimeoutMs
+		}
+		upstreamHeaders, upstreamBody := spec.buildUpstream(c.Request, body, target.UpstreamModel, stream, target.APIKey, target.AnthropicVersion)
+		upstreamURL := strings.TrimRight(target.BaseURL, "/") + spec.upstreamPath
+		// 上游请求必须绑定带取消的 ctx:header 超时、空闲看门狗、客户端断连都靠它中断。
+		upstreamCtx, cancelUpstream := context.WithCancel(ctx)
+		req, err := http.NewRequestWithContext(upstreamCtx, http.MethodPost, upstreamURL, bytes.NewReader(upstreamBody))
+		if err != nil {
+			cancelUpstream()
+			deps.Logger.Error("构造上游请求失败", "error", err)
+			failWithUsage(target, store.UsageStatusError, "upstream_unavailable")
+			spec.errorResponse(c, 500, "api_error", "网关内部错误")
 			return
 		}
-		spec.errorResponse(c, 502, "api_error", "上游供应商暂时不可用，请稍后重试")
-		return
-	}
-	defer resp.Body.Close()
+		for key, value := range upstreamHeaders {
+			req.Header.Set(key, value)
+		}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		headerTimer.Stop()
-		text, _ := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamErrorBytes))
-		deps.Logger.Warn("上游返回错误", "requestId", requestID, "status", resp.StatusCode)
-		failWithUsage(store.UsageStatusError, "upstream_"+strconv.Itoa(resp.StatusCode))
-		// 只有供应商自身故障(5xx 与鉴权失效 401/403)计入熔断;404/429 等不入。
-		if resp.StatusCode >= 500 || resp.StatusCode == 401 || resp.StatusCode == 403 {
-			reportFailure("upstream_" + strconv.Itoa(resp.StatusCode))
-		}
-		contentType := resp.Header.Get("content-type")
-		if contentType == "" {
-			contentType = "application/json"
-		}
-		if len(text) == 0 {
-			spec.errorResponse(c, resp.StatusCode, "api_error", "upstream error")
-			return
-		}
-		c.Data(resp.StatusCode, contentType, text)
-		return
-	}
+		var headerTimedOut atomic.Bool
+		headerTimer := time.AfterFunc(time.Duration(upstreamConnectTimeoutMs)*time.Millisecond, func() {
+			headerTimedOut.Store(true)
+			cancelUpstream()
+		})
 
-	// 成功转发到响应头即重置连续失败计数。
-	if upstreamProviderID != "" {
-		if err := deps.Store.ReportUpstreamSuccess(ctx, upstreamProviderID); err != nil {
-			deps.Logger.Error("熔断计数重置失败", "error", err)
-		}
-	}
-
-	// ---- 非流式:一次结算(header 限时覆盖整个响应体读取) ----
-	if !stream {
-		text, readErr := io.ReadAll(resp.Body)
-		if readErr != nil {
+		resp, err := deps.HTTPClient.Do(req)
+		if err != nil {
 			headerTimer.Stop()
-			errorType := "upstream_body_failure"
+			cancelUpstream()
+			errorType := "upstream_unavailable"
 			if headerTimedOut.Load() {
 				errorType = "upstream_timeout"
 			}
-			deps.Logger.Warn("上游响应体读取失败", "requestId", requestID, "errorType", errorType)
-			failWithUsage(store.UsageStatusError, errorType)
-			if headerTimedOut.Load() {
-				spec.errorResponse(c, 504, "api_error", "上游响应异常，请稍后重试")
+			deps.Logger.Warn("上游请求失败", "requestId", requestID, "attempt", attempt+1,
+				"providerId", target.ProviderID, "timedOut", headerTimedOut.Load(), "error", err)
+			reportFailure(target.ProviderID, errorType)
+			if ctx.Err() != nil {
+				failWithUsage(target, store.UsageStatusAborted, "client_aborted")
 				return
 			}
-			spec.errorResponse(c, 502, "api_error", "上游响应异常，请稍后重试")
+			lastStatus, lastErrorType = 502, errorType
+			lastMessage = "上游供应商暂时不可用，请稍后重试"
+			lastBody = nil
+			if headerTimedOut.Load() {
+				lastStatus, lastMessage = 504, "上游响应超时，请稍后重试"
+			}
+			if attempt+1 < maxAttempts {
+				continue
+			}
+			failWithUsage(target, store.UsageStatusError, errorType)
+			spec.errorResponse(c, lastStatus, "api_error", lastMessage)
 			return
 		}
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			headerTimer.Stop()
+			text, _ := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamErrorBytes))
+			resp.Body.Close()
+			cancelUpstream()
+			errorType := "upstream_" + strconv.Itoa(resp.StatusCode)
+			deps.Logger.Warn("上游返回错误", "requestId", requestID, "attempt", attempt+1,
+				"providerId", target.ProviderID, "status", resp.StatusCode)
+			// 只有供应商自身故障(5xx 与鉴权失效 401/403)计入熔断;404/429 等不入。
+			if resp.StatusCode >= 500 || resp.StatusCode == 401 || resp.StatusCode == 403 {
+				reportFailure(target.ProviderID, errorType)
+			}
+			contentType := resp.Header.Get("content-type")
+			if contentType == "" {
+				contentType = "application/json"
+			}
+			lastStatus, lastErrorType = resp.StatusCode, errorType
+			lastBody, lastContentType = text, contentType
+			lastMessage = "upstream error"
+			if retryableUpstreamStatus(resp.StatusCode) && attempt+1 < maxAttempts {
+				continue
+			}
+			failWithUsage(target, store.UsageStatusError, errorType)
+			if len(text) == 0 {
+				spec.errorResponse(c, resp.StatusCode, "api_error", "upstream error")
+				return
+			}
+			c.Data(resp.StatusCode, contentType, text)
+			return
+		}
+
+		// 成功转发到响应头即重置连续失败计数（无渠道池的 env 上游不计数）。
+		if target.ProviderID != "" {
+			if err := deps.Store.ReportUpstreamSuccess(ctx, target.ProviderID); err != nil {
+				deps.Logger.Error("熔断计数重置失败", "error", err)
+			}
+		}
+
+		// ---- 非流式:一次结算(header 限时覆盖整个响应体读取) ----
+		if !stream {
+			text, readErr := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if readErr != nil {
+				headerTimer.Stop()
+				cancelUpstream()
+				errorType := "upstream_body_failure"
+				if headerTimedOut.Load() {
+					errorType = "upstream_timeout"
+				}
+				deps.Logger.Warn("上游响应体读取失败", "requestId", requestID, "errorType", errorType)
+				failWithUsage(target, store.UsageStatusError, errorType)
+				if headerTimedOut.Load() {
+					spec.errorResponse(c, 504, "api_error", "上游响应异常，请稍后重试")
+					return
+				}
+				spec.errorResponse(c, 502, "api_error", "上游响应异常，请稍后重试")
+				return
+			}
+			headerTimer.Stop()
+			cancelUpstream()
+			var usage UsageCounts
+			if parsed := spec.parseUsageJSON(string(text)); parsed != nil {
+				usage = *parsed
+			}
+			settle(target, usage, store.UsageStatusOk, "")
+			contentType := resp.Header.Get("content-type")
+			if contentType == "" {
+				contentType = "application/json"
+			}
+			c.Data(200, contentType, text)
+			return
+		}
+
+		// ---- 流式:边透传边采集,结束结算;客户端中断按 aborted ----
 		headerTimer.Stop()
-		var usage UsageCounts
-		if parsed := spec.parseUsageJSON(string(text)); parsed != nil {
-			usage = *parsed
+		scanner := spec.newScanner()
+		var idleFired atomic.Bool
+		idleTimer := time.AfterFunc(time.Duration(upstreamIdleTimeoutMs)*time.Millisecond, func() {
+			idleFired.Store(true)
+			cancelUpstream()
+		})
+
+		finalize := func(status store.UsageStatus) {
+			idleTimer.Stop()
+			cancelUpstream()
+			if dropped := scanner.Dropped(); dropped > 0 {
+				deps.Logger.Warn("流式 usage 存在无法解析/被截断的事件帧", "requestId", requestID, "dropped", dropped)
+			}
+			errorType := ""
+			if status == store.UsageStatusAborted {
+				errorType = "client_aborted"
+			}
+			settle(target, scanner.Usage(), status, errorType)
 		}
-		if err := deps.Store.SettleUsage(ctx, buildUsageRecord(usage, store.UsageStatusOk, ""), estimateMicro); err != nil {
-			deps.Logger.Error("结算写入失败", "requestId", requestID, "error", err)
-		}
+
 		contentType := resp.Header.Get("content-type")
 		if contentType == "" {
-			contentType = "application/json"
+			contentType = "text/event-stream"
 		}
-		c.Data(200, contentType, text)
-		return
-	}
+		c.Header("content-type", contentType)
+		c.Header("cache-control", "no-store")
+		c.Writer.WriteHeader(200)
+		c.Writer.Flush()
 
-	// ---- 流式:边透传边采集,结束结算;客户端中断按 aborted ----
-	headerTimer.Stop()
-	scanner := spec.newScanner()
-	var idleFired atomic.Bool
-	idleTimer := time.AfterFunc(time.Duration(upstreamIdleTimeoutMs)*time.Millisecond, func() {
-		idleFired.Store(true)
-		cancelUpstream()
-	})
-	defer idleTimer.Stop()
-
-	finalize := func(status store.UsageStatus) {
-		if settled.Swap(true) {
-			return
-		}
-		idleTimer.Stop()
-		if dropped := scanner.Dropped(); dropped > 0 {
-			deps.Logger.Warn("流式 usage 存在无法解析/被截断的事件帧", "requestId", requestID, "dropped", dropped)
-		}
-		errorType := ""
-		if status == store.UsageStatusAborted {
-			errorType = "client_aborted"
-		}
-		if err := deps.Store.SettleUsage(ctx, buildUsageRecord(scanner.Usage(), status, errorType), estimateMicro); err != nil {
-			deps.Logger.Error("流式结算写入失败", "requestId", requestID, "error", err)
-		}
-	}
-
-	contentType := resp.Header.Get("content-type")
-	if contentType == "" {
-		contentType = "text/event-stream"
-	}
-	c.Header("content-type", contentType)
-	c.Header("cache-control", "no-store")
-	c.Writer.WriteHeader(200)
-	c.Writer.Flush()
-
-	buf := make([]byte, 32*1024)
-	for {
-		n, readErr := resp.Body.Read(buf)
-		if n > 0 {
-			idleTimer.Reset(time.Duration(upstreamIdleTimeoutMs) * time.Millisecond)
-			scanner.Push(string(buf[:n]))
-			if _, writeErr := c.Writer.Write(buf[:n]); writeErr != nil {
-				// 客户端断开:按已采集 usage 结算。
+		buf := make([]byte, 32*1024)
+		for {
+			n, readErr := resp.Body.Read(buf)
+			if n > 0 {
+				idleTimer.Reset(time.Duration(upstreamIdleTimeoutMs) * time.Millisecond)
+				scanner.Push(string(buf[:n]))
+				if _, writeErr := c.Writer.Write(buf[:n]); writeErr != nil {
+					// 客户端断开:按已采集 usage 结算。
+					resp.Body.Close()
+					finalize(store.UsageStatusAborted)
+					return
+				}
+				c.Writer.Flush()
+			}
+			if readErr == nil {
+				continue
+			}
+			resp.Body.Close()
+			// 空闲看门狗会取消上游 ctx；取消后上游通常以 EOF 结束，
+			// 必须先判定 idleFired，否则会把超时误记成成功。
+			if idleFired.Load() {
+				deps.Logger.Warn("上游流式传输空闲超时", "requestId", requestID)
+				failWithUsage(target, store.UsageStatusError, "upstream_idle_timeout")
+				reportFailure(target.ProviderID, "upstream_idle_timeout")
+				return
+			}
+			if readErr == io.EOF {
+				finalize(store.UsageStatusOk)
+				return
+			}
+			if ctx.Err() != nil {
+				// 客户端断开触发的取消。
 				finalize(store.UsageStatusAborted)
 				return
 			}
-			c.Writer.Flush()
-		}
-		if readErr == nil {
-			continue
-		}
-		if readErr == io.EOF {
-			finalize(store.UsageStatusOk)
+			deps.Logger.Warn("上游流式中断", "requestId", requestID, "error", readErr)
+			failWithUsage(target, store.UsageStatusError, "upstream_stream_failure")
 			return
 		}
-		if ctx.Err() != nil {
-			// 客户端断开触发的取消。
-			finalize(store.UsageStatusAborted)
-			return
-		}
-		if idleFired.Load() {
-			deps.Logger.Warn("上游流式传输空闲超时", "requestId", requestID)
-			failWithUsage(store.UsageStatusError, "upstream_idle_timeout")
-			reportFailure("upstream_idle_timeout")
-			return
-		}
-		deps.Logger.Warn("上游流式中断", "requestId", requestID, "error", readErr)
-		failWithUsage(store.UsageStatusError, "upstream_stream_failure")
+	}
+
+	// 所有候选都失败（通常不会走到这里，循环末次已提前返回）。
+	failWithUsage(lastTarget, store.UsageStatusError, lastErrorType)
+	if len(lastBody) > 0 {
+		c.Data(lastStatus, lastContentType, lastBody)
 		return
 	}
+	spec.errorResponse(c, lastStatus, "api_error", lastMessage)
+}
+
+func retryableUpstreamStatus(status int) bool {
+	return status == http.StatusRequestTimeout || status == http.StatusTooManyRequests ||
+		status == http.StatusUnauthorized || status == http.StatusForbidden ||
+		status >= 500
 }

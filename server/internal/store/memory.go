@@ -44,6 +44,10 @@ type memoryStore struct {
 	usage          []UsageRecord
 	auditLogs      []AdminAuditLogView
 	quotaAdjusts   []quotaAdjustmentRow
+	upstreamRoutes map[string]UpstreamRouteRecord
+	reservations   map[string]QuotaReservationRecord
+	alertRules     map[string]AlertRuleRecord
+	alertEvents    []AlertEventRecord
 }
 
 type quotaAdjustmentRow struct {
@@ -66,6 +70,9 @@ func NewMemoryStore(ctx context.Context, opts MemoryOptions) (*memoryStore, erro
 		models:         map[string]PlatformModelRecord{},
 		providers:      map[string]UpstreamProviderRecord{},
 		config:         map[string][]byte{},
+		upstreamRoutes: map[string]UpstreamRouteRecord{},
+		reservations:   map[string]QuotaReservationRecord{},
+		alertRules:     map[string]AlertRuleRecord{},
 	}
 	if opts.DemoSeed {
 		if err := s.seedDemo(ctx); err != nil {
@@ -262,6 +269,15 @@ func (s *memoryStore) UpdateTeam(_ context.Context, id string, patch UpdateTeamP
 	}
 	if patch.Unlimited != nil {
 		team.Unlimited = *patch.Unlimited
+	}
+	if patch.RPMLimit != nil {
+		team.RPMLimit = *patch.RPMLimit
+	}
+	if patch.TPMLimit != nil {
+		team.TPMLimit = *patch.TPMLimit
+	}
+	if patch.ConcurrencyLimit != nil {
+		team.ConcurrencyLimit = *patch.ConcurrencyLimit
 	}
 	if patch.HasDisabled {
 		team.DisabledAt = patch.DisabledAt

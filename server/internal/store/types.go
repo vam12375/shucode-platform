@@ -99,8 +99,12 @@ type TeamRecord struct {
 	UsedCredits     string
 	ReservedCredits string
 	Unlimited       bool
-	CreatedAt       time.Time
-	DisabledAt      *time.Time
+	// 团队级流控：0 = 不限制。RPM/TPM 按分钟窗口，concurrency 按在途请求数。
+	RPMLimit         int64
+	TPMLimit         int64
+	ConcurrencyLimit int64
+	CreatedAt        time.Time
+	DisabledAt       *time.Time
 }
 
 type TeamMemberView struct {
@@ -159,10 +163,152 @@ type PlatformModelRecord struct {
 	OutputPricePerMtok     string
 	CacheReadPricePerMtok  string
 	CacheWritePricePerMtok string
-	Enabled                bool
-	SortOrder              int64
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
+	// OffPeakMultiplier:空闲时段价格倍率（1 = 无折扣；DeepSeek 0.5）。
+	OffPeakMultiplier string
+	Enabled           bool
+	SortOrder         int64
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+// UpstreamRouteRecord:模型的可调度上游路由（渠道池）。
+type UpstreamRouteRecord struct {
+	ID            string
+	ModelID       string
+	ProviderID    string
+	ProviderName  string
+	UpstreamModel string
+	Priority      int64
+	Weight        int64
+	Enabled       bool
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+type CreateUpstreamRouteInput struct {
+	ModelID       string
+	ProviderID    string
+	UpstreamModel string
+	Priority      int64
+	Weight        int64
+	Enabled       bool
+}
+
+type UpdateUpstreamRoutePatch struct {
+	UpstreamModel *string
+	Priority      *int64
+	Weight        *int64
+	Enabled       *bool
+}
+
+// QuotaReservationStatus:预留状态机。settled 后不可重复结算。
+type QuotaReservationStatus string
+
+const (
+	ReservationReserved QuotaReservationStatus = "reserved"
+	ReservationSettled  QuotaReservationStatus = "settled"
+	ReservationReleased QuotaReservationStatus = "released"
+	ReservationExpired  QuotaReservationStatus = "expired"
+)
+
+// ReserveResult:原子预留的三种结果，调用方据此区分 429 / 409。
+type ReserveResult string
+
+const (
+	ReserveReserved  ReserveResult = "reserved"
+	ReserveDenied    ReserveResult = "denied"
+	ReserveDuplicate ReserveResult = "duplicate"
+)
+
+type ReserveQuotaInput struct {
+	ID        string
+	TeamID    string
+	RequestID string
+	Micro     int64
+	TTL       time.Duration
+	CreatedAt time.Time
+}
+
+type QuotaReservationRecord struct {
+	ID            string
+	TeamID        string
+	RequestID     string
+	ReservedMicro int64
+	Status        QuotaReservationStatus
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
+	SettledAt     *time.Time
+	ReleasedAt    *time.Time
+	UsageID       string
+}
+
+// OpsProviderStat:运维大盘的供应商维度。
+type OpsProviderStat struct {
+	ProviderID   string
+	ProviderName string
+	Requests     int64
+	Errors       int64
+	ErrorRate    float64
+	P95LatencyMs *float64
+}
+
+type OpsOverview struct {
+	Requests            int64
+	SuccessRequests     int64
+	ErrorRequests       int64
+	AbortedRequests     int64
+	InputTokens         int64
+	OutputTokens        int64
+	CacheReadTokens     int64
+	CacheCreationTokens int64
+	CreditsMicro        int64
+	P50LatencyMs        *float64
+	P95LatencyMs        *float64
+	P99LatencyMs        *float64
+	ActiveDevices       int64
+	OpenReservations    int64
+	ProviderStats       []OpsProviderStat
+}
+
+type OpsSeriesPoint struct {
+	BucketStart  string
+	Requests     int64
+	Errors       int64
+	CreditsMicro int64
+	P95LatencyMs *float64
+}
+
+type AlertRuleRecord struct {
+	ID            string
+	Name          string
+	Metric        string
+	Threshold     string // numeric(18,6)
+	WindowMinutes int64
+	Enabled       bool
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+type UpsertAlertRuleInput struct {
+	ID            string
+	Name          string
+	Metric        string
+	Threshold     string
+	WindowMinutes int64
+	Enabled       bool
+}
+
+type AlertEventRecord struct {
+	ID         string
+	RuleID     string
+	RuleName   string
+	Metric     string
+	Value      string
+	Threshold  string
+	Message    string
+	Status     string
+	CreatedAt  time.Time
+	ResolvedAt *time.Time
 }
 
 type UsageRecord struct {
@@ -218,11 +364,14 @@ type UpdateUserPatch struct {
 }
 
 type UpdateTeamPatch struct {
-	Name         *string
-	QuotaCredits *string
-	Unlimited    *bool
-	HasDisabled  bool
-	DisabledAt   *time.Time
+	Name             *string
+	QuotaCredits     *string
+	Unlimited        *bool
+	RPMLimit         *int64
+	TPMLimit         *int64
+	ConcurrencyLimit *int64
+	HasDisabled      bool
+	DisabledAt       *time.Time
 }
 
 type UpdateLoginFlowPatch struct {
@@ -252,6 +401,7 @@ type UpsertModelInput struct {
 	OutputPricePerMtok        string
 	CacheReadPricePerMtok     *string
 	CacheWritePricePerMtok    *string
+	OffPeakMultiplier         *string
 	Enabled                   *bool
 	SortOrder                 *int64
 }
@@ -290,6 +440,7 @@ type UsageFilter struct {
 	Model      string
 	ProviderID string
 	Status     UsageStatus
+	RequestID  string
 	Limit      *int64 // listUsage 专用,默认 50 最大 500。
 	// 游标 (created_at, id) 元组:取严格更旧于该行的记录,两字段必须同时设置。
 	CursorCreatedAt *time.Time

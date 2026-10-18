@@ -7,6 +7,7 @@ import { ConfigPage } from "./pages/ConfigPage.js";
 import { DevicesPage } from "./pages/Devices.js";
 import { LoginPage } from "./pages/Login.js";
 import { ModelsPage } from "./pages/Models.js";
+import { OpsPage } from "./pages/Ops.js";
 import { PricingPage } from "./pages/Pricing.js";
 import { ProvidersPage } from "./pages/Providers.js";
 import { ReleasesPage } from "./pages/Releases.js";
@@ -34,7 +35,10 @@ const NAV_GROUPS = [
   },
   {
     label: "计量",
-    items: [{ path: "/usage", label: "用量" }],
+    items: [
+      { path: "/usage", label: "用量" },
+      { path: "/ops", label: "运维大盘" },
+    ],
   },
   {
     label: "下发",
@@ -147,6 +151,9 @@ export function App() {
       break;
     case "usage":
       page = <UsagePage />;
+      break;
+    case "ops":
+      page = <OpsPage />;
       break;
     case "ui":
       page = <UiLibraryPage />;

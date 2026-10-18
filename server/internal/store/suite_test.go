@@ -20,6 +20,9 @@ func runSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 	t.Run("sessions", func(t *testing.T) { testSessions(t, ctx, s) })
 	t.Run("teams", func(t *testing.T) { testTeams(t, ctx, s) })
 	t.Run("quota-critical-section", func(t *testing.T) { testQuota(t, ctx, s) })
+	t.Run("quota-reservations", func(t *testing.T) { testReservations(t, ctx, s) })
+	t.Run("upstream-routes", func(t *testing.T) { testUpstreamRoutes(t, ctx, s) })
+	t.Run("ops-alerts", func(t *testing.T) { testOpsAlerts(t, ctx, s) })
 	t.Run("device-tokens", func(t *testing.T) { testDeviceTokens(t, ctx, s) })
 	t.Run("login-flows", func(t *testing.T) { testLoginFlows(t, ctx, s) })
 	t.Run("releases", func(t *testing.T) { testReleases(t, ctx, s) })
@@ -166,6 +169,11 @@ func testTeams(t *testing.T, ctx context.Context, s PlatformStore) {
 	if err != nil || updated.QuotaCredits != "2000.000000" || !updated.Unlimited || updated.Name != "研发部" {
 		t.Fatalf("更新团队: %v %+v", err, updated)
 	}
+	rpm, tpm, concurrency := int64(60), int64(120_000), int64(8)
+	updated, err = s.UpdateTeam(ctx, team.ID, UpdateTeamPatch{RPMLimit: &rpm, TPMLimit: &tpm, ConcurrencyLimit: &concurrency})
+	if err != nil || updated.RPMLimit != 60 || updated.TPMLimit != 120_000 || updated.ConcurrencyLimit != 8 {
+		t.Fatalf("团队流控更新失败: %v %+v", err, updated)
+	}
 	if removed, _ := s.RemoveMember(ctx, team.ID, member.ID); !removed {
 		t.Fatal("移除成员失败")
 	}
@@ -250,6 +258,218 @@ func tryUpdateTeamDisabled(s PlatformStore, ctx context.Context, teamID string) 
 	}
 	ok, err := s.TryReserveQuota(ctx, teamID, 1)
 	return !ok && err == nil, err
+}
+
+func testReservations(t *testing.T, ctx context.Context, s PlatformStore) {
+	u := mustUser(t, ctx, s, "reserve@test.local")
+	suffix := fmt.Sprint(time.Now().UnixNano())
+	team, err := s.CreateTeam(ctx, CreateTeamInput{Name: "预留团队-" + suffix, QuotaCredits: "1.000000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	input := ReserveQuotaInput{
+		ID: "00000000-0000-4000-8000-000000000601", TeamID: team.ID,
+		RequestID: "reserve-req-1-" + suffix, Micro: 400_000, TTL: time.Hour, CreatedAt: now,
+	}
+	if result, err := s.ReserveQuota(ctx, input); err != nil || result != ReserveReserved {
+		t.Fatalf("首次预留应成功: %v %s", err, result)
+	}
+	duplicate := input
+	duplicate.ID = "00000000-0000-4000-8000-000000000602"
+	if result, err := s.ReserveQuota(ctx, duplicate); err != nil || result != ReserveDuplicate {
+		t.Fatalf("重复 request_id 应返回 duplicate: %v %s", err, result)
+	}
+	if got, _ := s.GetTeam(ctx, team.ID); got.ReservedCredits != "0.400000" {
+		t.Fatalf("预留额度不符: %s", got.ReservedCredits)
+	}
+	record := UsageRecord{
+		ID: "00000000-0000-4000-8000-000000000603", RequestID: input.RequestID,
+		UserID: u.ID, TeamID: team.ID, Model: "m", UpstreamModel: "m",
+		CreditsMicro: 300_000, Status: UsageStatusOk, CreatedAt: now.Add(time.Second),
+	}
+	if err := s.SettleReservation(ctx, input.ID, record); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.GetTeam(ctx, team.ID)
+	if got.UsedCredits != "0.300000" || got.ReservedCredits != "0.000000" {
+		t.Fatalf("预留结算后额度不符: used=%s reserved=%s", got.UsedCredits, got.ReservedCredits)
+	}
+	// 重复结算必须幂等（不重复写 usage）。
+	if err := s.SettleReservation(ctx, input.ID, record); err != nil {
+		t.Fatal(err)
+	}
+	if usage, _ := s.ListUsage(ctx, UsageFilter{TeamID: team.ID}); len(usage) != 1 {
+		t.Fatalf("重复结算不应重复写 usage: %d", len(usage))
+	}
+	// 释放。
+	releaseInput := ReserveQuotaInput{
+		ID: "00000000-0000-4000-8000-000000000604", TeamID: team.ID,
+		RequestID: "reserve-req-2-" + suffix, Micro: 500_000, TTL: time.Hour, CreatedAt: now,
+	}
+	if result, _ := s.ReserveQuota(ctx, releaseInput); result != ReserveReserved {
+		t.Fatalf("第二次预留失败: %s", result)
+	}
+	if err := s.ReleaseReservationByID(ctx, releaseInput.ID, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetTeam(ctx, team.ID); got.ReservedCredits != "0.000000" {
+		t.Fatalf("释放后预留应归零: %s", got.ReservedCredits)
+	}
+	// 过期回收。
+	expireInput := ReserveQuotaInput{
+		ID: "00000000-0000-4000-8000-000000000605", TeamID: team.ID,
+		RequestID: "reserve-req-3-" + suffix, Micro: 600_000, TTL: time.Minute,
+		CreatedAt: now.Add(-2 * time.Hour),
+	}
+	if result, _ := s.ReserveQuota(ctx, expireInput); result != ReserveReserved {
+		t.Fatalf("第三次预留失败: %s", result)
+	}
+	if count, err := s.ExpireStaleReservations(ctx, now); err != nil || count != 1 {
+		t.Fatalf("过期回收数量不符: %d %v", count, err)
+	}
+	if got, _ := s.GetTeam(ctx, team.ID); got.ReservedCredits != "0.000000" {
+		t.Fatalf("过期回收后预留应归零: %s", got.ReservedCredits)
+	}
+	if open, _ := s.ListOpenReservations(ctx, 10); len(open) != 0 {
+		t.Fatalf("不应有未释放预留: %+v", open)
+	}
+	// 超配额拒绝。
+	over := ReserveQuotaInput{
+		ID: "00000000-0000-4000-8000-000000000606", TeamID: team.ID,
+		RequestID: "reserve-req-4-" + suffix, Micro: 900_000, TTL: time.Hour, CreatedAt: now,
+	}
+	if result, _ := s.ReserveQuota(ctx, over); result != ReserveDenied {
+		t.Fatalf("超配额应拒绝: %s", result)
+	}
+}
+
+func testUpstreamRoutes(t *testing.T, ctx context.Context, s PlatformStore) {
+	suffix := fmt.Sprint(time.Now().UnixNano())
+	providerA, err := s.CreateUpstreamProvider(ctx, CreateUpstreamProviderInput{
+		Name: "route-a-" + suffix, BaseURL: "https://a.example.com", Protocol: ProtocolOpenAIChatCompletions,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerB, err := s.CreateUpstreamProvider(ctx, CreateUpstreamProviderInput{
+		Name: "route-b-" + suffix, BaseURL: "https://b.example.com", Protocol: ProtocolOpenAIChatCompletions,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	modelID := "m-routes-" + suffix
+	if _, err := s.UpsertModel(ctx, UpsertModelInput{
+		ModelID: modelID, DisplayName: "Routes", InputPricePerMtok: "1", OutputPricePerMtok: "2",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	routeA, err := s.CreateUpstreamRoute(ctx, CreateUpstreamRouteInput{
+		ModelID: modelID, ProviderID: providerA.ID, UpstreamModel: "up-a", Priority: 100, Weight: 1, Enabled: true,
+	})
+	if err != nil || routeA == nil || routeA.ProviderName != providerA.Name {
+		t.Fatalf("建路由 A: %v %+v", err, routeA)
+	}
+	routeB, err := s.CreateUpstreamRoute(ctx, CreateUpstreamRouteInput{
+		ModelID: modelID, ProviderID: providerB.ID, UpstreamModel: "up-b", Priority: 10, Weight: 2, Enabled: true,
+	})
+	if err != nil || routeB == nil {
+		t.Fatalf("建路由 B: %v", err)
+	}
+	if _, err := s.CreateUpstreamRoute(ctx, CreateUpstreamRouteInput{
+		ModelID: modelID, ProviderID: providerB.ID, Priority: 1, Weight: 1, Enabled: true,
+	}); err == nil {
+		t.Fatal("同模型重复绑定同供应商应失败")
+	}
+	list, _ := s.ListUpstreamRoutes(ctx, modelID, true)
+	if len(list) != 2 || list[0].ProviderID != providerB.ID || list[1].ProviderID != providerA.ID {
+		t.Fatalf("路由应按 priority 升序: %+v", list)
+	}
+	disabled := false
+	if updated, err := s.UpdateUpstreamRoute(ctx, routeB.ID, UpdateUpstreamRoutePatch{Enabled: &disabled, Weight: ptr(int64(5))}); err != nil ||
+		updated == nil || updated.Enabled || updated.Weight != 5 {
+		t.Fatalf("更新路由: %v %+v", err, updated)
+	}
+	if enabledList, _ := s.ListUpstreamRoutes(ctx, modelID, false); len(enabledList) != 1 {
+		t.Fatalf("停用路由不应出现在启用列表: %+v", enabledList)
+	}
+	if deleted, _ := s.DeleteUpstreamRoute(ctx, routeA.ID); !deleted {
+		t.Fatal("删除路由失败")
+	}
+	// 自动熔断 → 自动恢复。
+	if tripped, _ := s.ReportUpstreamFailure(ctx, providerA.ID, "upstream_500", 1); !tripped {
+		t.Fatal("阈值 1 应触发熔断")
+	}
+	if recovered, err := s.RecoverUpstreamProvider(ctx, providerA.ID, time.Now()); err != nil || !recovered {
+		t.Fatalf("自动熔断应可恢复: %v %v", err, recovered)
+	}
+	if recovered, _ := s.RecoverUpstreamProvider(ctx, providerA.ID, time.Now()); recovered {
+		t.Fatal("已启用供应商不应再次恢复")
+	}
+	if provider, _ := s.GetUpstreamProvider(ctx, providerA.ID); !provider.Enabled || provider.DisabledMode != "" {
+		t.Fatalf("恢复后状态不符: %+v", provider)
+	}
+	_, _ = s.DeleteModel(ctx, modelID)
+}
+
+func testOpsAlerts(t *testing.T, ctx context.Context, s PlatformStore) {
+	u := mustUser(t, ctx, s, "ops@test.local")
+	suffix := fmt.Sprint(time.Now().UnixNano())
+	team, err := s.CreateTeam(ctx, CreateTeamInput{Name: "运维团队-" + suffix, QuotaCredits: "100.000000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now().UTC().Add(10 * time.Minute).Truncate(time.Millisecond)
+	for i, latency := range []int64{100, 300} {
+		latencyCopy := latency
+		if err := s.InsertUsage(ctx, UsageRecord{
+			ID: fmt.Sprintf("00000000-0000-4000-8000-%012d", 700+i), RequestID: fmt.Sprintf("ops-%s-%d", suffix, i),
+			UserID: u.ID, TeamID: team.ID, Model: "m", UpstreamModel: "m",
+			CreditsMicro: 1_000_000, Status: UsageStatusOk, LatencyMs: &latencyCopy,
+			CreatedAt: base.Add(time.Duration(i) * time.Second),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	overview, err := s.OpsOverview(ctx, base.Add(-time.Minute))
+	if err != nil || overview.Requests != 2 || overview.SuccessRequests != 2 || overview.CreditsMicro != 2_000_000 {
+		t.Fatalf("ops overview 不符: %v %+v", err, overview)
+	}
+	if overview.P50LatencyMs == nil || *overview.P50LatencyMs != 200 {
+		t.Fatalf("P50 不符: %+v", overview.P50LatencyMs)
+	}
+	if overview.P95LatencyMs == nil || *overview.P95LatencyMs < 289 || *overview.P95LatencyMs > 291 {
+		t.Fatalf("P95 不符: %+v", overview.P95LatencyMs)
+	}
+	points, err := s.OpsSeries(ctx, base.Add(-time.Minute), 60)
+	if err != nil || len(points) != 1 || points[0].Requests != 2 {
+		t.Fatalf("ops series 不符: %v %+v", err, points)
+	}
+	rule, err := s.UpsertAlertRule(ctx, UpsertAlertRuleInput{
+		Name: "错误率-" + suffix, Metric: "error_rate", Threshold: "0.100000", WindowMinutes: 15, Enabled: true,
+	})
+	if err != nil || rule == nil {
+		t.Fatalf("建告警规则: %v", err)
+	}
+	event, err := s.InsertAlertEvent(ctx, *rule, "0.500000", "错误率超过阈值", time.Now().UTC())
+	if err != nil || event == nil || event.Status != "open" || event.RuleName != rule.Name {
+		t.Fatalf("写告警事件: %v %+v", err, event)
+	}
+	if open, _ := s.OpenAlertEventForRule(ctx, rule.ID); open == nil || open.ID != event.ID {
+		t.Fatal("应查到未处理告警")
+	}
+	if resolved, err := s.ResolveAlertEvent(ctx, event.ID, time.Now().UTC()); err != nil || !resolved {
+		t.Fatalf("处理告警失败: %v", err)
+	}
+	if open, _ := s.OpenAlertEventForRule(ctx, rule.ID); open != nil {
+		t.Fatal("处理后不应再查到未处理告警")
+	}
+	if events, _ := s.ListAlertEvents(ctx, "resolved", 10); len(events) == 0 {
+		t.Fatal("应能按状态查询告警事件")
+	}
+	if deleted, err := s.DeleteAlertRule(ctx, rule.ID); err != nil || !deleted {
+		t.Fatalf("删除告警规则失败: %v", err)
+	}
 }
 
 func testDeviceTokens(t *testing.T, ctx context.Context, s PlatformStore) {
@@ -732,5 +952,27 @@ func testUsage(t *testing.T, ctx context.Context, s PlatformStore) {
 	hour, _ := s.AggregateUsageSeries(ctx, UsageFilter{TeamID: team.ID}, SeriesGranularityHour)
 	if len(hour) != 6 || hour[0].BucketStart != "2026-10-18T09:00:00" {
 		t.Fatalf("小时桶不符: %+v", hour)
+	}
+	// 全局趋势走 rollup（PG）或明细分桶（内存），累计值必须与全局聚合一致。
+	globalAgg, _ := s.AggregateUsage(ctx, UsageFilter{})
+	var globalRequests, globalCredits int64
+	for _, row := range globalAgg {
+		globalRequests += row.Requests
+		globalCredits += row.CreditsMicro
+	}
+	for _, granularity := range []UsageSeriesGranularity{SeriesGranularityDay, SeriesGranularityHour} {
+		series, err := s.AggregateUsageSeries(ctx, UsageFilter{}, granularity)
+		if err != nil {
+			t.Fatalf("全局 %s 趋势失败: %v", granularity, err)
+		}
+		var requests, credits int64
+		for _, row := range series {
+			requests += row.Requests
+			credits += row.CreditsMicro
+		}
+		if requests != globalRequests || credits != globalCredits {
+			t.Fatalf("全局 %s 趋势累计不符: series=%d/%d agg=%d/%d",
+				granularity, requests, credits, globalRequests, globalCredits)
+		}
 	}
 }

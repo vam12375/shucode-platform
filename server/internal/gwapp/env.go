@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/vam12375/shucode-platform/server/internal/platformenv"
 )
@@ -23,6 +24,12 @@ type Env struct {
 	UpstreamIdleTimeoutMs        int64
 	ProviderAutoDisableThreshold int64
 	PlatformSecretKey            string
+	RedisURL                     string
+	MaxAttempts                  int64
+	ReservationTTL               time.Duration
+	ProviderProbeInterval        time.Duration
+	// PeakHoursHolidays：北京时间法定节假日（YYYY-MM-DD），高峰窗口排除这些日期。
+	PeakHoursHolidays map[string]bool
 }
 
 func LoadEnv() (*Env, error) {
@@ -48,6 +55,29 @@ func LoadEnv() (*Env, error) {
 	if err != nil {
 		return nil, err
 	}
+	maxAttempts, err := readPositiveIntEnv("GATEWAY_MAX_ATTEMPTS", 3)
+	if err != nil {
+		return nil, err
+	}
+	reservationTTL, err := readPositiveIntEnv("GATEWAY_RESERVATION_TTL_SEC", 1800)
+	if err != nil {
+		return nil, err
+	}
+	probeInterval, err := readNonNegativeIntEnv("PROVIDER_PROBE_INTERVAL_SEC", 120)
+	if err != nil {
+		return nil, err
+	}
+	holidays := map[string]bool{}
+	for _, raw := range strings.Split(os.Getenv("PEAK_HOURS_HOLIDAYS"), ",") {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			continue
+		}
+		if _, err := time.Parse("2006-01-02", value); err != nil {
+			return nil, fmt.Errorf("PEAK_HOURS_HOLIDAYS 非法日期: %s", value)
+		}
+		holidays[value] = true
+	}
 	return &Env{
 		Port:                         port,
 		Host:                         platformenv.EnvOr("HOST", "0.0.0.0"),
@@ -61,6 +91,11 @@ func LoadEnv() (*Env, error) {
 		UpstreamIdleTimeoutMs:        idleTimeout,
 		ProviderAutoDisableThreshold: threshold,
 		PlatformSecretKey:            strings.TrimSpace(os.Getenv("PLATFORM_SECRET_KEY")),
+		RedisURL:                     strings.TrimSpace(os.Getenv("REDIS_URL")),
+		MaxAttempts:                  maxAttempts,
+		ReservationTTL:               time.Duration(reservationTTL) * time.Second,
+		ProviderProbeInterval:        time.Duration(probeInterval) * time.Second,
+		PeakHoursHolidays:            holidays,
 	}, nil
 }
 

@@ -268,21 +268,21 @@ func scanUsage(rows pgx.Rows) (*UsageRecord, error) {
 }
 
 func (s *PostgresStore) InsertUsage(ctx context.Context, record UsageRecord) error {
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO usage_records (
-			id, request_id, user_id, team_id, device_token_id, model, upstream_model,
-			input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-			credits_micro, status, error_type, client_ip, latency_ms, provider_id, created_at
-		) VALUES (
-			$1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6, $7,
-			$8, $9, $10, $11, $12, $13, $14, $15, $16, $17::uuid, $18::timestamptz
-		)`,
-		record.ID, record.RequestID, record.UserID, record.TeamID, nullIfEmpty(record.DeviceTokenID),
-		record.Model, record.UpstreamModel, record.InputTokens, record.OutputTokens,
-		record.CacheReadTokens, record.CacheCreationTokens, record.CreditsMicro, string(record.Status),
-		emptyToNil(record.ErrorType), emptyToNil(record.ClientIP), record.LatencyMs,
-		nullIfEmpty(record.ProviderID), record.CreatedAt)
-	return err
+	if record.ID == "" {
+		record.ID = newUUID()
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := insertUsageExec(ctx, tx, record); err != nil {
+		return err
+	}
+	if err := upsertRollupExec(ctx, tx, record); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // listUsageWhere:TS postgres.ts 的 WHERE 拼装(可选条件全部用 NULL 短路)。
@@ -295,6 +295,7 @@ func listUsageWhere(filter UsageFilter) (string, []any) {
 		emptyToNil(filter.Model), emptyToNil(filter.ProviderID),
 		nullableUsageStatus(filter.Status),
 		nullableTime(filter.CursorCreatedAt), nullIfEmpty(filter.CursorID),
+		nullIfEmpty(filter.RequestID),
 	}
 	return `
 		WHERE ($1::timestamptz IS NULL OR created_at >= $1::timestamptz)
@@ -307,7 +308,8 @@ func listUsageWhere(filter UsageFilter) (string, []any) {
 			AND (
 				$8::timestamptz IS NULL
 				OR (created_at, id) < ($8::timestamptz, $9::uuid)
-			)`, args
+			)
+			AND ($10::text IS NULL OR request_id = $10)`, args
 }
 
 func nullableUsageStatus(s UsageStatus) any {
@@ -320,7 +322,7 @@ func nullableUsageStatus(s UsageStatus) any {
 func (s *PostgresStore) ListUsage(ctx context.Context, filter UsageFilter) ([]UsageRecord, error) {
 	where, args := listUsageWhere(filter)
 	rows, err := s.pool.Query(ctx,
-		`SELECT `+usageCols+` FROM usage_records `+where+` ORDER BY created_at DESC LIMIT $10`,
+		`SELECT `+usageCols+` FROM usage_records `+where+` ORDER BY created_at DESC LIMIT $11`,
 		argsList(args, int64(clampLimit(filter.Limit)))...)
 	if err != nil {
 		return nil, err
@@ -367,16 +369,58 @@ func (s *PostgresStore) AggregateUsage(ctx context.Context, filter UsageFilter) 
 	return out, rows.Err()
 }
 
+// isGlobalUsageFilter:无任何维度/游标条件时，趋势图可走小时 rollup。
+func isGlobalUsageFilter(filter UsageFilter) bool {
+	return filter.TeamID == "" && filter.UserID == "" && filter.Model == "" &&
+		filter.ProviderID == "" && filter.Status == "" && filter.RequestID == "" &&
+		filter.CursorCreatedAt == nil && filter.CursorID == ""
+}
+
 func (s *PostgresStore) AggregateUsageSeries(ctx context.Context, filter UsageFilter, granularity UsageSeriesGranularity) ([]UsageSeriesRow, error) {
 	field := "day"
 	if granularity == SeriesGranularityHour {
 		field = "hour"
 	}
+	if isGlobalUsageFilter(filter) {
+		rows, err := s.pool.Query(ctx, `
+			SELECT
+				to_char(
+					date_trunc($3, bucket_start AT TIME ZONE 'Asia/Shanghai'),
+					'YYYY-MM-DD"T"HH24:MI:SS'
+				) AS bucket_start,
+				COALESCE(sum(requests), 0)::bigint,
+				COALESCE(sum(input_tokens), 0)::bigint,
+				COALESCE(sum(output_tokens), 0)::bigint,
+				COALESCE(sum(cache_read_tokens), 0)::bigint,
+				COALESCE(sum(cache_creation_tokens), 0)::bigint,
+				COALESCE(sum(credits_micro), 0)::bigint,
+				COALESCE(sum(latency_ms_sum), 0)::bigint
+			FROM usage_hourly_rollups
+			WHERE ($1::timestamptz IS NULL OR bucket_start >= $1::timestamptz)
+				AND ($2::timestamptz IS NULL OR bucket_start <= $2::timestamptz)
+			GROUP BY bucket_start
+			ORDER BY bucket_start ASC`,
+			nullableTime(filter.From), nullableTime(filter.To), field)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		out := []UsageSeriesRow{}
+		for rows.Next() {
+			var r UsageSeriesRow
+			if err := rows.Scan(&r.BucketStart, &r.Requests, &r.InputTokens, &r.OutputTokens,
+				&r.CacheReadTokens, &r.CacheCreationTokens, &r.CreditsMicro, &r.LatencyMsSum); err != nil {
+				return nil, err
+			}
+			out = append(out, r)
+		}
+		return out, rows.Err()
+	}
 	where, args := listUsageWhere(filter)
 	rows, err := s.pool.Query(ctx, `
 		SELECT
 			to_char(
-				date_trunc($10, created_at AT TIME ZONE 'Asia/Shanghai'),
+				date_trunc($11, created_at AT TIME ZONE 'Asia/Shanghai'),
 				'YYYY-MM-DD"T"HH24:MI:SS'
 			) AS bucket_start,
 			count(*)::int AS requests,
@@ -429,6 +473,9 @@ func (s *PostgresStore) TryReserveQuota(ctx context.Context, teamID string, micr
 }
 
 func (s *PostgresStore) SettleUsage(ctx context.Context, record UsageRecord, reservedMicro int64) error {
+	if record.ID == "" {
+		record.ID = newUUID()
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -445,20 +492,10 @@ func (s *PostgresStore) SettleUsage(ctx context.Context, record UsageRecord, res
 		record.TeamID, reservedCredits, actualCredits); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO usage_records (
-			id, request_id, user_id, team_id, device_token_id, model, upstream_model,
-			input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-			credits_micro, status, error_type, client_ip, latency_ms, provider_id, created_at
-		) VALUES (
-			$1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6, $7,
-			$8, $9, $10, $11, $12, $13, $14, $15, $16, $17::uuid, $18::timestamptz
-		)`,
-		record.ID, record.RequestID, record.UserID, record.TeamID, nullIfEmpty(record.DeviceTokenID),
-		record.Model, record.UpstreamModel, record.InputTokens, record.OutputTokens,
-		record.CacheReadTokens, record.CacheCreationTokens, record.CreditsMicro, string(record.Status),
-		emptyToNil(record.ErrorType), emptyToNil(record.ClientIP), record.LatencyMs,
-		nullIfEmpty(record.ProviderID), record.CreatedAt); err != nil {
+	if err := insertUsageExec(ctx, tx, record); err != nil {
+		return err
+	}
+	if err := upsertRollupExec(ctx, tx, record); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

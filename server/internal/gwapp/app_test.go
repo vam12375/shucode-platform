@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/vam12375/shucode-platform/server/internal/crypto"
+	"github.com/vam12375/shucode-platform/server/internal/ratelimit"
 	"github.com/vam12375/shucode-platform/server/internal/store"
 )
 
@@ -109,7 +110,8 @@ func newGatewayFixture(t *testing.T, patch func(env *Env, f *gatewayFixture)) *g
 		HTTPClient: &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return fmt.Errorf("redirect blocked")
 		}},
-		Trusted: NewTrustedProxies(f.env.TrustedProxyIPs),
+		Trusted:     NewTrustedProxies(f.env.TrustedProxyIPs),
+		RateLimiter: ratelimit.NewGatewayLimiter(nil),
 	})
 	return f
 }

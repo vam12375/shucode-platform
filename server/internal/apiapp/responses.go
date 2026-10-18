@@ -47,21 +47,25 @@ func toPublicUser(user *store.UserRecord) userPublic {
 }
 
 type teamPublic struct {
-	ID              string  `json:"id"`
-	Name            string  `json:"name"`
-	QuotaCredits    string  `json:"quotaCredits"`
-	UsedCredits     string  `json:"usedCredits"`
-	ReservedCredits string  `json:"reservedCredits"`
-	Unlimited       bool    `json:"unlimited"`
-	CreatedAt       string  `json:"createdAt"`
-	DisabledAt      *string `json:"disabledAt"`
+	ID               string  `json:"id"`
+	Name             string  `json:"name"`
+	QuotaCredits     string  `json:"quotaCredits"`
+	UsedCredits      string  `json:"usedCredits"`
+	ReservedCredits  string  `json:"reservedCredits"`
+	Unlimited        bool    `json:"unlimited"`
+	RPMLimit         int64   `json:"rpmLimit"`
+	TPMLimit         int64   `json:"tpmLimit"`
+	ConcurrencyLimit int64   `json:"concurrencyLimit"`
+	CreatedAt        string  `json:"createdAt"`
+	DisabledAt       *string `json:"disabledAt"`
 }
 
 func toPublicTeam(team *store.TeamRecord) teamPublic {
 	return teamPublic{
 		ID: team.ID, Name: team.Name, QuotaCredits: team.QuotaCredits,
 		UsedCredits: team.UsedCredits, ReservedCredits: team.ReservedCredits,
-		Unlimited: team.Unlimited, CreatedAt: isoString(team.CreatedAt),
+		Unlimited: team.Unlimited, RPMLimit: team.RPMLimit, TPMLimit: team.TPMLimit,
+		ConcurrencyLimit: team.ConcurrencyLimit, CreatedAt: isoString(team.CreatedAt),
 		DisabledAt: isoStringPtr(team.DisabledAt),
 	}
 }
@@ -75,6 +79,7 @@ type modelPublic struct {
 	OutputPricePerMtok     string  `json:"outputPricePerMtok"`
 	CacheReadPricePerMtok  string  `json:"cacheReadPricePerMtok"`
 	CacheWritePricePerMtok string  `json:"cacheWritePricePerMtok"`
+	OffPeakMultiplier      string  `json:"offPeakMultiplier"`
 	Enabled                bool    `json:"enabled"`
 	SortOrder              int64   `json:"sortOrder"`
 	CreatedAt              string  `json:"createdAt"`
@@ -88,7 +93,8 @@ func toPublicModel(model *store.PlatformModelRecord) modelPublic {
 		UpstreamProviderID: stringPtrOrNil(model.UpstreamProviderID),
 		InputPricePerMtok:  model.InputPricePerMtok, OutputPricePerMtok: model.OutputPricePerMtok,
 		CacheReadPricePerMtok: model.CacheReadPricePerMtok, CacheWritePricePerMtok: model.CacheWritePricePerMtok,
-		Enabled: model.Enabled, SortOrder: model.SortOrder,
+		OffPeakMultiplier: model.OffPeakMultiplier,
+		Enabled:           model.Enabled, SortOrder: model.SortOrder,
 		CreatedAt: isoString(model.CreatedAt), UpdatedAt: isoString(model.UpdatedAt),
 	}
 }

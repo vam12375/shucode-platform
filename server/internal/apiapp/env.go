@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/vam12375/shucode-platform/server/internal/platformenv"
 )
@@ -28,6 +29,8 @@ type Env struct {
 	ConsoleDistDir      string
 	PublicConsoleOrigin string
 	RedisURL            string
+	AlertWebhookURL     string
+	ReservationTTL      time.Duration
 }
 
 func LoadPlatformEnv() (*Env, error) {
@@ -58,6 +61,10 @@ func LoadPlatformEnv() (*Env, error) {
 	if gatewayAPIType == "openai-chat-completions" {
 		gatewayAPIBaseURL = gatewayBaseURL + "/v1"
 	}
+	reservationTTLSeconds, err := strconv.Atoi(platformenv.EnvOr("GATEWAY_RESERVATION_TTL_SEC", "1800"))
+	if err != nil || reservationTTLSeconds <= 0 {
+		return nil, fmt.Errorf("GATEWAY_RESERVATION_TTL_SEC 非法")
+	}
 	return &Env{
 		Port:                port,
 		Host:                platformenv.EnvOr("HOST", "0.0.0.0"),
@@ -75,6 +82,8 @@ func LoadPlatformEnv() (*Env, error) {
 		ConsoleDistDir:      strings.TrimSpace(os.Getenv("CONSOLE_DIST_DIR")),
 		PublicConsoleOrigin: strings.TrimSpace(os.Getenv("PUBLIC_CONSOLE_ORIGIN")),
 		RedisURL:            strings.TrimSpace(os.Getenv("REDIS_URL")),
+		AlertWebhookURL:     strings.TrimSpace(os.Getenv("ALERT_WEBHOOK_URL")),
+		ReservationTTL:      time.Duration(reservationTTLSeconds) * time.Second,
 	}, nil
 }
 

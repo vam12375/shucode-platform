@@ -113,7 +113,7 @@ export function ReadoutRail() {
         <div className="label">今日费用</div>
         <div className="value">
           {creditsText}
-          <span className="unit">CR</span>
+          <span className="unit">¥</span>
         </div>
         <div className="mini" aria-hidden="true" style={{ "--w": creditWidth } as CSSProperties}>
           <i />
