@@ -95,23 +95,35 @@ postgres + redis（healthcheck 就绪）
 
 镜像由根目录 `Dockerfile` 多阶段构建：Node 构建 console 产物 → Go 静态编译 api/gateway/migrate/seed → alpine 运行时（含 ca-certificates/curl）。console 产物并入 api 镜像以 `/console` 托管；compose 为 api 注入 `REDIS_URL`（共享限流与配置事件总线）。
 
-首次部署请在对外放行前打开控制台完成 root 初始化；初始化接口在 root 存在后自动关闭。
+首次部署请在对外放行前打开控制台完成 root 初始化。新部署必须先在 `.env` 设置 `BOOTSTRAP_SECRET`，初始化请求需携带同值 `x-bootstrap-secret` 头；初始化成功后删除该变量并重启 api。初始化接口在 root 存在后自动关闭。
 
 | 项 | 说明 |
 | --- | --- |
 | 访问地址 | 控制台 `http://localhost:8787/console/`、控制面 `http://localhost:8787`、网关 `http://localhost:8788` |
-| 服务器部署 | 把 `.env` 的 `PUBLIC_API_ORIGIN` / `PUBLIC_APP_ORIGIN` / `GATEWAY_BASE_URL` / `COOKIE_DOMAIN` / `UPSTREAM_API_KEY` 换成正式值，服务器上执行同一条 `pnpm docker:up`；反向代理（HTTPS）指向 8787 / 8788 |
-| 宿主机端口 | `API_HOST_PORT` / `GATEWAY_HOST_PORT` / `POSTGRES_HOST_PORT` 可改映射端口 |
+| 服务器部署 | 使用 `docker-compose.yml` + `docker-compose.prod.yml`，api/gateway 固定只绑 `127.0.0.1`，由宿主机 Nginx 提供 HTTPS；首次发布前先验证 Nginx 入口。公开地址、证书与反代步骤见 `deploy/nginx/README.md`，公网只放行 SSH / 80 / 443 |
+| 宿主机端口 | `API_HOST_PORT` / `GATEWAY_HOST_PORT` 可改映射端口，需同步 Nginx 回源；`POSTGRES_HOST_PORT` 仅基础编排使用，生产固定 `127.0.0.1:5432` |
 | 只起数据库 | `docker compose up -d postgres redis`；整条 `docker compose up -d` 会按依赖先跑迁移与种子 |
 | 与本地 dev 并存 | 两者默认都占 8787 / 8788，不要同时用；需要并存时给 stack 改宿主端口映射 |
 | 停止 | `pnpm docker:down`（停 api / gateway / redis 与一次性容器，保留 Postgres 数据卷） |
 | 日志 | `pnpm docker:logs`；`docker compose ps -a` 查看健康状态（migrate / seed 显示已退出属正常） |
 
-种子说明：seed 只负责内置配置与模型目录（幂等），不再创建管理员账号；root 首次初始化在控制台完成，账号口令只以哈希入库，`.env` 中不再有 root 凭据。控制台角色分为 `root`（唯一超级管理员）、`admin`（普通管理员，只能管理普通用户）与 `user`（普通用户，只能登录客户端）。
+种子说明：seed 只负责内置配置与模型目录（幂等），不再创建管理员账号；root 首次初始化在控制台完成，账号口令只以哈希入库，`.env` 中不再有 root 凭据。控制台向所有账号开放：`root` 管理平台；团队 `owner/admin` 管理自己的团队，权限来自成员关系，全局 `admin` 标记不授予平台权限；普通成员查看个人用量、设备与资料。定价、参考成本、供应商和全局配置仅 root 可见。完整矩阵与升级规则见 [`specs/tenant-permissions.md`](specs/tenant-permissions.md)。
 
 用量中的客户端 IP 默认只取 TCP 对端，忽略所有转发头；端口直连无需额外配置。使用可信反代时，才在 `.env` 设置 `GATEWAY_TRUSTED_PROXY_IPS` 为网关实际看到的代理精确 IP（逗号分隔，支持 IPv4/IPv6，不支持 CIDR/通配符）。仅这些对端提供的 `X-Forwarded-For` 会按链从右向左解析，遇到首个非可信地址即停止；没有 XFF 时才接受经校验的 `X-Real-IP`。反代须覆盖转发头或在 XFF 追加实际对端地址，并限制其入口访问；不要仅因地址属于私网或 Docker 网桥就信任它。
 
 旧的手工部署方式仍可用：`pnpm build`（console 产物在 `apps/console/dist`），设置 `CONSOLE_DIST_DIR` 由 API 以 `/console` 路径托管；或托管到独立域名并设置 `PUBLIC_CONSOLE_ORIGIN`（已内置带凭据 CORS）。
+
+使用宿主机 Nginx 与 Cloudflare DNS 时，域名、证书签发、反代配置、真实 IP 与验收命令见 [`deploy/nginx/README.md`](deploy/nginx/README.md)。
+
+### 生产安全基线
+
+- **HTTPS 是硬前提**：公网 HTTP 会暴露口令、会话与录入的上游 key。生产编排将 api/gateway 固定绑定到 `127.0.0.1`，宿主机 Nginx 负责 TLS，避免公网 8787/8788 绕过 HTTPS。边缘不要对 `/console/api/*`、SSE 或网关响应启用 Cache Everything；Nginx 示例已关闭代理缓冲与缓存，支持流式响应。
+- **管理与公开入口分离**：设置 `CONSOLE_ALLOWED_HOSTS` 后，`/console` 只接受指定 Host；配合 Cloudflare Access（或 VPN）保护管理域名，公开 API 域名无法绕入。
+- **可信代理解析**：api 与 gateway 都只在 TCP 对端命中 `API_TRUSTED_PROXY_IPS` / `GATEWAY_TRUSTED_PROXY_IPS` 精确地址时才读取转发头；反代须覆盖或清洗转发头。宿主反代访问 Docker 发布的回环端口后，容器可能看到网桥 gateway，必须填写实测的精确对端；只有实际对端为 `127.0.0.1` 时才填该值。`CF-Connecting-IP` 默认不信任（普通反代不会清洗它），只有源站只能经 Cloudflare 访问时才设 `TRUST_CF_CONNECTING_IP=1`。
+- **上游密钥边界**：供应商地址强制 https、拒绝 userinfo/查询串，管理端与网关都不跟随重定向；默认禁止出站访问回环、私网与云元数据地址（自建内网上游需显式设 `UPSTREAM_ALLOW_PRIVATE_NETWORKS=1`）。新建供应商与修改地址/密钥仅 root 可操作。
+- **计量**：OpenAI 流式请求由网关强制 `include_usage=true`；上游成功但缺失 usage 时按准入预留额保守结算并标记 `usage_missing_estimated`，便于对账。请求幂等键按 `(team_id, request_id)` 隔离。
+- **请求边界**：控制台 JSON 1 MiB、登录表单/初始化 64 KiB、网关请求 32 MiB，上游非流式响应 32 MiB；SSE 与长响应不设写超时。管理面登录/初始化与设备授权页的密码验证在限流后端故障时 fail-closed，匿名设备登录流初始化沿用原可用性策略。
+- **日志**：不再使用 Gin 默认 recovery（避免 broken-pipe 时 dump Cookie/x-api-key）；上游错误正文返回前会脱敏当前供应商密钥。
 
 ## 域名与对客端
 
@@ -162,7 +174,7 @@ docker run --rm -e TEST_DATABASE_URL=postgres://mendao:mendao@host.docker.intern
 
 ## 已知边界（MVP 内）
 
-- 单团队：用户取第一个未禁用团队作为额度归属；多团队与切换后续评估。
+- 单团队：新增成员关系拒绝跨团队重复加入；历史多有效团队返回 409，需 root 修复归属，不再自动选第一个。无有效成员关系或团队停用返回 403。
 - 多上游为「同构透传」：模型绑定供应商（密钥加密存储），未绑定回落 `UPSTREAM_BASE_URL`/`UPSTREAM_API_KEY`；跨协议翻译是后续项。
-- 未托管额度充值流程：额度调整在控制台人工操作；计费口径为参考 credit，非发票账单。
+- 额度申请由团队管理员提交、root 人工批准或拒绝；批准与额度增加同事务且仅执行一次。尚未接入在线支付、订阅或发票。参考成本采用请求时冻结的估算快照，旧记录不回填为零。
 - 登录限流与配置事件总线：设置 `REDIS_URL`（compose 整栈默认）时为多实例共享；未设置时退回进程内实现（单实例语义）。
