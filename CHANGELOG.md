@@ -9,6 +9,17 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.26.0] - 2026-10-19
+
+### 新增(控制台登录人机验证)
+
+- 控制台登录页按 `/console/api/public-config` 下发的 site key 显式渲染 Turnstile，登录请求携带 token，失败后自动重置挑战。
+- 新增 `Turnstile` 组件（脚本单例加载、过期/错误回调、卸载清理）与 site key 归一化工具；挑战未完成时登录按钮禁用。
+
+### 测试
+
+- Console：Turnstile site key 归一化测试（`apps/console/tests/turnstile.test.mjs`）。
+
 ## [0.25.0] - 2026-10-19
 
 ### 安全（登录防护）
