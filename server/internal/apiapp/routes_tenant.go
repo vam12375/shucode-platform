@@ -155,7 +155,7 @@ func registerTenantRoutes(router *gin.Engine, deps *Deps) {
 				internalError(c, deps, err)
 				return
 			}
-			if err := loginWithSession(ctx, deps, c, user.ID); err != nil {
+			if err := loginWithSession(ctx, deps, c, user); err != nil {
 				internalError(c, deps, err)
 				return
 			}
@@ -548,7 +548,7 @@ func registerTenantRoutes(router *gin.Engine, deps *Deps) {
 			tenantStoreError(c, deps, err)
 			return
 		}
-		if err := loginWithSession(ctx, deps, c, user.ID); err != nil {
+		if err := loginWithSession(ctx, deps, c, user); err != nil {
 			internalError(c, deps, err)
 			return
 		}

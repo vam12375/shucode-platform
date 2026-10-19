@@ -15,10 +15,17 @@ import (
 // 控制台 JSON 请求体上限；模型探测等路径的响应体另有独立限制。
 const maxConsoleJSONBodyBytes = 1 << 20
 
+// 登录/初始化只接收凭据与少量字段，单独收紧，避免长字段放大限流键与内存。
+const maxLoginJSONBodyBytes = 64 << 10
+
 // 控制台路由公共辅助(console.ts 内部 closures 的包级化)。
 
 func readJSONBody(c *gin.Context) (any, bool) {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxConsoleJSONBodyBytes)
+	return readJSONBodyLimited(c, maxConsoleJSONBodyBytes)
+}
+
+func readJSONBodyLimited(c *gin.Context, maxBytes int64) (any, bool) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
 	raw, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		return nil, false
@@ -31,7 +38,11 @@ func readJSONBody(c *gin.Context) (any, bool) {
 }
 
 func readObjectBody(c *gin.Context) (map[string]any, bool) {
-	value, ok := readJSONBody(c)
+	return readObjectBodyLimited(c, maxConsoleJSONBodyBytes)
+}
+
+func readObjectBodyLimited(c *gin.Context, maxBytes int64) (map[string]any, bool) {
+	value, ok := readJSONBodyLimited(c, maxBytes)
 	if !ok {
 		return nil, false
 	}

@@ -221,7 +221,13 @@ func renewRootMFASession(ctx context.Context, deps *Deps, c *gin.Context, userID
 		// 版本已原子轮换，旧会话即使清理失败也已失效；清理只是回收存储。
 		deps.Logger.Warn("旧安全会话清理失败", "error", err)
 	}
-	if err := loginWithSession(ctx, deps, c, userID); err != nil {
+	user, err := deps.Store.FindUserByID(ctx, userID)
+	if err != nil || user == nil {
+		deps.Logger.Error("MFA 会话续签读取用户失败", "error", err)
+		rootMFAUnavailable(c)
+		return false
+	}
+	if err := loginWithSession(ctx, deps, c, user); err != nil {
 		rootMFAUnavailable(c)
 		return false
 	}

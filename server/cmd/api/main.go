@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/vam12375/shucode-platform/server/internal/ratelimit"
 	"github.com/vam12375/shucode-platform/server/internal/seed"
 	"github.com/vam12375/shucode-platform/server/internal/store"
+	"github.com/vam12375/shucode-platform/server/internal/turnstile"
 )
 
 func main() {
@@ -49,6 +51,12 @@ func main() {
 		default:
 			logger.Warn("PUBLIC_API_ORIGIN 使用 HTTP：管理员口令、会话 cookie 与录入的上游 key 可能被链路攻击者读取；请尽快启用 HTTPS")
 		}
+	}
+	if env.TurnstileSiteKey == "" {
+		logger.Warn("未配置 TURNSTILE_SITE_KEY/TURNSTILE_SECRET_KEY，登录页不启用人机验证")
+	}
+	if !env.MemoryDB && strings.HasPrefix(env.PublicAPIOrigin, "https:") && len(env.TrustedProxyIPs) == 0 {
+		logger.Warn("API_TRUSTED_PROXY_IPS 未配置：经 Nginx 回源时所有请求可能折叠到 Docker 网桥 IP，登录限流分桶会失效")
 	}
 
 	ctx := context.Background()
@@ -111,9 +119,11 @@ func main() {
 
 	// 事件总线与限流:REDIS_URL 配置时用 Redis(跨实例),否则进程内(单实例语义)。
 	var bus events.Bus
-	var consoleLimiter, platformLimiter ratelimit.Limiter
+	var consoleLimiter, platformLimiter, loginIPLimiter, rootLoginLimiter ratelimit.Limiter
 	var redisClient *redis.Client
 	window := ratelimit.Window{Window: 5 * time.Minute, Max: 10}
+	ipWindow := ratelimit.Window{Window: 24 * time.Hour, Max: 100}
+	rootWindow := ratelimit.Window{Window: time.Hour, Max: 5}
 	if env.RedisURL != "" {
 		options, err := redis.ParseURL(env.RedisURL)
 		if err != nil {
@@ -129,11 +139,36 @@ func main() {
 		bus = redisBus
 		consoleLimiter = ratelimit.NewRedis(redisClient, window)
 		platformLimiter = ratelimit.NewRedis(redisClient, window)
+		loginIPLimiter = ratelimit.NewRedis(redisClient, ipWindow)
+		rootLoginLimiter = ratelimit.NewRedis(redisClient, rootWindow)
 		logger.Info("已启用 Redis 共享限流与事件总线")
 	} else {
 		bus = events.NewInProc()
 		consoleLimiter = ratelimit.NewInProc(window)
 		platformLimiter = ratelimit.NewInProc(window)
+		loginIPLimiter = ratelimit.NewInProc(ipWindow)
+		rootLoginLimiter = ratelimit.NewInProc(rootWindow)
+	}
+
+	var turnstileVerifier apiapp.TurnstileVerifier
+	if env.TurnstileSecretKey != "" {
+		verifier, err := turnstile.NewClient(turnstile.Options{
+			SecretKey:      env.TurnstileSecretKey,
+			Endpoint:       env.TurnstileVerifyURL,
+			ExpectedAction: turnstile.DefaultAction,
+			HTTPClient: &http.Client{
+				Timeout: 5 * time.Second,
+				// siteverify 不需要重定向；禁止重定向避免 secret 被带到意外目标。
+				CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+					return errors.New("Turnstile 校验重定向被禁止")
+				},
+			},
+		})
+		if err != nil {
+			logger.Error("启动失败", "error", err)
+			os.Exit(1)
+		}
+		turnstileVerifier = verifier
 	}
 
 	deps := &apiapp.Deps{
@@ -144,6 +179,9 @@ func main() {
 		ConfigEvents:         bus,
 		ConsoleLoginLimiter:  consoleLimiter,
 		PlatformLoginLimiter: platformLimiter,
+		LoginIPLimiter:       loginIPLimiter,
+		RootLoginLimiter:     rootLoginLimiter,
+		Turnstile:            turnstileVerifier,
 		Logger:               logger,
 		Trusted:              netutil.NewTrustedProxies(env.TrustedProxyIPs),
 		HTTPClient: &http.Client{

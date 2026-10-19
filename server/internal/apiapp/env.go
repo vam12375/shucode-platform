@@ -10,6 +10,7 @@ import (
 
 	"github.com/vam12375/shucode-platform/server/internal/netutil"
 	"github.com/vam12375/shucode-platform/server/internal/platformenv"
+	"github.com/vam12375/shucode-platform/server/internal/turnstile"
 )
 
 // env.ts(控制面)的镜像:变量名/默认值/派生规则逐项一致。
@@ -47,6 +48,12 @@ type Env struct {
 	DeviceTokenTTL time.Duration
 	// ConsoleAllowedHosts:非空时 /console 仅接受这些 Host（配合边缘 Access 按域名隔离管理面）。
 	ConsoleAllowedHosts []string
+	// SetupAllowedHosts:非空时首次初始化接口只在这些 Host 可达（建议专用初始化域名 + Access/VPN）。
+	SetupAllowedHosts []string
+	// TurnstileSiteKey/TurnstileSecretKey:登录页人机验证；两者必须同时配置。
+	TurnstileSiteKey   string
+	TurnstileSecretKey string
+	TurnstileVerifyURL string
 }
 
 func LoadPlatformEnv() (*Env, error) {
@@ -99,9 +106,21 @@ func LoadPlatformEnv() (*Env, error) {
 			consoleAllowedHosts = append(consoleAllowedHosts, host)
 		}
 	}
+	var setupAllowedHosts []string
+	for _, raw := range strings.Split(os.Getenv("SETUP_ALLOWED_HOSTS"), ",") {
+		if host := strings.ToLower(strings.TrimSpace(raw)); host != "" {
+			setupAllowedHosts = append(setupAllowedHosts, host)
+		}
+	}
 	deviceTokenTTLDays, err := strconv.Atoi(platformenv.EnvOr("DEVICE_TOKEN_TTL_DAYS", "0"))
 	if err != nil || deviceTokenTTLDays < 0 {
 		return nil, fmt.Errorf("DEVICE_TOKEN_TTL_DAYS 非法")
+	}
+	// 只配置一半会造成“前端不渲染、后端强制校验”或相反的半启用状态，启动时直接拒绝。
+	turnstileSiteKey := strings.TrimSpace(os.Getenv("TURNSTILE_SITE_KEY"))
+	turnstileSecretKey := strings.TrimSpace(os.Getenv("TURNSTILE_SECRET_KEY"))
+	if (turnstileSiteKey == "") != (turnstileSecretKey == "") {
+		return nil, fmt.Errorf("TURNSTILE_SITE_KEY 与 TURNSTILE_SECRET_KEY 必须同时配置")
 	}
 	return &Env{
 		Port:                port,
@@ -130,7 +149,11 @@ func LoadPlatformEnv() (*Env, error) {
 			os.Getenv("UPSTREAM_ALLOW_PRIVATE_NETWORKS")),
 		TrustCFConnectingIP: platformenv.Truthy(os.Getenv("TRUST_CF_CONNECTING_IP")),
 		ConsoleAllowedHosts: consoleAllowedHosts,
+		SetupAllowedHosts:   setupAllowedHosts,
 		DeviceTokenTTL:      time.Duration(deviceTokenTTLDays) * 24 * time.Hour,
+		TurnstileSiteKey:    turnstileSiteKey,
+		TurnstileSecretKey:  turnstileSecretKey,
+		TurnstileVerifyURL:  platformenv.EnvOr("TURNSTILE_VERIFY_URL", turnstile.DefaultEndpoint),
 	}, nil
 }
 

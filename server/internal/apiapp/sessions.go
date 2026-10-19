@@ -19,7 +19,10 @@ import (
 
 const sessionCookieName = "mendao_session"
 
-const sessionTTL = 7 * 24 * time.Hour
+const (
+	sessionTTL           = 7 * 24 * time.Hour
+	privilegedSessionTTL = 24 * time.Hour
+)
 
 func getCookieValue(c *gin.Context, name string) string {
 	value, err := c.Cookie(name)
@@ -81,7 +84,7 @@ func cacheSessionSecurityProof(c *gin.Context, userID, version string) {
 }
 
 // 仅复制密码/MFA验证或有效会话实际证明过的版本，绝不能读取当前版本补发证明。
-func loginWithSession(ctx context.Context, deps *Deps, c *gin.Context, userID string) error {
+func loginWithSession(ctx context.Context, deps *Deps, c *gin.Context, user *store.UserRecord) error {
 	// TS 生成 `${randomUUID()}.${Math.random().toString(36).slice(2)}` 形态;
 	// token 是不透明凭据,这里保持同形态(uuid + 点 + 基 36 随机后缀)。
 	suffixBytes := make([]byte, 8)
@@ -91,23 +94,27 @@ func loginWithSession(ctx context.Context, deps *Deps, c *gin.Context, userID st
 	token := uuid.NewString() + "." + base36(suffixBytes)
 	securityVersion := ""
 	if raw, exists := c.Get(sessionSecurityProofKey); exists {
-		if proof, ok := raw.(sessionSecurityProof); ok && proof.UserID == userID {
+		if proof, ok := raw.(sessionSecurityProof); ok && proof.UserID == user.ID {
 			securityVersion = proof.Version
 		}
+	}
+	ttl := sessionTTL
+	if user.Role == store.RoleRoot || user.Role == store.RoleAdmin {
+		ttl = privilegedSessionTTL
 	}
 	now := deps.Now()
 	if err := deps.Store.CreateSession(ctx, store.SessionRecord{
 		TokenHash:       crypto.HashToken(token),
 		SecurityVersion: securityVersion,
-		UserID:          userID,
+		UserID:          user.ID,
 		CreatedAt:       now,
-		ExpiresAt:       now.Add(sessionTTL),
+		ExpiresAt:       now.Add(ttl),
 		LastSeenAt:      now,
 	}); err != nil {
 		return err
 	}
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(sessionCookieName, token, int(sessionTTL.Seconds()), "/", deps.Env.CookieDomain, deps.Env.SecureCookies, true)
+	c.SetCookie(sessionCookieName, token, int(ttl.Seconds()), "/", deps.Env.CookieDomain, deps.Env.SecureCookies, true)
 	return nil
 }
 

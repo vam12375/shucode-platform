@@ -9,6 +9,25 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.25.0] - 2026-10-19
+
+### 安全（登录防护）
+
+- 控制台登录页与设备授权登录页接入 Cloudflare Turnstile（可选）：服务端调用 siteverify 并校验 `action=login`，校验不可用时 fail-closed；未配置 key 时保持原登录行为。CSP 仅在启用时放行 `challenges.cloudflare.com`。
+- 登录限流分层：Pure-IP 全局桶（100 次/24h）、IP+归一化邮箱桶（10 次/5min）、root 专属桶（5 次/h）；邮箱键去掉 `+tag`、归一 Gmail 点号，限流键在 Redis/内存中先 SHA-256。
+- 未知邮箱执行 dummy scrypt，禁用账号仍执行真实哈希；登录/初始化 JSON 限制 64 KiB，邮箱字段限制 254 字符。
+- root/admin 新签发会话 TTL 缩短为 24 小时，普通账号保持 7 天。
+
+### 安全（入口与部署）
+
+- 新增 `SETUP_ALLOWED_HOSTS`，首次初始化接口可限制到专用初始化 Host，降低公网 `setup/status`/`setup/root` 探测面。
+- HSTS 增加 `includeSubDomains`；`API_TRUSTED_PROXY_IPS`/`GATEWAY_TRUSTED_PROXY_IPS` 未配置时启动告警，提示限流分桶可能折叠到 Docker 网桥。
+- 新增 `TURNSTILE_SITE_KEY`、`TURNSTILE_SECRET_KEY`、`TURNSTILE_VERIFY_URL` 配置项，`/console/api/public-config` 下发公开 site key。
+
+### 测试
+
+- Go：Turnstile siteverify、登录限流分层/别名归一/root 桶、setup Host、HSTS、会话 TTL、环境变量成对校验。
+
 ## [0.24.2] - 2026-10-19
 
 ### 文档

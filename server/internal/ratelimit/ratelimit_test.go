@@ -29,6 +29,44 @@ func TestInProcWindow(t *testing.T) {
 	}
 }
 
+func TestCompositeAllowStopsAtFirstRejection(t *testing.T) {
+	l := NewInProc(Window{Window: time.Minute, Max: 1})
+	ctx := context.Background()
+	allowed, err := CompositeAllow(ctx,
+		Rule{Limiter: nil, Key: "ignored"},
+		Rule{Limiter: l, Key: "ip"},
+		Rule{Limiter: l, Key: "email"},
+	)
+	if err != nil || !allowed {
+		t.Fatalf("首次应放行: allowed=%v err=%v", allowed, err)
+	}
+	allowed, err = CompositeAllow(ctx,
+		Rule{Limiter: l, Key: "ip"},
+		Rule{Limiter: l, Key: "email"},
+	)
+	if err != nil || allowed {
+		t.Fatalf("任一桶拒绝应整体拒绝: allowed=%v err=%v", allowed, err)
+	}
+}
+
+func TestHashKeyIsStableAndBounded(t *testing.T) {
+	long := make([]byte, 1000)
+	for i := range long {
+		long[i] = 'a'
+	}
+	key := string(long)
+	hashed := hashKey(key)
+	if hashed != hashKey(key) {
+		t.Fatal("同一 key 的哈希应稳定")
+	}
+	if len(hashed) != 64 {
+		t.Fatalf("SHA-256 hex 长度应为 64，得到 %d", len(hashed))
+	}
+	if hashed == hashKey("other") {
+		t.Fatal("不同 key 不应碰撞")
+	}
+}
+
 func TestRedisWindowSharedAcrossInstances(t *testing.T) {
 	url := os.Getenv("TEST_REDIS_URL")
 	if url == "" {
@@ -42,7 +80,7 @@ func TestRedisWindowSharedAcrossInstances(t *testing.T) {
 	client := redis.NewClient(opts)
 	defer client.Close()
 	ctx := context.Background()
-	_ = client.Del(ctx, "ratelimit:shared-key").Err()
+	_ = client.Del(ctx, "ratelimit:"+hashKey("shared-key")).Err()
 
 	cfg := Window{Window: 5 * time.Minute, Max: 5}
 	a := NewRedis(client, cfg)

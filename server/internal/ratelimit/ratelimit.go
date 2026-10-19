@@ -5,6 +5,8 @@ package ratelimit
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"sync"
 	"time"
 
@@ -20,6 +22,36 @@ type Limiter interface {
 type Window struct {
 	Window time.Duration
 	Max    int
+}
+
+// Rule 是 CompositeAllow 的一个限流桶；Limiter 为 nil 时跳过（便于测试/逐步启用）。
+type Rule struct {
+	Limiter Limiter
+	Key     string
+}
+
+// CompositeAllow 依次检查多个桶，任一拒绝即拒绝；用于登录的 IP 全局桶 + 邮箱桶。
+func CompositeAllow(ctx context.Context, rules ...Rule) (bool, error) {
+	for _, rule := range rules {
+		if rule.Limiter == nil {
+			continue
+		}
+		allowed, err := rule.Limiter.Allow(ctx, rule.Key)
+		if err != nil {
+			return false, err
+		}
+		if !allowed {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// hashKey 把调用方拼装的业务键收敛成固定长度，避免长邮箱/伪造前缀直接成为
+// Redis ZSET 成员或进程内 map 的长键。
+func hashKey(key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:])
 }
 
 // ---- 进程内滑动窗口(登录接口,参数 5min/10 次) ----
@@ -39,6 +71,7 @@ func (l *InProc) Allow(_ context.Context, key string) (bool, error) {
 }
 
 func (l *InProc) allowAt(key string, now time.Time) bool {
+	key = hashKey(key)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	cutoff := now.Add(-l.cfg.Window)
@@ -87,9 +120,10 @@ return 0`),
 
 func (l *RedisLimiter) Allow(ctx context.Context, key string) (bool, error) {
 	nowMs := time.Now().UnixMilli()
-	member := key + ":" + time.Now().Format(time.RFC3339Nano)
+	hashed := hashKey(key)
+	member := hashed + ":" + time.Now().Format(time.RFC3339Nano)
 	result, err := l.script.Run(ctx, l.client,
-		[]string{"ratelimit:" + key},
+		[]string{"ratelimit:" + hashed},
 		nowMs,
 		l.cfg.Window.Milliseconds(),
 		l.cfg.Max,

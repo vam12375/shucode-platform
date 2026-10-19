@@ -560,6 +560,7 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 		if user == nil {
 			c.Data(200, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
 				FlowID: flowID, DeviceName: flow.DeviceName,
+				TurnstileSiteKey: deps.Env.TurnstileSiteKey,
 			})))
 			return
 		}
@@ -593,11 +594,18 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 			})))
 			return
 		}
+		if len(email) > 254 {
+			c.Data(400, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
+				FlowID: flowID, DeviceName: flow.DeviceName, Error: "邮箱格式不正确。",
+				TurnstileSiteKey: deps.Env.TurnstileSiteKey,
+			})))
+			return
+		}
 		if deps.PlatformLoginLimiter == nil {
 			rootMFAUnavailable(c)
 			return
 		}
-		allowed, err := deps.PlatformLoginLimiter.Allow(ctx, resolveLimiterClientIP(c, deps)+":"+strings.ToLower(email))
+		allowed, err := checkLoginRateLimits(ctx, deps, c, deps.PlatformLoginLimiter, email)
 		if err != nil {
 			// 此表单也签发控制台会话；限流故障不能退化为无限次密码验证。
 			c.Data(503, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{Title: "登录暂不可用", Message: "登录验证暂不可用，请稍后重试。", Tone: "error"})))
@@ -606,6 +614,15 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 		if !allowed {
 			c.Data(429, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
 				FlowID: flowID, DeviceName: flow.DeviceName, Error: "尝试次数过多，请稍后再试。",
+				TurnstileSiteKey: deps.Env.TurnstileSiteKey,
+			})))
+			return
+		}
+		if err := requireTurnstile(ctx, deps, c, c.Request.FormValue("cf-turnstile-response")); err != nil {
+			deps.Logger.Warn("设备登录人机验证未通过", "error", err)
+			c.Data(turnstileHTMLStatus(err), "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
+				FlowID: flowID, DeviceName: flow.DeviceName, Error: turnstileHTMLMessage(err), Email: email,
+				TurnstileSiteKey: deps.Env.TurnstileSiteKey,
 			})))
 			return
 		}
@@ -617,10 +634,25 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 				return
 			}
 		}
-		passwordOK := user != nil && user.DisabledAt == nil && crypto.VerifyPassword(password, user.PasswordHash)
-		if user == nil || !passwordOK {
+		allowed, err = checkRootLoginLimit(ctx, deps, user)
+		if err != nil {
+			deps.Logger.Error("设备登录 root 限流不可用，拒绝登录", "error", err)
+			c.Data(503, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+				Title: "登录暂不可用", Message: "登录验证暂不可用，请稍后重试。", Tone: "error",
+			})))
+			return
+		}
+		if !allowed {
+			c.Data(429, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
+				FlowID: flowID, DeviceName: flow.DeviceName, Error: "尝试次数过多，请稍后再试。", Email: email,
+				TurnstileSiteKey: deps.Env.TurnstileSiteKey,
+			})))
+			return
+		}
+		if !verifyLoginPassword(user, password) {
 			c.Data(401, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
 				FlowID: flowID, DeviceName: flow.DeviceName, Error: "邮箱或密码不正确。", Email: email,
+				TurnstileSiteKey: deps.Env.TurnstileSiteKey,
 			})))
 			return
 		}
@@ -628,7 +660,7 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		rehashPasswordIfNeeded(ctx, deps, user, password)
-		if err := loginWithSession(ctx, deps, c, user.ID); err != nil {
+		if err := loginWithSession(ctx, deps, c, user); err != nil {
 			internalError(c, deps, err)
 			return
 		}

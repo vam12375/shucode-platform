@@ -31,6 +31,9 @@ func main() {
 		logger.Error("启动失败", "error", err)
 		os.Exit(1)
 	}
+	if !env.MemoryDB && len(env.TrustedProxyIPs) == 0 {
+		logger.Warn("GATEWAY_TRUSTED_PROXY_IPS 未配置：经 Nginx 回源时客户端 IP 可能折叠到 Docker 网桥 IP")
+	}
 
 	ctx, stopBackground := context.WithCancel(context.Background())
 	defer stopBackground()

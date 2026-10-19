@@ -44,7 +44,8 @@ func consoleAccessGuard(deps *Deps) gin.HandlerFunc {
 			return
 		}
 		path := strings.TrimPrefix(c.FullPath(), "/console/api")
-		if strings.HasPrefix(path, "/setup/") || path == "/auth/login" || path == "/auth/logout" || path == "/invitations/accept" {
+		if strings.HasPrefix(path, "/setup/") || path == "/auth/login" ||
+			path == "/auth/logout" || path == "/invitations/accept" || path == "/public-config" {
 			c.Next()
 			return
 		}

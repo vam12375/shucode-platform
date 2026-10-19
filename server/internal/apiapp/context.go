@@ -25,9 +25,14 @@ type Deps struct {
 	ConfigEvents         events.Bus
 	ConsoleLoginLimiter  ratelimit.Limiter
 	PlatformLoginLimiter ratelimit.Limiter
-	Logger               *slog.Logger
-	HTTPClient           *http.Client // 上游探测(模型列表/连通测试)
-	Trusted              netutil.TrustedProxies
+	// LoginIPLimiter:Pure-IP 全局登录桶；RootLoginLimiter:root 专属更紧的桶。
+	LoginIPLimiter   ratelimit.Limiter
+	RootLoginLimiter ratelimit.Limiter
+	// Turnstile:登录页人机验证；nil 表示未配置，登录行为保持原样。
+	Turnstile  TurnstileVerifier
+	Logger     *slog.Logger
+	HTTPClient *http.Client // 上游探测(模型列表/连通测试)
+	Trusted    netutil.TrustedProxies
 }
 
 // jsonMarshalNoHTML:与 JSON.stringify 一致的紧凑序列化(禁用 <>& 转义)。

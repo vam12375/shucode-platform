@@ -41,15 +41,22 @@ func securityHeaders(deps *Deps) gin.HandlerFunc {
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("Referrer-Policy", "no-referrer")
 		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		csp := "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-			"img-src 'self' data:; font-src 'self'; connect-src 'self'; " +
-			"frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-		if strings.HasPrefix(c.Request.URL.Path, "/app/") {
-			csp = strings.Replace(csp, "script-src 'self'", "script-src 'self' 'unsafe-inline'", 1)
+		// Turnstile 脚本与挑战 iframe 都在 challenges.cloudflare.com；只在启用时放宽。
+		turnstileHosts := ""
+		if deps.Env.TurnstileSiteKey != "" {
+			turnstileHosts = " https://challenges.cloudflare.com"
 		}
+		scriptSrc := "'self'" + turnstileHosts
+		if strings.HasPrefix(c.Request.URL.Path, "/app/") {
+			scriptSrc += " 'unsafe-inline'"
+		}
+		csp := "default-src 'self'; script-src " + scriptSrc + "; style-src 'self' 'unsafe-inline'; " +
+			"img-src 'self' data:; font-src 'self'; connect-src 'self'" + turnstileHosts + "; " +
+			"frame-src 'self'" + turnstileHosts + "; " +
+			"frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 		c.Header("Content-Security-Policy", csp)
 		if len(httpsOrigins) > 0 {
-			c.Header("Strict-Transport-Security", "max-age=31536000")
+			c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
 		if strings.HasPrefix(c.Request.URL.Path, "/console/api/auth") ||
 			strings.HasPrefix(c.Request.URL.Path, "/console/api/setup") ||
@@ -70,6 +77,28 @@ func consoleHostGuard(deps *Deps) gin.HandlerFunc {
 	}
 	return func(c *gin.Context) {
 		if len(allowed) == 0 || !strings.HasPrefix(c.Request.URL.Path, "/console") {
+			c.Next()
+			return
+		}
+		host := strings.ToLower(strings.TrimSuffix(netutilHost(c.Request.Host), "."))
+		if _, ok := allowed[host]; !ok {
+			c.Status(404)
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+// setupHostGuard:首次初始化接口（/console/api/setup/*）只在专用初始化 Host 暴露。
+// 未配置时保持与 /console 相同的可见性；生产建议指向仅经 Access/VPN 可达的域名。
+func setupHostGuard(deps *Deps) gin.HandlerFunc {
+	allowed := map[string]struct{}{}
+	for _, host := range deps.Env.SetupAllowedHosts {
+		allowed[strings.ToLower(strings.TrimSuffix(host, "."))] = struct{}{}
+	}
+	return func(c *gin.Context) {
+		if len(allowed) == 0 || !strings.HasPrefix(c.Request.URL.Path, "/console/api/setup/") {
 			c.Next()
 			return
 		}

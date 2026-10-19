@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -35,6 +34,15 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 		}
 		c.Header("cache-control", "no-store")
 		c.JSON(200, okData(gin.H{"rootInitialized": root != nil}))
+	})
+
+	// 登录页公开配置：site key 本身是公开值，secret 永远不下发。
+	group.GET("/public-config", func(c *gin.Context) {
+		c.Header("cache-control", "no-store")
+		c.JSON(200, okData(gin.H{
+			"turnstileSiteKey": deps.Env.TurnstileSiteKey,
+			"turnstileEnabled": deps.Env.TurnstileSiteKey != "" && deps.Turnstile != nil,
+		}))
 	})
 
 	group.POST("/setup/root", func(c *gin.Context) {
@@ -73,12 +81,12 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 				return
 			}
 		}
-		body, ok := readObjectBody(c)
+		body, ok := readObjectBodyLimited(c, maxLoginJSONBodyBytes)
 		if !ok {
 			c.JSON(400, fail(400, "请求参数不合法"))
 			return
 		}
-		email, okEmail := trimmedRequired(body["email"], 3, 1<<30)
+		email, okEmail := trimmedRequired(body["email"], 3, 254)
 		displayName, okName := trimmedRequired(body["displayName"], 1, 80)
 		password, okPassword := body["password"].(string)
 		if !okEmail || !emailShape(email) || !okName || !okPassword ||
@@ -106,7 +114,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		writeAudit(ctx, deps, user, "root.setup", "user", user.ID, nil)
-		if err := loginWithSession(ctx, deps, c, user.ID); err != nil {
+		if err := loginWithSession(ctx, deps, c, user); err != nil {
 			internalError(c, deps, err)
 			return
 		}
@@ -117,18 +125,22 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 
 	group.POST("/auth/login", func(c *gin.Context) {
 		ctx := c.Request.Context()
-		body, ok := readObjectBody(c)
+		body, ok := readObjectBodyLimited(c, maxLoginJSONBodyBytes)
 		if !ok {
 			c.JSON(400, fail(400, "请求参数不合法"))
 			return
 		}
-		email, okEmail := trimmedRequired(body["email"], 3, 1<<30)
+		email, okEmail := trimmedRequired(body["email"], 3, 254)
 		password, okPassword := body["password"].(string)
 		if !okEmail || !okPassword || password == "" {
 			c.JSON(400, fail(400, "请求参数不合法"))
 			return
 		}
-		allowed, err := deps.ConsoleLoginLimiter.Allow(ctx, resolveLimiterClientIP(c, deps)+":"+strings.ToLower(email))
+		if deps.ConsoleLoginLimiter == nil {
+			c.JSON(503, fail(503, "登录限流服务不可用，请稍后重试"))
+			return
+		}
+		allowed, err := checkLoginRateLimits(ctx, deps, c, deps.ConsoleLoginLimiter, email)
 		if err != nil {
 			// 管理面 fail-closed：限流后端故障时不能退化为无限次口令尝试。
 			deps.Logger.Error("登录限流不可用，拒绝登录", "error", err)
@@ -139,13 +151,28 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(429, fail(429, "尝试次数过多，请稍后再试"))
 			return
 		}
+		turnstileToken, _ := body["turnstileToken"].(string)
+		if err := requireTurnstile(ctx, deps, c, turnstileToken); err != nil {
+			deps.Logger.Warn("登录人机验证未通过", "error", err)
+			writeTurnstileJSONError(c, err)
+			return
+		}
 		user, err := deps.Store.FindUserByEmail(ctx, email)
 		if err != nil {
 			internalError(c, deps, err)
 			return
 		}
-		if user == nil || user.DisabledAt != nil ||
-			!crypto.VerifyPassword(password, user.PasswordHash) {
+		allowed, err = checkRootLoginLimit(ctx, deps, user)
+		if err != nil {
+			deps.Logger.Error("root 登录限流不可用，拒绝登录", "error", err)
+			c.JSON(503, fail(503, "登录限流服务不可用，请稍后重试"))
+			return
+		}
+		if !allowed {
+			c.JSON(429, fail(429, "尝试次数过多，请稍后再试"))
+			return
+		}
+		if !verifyLoginPassword(user, password) {
 			c.JSON(401, fail(401, "邮箱或密码不正确"))
 			return
 		}
@@ -153,7 +180,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		rehashPasswordIfNeeded(ctx, deps, user, password)
-		if err := loginWithSession(ctx, deps, c, user.ID); err != nil {
+		if err := loginWithSession(ctx, deps, c, user); err != nil {
 			internalError(c, deps, err)
 			return
 		}
@@ -511,7 +538,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(400, fail(400, "请求参数不合法"))
 			return
 		}
-		email, okEmail := trimmedRequired(body["email"], 3, 1<<30)
+		email, okEmail := trimmedRequired(body["email"], 3, 254)
 		if !okEmail {
 			c.JSON(400, fail(400, "请求参数不合法"))
 			return
@@ -640,7 +667,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(400, fail(400, "请求参数不合法（密码至少 8 位）"))
 			return
 		}
-		email, okEmail := trimmedRequired(body["email"], 1, 1<<30)
+		email, okEmail := trimmedRequired(body["email"], 1, 254)
 		password, okPassword := body["password"].(string)
 		displayName, okName := trimmedRequired(body["displayName"], 1, 80)
 		if !okEmail || !emailShape(email) || !okPassword || len(password) < 8 || len(password) > 200 || !okName {

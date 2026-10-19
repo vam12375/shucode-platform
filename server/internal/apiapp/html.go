@@ -47,6 +47,7 @@ const pageStyle = `
     border-radius: 10px; padding: 10px 12px; font-size: 13px; margin: 0 0 12px;
   }
   .hint { font-size: 12px; color: #8a8578; margin-top: 14px; }
+  .turnstile { display: flex; justify-content: center; min-height: 65px; margin: 14px 0 0; }
   a { color: #3d5a43; }
 `
 
@@ -84,16 +85,25 @@ func htmlLayout(title, body, script string) string {
 }
 
 type loginPageOptions struct {
-	FlowID     string
-	DeviceName string
-	Error      string
-	Email      string
+	FlowID           string
+	DeviceName       string
+	Error            string
+	Email            string
+	TurnstileSiteKey string
 }
 
 func renderLoginPage(options loginPageOptions) string {
 	errorBlock := ""
 	if options.Error != "" {
 		errorBlock = `<div class="error">` + escapeHTML(options.Error) + `</div>`
+	}
+	// 未配置 Turnstile 时页面保持原样；配置后由 Cloudflare 自动渲染并注入
+	// cf-turnstile-response 隐藏字段，POST 处理按该字段校验。
+	turnstileBlock := ""
+	if options.TurnstileSiteKey != "" {
+		turnstileBlock = `
+<div class="turnstile cf-turnstile" data-sitekey="` + escapeHTML(options.TurnstileSiteKey) + `" data-action="login" data-theme="light" data-language="zh-cn"></div>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>`
 	}
 	body := `
 <p class="brand">Mendao</p>
@@ -110,6 +120,7 @@ func renderLoginPage(options loginPageOptions) string {
   <input id="email" name="email" type="email" autocomplete="username" value="` + escapeHTML(options.Email) + `" required />
   <label for="password">密码</label>
   <input id="password" name="password" type="password" autocomplete="current-password" required />
+  ` + turnstileBlock + `
   <button type="submit">登录并继续</button>
 </form>
 <p class="hint">没有账号？请联系你的团队管理员开通。</p>`
