@@ -34,6 +34,11 @@ type memoryStore struct {
 	teams          map[string]TeamRecord
 	members        map[string]map[string]struct{} // teamID -> userIDs
 	memberRoles    map[string]TeamMemberRole      // "teamId:userId"
+	memberDisabled map[string]*time.Time
+	memberBudgets  map[string]string
+	teamPolicies   map[string]TeamPolicyRecord
+	invitations    map[string]TeamInvitationRecord
+	quotaRequests  map[string]QuotaRequestRecord
 	memberJoinedAt map[string]time.Time
 	deviceTokens   map[string]DeviceTokenRecord
 	flows          map[string]LoginFlowRecord
@@ -64,6 +69,11 @@ func NewMemoryStore(ctx context.Context, opts MemoryOptions) (*memoryStore, erro
 		members:        map[string]map[string]struct{}{},
 		memberRoles:    map[string]TeamMemberRole{},
 		memberJoinedAt: map[string]time.Time{},
+		memberDisabled: map[string]*time.Time{},
+		memberBudgets:  map[string]string{},
+		teamPolicies:   map[string]TeamPolicyRecord{},
+		invitations:    map[string]TeamInvitationRecord{},
+		quotaRequests:  map[string]QuotaRequestRecord{},
 		deviceTokens:   map[string]DeviceTokenRecord{},
 		flows:          map[string]LoginFlowRecord{},
 		releases:       map[int64]ReleaseRecord{},
@@ -91,8 +101,7 @@ func (s *memoryStore) FindUserByEmail(_ context.Context, email string) (*UserRec
 	normalized := strings.ToLower(email)
 	for _, user := range s.users {
 		if strings.ToLower(user.Email) == normalized {
-			v := user
-			return &v, nil
+			return cloneUser(&user), nil
 		}
 	}
 	return nil, nil
@@ -151,7 +160,7 @@ func (s *memoryStore) ListUsers(_ context.Context) ([]UserRecord, error) {
 	defer s.mu.Unlock()
 	out := make([]UserRecord, 0, len(s.users))
 	for _, user := range s.users {
-		out = append(out, user)
+		out = append(out, *cloneUser(&user))
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
 	return out, nil
@@ -183,8 +192,18 @@ func (s *memoryStore) UpdateUser(_ context.Context, id string, patch UpdateUserP
 	if effectiveRole == RoleRoot && disabling {
 		return nil, ErrRootUserProtected
 	}
+	// 全局停用同样会撤销团队管理能力，必须和成员停用共用最后管理员保护。
+	if disabling {
+		for teamID, members := range s.members {
+			if _, exists := members[id]; exists {
+				if err := s.protectAdminLocked(teamID, id); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
 	if patch.HasDisabled {
-		user.DisabledAt = patch.DisabledAt
+		user.DisabledAt = copyTime(patch.DisabledAt)
 	}
 	if patch.DisplayName != nil {
 		user.DisplayName = *patch.DisplayName
@@ -285,7 +304,7 @@ func (s *memoryStore) ListTeams(_ context.Context) ([]TeamWithUsage, error) {
 	out := make([]TeamWithUsage, 0, len(s.teams))
 	for _, team := range s.teams {
 		count := int64(len(s.members[team.ID]))
-		out = append(out, TeamWithUsage{Team: team, MemberCount: count})
+		out = append(out, TeamWithUsage{Team: *cloneTeam(&team), MemberCount: count})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Team.CreatedAt.Before(out[j].Team.CreatedAt) })
 	return out, nil
@@ -317,7 +336,7 @@ func (s *memoryStore) UpdateTeam(_ context.Context, id string, patch UpdateTeamP
 		team.ConcurrencyLimit = *patch.ConcurrencyLimit
 	}
 	if patch.HasDisabled {
-		team.DisabledAt = patch.DisabledAt
+		team.DisabledAt = copyTime(patch.DisabledAt)
 	}
 	s.teams[id] = team
 	return cloneTeam(&team), nil
@@ -342,7 +361,7 @@ func (s *memoryStore) ListMembers(_ context.Context, teamID string) ([]TeamMembe
 		if role == "" {
 			role = MemberRoleMember
 		}
-		out = append(out, TeamMemberView{User: user, Role: role, CreatedAt: joinedAt})
+		out = append(out, TeamMemberView{User: *cloneUser(&user), Role: role, CreatedAt: joinedAt, MemberDisabledAt: copyTime(s.memberDisabled[key]), MonthlyBudgetCredits: s.memberBudgets[key]})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
 	return out, nil
@@ -351,24 +370,7 @@ func (s *memoryStore) ListMembers(_ context.Context, teamID string) ([]TeamMembe
 func (s *memoryStore) AddMember(_ context.Context, teamID, userID string, role TeamMemberRole) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.teams[teamID]; !ok {
-		return fmt.Errorf("团队不存在: %s", teamID)
-	}
-	if _, ok := s.users[userID]; !ok {
-		return fmt.Errorf("用户不存在: %s", userID)
-	}
-	set, ok := s.members[teamID]
-	if !ok {
-		set = map[string]struct{}{}
-		s.members[teamID] = set
-	}
-	key := memberKey(teamID, userID)
-	if _, exists := set[userID]; !exists {
-		s.memberJoinedAt[key] = time.Now()
-	}
-	set[userID] = struct{}{}
-	s.memberRoles[key] = role
-	return nil
+	return s.addMemberLocked(teamID, userID, role)
 }
 
 func (s *memoryStore) RemoveMember(_ context.Context, teamID, userID string) (bool, error) {
@@ -381,10 +383,15 @@ func (s *memoryStore) RemoveMember(_ context.Context, teamID, userID string) (bo
 	if _, exists := set[userID]; !exists {
 		return false, nil
 	}
+	if err := s.protectAdminLocked(teamID, userID); err != nil {
+		return false, err
+	}
 	delete(set, userID)
 	key := memberKey(teamID, userID)
 	delete(s.memberRoles, key)
 	delete(s.memberJoinedAt, key)
+	delete(s.memberDisabled, key)
+	delete(s.memberBudgets, key)
 	return true, nil
 }
 
@@ -412,7 +419,7 @@ func (s *memoryStore) ListTeamsForUser(_ context.Context, userID string) ([]Team
 		if !ok {
 			joined = time.Now()
 		}
-		out = append(out, row{m: TeamMembership{Team: team, Role: role}, at: joined})
+		out = append(out, row{m: TeamMembership{Team: *cloneTeam(&team), Role: role, MemberDisabledAt: copyTime(s.memberDisabled[memberKey(teamID, userID)]), MonthlyBudgetCredits: s.memberBudgets[memberKey(teamID, userID)]}, at: joined})
 	}
 	// 与 Postgres 实现同语义:按成员加入时间(team_members.created_at)排序。
 	sort.SliceStable(out, func(i, j int) bool {
@@ -423,6 +430,57 @@ func (s *memoryStore) ListTeamsForUser(_ context.Context, userID string) ([]Team
 		memberships = append(memberships, r.m)
 	}
 	return memberships, nil
+}
+
+func (s *memoryStore) ListAllMemberships(_ context.Context) ([]AllMembershipRow, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	type row struct {
+		r  AllMembershipRow
+		at time.Time
+	}
+	rows := make([]row, 0, len(s.members)*2)
+	for teamID, userIDs := range s.members {
+		team, ok := s.teams[teamID]
+		if !ok {
+			continue
+		}
+		for userID := range userIDs {
+			key := memberKey(teamID, userID)
+			role := s.memberRoles[key]
+			if role == "" {
+				role = MemberRoleMember
+			}
+			joined, ok := s.memberJoinedAt[key]
+			if !ok {
+				joined = time.Now()
+			}
+			rows = append(rows, row{
+				at: joined,
+				r: AllMembershipRow{
+					TeamID: teamID, TeamName: team.Name, UserID: userID, Role: role,
+					MonthlyBudgetCredits: s.memberBudgets[key],
+					MemberDisabledAt:     copyTime(s.memberDisabled[key]),
+					JoinedAt:             joined,
+				},
+			})
+		}
+	}
+	// 与 Postgres 实现同语义:加入时间升序,同时间按(团队ID, 用户ID)稳定排序。
+	sort.SliceStable(rows, func(i, j int) bool {
+		if !rows[i].at.Equal(rows[j].at) {
+			return rows[i].at.Before(rows[j].at)
+		}
+		if rows[i].r.TeamID != rows[j].r.TeamID {
+			return rows[i].r.TeamID < rows[j].r.TeamID
+		}
+		return rows[i].r.UserID < rows[j].r.UserID
+	})
+	out := make([]AllMembershipRow, 0, len(rows))
+	for _, item := range rows {
+		out = append(out, item.r)
+	}
+	return out, nil
 }
 
 func memberKey(teamID, userID string) string {
@@ -439,6 +497,6 @@ func numeric6(value string) string {
 	return credits.FormatMicroCredits(micro)
 }
 
-func cloneUser(u *UserRecord) *UserRecord          { c := *u; return &c }
-func cloneTeam(t *TeamRecord) *TeamRecord          { c := *t; return &c }
+func cloneUser(u *UserRecord) *UserRecord          { c := *u; c.DisabledAt = copyTime(u.DisabledAt); return &c }
+func cloneTeam(t *TeamRecord) *TeamRecord          { c := *t; c.DisabledAt = copyTime(t.DisabledAt); return &c }
 func cloneSession(s *SessionRecord) *SessionRecord { c := *s; return &c }

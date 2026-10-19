@@ -22,6 +22,7 @@ type TeamMemberRole string
 
 const (
 	MemberRoleOwner  TeamMemberRole = "owner"
+	MemberRoleAdmin  TeamMemberRole = "admin"
 	MemberRoleMember TeamMemberRole = "member"
 )
 
@@ -87,11 +88,12 @@ type UserRecord struct {
 }
 
 type SessionRecord struct {
-	TokenHash  string
-	UserID     string
-	CreatedAt  time.Time
-	ExpiresAt  time.Time
-	LastSeenAt time.Time
+	SecurityVersion string
+	TokenHash       string
+	UserID          string
+	CreatedAt       time.Time
+	ExpiresAt       time.Time
+	LastSeenAt      time.Time
 }
 
 type TeamRecord struct {
@@ -110,9 +112,11 @@ type TeamRecord struct {
 }
 
 type TeamMemberView struct {
-	User      UserRecord
-	Role      TeamMemberRole
-	CreatedAt time.Time
+	MemberDisabledAt     *time.Time
+	MonthlyBudgetCredits string
+	User                 UserRecord
+	Role                 TeamMemberRole
+	CreatedAt            time.Time
 }
 
 type TeamWithUsage struct {
@@ -131,6 +135,11 @@ type DeviceTokenRecord struct {
 	CreatedAt       time.Time
 	LastUsedAt      *time.Time
 	RevokedAt       *time.Time
+}
+
+// Expired:ttl<=0 表示不按年龄过期（仍可由吊销/禁用即时失效）。
+func (r DeviceTokenRecord) Expired(now time.Time, ttl time.Duration) bool {
+	return ttl > 0 && !r.CreatedAt.Add(ttl).After(now)
 }
 
 type LoginFlowRecord struct {
@@ -223,6 +232,7 @@ const (
 )
 
 type ReserveQuotaInput struct {
+	UserID    string
 	ID        string
 	TeamID    string
 	RequestID string
@@ -232,6 +242,7 @@ type ReserveQuotaInput struct {
 }
 
 type QuotaReservationRecord struct {
+	UserID        string
 	ID            string
 	TeamID        string
 	RequestID     string
@@ -327,6 +338,7 @@ type UsageRecord struct {
 	CacheReadTokens     int64
 	CacheCreationTokens int64
 	CreditsMicro        int64
+	PriceSnapshot       *UsagePricingSnapshot
 	Status              UsageStatus
 	ErrorType           string
 	ClientIP            string
@@ -450,6 +462,7 @@ type UsageFilter struct {
 }
 
 type AuditLogFilter struct {
+	TeamID          string
 	Limit           *int64 // 默认 50 最大 500。
 	CursorCreatedAt *time.Time
 	CursorID        string
@@ -457,6 +470,7 @@ type AuditLogFilter struct {
 }
 
 type AdminAuditLogView struct {
+	TeamID      string
 	ID          string
 	ActorUserID string
 	Action      string
@@ -479,6 +493,7 @@ type TeamQuotaAdjustmentView struct {
 }
 
 type InsertAuditLogInput struct {
+	TeamID      string
 	ActorUserID string
 	Action      string
 	TargetType  string
@@ -530,3 +545,39 @@ type UsageSeriesRow struct {
 // PricingDocSnapshot 复用 internal/pricing 的快照定义。
 type PricingDocSnapshot = pricing.Snapshot
 type PricingEntry = pricing.PricingEntry
+
+// TeamMemberPatch 只改变团队成员关系，不改变全局账号或其他团队的访问。
+type TeamMemberPatch struct {
+	Role                 *TeamMemberRole
+	HasDisabled          bool
+	DisabledAt           *time.Time
+	MonthlyBudgetCredits *string
+}
+
+type TeamPolicyRecord struct {
+	TeamID               string    `json:"teamId"`
+	DailyBudgetCredits   string    `json:"dailyBudgetCredits"`
+	MonthlyBudgetCredits string    `json:"monthlyBudgetCredits"`
+	AllowedModelIDs      []string  `json:"allowedModelIds"`
+	BudgetAlertPercent   int64     `json:"budgetAlertPercent"`
+	RPMLimit             int64     `json:"rpmLimit"`
+	TPMLimit             int64     `json:"tpmLimit"`
+	ConcurrencyLimit     int64     `json:"concurrencyLimit"`
+	UpdatedAt            time.Time `json:"updatedAt"`
+}
+
+type TeamInvitationRecord struct {
+	ID         string
+	TeamID     string
+	Email      string
+	TokenHash  string
+	CreatedBy  string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	AcceptedAt *time.Time
+	RevokedAt  *time.Time
+}
+
+func IsTeamAdmin(role TeamMemberRole) bool {
+	return role == MemberRoleOwner || role == MemberRoleAdmin
+}

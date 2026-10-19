@@ -4,15 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/vam12375/shucode-platform/server/internal/store"
 )
 
+// 控制台 JSON 请求体上限；模型探测等路径的响应体另有独立限制。
+const maxConsoleJSONBodyBytes = 1 << 20
+
 // 控制台路由公共辅助(console.ts 内部 closures 的包级化)。
 
 func readJSONBody(c *gin.Context) (any, bool) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxConsoleJSONBodyBytes)
 	raw, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		return nil, false
@@ -33,15 +39,38 @@ func readObjectBody(c *gin.Context) (map[string]any, bool) {
 	return obj, ok
 }
 
-// requireAdmin:控制台最低门槛是普通管理员；root 拥有全部管理员权限。
-func requireAdmin(ctx context.Context, deps *Deps, c *gin.Context) (*store.UserRecord, bool) {
-	user, err := readSessionUser(ctx, deps, c)
-	if err != nil {
-		internalError(c, deps, err)
+// redactSecretString:上游错误正文可能回显密钥，落库/返回前统一脱敏。
+func redactSecretString(text, secret string) string {
+	if secret == "" {
+		return text
+	}
+	return strings.ReplaceAll(text, secret, "[redacted]")
+}
+
+// requireRoot:平台级密钥/上游地址变更属于 root 专属，普通管理员不能把已有 key
+// 重新绑定到自己的目标地址。
+func requireRoot(ctx context.Context, deps *Deps, c *gin.Context) (*store.UserRecord, bool) {
+	user, ok := requireConsoleUser(ctx, deps, c)
+	if !ok {
 		return nil, false
 	}
-	if user == nil || (user.Role != store.RoleRoot && user.Role != store.RoleAdmin) {
-		c.JSON(401, fail(401, "需要管理员登录"))
+	if user.Role != store.RoleRoot {
+		c.JSON(403, fail(403, "需要超级管理员权限"))
+		return nil, false
+	}
+	return user, true
+}
+
+// requireAdmin 检查当前团队的管理身份，全局 admin 标签不再授予跨租户权限。
+func requireAdmin(ctx context.Context, deps *Deps, c *gin.Context) (*store.UserRecord, bool) {
+	user, ok := requireConsoleUser(ctx, deps, c)
+	if !ok {
+		return nil, false
+	}
+	if user.Role == store.RoleRoot {
+		return user, true
+	}
+	if _, ok := selectedTeam(c, deps, true); !ok {
 		return nil, false
 	}
 	return user, true

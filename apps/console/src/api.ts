@@ -1,3 +1,13 @@
+import { scopedPath } from "./permissions.js";
+
+let selectedTeamId = "";
+export function setApiTeamScope(teamId: string): void {
+  selectedTeamId = teamId;
+}
+export function apiUrl(path: string): string {
+  return `/console/api${scopedPath(path, selectedTeamId)}`;
+}
+
 export interface ApiError extends Error {
   code?: number;
 }
@@ -5,16 +15,20 @@ export interface ApiError extends Error {
 /** /console/api 客户端：携带会话 cookie，统一解包 { code, data, msg } 信封。 */
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const initHeaders = init.headers as Record<string, string> | undefined;
-  const response = await fetch(`/console/api${path}`, {
+  const response = await fetch(apiUrl(path), {
     ...init,
     credentials: "include",
     headers: { "content-type": "application/json", ...initHeaders },
   });
-  const body = (await response.json().catch(() => null)) as
-    | { code?: number; data?: T; msg?: string }
-    | null;
+  const body = (await response.json().catch(() => null)) as {
+    code?: number;
+    data?: T;
+    msg?: string;
+  } | null;
   if (!response.ok || (body?.code !== undefined && body.code !== 0)) {
-    const error = new Error(body?.msg ?? `请求失败 (${response.status})`) as ApiError;
+    const error = new Error(
+      body?.msg ?? `请求失败 (${response.status})`,
+    ) as ApiError;
     error.code = body?.code ?? response.status;
     throw error;
   }

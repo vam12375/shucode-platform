@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,6 +22,8 @@ import (
 	"github.com/vam12375/shucode-platform/server/internal/apiapp"
 	"github.com/vam12375/shucode-platform/server/internal/crypto"
 	"github.com/vam12375/shucode-platform/server/internal/events"
+	"github.com/vam12375/shucode-platform/server/internal/netguard"
+	"github.com/vam12375/shucode-platform/server/internal/netutil"
 	"github.com/vam12375/shucode-platform/server/internal/platformenv"
 	"github.com/vam12375/shucode-platform/server/internal/ratelimit"
 	"github.com/vam12375/shucode-platform/server/internal/seed"
@@ -39,6 +42,13 @@ func main() {
 	if err != nil {
 		logger.Error("启动失败", "error", err)
 		os.Exit(1)
+	}
+	if parsed, parseErr := url.Parse(env.PublicAPIOrigin); parseErr == nil && parsed.Scheme == "http" {
+		switch parsed.Hostname() {
+		case "localhost", "127.0.0.1", "::1":
+		default:
+			logger.Warn("PUBLIC_API_ORIGIN 使用 HTTP：管理员口令、会话 cookie 与录入的上游 key 可能被链路攻击者读取；请尽快启用 HTTPS")
+		}
 	}
 
 	ctx := context.Background()
@@ -135,7 +145,15 @@ func main() {
 		ConsoleLoginLimiter:  consoleLimiter,
 		PlatformLoginLimiter: platformLimiter,
 		Logger:               logger,
-		HTTPClient:           &http.Client{},
+		Trusted:              netutil.NewTrustedProxies(env.TrustedProxyIPs),
+		HTTPClient: &http.Client{
+			Transport: netguard.NewTransport(env.AllowPrivateUpstreamNetworks),
+			// 管理端探测同样禁止跟随重定向，避免解密后的上游密钥被带到新目标。
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return errors.New("上游重定向被禁止")
+			},
+			Timeout: 60 * time.Second,
+		},
 	}
 	if err := seed.EnsureSeedRelease(ctx, platformStore, *seedFile); err != nil {
 		logger.Error("种子失败", "error", err)
@@ -148,10 +166,19 @@ func main() {
 	defer stopBackground()
 	apiapp.StartAlertEvaluator(runCtx, deps, time.Minute)
 	apiapp.StartReservationSweeper(runCtx, deps, time.Minute)
+	apiapp.StartLoginFlowSweeper(runCtx, deps, 10*time.Minute)
 
 	engine := apiapp.New(deps)
 	addr := fmt.Sprintf("%s:%d", env.Host, env.Port)
-	server := &http.Server{Addr: addr, Handler: engine}
+	server := &http.Server{
+		Addr:    addr,
+		Handler: engine,
+		// SSE 需要长写连接，因此不设 WriteTimeout；读取入口仍有明确上限。
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
 	go func() {
 		logger.Info("Mendao 平台 API 已启动",
 			"listen", "http://"+addr,

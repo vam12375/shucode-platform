@@ -136,12 +136,23 @@ func (s *memoryStore) ReserveQuota(_ context.Context, input ReserveQuotaInput) (
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, reservation := range s.reservations {
-		if reservation.RequestID == input.RequestID {
+		if reservation.TeamID == input.TeamID && reservation.RequestID == input.RequestID {
 			return ReserveDuplicate, nil
 		}
 	}
 	team, ok := s.teams[input.TeamID]
 	if !ok || team.DisabledAt != nil {
+		return ReserveDenied, nil
+	}
+	createdAt := input.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = time.Now()
+	}
+	allowed, err := s.reservationBudgetAllowedLocked(input, createdAt)
+	if err != nil {
+		return "", err
+	}
+	if !allowed {
 		return ReserveDenied, nil
 	}
 	if !team.Unlimited {
@@ -157,7 +168,7 @@ func (s *memoryStore) ReserveQuota(_ context.Context, input ReserveQuotaInput) (
 		if err != nil {
 			return "", err
 		}
-		if used+reserved+input.Micro > quota {
+		if input.Micro > quota || addBudgetSpent(used, reserved) > quota-input.Micro {
 			return ReserveDenied, nil
 		}
 	}
@@ -165,16 +176,12 @@ func (s *memoryStore) ReserveQuota(_ context.Context, input ReserveQuotaInput) (
 	if ttl <= 0 {
 		ttl = 30 * time.Minute
 	}
-	createdAt := input.CreatedAt
-	if createdAt.IsZero() {
-		createdAt = time.Now()
-	}
 	id := input.ID
 	if id == "" {
 		id = uuid.NewString()
 	}
 	reservation := QuotaReservationRecord{
-		ID: id, TeamID: input.TeamID, RequestID: input.RequestID,
+		ID: id, TeamID: input.TeamID, UserID: input.UserID, RequestID: input.RequestID,
 		ReservedMicro: input.Micro, Status: ReservationReserved,
 		CreatedAt: createdAt, ExpiresAt: createdAt.Add(ttl),
 	}
@@ -222,7 +229,7 @@ func (s *memoryStore) SettleReservation(_ context.Context, reservationID string,
 	reservation.SettledAt = &settledAt
 	reservation.UsageID = record.ID
 	s.reservations[reservation.ID] = reservation
-	s.usage = append(s.usage, record)
+	s.usage = append(s.usage, cloneUsage(record))
 	return nil
 }
 
@@ -313,7 +320,7 @@ func (s *memoryStore) ListUsageForExport(_ context.Context, filter UsageFilter, 
 		if !usageMatches(record, filter) {
 			continue
 		}
-		out = append(out, record)
+		out = append(out, cloneUsage(record))
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
 	if int64(len(out)) > max {

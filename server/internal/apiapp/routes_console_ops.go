@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,9 +24,10 @@ import (
 // console.ts 运维面:上游供应商 / 定价库 / 平台配置 / 用量 / 设备 / 审计。
 
 const (
-	providerTestTimeoutMs    = 30_000
-	upstreamModelListTimeout = 15_000
-	anthropicVersionFallback = "2023-06-01"
+	providerTestTimeoutMs     = 30_000
+	upstreamModelListTimeout  = 15_000
+	anthropicVersionFallback  = "2023-06-01"
+	maxProviderModelsBodySize = 4 << 20
 )
 
 func normalizeUpstreamBaseURL(raw string) string {
@@ -33,6 +36,26 @@ func normalizeUpstreamBaseURL(raw string) string {
 		trimmed = trimmed[:len(trimmed)-3]
 	}
 	return strings.TrimRight(trimmed, "/")
+}
+
+// validateUpstreamBaseURL:供应商地址只允许绝对 https（本地测试可显式放行 http），
+// 拒绝 userinfo/query/fragment，避免把解密后的上游密钥发往难以审计的目标。
+func validateUpstreamBaseURL(raw string, allowInsecure bool) (string, error) {
+	normalized := normalizeUpstreamBaseURL(raw)
+	parsed, err := url.Parse(normalized)
+	if err != nil || parsed.Host == "" {
+		return "", errors.New("baseUrl 不是合法的绝对地址")
+	}
+	if parsed.Scheme != "https" && !(allowInsecure && parsed.Scheme == "http") {
+		return "", errors.New("baseUrl 必须使用 https")
+	}
+	if parsed.User != nil {
+		return "", errors.New("baseUrl 不允许包含 userinfo")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("baseUrl 不允许包含查询串或片段")
+	}
+	return normalized, nil
 }
 
 func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
@@ -77,7 +100,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 	// ---- providers ----
 
 	group.GET("/providers", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
 			return
 		}
 		providers, err := deps.Store.ListUpstreamProviders(c.Request.Context(), true)
@@ -93,7 +116,8 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.POST("/providers", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		// 新建供应商会绑定/加密平台级密钥，仅 root 可操作。
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
@@ -107,6 +131,11 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		baseURL, okBase := trimmedRequired(body["baseUrl"], 1, 300)
 		if !okName || !okBase {
 			c.JSON(400, fail(400, "请求参数不合法"))
+			return
+		}
+		normalizedBaseURL, baseURLErr := validateUpstreamBaseURL(baseURL, deps.Env.AllowInsecureUpstreamURLs)
+		if baseURLErr != nil {
+			c.JSON(400, fail(400, baseURLErr.Error()))
 			return
 		}
 		protocol := store.ProtocolOpenAIChatCompletions
@@ -159,7 +188,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 			enabled = parsed
 		}
 		input := store.CreateUpstreamProviderInput{
-			Name: name, BaseURL: normalizeUpstreamBaseURL(baseURL), Protocol: protocol,
+			Name: name, BaseURL: normalizedBaseURL, Protocol: protocol,
 			APIKeyCiphertext: ciphertext, APIKeyHint: hint, Enabled: &enabled,
 		}
 		if hasVersionField && anthropicVersion != "" {
@@ -182,7 +211,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.PATCH("/providers/:id", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
@@ -190,6 +219,13 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		body, ok := readObjectBody(c)
 		if !ok {
 			c.JSON(400, fail(400, "请求参数不合法"))
+			return
+		}
+		// 改上游地址或替换密钥可能把平台密钥送往新目标，仅 root 可操作。
+		_, hasBaseURL := body["baseUrl"]
+		_, hasAPIKey := body["apiKey"]
+		if (hasBaseURL || hasAPIKey) && admin.Role != store.RoleRoot {
+			c.JSON(403, fail(403, "需要超级管理员权限"))
 			return
 		}
 		var patch store.UpdateUpstreamProviderPatch
@@ -207,7 +243,11 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 				c.JSON(400, fail(400, "请求参数不合法"))
 				return
 			}
-			normalized := normalizeUpstreamBaseURL(baseURL)
+			normalized, baseURLErr := validateUpstreamBaseURL(baseURL, deps.Env.AllowInsecureUpstreamURLs)
+			if baseURLErr != nil {
+				c.JSON(400, fail(400, baseURLErr.Error()))
+				return
+			}
 			patch.BaseURL = &normalized
 		}
 		if raw, exists := body["protocol"]; exists {
@@ -288,7 +328,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.DELETE("/providers/:id", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
@@ -317,7 +357,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.GET("/providers/:id/models", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
 			return
 		}
 		ctx := c.Request.Context()
@@ -366,7 +406,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		defer resp.Body.Close()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			detailBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
-			detail := string(detailBytes)
+			detail := redactSecretString(string(detailBytes), apiKey)
 			message := "上游返回 HTTP " + strconv.Itoa(resp.StatusCode)
 			if detail != "" {
 				message += ": " + detail
@@ -374,7 +414,11 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(502, fail(502, message))
 			return
 		}
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, maxProviderModelsBodySize+1))
+		if readErr != nil || len(bodyBytes) > maxProviderModelsBodySize {
+			c.JSON(502, fail(502, "上游模型列表响应过大或读取失败"))
+			return
+		}
 		var payload any
 		_ = json.Unmarshal(bodyBytes, &payload)
 		rows := []any{}
@@ -405,7 +449,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.POST("/providers/:id/test", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
@@ -500,7 +544,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		defer resp.Body.Close()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			detailBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
-			detail := string(detailBytes)
+			detail := redactSecretString(string(detailBytes), apiKey)
 			kind := "upstream_error"
 			switch {
 			case resp.StatusCode == 401 || resp.StatusCode == 403:
@@ -534,7 +578,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 	// ---- model pricing ----
 
 	group.GET("/model-pricing", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
 			return
 		}
 		doc, err := loadPricingDoc(c.Request.Context(), deps.Store)
@@ -546,7 +590,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.PUT("/model-pricing", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
@@ -641,7 +685,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 	// ---- config ----
 
 	group.GET("/config", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
 			return
 		}
 		ctx := c.Request.Context()
@@ -661,7 +705,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.PUT("/config", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
 			return
 		}
 		ctx := c.Request.Context()
@@ -737,11 +781,14 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 			}
 			filter.RequestID = requestID
 		}
+		if !scopeUsageFilter(c, deps, &filter) {
+			return filter, false, false
+		}
 		return filter, true, true
 	}
 
 	group.GET("/usage", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		if _, ok := requireConsoleUser(c.Request.Context(), deps, c); !ok {
 			return
 		}
 		ctx := c.Request.Context()
@@ -799,9 +846,9 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		for _, row := range aggregates {
 			aggregateRows = append(aggregateRows, toPublicAggregate(row))
 		}
-		recordRows := make([]usagePublic, 0, len(records))
+		recordRows := make([]any, 0, len(records))
 		for i := range records {
-			recordRows = append(recordRows, toPublicUsage(&records[i]))
+			recordRows = append(recordRows, usageForConsole(c, &records[i]))
 		}
 		c.JSON(200, okData(gin.H{
 			"aggregates": aggregateRows, "records": recordRows, "nextCursor": nextCursor,
@@ -809,7 +856,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.GET("/usage/series", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		if _, ok := requireConsoleUser(c.Request.Context(), deps, c); !ok {
 			return
 		}
 		ctx := c.Request.Context()
@@ -847,15 +894,15 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.GET("/usage/export", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		user, ok := requireConsoleUser(c.Request.Context(), deps, c)
+		if !ok {
 			return
 		}
-		ctx := c.Request.Context()
 		filter, okFilter, _ := parseUsageQueryFilter(c)
 		if !okFilter {
 			return
 		}
-		records, err := deps.Store.ListUsageForExport(ctx, filter, 100_000)
+		records, err := deps.Store.ListUsageForExport(c.Request.Context(), filter, 100_000)
 		if err != nil {
 			internalError(c, deps, err)
 			return
@@ -864,27 +911,31 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		c.Header("content-type", "text/csv; charset=utf-8")
 		c.Header("content-disposition", `attachment; filename="`+filename+`"`)
 		c.Header("cache-control", "no-store")
-		// Excel 识别 UTF-8 需要 BOM；避免中文表头乱码。
 		_, _ = c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
 		writer := csv.NewWriter(c.Writer)
-		_ = writer.Write([]string{
-			"时间(UTC)", "request_id", "用户ID", "团队ID", "设备ID", "模型", "上游模型", "供应商ID",
-			"输入Token", "输出Token", "缓存读", "缓存写", "费用microCR", "状态", "错误类型", "客户端IP", "延迟ms",
-		})
-		for i := range records {
-			record := records[i]
+		header := []string{"时间(UTC)", "request_id", "用户ID", "团队ID", "设备ID", "模型", "输入Token", "输出Token", "缓存读", "缓存写", "费用microCR", "状态", "错误类型", "延迟ms"}
+		if user.Role == store.RoleRoot {
+			header = append(header, "上游模型", "供应商ID", "客户端IP")
+		}
+		_ = writer.Write(header)
+		for _, record := range records {
 			latency := ""
 			if record.LatencyMs != nil {
 				latency = strconv.FormatInt(*record.LatencyMs, 10)
 			}
-			_ = writer.Write([]string{
-				isoString(record.CreatedAt), record.RequestID, record.UserID, record.TeamID,
-				record.DeviceTokenID, record.Model, record.UpstreamModel, record.ProviderID,
-				strconv.FormatInt(record.InputTokens, 10), strconv.FormatInt(record.OutputTokens, 10),
-				strconv.FormatInt(record.CacheReadTokens, 10), strconv.FormatInt(record.CacheCreationTokens, 10),
-				strconv.FormatInt(record.CreditsMicro, 10), string(record.Status), record.ErrorType,
-				record.ClientIP, latency,
-			})
+			row := []string{isoString(record.CreatedAt), record.RequestID, record.UserID, record.TeamID, record.DeviceTokenID, record.Model,
+				strconv.FormatInt(record.InputTokens, 10), strconv.FormatInt(record.OutputTokens, 10), strconv.FormatInt(record.CacheReadTokens, 10), strconv.FormatInt(record.CacheCreationTokens, 10),
+				strconv.FormatInt(record.CreditsMicro, 10), string(record.Status), record.ErrorType, latency}
+			if user.Role == store.RoleRoot {
+				row = append(row, record.UpstreamModel, record.ProviderID, record.ClientIP)
+			}
+			// CSV字段可能包含用户提供的request ID/模型名，防止表格软件把它解释为公式。
+			for i, cell := range row {
+				if strings.HasPrefix(cell, "=") || strings.HasPrefix(cell, "+") || strings.HasPrefix(cell, "-") || strings.HasPrefix(cell, "@") || strings.HasPrefix(cell, "\t") || strings.HasPrefix(cell, "\r") {
+					row[i] = "'" + cell
+				}
+			}
+			_ = writer.Write(row)
 		}
 		writer.Flush()
 	})
@@ -892,16 +943,31 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 	// ---- devices ----
 
 	group.GET("/devices", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		user, ok := requireConsoleUser(c.Request.Context(), deps, c)
+		if !ok {
 			return
 		}
 		ctx := c.Request.Context()
-		tokens, err := deps.Store.ListDeviceTokens(ctx, "")
+		userID := ""
+		if user.Role != store.RoleRoot {
+			userID = user.ID
+		} else if queryUser := c.Query("userId"); queryUser != "" {
+			// root 按用户精确过滤(账号详情抽屉);此时附带 teamId 也会被 scopedPath 注入,故必须优先。
+			if !uuidShape(queryUser) {
+				c.JSON(400, fail(400, "用户 ID 不合法"))
+				return
+			}
+			userID = queryUser
+		}
+		tokens, err := deps.Store.ListDeviceTokens(ctx, userID)
 		if err != nil {
 			internalError(c, deps, err)
 			return
 		}
-		users, err := deps.Store.ListUsers(ctx)
+		users := []store.UserRecord{*user}
+		if user.Role == store.RoleRoot {
+			users, err = deps.Store.ListUsers(ctx)
+		}
 		if err != nil {
 			internalError(c, deps, err)
 			return
@@ -910,9 +976,28 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		for _, user := range users {
 			emailByID[user.ID] = user.Email
 		}
+		var teamUsers map[string]bool
+		// teamId 过滤只在未按用户过滤时生效(按用户过滤的组合已足够精确)。
+		if teamID := c.Query("teamId"); user.Role == store.RoleRoot && teamID != "" && userID == "" {
+			if _, ok := requireTeamAccess(c, deps, teamID, false); !ok {
+				return
+			}
+			members, err := deps.Store.ListMembers(ctx, teamID)
+			if err != nil {
+				internalError(c, deps, err)
+				return
+			}
+			teamUsers = make(map[string]bool, len(members))
+			for _, member := range members {
+				teamUsers[member.User.ID] = true
+			}
+		}
 		rows := make([]devicePublic, 0, len(tokens))
 		for i := range tokens {
 			token := tokens[i]
+			if teamUsers != nil && !teamUsers[token.UserID] {
+				continue
+			}
 			email := emailByID[token.UserID]
 			if email == "" {
 				email = "(已删除)"
@@ -927,8 +1012,12 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.POST("/devices/:id/revoke", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireConsoleUser(c.Request.Context(), deps, c)
 		if !ok {
+			return
+		}
+		if !uuidShape(c.Param("id")) {
+			c.JSON(400, fail(400, "设备 ID 不合法"))
 			return
 		}
 		ctx := c.Request.Context()
@@ -939,6 +1028,10 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		}
 		if device == nil {
 			c.JSON(404, fail(404, "设备不存在"))
+			return
+		}
+		if admin.Role != store.RoleRoot && device.UserID != admin.ID {
+			c.JSON(403, fail(403, "只能吊销本人的设备凭据"))
 			return
 		}
 		if err := deps.Store.RevokeDeviceToken(ctx, device.ID, deps.Now()); err != nil {
@@ -953,7 +1046,8 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 	// ---- audit ----
 
 	group.GET("/audit", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		user, ok := requireConsoleUser(c.Request.Context(), deps, c)
+		if !ok {
 			return
 		}
 		ctx := c.Request.Context()
@@ -971,7 +1065,14 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		pageLimit := limit + 1
-		filter := store.AuditLogFilter{Limit: &pageLimit}
+		filter := store.AuditLogFilter{Limit: &pageLimit, TeamID: c.Query("teamId")}
+		if user.Role != store.RoleRoot {
+			membership, ok := selectedTeam(c, deps, true)
+			if !ok {
+				return
+			}
+			filter.TeamID = membership.Team.ID
+		}
 		if actor := c.Query("actorUserId"); actor != "" {
 			filter.ActorUserID = actor
 		}

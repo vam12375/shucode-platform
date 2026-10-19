@@ -32,10 +32,7 @@ func New(deps *Deps) *gin.Engine {
 	// 与 TS 路由逐位兼容:Gin 默认会把未知路径的尾斜杠 301 到去斜杠版本,TS 直接 404。
 	router.RedirectTrailingSlash = false
 	router.RedirectFixedPath = false
-	router.Use(gin.CustomRecovery(func(c *gin.Context, err any) {
-		deps.Logger.Error("请求处理失败", "path", c.Request.URL.Path, "error", err)
-		c.JSON(500, fail(500, "服务器内部错误"))
-	}))
+	router.Use(recoveryMiddleware(deps), securityHeaders(deps), consoleHostGuard(deps), csrfOriginGuard(deps), consoleAccessGuard(deps))
 
 	// 独立部署 Console 时允许携带凭据的跨源访问(仅 /console/api/*)。
 	if deps.Env.PublicConsoleOrigin != "" {
@@ -73,7 +70,27 @@ func New(deps *Deps) *gin.Engine {
 	registerConsoleRoutes(router, deps)
 	registerConsoleOpsRoutes(router, deps)
 	registerConsoleOpsExtRoutes(router, deps)
+	registerTenantRoutes(router, deps)
+	registerQuotaRequestRoutes(router, deps)
+	registerRootMFARoutes(router, deps)
 	return router
+}
+
+// recoveryMiddleware:替代 gin.CustomRecovery。后者在 broken-pipe 分支会 dump
+// 整个请求（仅屏蔽 Authorization），可能把 Cookie / x-api-key 写进日志。
+func recoveryMiddleware(deps *Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				deps.Logger.Error("请求处理失败", "path", c.Request.URL.Path, "error", recovered)
+				if !c.Writer.Written() {
+					c.JSON(500, fail(500, "服务器内部错误"))
+				}
+				c.Abort()
+			}
+		}()
+		c.Next()
+	}
 }
 
 // consoleStaticMiddleware:GET/HEAD 的 /console/* 直接由静态文件响应;

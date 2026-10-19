@@ -24,6 +24,22 @@ const ACTION_LABELS: Record<string, string> = {
   "user.update": "更新用户",
   "team.create": "创建团队",
   "team.update": "更新团队",
+  "member.update": "更新成员权限",
+  "member.remove": "移除成员",
+  "member.add": "添加成员",
+  "policy.update": "更新消费策略",
+  "invitation.create": "创建邀请",
+  "invitation.revoke": "撤回邀请",
+  "invitation.accept": "接受邀请",
+  "quota_request.create": "申请团队额度",
+  "quota_request.approved": "批准额度申请",
+  "quota_request.rejected": "拒绝额度申请",
+  "team.member.update": "更新成员权限",
+  "team.member.remove": "移除成员",
+  "team.policy.update": "更新消费策略",
+  "team.invitation.create": "创建邀请",
+  "team.invitation.revoke": "撤回邀请",
+  "team.invitation.accept": "接受邀请",
   "provider.create": "创建供应商",
   "provider.update": "更新供应商",
   "provider.delete": "删除供应商",
@@ -47,7 +63,9 @@ export function AuditPage() {
   const fetchLogs = useCallback((cursor: string | null) => {
     const params = new URLSearchParams();
     if (cursor) params.set("cursor", cursor);
-    return api<AuditPageData>(`/audit${params.size > 0 ? `?${params.toString()}` : ""}`);
+    return api<AuditPageData>(
+      `/audit${params.size > 0 ? `?${params.toString()}` : ""}`,
+    );
   }, []);
 
   const load = useCallback(async () => {

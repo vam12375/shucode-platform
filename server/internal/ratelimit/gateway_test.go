@@ -62,6 +62,38 @@ func TestGatewayLimiterRedisTMPScript(t *testing.T) {
 	}
 }
 
+func TestGatewayLimiterRedisConcurrencyScript(t *testing.T) {
+	url := os.Getenv("TEST_REDIS_URL")
+	if url == "" {
+		t.Skip("未设置 TEST_REDIS_URL，跳过 Redis 并发槽测试")
+	}
+	opts, err := redis.ParseURL(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts.DB = 15
+	client := redis.NewClient(opts)
+	defer client.Close()
+	ctx := context.Background()
+	key := "gw:conc:redis-conc"
+	_ = client.Del(ctx, key).Err()
+	limiter := NewGatewayLimiter(client)
+	release, ok, err := limiter.AcquireConcurrency(ctx, "redis-conc", 1)
+	if err != nil || !ok {
+		t.Fatalf("首个 Redis 并发槽应获得: %v %v", ok, err)
+	}
+	if _, ok, _ := limiter.AcquireConcurrency(ctx, "redis-conc", 1); ok {
+		t.Fatal("超过 Redis 并发上限应拒绝")
+	}
+	release()
+	release() // 幂等释放不应把计数压到负数。
+	release2, ok, err := limiter.AcquireConcurrency(ctx, "redis-conc", 1)
+	if err != nil || !ok {
+		t.Fatalf("释放后应可再次获得: %v %v", ok, err)
+	}
+	release2()
+}
+
 func TestGatewayLimiterConcurrency(t *testing.T) {
 	limiter := NewGatewayLimiter(nil)
 	ctx := context.Background()

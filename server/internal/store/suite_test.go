@@ -32,6 +32,10 @@ func runSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 	t.Run("audit", func(t *testing.T) { testAudit(t, ctx, s) })
 	t.Run("config-kv", func(t *testing.T) { testConfigKV(t, ctx, s) })
 	t.Run("usage", func(t *testing.T) { testUsage(t, ctx, s) })
+	t.Run("usage-price-snapshot", func(t *testing.T) { runUsageSnapshotSuite(t, ctx, s) })
+	t.Run("team-policy-limits", func(t *testing.T) { testTeamPolicyLimits(t, ctx, s) })
+	t.Run("budget-carry-active-reservations", func(t *testing.T) { testTenantBudgetCarriesActiveReservations(t, ctx, s) })
+	t.Run("tenant-permissions", func(t *testing.T) { runTenantSuite(t, ctx, s) })
 }
 
 func mustUser(t *testing.T, ctx context.Context, s PlatformStore, email string) *UserRecord {
@@ -131,12 +135,12 @@ func testUsers(t *testing.T, ctx context.Context, s PlatformStore) {
 func testSessions(t *testing.T, ctx context.Context, s PlatformStore) {
 	u := mustUser(t, ctx, s, "sess@test.local")
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	rec := SessionRecord{TokenHash: "hash-1", UserID: u.ID, CreatedAt: now, ExpiresAt: now.Add(7 * 24 * time.Hour), LastSeenAt: now}
+	rec := SessionRecord{SecurityVersion: "security-epoch-1", TokenHash: "hash-1", UserID: u.ID, CreatedAt: now, ExpiresAt: now.Add(7 * 24 * time.Hour), LastSeenAt: now}
 	if err := s.CreateSession(ctx, rec); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.FindSession(ctx, "hash-1")
-	if err != nil || got == nil || got.UserID != u.ID || !got.ExpiresAt.Equal(rec.ExpiresAt) {
+	if err != nil || got == nil || got.UserID != u.ID || got.SecurityVersion != rec.SecurityVersion || !got.ExpiresAt.Equal(rec.ExpiresAt) {
 		t.Fatalf("find session: %v %+v", err, got)
 	}
 	later := now.Add(time.Minute)
@@ -197,6 +201,22 @@ func testTeams(t *testing.T, ctx context.Context, s PlatformStore) {
 	memberTeams, _ := s.ListTeamsForUser(ctx, member.ID)
 	if len(ownerTeams) != 1 || ownerTeams[0].Role != MemberRoleOwner || len(memberTeams) != 1 || memberTeams[0].Role != MemberRoleOwner {
 		t.Fatalf("成员归属/角色不符: %+v %+v", ownerTeams, memberTeams)
+	}
+	// 全量成员关系展平(控制台账号列表注入归属用):加入顺序、团队名、角色、预算空值。
+	all, err := s.ListAllMemberships(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 || all[0].UserID != owner.ID || all[1].UserID != member.ID {
+		t.Fatalf("全量成员关系应按加入时间升序: %+v", all)
+	}
+	for _, row := range all {
+		if row.TeamID != team.ID || row.TeamName != "研发部" || row.MonthlyBudgetCredits != "" || row.MemberDisabledAt != nil {
+			t.Fatalf("成员关系归属字段不符: %+v", row)
+		}
+	}
+	if all[0].Role != MemberRoleOwner || all[1].Role != MemberRoleOwner {
+		t.Fatalf("重复添加只覆盖角色: %+v", all)
 	}
 	quota := "2000.000000"
 	unlimited := true
@@ -314,6 +334,20 @@ func testReservations(t *testing.T, ctx context.Context, s PlatformStore) {
 	duplicate.ID = "00000000-0000-4000-8000-000000000602"
 	if result, err := s.ReserveQuota(ctx, duplicate); err != nil || result != ReserveDuplicate {
 		t.Fatalf("重复 request_id 应返回 duplicate: %v %s", err, result)
+	}
+	// request_id 幂等必须按团队隔离：其他租户复用同一 ID 不应被抢占。
+	team2, err := s.CreateTeam(ctx, CreateTeamInput{Name: "预留团队二-" + suffix, QuotaCredits: "1.000000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherTeamInput := input
+	otherTeamInput.ID = "00000000-0000-4000-8000-000000000607"
+	otherTeamInput.TeamID = team2.ID
+	if result, err := s.ReserveQuota(ctx, otherTeamInput); err != nil || result != ReserveReserved {
+		t.Fatalf("跨团队相同 request_id 应允许: %v %s", err, result)
+	}
+	if err := s.ReleaseReservationByID(ctx, otherTeamInput.ID, now); err != nil {
+		t.Fatal(err)
 	}
 	if got, _ := s.GetTeam(ctx, team.ID); got.ReservedCredits != "0.400000" {
 		t.Fatalf("预留额度不符: %s", got.ReservedCredits)
@@ -568,11 +602,25 @@ func testLoginFlows(t *testing.T, ctx context.Context, s PlatformStore) {
 	if got, _ := s.GetLoginFlow(ctx, flow.ID); got == nil || got.Status != FlowStatusPending {
 		t.Fatalf("查登录流: %+v", got)
 	}
+	// 条件转换：状态不匹配时不得覆盖（authorize 与 poll 的竞态边界）。
+	if got, err := s.UpdateLoginFlowIfStatus(ctx, flow.ID, FlowStatusAuthorized,
+		UpdateLoginFlowPatch{Status: ptr(FlowStatusDenied)}); err != nil || got != nil {
+		t.Fatalf("状态不匹配不应更新: %v %+v", err, got)
+	}
 	userID := u.ID
 	authorizedAt := now.Add(time.Second)
-	updated, err := s.UpdateLoginFlow(ctx, flow.ID, UpdateLoginFlowPatch{Status: ptr(FlowStatusAuthorized), UserID: &userID, AuthorizedAt: &authorizedAt})
-	if err != nil || updated.Status != FlowStatusAuthorized || updated.UserID != u.ID || updated.AuthorizedAt == nil {
+	updated, err := s.UpdateLoginFlowIfStatus(ctx, flow.ID, FlowStatusPending,
+		UpdateLoginFlowPatch{Status: ptr(FlowStatusAuthorized), UserID: &userID, AuthorizedAt: &authorizedAt})
+	if err != nil || updated == nil || updated.Status != FlowStatusAuthorized || updated.UserID != u.ID || updated.AuthorizedAt == nil {
 		t.Fatalf("授权登录流: %v %+v", err, updated)
+	}
+	// 旧授权请求（仍以为状态是 pending）不得把已授权流程改回 denied。
+	if got, err := s.UpdateLoginFlowIfStatus(ctx, flow.ID, FlowStatusPending,
+		UpdateLoginFlowPatch{Status: ptr(FlowStatusDenied)}); err != nil || got != nil {
+		t.Fatalf("过期状态转换不应覆盖: %v %+v", err, got)
+	}
+	if current, _ := s.GetLoginFlow(ctx, flow.ID); current == nil || current.Status != FlowStatusAuthorized {
+		t.Fatalf("授权状态被旧请求覆盖: %+v", current)
 	}
 	// 条件消费:并发只允许一个成功。
 	var consumed int64
@@ -601,6 +649,18 @@ func testLoginFlows(t *testing.T, ctx context.Context, s PlatformStore) {
 	polledAt := now.Add(3 * time.Second)
 	if got, _ := s.UpdateLoginFlow(ctx, flow.ID, UpdateLoginFlowPatch{LastPolledAt: &polledAt}); got.LastPolledAt == nil || !got.LastPolledAt.Equal(polledAt) {
 		t.Fatal("轮询时间更新失败")
+	}
+	// 过期登录流清理。
+	expiredFlow := LoginFlowRecord{
+		ID: "00000000-0000-4000-8000-000000000302", PollTokenHash: "poll-hash-2",
+		Status: FlowStatusExpired, DeviceName: "过期机", CreatedAt: now.Add(-2 * time.Hour),
+		ExpiresAt: now.Add(-time.Hour),
+	}
+	if err := s.CreateLoginFlow(ctx, expiredFlow); err != nil {
+		t.Fatal(err)
+	}
+	if count, err := s.DeleteExpiredLoginFlows(ctx, now); err != nil || count < 1 {
+		t.Fatalf("过期登录流清理: %d %v", count, err)
 	}
 }
 

@@ -187,6 +187,7 @@ func splitLines(raw string) []string {
 
 type OpenAIScanner struct {
 	usage     UsageCounts
+	observed  bool
 	malformed int64
 	splitter  *sseSplitter
 }
@@ -221,19 +222,22 @@ func NewOpenAIScanner() *OpenAIScanner {
 			}
 			counts := countsFromOpenAIUsage(usage)
 			scanner.usage = counts
+			scanner.observed = true
 		}
 	})
 	return scanner
 }
 
-func (s *OpenAIScanner) Push(chunk string)  { s.splitter.push(chunk) }
-func (s *OpenAIScanner) Usage() UsageCounts { return s.usage }
-func (s *OpenAIScanner) Dropped() int64     { return s.malformed + s.splitter.dropped() }
+func (s *OpenAIScanner) Push(chunk string)   { s.splitter.push(chunk) }
+func (s *OpenAIScanner) Usage() UsageCounts  { return s.usage }
+func (s *OpenAIScanner) UsageObserved() bool { return s.observed }
+func (s *OpenAIScanner) Dropped() int64      { return s.malformed + s.splitter.dropped() }
 
 // ---- Anthropic 扫描器(message_start 输入侧 + message_delta 累计输出) ----
 
 type AnthropicScanner struct {
 	usage     UsageCounts
+	observed  bool
 	malformed int64
 	splitter  *sseSplitter
 }
@@ -292,6 +296,7 @@ func (s *AnthropicScanner) observe(message any) {
 		counts := countsFromUsageRecord(usage)
 		if counts != nil {
 			s.usage = *counts
+			s.observed = true
 		}
 	case "message_delta":
 		usage, ok := record["usage"].(map[string]any)
@@ -302,6 +307,7 @@ func (s *AnthropicScanner) observe(message any) {
 		if counts == nil {
 			return
 		}
+		s.observed = true
 		// message_delta 的 output_tokens 是累计值,直接覆盖;输入侧仅非零时更新。
 		s.usage.OutputTokens = counts.OutputTokens
 		if counts.InputTokens > 0 {
@@ -316,14 +322,16 @@ func (s *AnthropicScanner) observe(message any) {
 	}
 }
 
-func (s *AnthropicScanner) Push(chunk string)  { s.splitter.push(chunk) }
-func (s *AnthropicScanner) Usage() UsageCounts { return s.usage }
-func (s *AnthropicScanner) Dropped() int64     { return s.malformed + s.splitter.dropped() }
+func (s *AnthropicScanner) Push(chunk string)   { s.splitter.push(chunk) }
+func (s *AnthropicScanner) Usage() UsageCounts  { return s.usage }
+func (s *AnthropicScanner) UsageObserved() bool { return s.observed }
+func (s *AnthropicScanner) Dropped() int64      { return s.malformed + s.splitter.dropped() }
 
 // ---- Responses 扫描器(terminal 事件携带累计 usage) ----
 
 type ResponsesScanner struct {
 	usage     UsageCounts
+	observed  bool
 	malformed int64
 	splitter  *sseSplitter
 }
@@ -347,12 +355,14 @@ func NewResponsesScanner() *ResponsesScanner {
 			counts := ParseUsageFromResponsesJSON(parsed)
 			if counts != nil {
 				scanner.usage = *counts
+				scanner.observed = true
 			}
 		}
 	})
 	return scanner
 }
 
-func (s *ResponsesScanner) Push(chunk string)  { s.splitter.push(chunk) }
-func (s *ResponsesScanner) Usage() UsageCounts { return s.usage }
-func (s *ResponsesScanner) Dropped() int64     { return s.malformed + s.splitter.dropped() }
+func (s *ResponsesScanner) Push(chunk string)   { s.splitter.push(chunk) }
+func (s *ResponsesScanner) Usage() UsageCounts  { return s.usage }
+func (s *ResponsesScanner) UsageObserved() bool { return s.observed }
+func (s *ResponsesScanner) Dropped() int64      { return s.malformed + s.splitter.dropped() }

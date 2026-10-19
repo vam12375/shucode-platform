@@ -33,9 +33,26 @@ type PlatformStore interface {
 	ListTeams(ctx context.Context) ([]TeamWithUsage, error)
 	UpdateTeam(ctx context.Context, id string, patch UpdateTeamPatch) (*TeamRecord, error)
 	ListMembers(ctx context.Context, teamID string) ([]TeamMemberView, error)
+	GetTeamMember(ctx context.Context, teamID, userID string) (*TeamMemberView, error)
+	UpdateTeamMember(ctx context.Context, teamID, userID string, patch TeamMemberPatch) (*TeamMemberView, error)
+	GetTeamPolicy(ctx context.Context, teamID string) (*TeamPolicyRecord, error)
+	SaveTeamPolicy(ctx context.Context, record TeamPolicyRecord) (*TeamPolicyRecord, error)
+	CreateTeamInvitation(ctx context.Context, record TeamInvitationRecord) error
+	FindTeamInvitationByHash(ctx context.Context, tokenHash string) (*TeamInvitationRecord, error)
+	ListTeamInvitations(ctx context.Context, teamID string) ([]TeamInvitationRecord, error)
+	RevokeTeamInvitation(ctx context.Context, teamID, id string, at time.Time) (bool, error)
+	AcceptTeamInvitation(ctx context.Context, tokenHash, userID string, at time.Time) (*TeamInvitationRecord, error)
 	AddMember(ctx context.Context, teamID, userID string, role TeamMemberRole) error
 	RemoveMember(ctx context.Context, teamID, userID string) (bool, error)
 	ListTeamsForUser(ctx context.Context, userID string) ([]TeamMembership, error)
+	// ListAllMemberships:跨团队列出全部成员关系(展平含团队名)，按加入时间升序。
+	// 供控制台账号列表一次性注入归属，避免按用户逐一查询。
+	ListAllMemberships(ctx context.Context) ([]AllMembershipRow, error)
+
+	// ---- manual quota requests ----
+	CreateQuotaRequest(ctx context.Context, record QuotaRequestRecord) error
+	ListQuotaRequests(ctx context.Context, teamID string) ([]QuotaRequestRecord, error)
+	ReviewQuotaRequest(ctx context.Context, id, reviewerID, decision, note string, at time.Time) (*QuotaRequestRecord, error)
 
 	// ---- device tokens ----
 	CreateDeviceToken(ctx context.Context, record DeviceTokenRecord) error
@@ -51,8 +68,13 @@ type PlatformStore interface {
 	CreateLoginFlow(ctx context.Context, record LoginFlowRecord) error
 	GetLoginFlow(ctx context.Context, id string) (*LoginFlowRecord, error)
 	UpdateLoginFlow(ctx context.Context, id string, patch UpdateLoginFlowPatch) (*LoginFlowRecord, error)
+	// UpdateLoginFlowIfStatus:仅当前状态等于 expected 时应用 patch。
+	// 授权/拒绝/过期都走条件更新，避免旧请求把 consumed 回写成 authorized。
+	UpdateLoginFlowIfStatus(ctx context.Context, id string, expected LoginFlowStatus, patch UpdateLoginFlowPatch) (*LoginFlowRecord, error)
 	// 条件消费:仅 status=authorized 时置 consumed 并返回——并发轮询只签发一次。
 	ConsumeLoginFlow(ctx context.Context, id string, consumedAt time.Time) (*LoginFlowRecord, error)
+	// DeleteExpiredLoginFlows:清理已过期的登录流，返回删除条数。
+	DeleteExpiredLoginFlows(ctx context.Context, before time.Time) (int64, error)
 
 	// ---- releases ----
 	InsertRelease(ctx context.Context, input InsertReleaseInput) (*ReleaseRecord, error)
@@ -102,6 +124,7 @@ type PlatformStore interface {
 	// ---- config kv ----
 	GetConfigValue(ctx context.Context, key string) ([]byte, error)
 	SetConfigValue(ctx context.Context, key string, value []byte) error
+	CompareAndSwapConfigValue(ctx context.Context, key string, expected, value []byte) (bool, error)
 
 	// ---- usage ----
 	InsertUsage(ctx context.Context, record UsageRecord) error
@@ -148,17 +171,55 @@ type PlatformStore interface {
 
 // TeamMembership:listTeamsForUser 的返回行。
 type TeamMembership struct {
-	Team TeamRecord
-	Role TeamMemberRole
+	MemberDisabledAt     *time.Time
+	MonthlyBudgetCredits string
+	Team                 TeamRecord
+	Role                 TeamMemberRole
+}
+
+// AllMembershipRow:ListAllMemberships 的展平行(成员关系 + 团队名，不含用户与团队全字段)。
+type AllMembershipRow struct {
+	TeamID               string
+	TeamName             string
+	UserID               string
+	Role                 TeamMemberRole
+	MonthlyBudgetCredits string
+	MemberDisabledAt     *time.Time
+	JoinedAt             time.Time
 }
 
 // ---- 语义错误(两实现都必须等价返回;路由层翻译为响应) ----
 
 var (
-	ErrEmailTaken        = errors.New("邮箱已存在")
-	ErrTeamNameTaken     = errors.New("团队名已存在")
-	ErrReleaseTaken      = errors.New("Release revision 已存在")
-	ErrProviderNameTaken = errors.New("供应商名已存在")
-	ErrRootUserExists    = errors.New("超级管理员已存在")
-	ErrRootUserProtected = errors.New("超级管理员不能被禁用或降级")
+	ErrUserAlreadyInTeam       = errors.New("用户已属于其他团队")
+	ErrAmbiguousTeam           = errors.New("用户存在多个有效团队，请先修正团队归属")
+	ErrLastTeamAdmin           = errors.New("不能移除、停用或降级最后一位团队管理员")
+	ErrInvitationInvalid       = errors.New("邀请已失效、过期或被使用")
+	ErrInvitationEmailMismatch = errors.New("邀请邮箱与账号邮箱不匹配")
+	ErrEmailTaken              = errors.New("邮箱已存在")
+	ErrTeamNameTaken           = errors.New("团队名已存在")
+	ErrReleaseTaken            = errors.New("Release revision 已存在")
+	ErrProviderNameTaken       = errors.New("供应商名已存在")
+	ErrRootUserExists          = errors.New("超级管理员已存在")
+	ErrRootUserProtected       = errors.New("超级管理员不能被禁用或降级")
 )
+
+// ResolveUserTeam 显式拒绝既存多团队歧义，避免按列表顺序错误扣费。
+func ResolveUserTeam(ctx context.Context, st PlatformStore, userID string) (*TeamMembership, error) {
+	memberships, err := st.ListTeamsForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	var selected *TeamMembership
+	for _, membership := range memberships {
+		if membership.Team.DisabledAt != nil || membership.MemberDisabledAt != nil {
+			continue
+		}
+		if selected != nil {
+			return nil, ErrAmbiguousTeam
+		}
+		copy := membership
+		selected = &copy
+	}
+	return selected, nil
+}

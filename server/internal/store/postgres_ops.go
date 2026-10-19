@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -145,14 +146,36 @@ func (s *PostgresStore) ReserveQuota(ctx context.Context, input ReserveQuotaInpu
 		ttl = 30 * time.Minute
 	}
 	expiresAt := createdAt.Add(ttl)
+	// 先持有团队行锁，避免并发请求同时读到相同预算余额。
+	exists, err := lockTeam(ctx, tx, input.TeamID)
+	if err != nil {
+		return "", err
+	}
+	if !exists {
+		return ReserveDenied, nil
+	}
+	var duplicate bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM quota_reservations WHERE team_id=$1::uuid AND request_id=$2)`, input.TeamID, input.RequestID).Scan(&duplicate); err != nil {
+		return "", err
+	}
+	if duplicate {
+		return ReserveDuplicate, nil
+	}
+	allowed, err := reservationBudgetAllowed(ctx, tx, input, createdAt)
+	if err != nil {
+		return "", err
+	}
+	if !allowed {
+		return ReserveDenied, nil
+	}
 	var inserted string
 	err = tx.QueryRow(ctx, `
-		INSERT INTO quota_reservations (id, team_id, request_id, reserved_credits, status, created_at, expires_at)
-		VALUES ($1::uuid, $2::uuid, $3, $4::numeric, 'reserved', $5::timestamptz, $6::timestamptz)
-		ON CONFLICT (request_id) DO NOTHING
+		INSERT INTO quota_reservations (id, team_id, request_id, reserved_credits, status, created_at, expires_at, user_id)
+		VALUES ($1::uuid, $2::uuid, $3, $4::numeric, 'reserved', $5::timestamptz, $6::timestamptz, $7::uuid)
+		ON CONFLICT (team_id, request_id) DO NOTHING
 		RETURNING id::text`,
 		id, input.TeamID, input.RequestID, creditMicroString(input.Micro),
-		createdAt, expiresAt).Scan(&inserted)
+		createdAt, expiresAt, nullIfEmpty(input.UserID)).Scan(&inserted)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return ReserveDuplicate, nil
@@ -326,7 +349,7 @@ func (s *PostgresStore) ListOpenReservations(ctx context.Context, limit int64) (
 		limit = 500
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id::text, team_id::text, request_id, reserved_credits::text, status,
+		SELECT id::text, team_id::text, COALESCE(user_id::text,''), request_id, reserved_credits::text, status,
 			created_at, expires_at, settled_at, released_at, COALESCE(usage_id::text, '')
 		FROM quota_reservations
 		WHERE status = 'reserved'
@@ -343,7 +366,7 @@ func (s *PostgresStore) ListOpenReservations(ctx context.Context, limit int64) (
 			reserved string
 			status   string
 		)
-		if err := rows.Scan(&r.ID, &r.TeamID, &r.RequestID, &reserved, &status,
+		if err := rows.Scan(&r.ID, &r.TeamID, &r.UserID, &r.RequestID, &reserved, &status,
 			&r.CreatedAt, &r.ExpiresAt, &r.SettledAt, &r.ReleasedAt, &r.UsageID); err != nil {
 			return nil, err
 		}
@@ -385,20 +408,28 @@ func (s *PostgresStore) ListUsageForExport(ctx context.Context, filter UsageFilt
 // ---- rollup helpers ----
 
 func insertUsageExec(ctx context.Context, tx pgx.Tx, record UsageRecord) error {
+	var snapshotJSON []byte
+	if record.PriceSnapshot != nil {
+		var err error
+		snapshotJSON, err = json.Marshal(record.PriceSnapshot)
+		if err != nil {
+			return err
+		}
+	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO usage_records (
 			id, request_id, user_id, team_id, device_token_id, model, upstream_model,
 			input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-			credits_micro, status, error_type, client_ip, latency_ms, provider_id, created_at
+			credits_micro, status, error_type, client_ip, latency_ms, provider_id, created_at, price_snapshot
 		) VALUES (
 			$1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6, $7,
-			$8, $9, $10, $11, $12, $13, $14, $15, $16, $17::uuid, $18::timestamptz
+			$8, $9, $10, $11, $12, $13, $14, $15, $16, $17::uuid, $18::timestamptz, $19::jsonb
 		)`,
 		record.ID, record.RequestID, record.UserID, record.TeamID, nullIfEmpty(record.DeviceTokenID),
 		record.Model, record.UpstreamModel, record.InputTokens, record.OutputTokens,
 		record.CacheReadTokens, record.CacheCreationTokens, record.CreditsMicro, string(record.Status),
 		emptyToNil(record.ErrorType), emptyToNil(record.ClientIP), record.LatencyMs,
-		nullIfEmpty(record.ProviderID), record.CreatedAt)
+		nullIfEmpty(record.ProviderID), record.CreatedAt, nullableBytes(snapshotJSON))
 	return err
 }
 

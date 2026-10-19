@@ -71,22 +71,42 @@ func (l *GatewayLimiter) AcquireConcurrency(ctx context.Context, key string, lim
 		var once sync.Once
 		return func() { once.Do(func() { l.mem.release(key) }) }, true, nil
 	}
+	const leaseMs = int64(300_000)
+	redisKey := "gw:conc:" + key
 	result, err := redisAcquireConcurrency.Run(ctx, l.client,
-		[]string{"gw:conc:" + key}, limit, 300_000).Int64()
+		[]string{redisKey}, limit, leaseMs).Int64()
 	if err != nil {
 		return func() {}, false, err
 	}
 	if result != 1 {
 		return func() {}, false, nil
 	}
+	// 长 SSE 请求可能持续数十分钟，固定 5 分钟过期会让并发槽位提前消失；
+	// 持槽期间定期续租。续租失败（Redis 故障/键已过期）不影响请求本身。
+	stopRenew := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopRenew:
+				return
+			case <-ticker.C:
+				renewCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				_ = redisRenewConcurrency.Run(renewCtx, l.client, []string{redisKey}, leaseMs).Err()
+				cancel()
+			}
+		}
+	}()
 	var once sync.Once
 	release := func() {
 		once.Do(func() {
+			close(stopRenew)
 			// 请求 ctx 可能已取消，释放必须用独立 ctx。
 			releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			_ = redisReleaseConcurrency.Run(releaseCtx, l.client,
-				[]string{"gw:conc:" + key}, 300_000).Err()
+				[]string{redisKey}, leaseMs).Err()
 		})
 	}
 	return release, true, nil
@@ -142,6 +162,16 @@ if current < 0 then
 end
 redis.call('PEXPIRE', key, ttl)
 return 1`)
+
+	// 仅当槽位键仍存在时续租；键已过期就不重建，避免复活旧的计数。
+	redisRenewConcurrency = redis.NewScript(`
+local key = KEYS[1]
+local ttl = tonumber(ARGV[1])
+if redis.call('EXISTS', key) == 1 then
+  redis.call('PEXPIRE', key, ttl)
+  return 1
+end
+return 0`)
 )
 
 // memGatewayLimiter:Redis 不可用时的单实例回退。

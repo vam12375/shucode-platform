@@ -119,6 +119,24 @@ func (s *memoryStore) UpdateLoginFlow(_ context.Context, id string, patch Update
 	if !ok {
 		return nil, nil
 	}
+	applyLoginFlowPatch(&flow, patch)
+	s.flows[id] = flow
+	return cloneLoginFlow(&flow), nil
+}
+
+func (s *memoryStore) UpdateLoginFlowIfStatus(_ context.Context, id string, expected LoginFlowStatus, patch UpdateLoginFlowPatch) (*LoginFlowRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	flow, ok := s.flows[id]
+	if !ok || flow.Status != expected {
+		return nil, nil
+	}
+	applyLoginFlowPatch(&flow, patch)
+	s.flows[id] = flow
+	return cloneLoginFlow(&flow), nil
+}
+
+func applyLoginFlowPatch(flow *LoginFlowRecord, patch UpdateLoginFlowPatch) {
 	if patch.Status != nil {
 		flow.Status = *patch.Status
 	}
@@ -140,8 +158,19 @@ func (s *memoryStore) UpdateLoginFlow(_ context.Context, id string, patch Update
 		v := *patch.LastPolledAt
 		flow.LastPolledAt = &v
 	}
-	s.flows[id] = flow
-	return cloneLoginFlow(&flow), nil
+}
+
+func (s *memoryStore) DeleteExpiredLoginFlows(_ context.Context, before time.Time) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var count int64
+	for id, flow := range s.flows {
+		if flow.ExpiresAt.Before(before) {
+			delete(s.flows, id)
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (s *memoryStore) ConsumeLoginFlow(_ context.Context, id string, consumedAt time.Time) (*LoginFlowRecord, error) {

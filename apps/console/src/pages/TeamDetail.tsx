@@ -3,7 +3,9 @@ import {
   formatCreditsDisplay,
 } from "@shucode-platform/contracts/credits";
 import { useCallback, useEffect, useState } from "react";
-import { api } from "../api.js";
+import { useAuth } from "../auth.js";
+import { Select } from "../components/Select.js";
+import { api, navigate } from "../api.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { Gauge } from "../components/Gauge.js";
 import { Chip, Notice, type ChipTone } from "../components/StatusChip.js";
@@ -23,7 +25,7 @@ interface TeamDetail {
   };
   members: Array<{
     user: { id: string; email: string; displayName: string };
-    role: "owner" | "member";
+    role: "owner" | "admin" | "member";
     joinedAt: string;
   }>;
   aggregates: Array<{
@@ -66,6 +68,7 @@ function statusChip(status: string): { tone?: ChipTone; label: string } {
 }
 
 export function TeamDetailPage({ teamId }: { teamId: string }) {
+  const { selectTeam } = useAuth();
   const [detail, setDetail] = useState<TeamDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [quota, setQuota] = useState("");
@@ -121,7 +124,10 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
   };
 
   // 操作结果走全局 Toast；内联 error 仅保留给页面加载失败。
-  const run = async (action: () => Promise<unknown>, success?: string): Promise<void> => {
+  const run = async (
+    action: () => Promise<unknown>,
+    success?: string,
+  ): Promise<void> => {
     setBusy(true);
     try {
       await action();
@@ -138,7 +144,7 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
     return (
       <div>
         <p className="eyebrow">
-          <a href="#/teams">← 返回团队列表</a>
+          <a href="#/org">← 返回团队与账号</a>
         </p>
         {error ? (
           <Notice tone="stop" k="加载失败">
@@ -155,7 +161,10 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
   const used = Number.parseFloat(team.usedCredits) || 0;
   const reserved = Number.parseFloat(team.reservedCredits) || 0;
   const quotaValue = Number.parseFloat(team.quotaCredits) || 0;
-  const totalCredits = aggregates.reduce((sum, row) => sum + row.creditsMicro, 0);
+  const totalCredits = aggregates.reduce(
+    (sum, row) => sum + row.creditsMicro,
+    0,
+  );
   const totalRequests = aggregates.reduce((sum, row) => sum + row.requests, 0);
 
   return (
@@ -163,12 +172,13 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
       <header className="page-head">
         <div>
           <p className="eyebrow">
-            <a href="#/teams">← 返回团队列表</a>
+            <a href="#/org">← 返回团队与账号</a>
           </p>
           <h1>{team.name}</h1>
         </div>
         <span className="readout m0">
-          共 {totalRequests.toLocaleString("en-US")} 次请求 · ¥{credits(totalCredits)}
+          共 {totalRequests.toLocaleString("en-US")} 次请求 · ¥
+          {credits(totalCredits)}
         </span>
       </header>
 
@@ -185,10 +195,7 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
         </div>
         <div className="pane-b">
           <div style={{ marginBottom: 14 }}>
-            <Gauge
-              used={used}
-              quota={team.unlimited ? null : quotaValue}
-            />
+            <Gauge used={used} quota={team.unlimited ? null : quotaValue} />
           </div>
           <div className="form-row">
             <input
@@ -230,7 +237,9 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
             </button>
           </div>
           <p className="readout" style={{ margin: 0, marginTop: 10 }}>
-            已用 ¥{formatCreditsDisplay(used)} · 预留 ¥{formatCreditsDisplay(reserved)}。额度扣减发生在模型网关，页面展示为实时汇总。
+            已用 ¥{formatCreditsDisplay(used)} · 预留 ¥
+            {formatCreditsDisplay(reserved)}
+            。额度扣减发生在模型网关，页面展示为实时汇总。
           </p>
         </div>
       </section>
@@ -283,7 +292,8 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
                       body: JSON.stringify({
                         rpmLimit: Number.parseInt(rpmLimit, 10) || 0,
                         tpmLimit: Number.parseInt(tpmLimit, 10) || 0,
-                        concurrencyLimit: Number.parseInt(concurrencyLimit, 10) || 0,
+                        concurrencyLimit:
+                          Number.parseInt(concurrencyLimit, 10) || 0,
                       }),
                     }),
                   "已保存流控设置",
@@ -294,7 +304,8 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
             </button>
           </div>
           <p className="readout" style={{ margin: 0, marginTop: 10 }}>
-            RPM/TPM 按分钟窗口计数，并发按在途请求数计数；超限返回 429。TPM 使用请求体估算 token（正文长度 / 4 + max_tokens），用于准入保护。
+            RPM/TPM 按分钟窗口计数，并发按在途请求数计数；超限返回 429。TPM
+            使用请求体估算 token（正文长度 / 4 + max_tokens），用于准入保护。
           </p>
         </div>
       </section>
@@ -302,7 +313,9 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
       <section className="pane d1">
         <div className="pane-h">
           <h2>额度变更记录</h2>
-          <span className="readout">最近 {quotaAdjustments.length} 条 · 含前后快照</span>
+          <span className="readout">
+            最近 {quotaAdjustments.length} 条 · 含前后快照
+          </span>
         </div>
         <div className="pane-b flush table-scroll">
           <table className="table">
@@ -324,7 +337,9 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
                   </td>
                   <td>
                     {row.oldUnlimited === row.newUnlimited ? (
-                      <span className="readout">{row.newUnlimited ? "是" : "否"}</span>
+                      <span className="readout">
+                        {row.newUnlimited ? "是" : "否"}
+                      </span>
                     ) : (
                       <Chip tone={row.newUnlimited ? "hot" : undefined}>
                         {row.oldUnlimited ? "是 → 否" : "否 → 是"}
@@ -348,6 +363,15 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
       <section className="pane d1">
         <div className="pane-h">
           <h2>成员</h2>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              selectTeam(teamId);
+              navigate("/members");
+            }}
+          >
+            团队工作台 · 邀请与预算
+          </button>
           <span className="readout">{members.length} 人</span>
         </div>
         <div className="pane-b">
@@ -388,11 +412,36 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
               {members.map((member) => (
                 <tr key={member.user.id}>
                   <td>
-                    {member.user.displayName} <span className="readout">({member.user.email})</span>
+                    {member.user.displayName}{" "}
+                    <span className="readout">({member.user.email})</span>
                   </td>
-                  <td>{member.role === "owner" ? "所有者" : "成员"}</td>
                   <td>
-                    <div className="form-row" style={{ justifyContent: "flex-end" }}>
+                    <Select
+                      ariaLabel={`${member.user.email}的团队身份`}
+                      value={member.role}
+                      disabled={busy}
+                      options={[
+                        { value: "owner", label: "所有者" },
+                        { value: "admin", label: "团队管理员" },
+                        { value: "member", label: "成员" },
+                      ]}
+                      onChange={(role) =>
+                        void run(
+                          () =>
+                            api(`/teams/${teamId}/members/${member.user.id}`, {
+                              method: "PATCH",
+                              body: JSON.stringify({ role }),
+                            }),
+                          "团队身份已更新",
+                        )
+                      }
+                    />
+                  </td>
+                  <td>
+                    <div
+                      className="form-row"
+                      style={{ justifyContent: "flex-end" }}
+                    >
                       <button
                         className="btn btn-danger btn-sm"
                         disabled={busy}
@@ -400,13 +449,18 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
                           void confirmDialog({
                             k: "移除成员",
                             title: `将 ${member.user.displayName} 移出「${team.name}」？`,
-                            message: "移除后该用户不再共享本团队额度；其设备凭据与账号本身不受影响。",
+                            message:
+                              "移除后该用户不再共享本团队额度；其设备凭据与账号本身不受影响。",
                             confirmText: "移除",
                             danger: true,
                           }).then((answer) => {
                             if (!answer.confirmed) return;
                             return run(
-                              () => api(`/teams/${teamId}/members/${member.user.id}`, { method: "DELETE" }),
+                              () =>
+                                api(
+                                  `/teams/${teamId}/members/${member.user.id}`,
+                                  { method: "DELETE" },
+                                ),
                               `已移除 ${member.user.displayName}`,
                             );
                           });
@@ -458,9 +512,15 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
               {aggregates.map((row) => (
                 <tr key={row.model}>
                   <td>{row.model}</td>
-                  <td className="num">{row.requests.toLocaleString("en-US")}</td>
-                  <td className="num">{row.inputTokens.toLocaleString("en-US")}</td>
-                  <td className="num">{row.outputTokens.toLocaleString("en-US")}</td>
+                  <td className="num">
+                    {row.requests.toLocaleString("en-US")}
+                  </td>
+                  <td className="num">
+                    {row.inputTokens.toLocaleString("en-US")}
+                  </td>
+                  <td className="num">
+                    {row.outputTokens.toLocaleString("en-US")}
+                  </td>
                   <td className="num">{credits(row.creditsMicro)}</td>
                 </tr>
               ))}
@@ -476,12 +536,18 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
               <tfoot>
                 <tr>
                   <td>合计 · {aggregates.length} 个模型</td>
-                  <td className="num">{totalRequests.toLocaleString("en-US")}</td>
                   <td className="num">
-                    {aggregates.reduce((sum, row) => sum + row.inputTokens, 0).toLocaleString("en-US")}
+                    {totalRequests.toLocaleString("en-US")}
                   </td>
                   <td className="num">
-                    {aggregates.reduce((sum, row) => sum + row.outputTokens, 0).toLocaleString("en-US")}
+                    {aggregates
+                      .reduce((sum, row) => sum + row.inputTokens, 0)
+                      .toLocaleString("en-US")}
+                  </td>
+                  <td className="num">
+                    {aggregates
+                      .reduce((sum, row) => sum + row.outputTokens, 0)
+                      .toLocaleString("en-US")}
                   </td>
                   <td className="num">{credits(totalCredits)}</td>
                 </tr>
@@ -516,13 +582,16 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
                 const status = statusChip(record.status);
                 return (
                   <tr key={record.id}>
-                    <td className="num">{formatShanghaiTime(record.createdAt)}</td>
+                    <td className="num">
+                      {formatShanghaiTime(record.createdAt)}
+                    </td>
                     <td>{record.model}</td>
                     <td>
                       <Chip tone={status.tone}>{status.label}</Chip>
                     </td>
                     <td className="num">
-                      {record.inputTokens.toLocaleString("en-US")} / {record.outputTokens.toLocaleString("en-US")}
+                      {record.inputTokens.toLocaleString("en-US")} /{" "}
+                      {record.outputTokens.toLocaleString("en-US")}
                     </td>
                     <td className="num">{credits(record.creditsMicro)}</td>
                   </tr>

@@ -44,6 +44,17 @@ func EstimateMaxMicroCredits(maxOutputTokens int64, outputPerMtok float64) int64
 	return round(raw)
 }
 
+// EstimateReservationMicroCredits:准入预留同时覆盖输入估算与输出上限，
+// 避免只预留输出导致输入成本完全不受准入额度约束。
+func EstimateReservationMicroCredits(inputTokens, outputTokens int64, rates ModelPriceRates) int64 {
+	raw := math.Max(0, math.Floor(float64(inputTokens)))*rates.InputPerMtok +
+		math.Max(0, math.Floor(float64(outputTokens)))*rates.OutputPerMtok
+	if math.IsNaN(raw) || math.IsInf(raw, 0) || raw < 0 {
+		return 0
+	}
+	return round(raw)
+}
+
 // FormatMicroCredits:micro → 定点 credit 字符串(numeric(18,6) 口径)。
 // 与 TS (micro/1e6).toFixed(6) 等价的整型实现(无浮点误差)。
 func FormatMicroCredits(micro int64) string {

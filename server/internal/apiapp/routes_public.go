@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -145,28 +147,32 @@ func registerUserConfigRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(401, fail(401, "凭据无效或已吊销"))
 			return
 		}
-		teams, err := deps.Store.ListTeamsForUser(ctx, auth.User.ID)
+		membership, err := store.ResolveUserTeam(ctx, deps.Store, auth.User.ID)
+		if errors.Is(err, store.ErrAmbiguousTeam) {
+			c.JSON(409, fail(409, "账号存在多个有效团队，请联系管理员明确团队归属"))
+			return
+		}
 		if err != nil {
 			internalError(c, deps, err)
 			return
 		}
-		var primary *store.TeamRecord
-		for i := range teams {
-			if teams[i].Team.DisabledAt == nil {
-				primary = &teams[i].Team
-				break
-			}
+		if membership == nil {
+			c.JSON(403, fail(403, "账号没有有效团队或团队访问已停用，请联系团队管理员"))
+			return
 		}
-		var models []store.PlatformModelRecord
-		if primary != nil {
-			models, err = deps.Store.ListModels(ctx, false)
-			if err != nil {
-				internalError(c, deps, err)
-				return
-			}
+		policy, err := deps.Store.GetTeamPolicy(ctx, membership.Team.ID)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		models, err := deps.Store.ListModels(ctx, false)
+		if err != nil {
+			internalError(c, deps, err)
+			return
 		}
 		input := BuildUserConfigInput{
 			UserID:         auth.User.ID,
+			TeamID:         membership.Team.ID,
 			DeviceTokenID:  auth.Device.ID,
 			GatewayBaseURL: deps.Env.GatewayBaseURL,
 			GatewayAPI: gatewayAPI{
@@ -174,10 +180,10 @@ func registerUserConfigRoutes(router *gin.Engine, deps *Deps) {
 				BaseURL: deps.Env.GatewayAPIBaseURL,
 			},
 		}
-		if primary != nil {
-			input.TeamID = primary.ID
-		}
 		for _, model := range models {
+			if !store.TeamModelAllowed(policy, model.ModelID) {
+				continue
+			}
 			input.Models = append(input.Models, userConfigModel{
 				ModelID:                model.ModelID,
 				InputPricePerMtok:      model.InputPricePerMtok,
@@ -186,8 +192,8 @@ func registerUserConfigRoutes(router *gin.Engine, deps *Deps) {
 				CacheWritePricePerMtok: model.CacheWritePricePerMtok,
 			})
 		}
-		if len(models) > 0 {
-			input.DefaultModelID = models[0].ModelID
+		if len(input.Models) > 0 {
+			input.DefaultModelID = input.Models[0].ModelID
 		}
 		envelope := buildUserConfigEnvelope(input)
 		if auth.PlaintextToken != "" {
@@ -301,20 +307,38 @@ func mergeDomains(pending, incoming []string) []string {
 type loginFlowTTL = time.Duration
 
 const (
-	flowTTL         loginFlowTTL = 10 * time.Minute
-	pollIntervalSec              = 3
+	flowTTL              loginFlowTTL = 10 * time.Minute
+	pollIntervalSec                   = 3
+	maxAuthInitBodyBytes              = 64 << 10
+	maxLoginFormBytes                 = 64 << 10
 )
 
 func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 	router.POST("/api/v1/platform/auth/init", func(c *gin.Context) {
 		ctx := c.Request.Context()
+		// 匿名入口：先限流再读 body，避免被用来无限写 login_flows 或耗尽内存。
+		if deps.PlatformLoginLimiter != nil {
+			allowed, limitErr := deps.PlatformLoginLimiter.Allow(ctx, resolveLimiterClientIP(c, deps)+":auth-init")
+			if limitErr != nil {
+				deps.Logger.Warn("登录流初始化限流不可用，按 fail-open 放行", "error", limitErr)
+			} else if !allowed {
+				c.JSON(429, fail(429, "请求过于频繁，请稍后再试"))
+				return
+			}
+		}
 		pollToken, ok := readPollToken(c)
 		if !ok || len(pollToken) < 32 {
 			c.JSON(400, fail(400, "缺少轮询凭据"))
 			return
 		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxAuthInitBodyBytes)
+		raw, readErr := io.ReadAll(c.Request.Body)
+		if readErr != nil {
+			c.JSON(413, fail(413, "请求体过大"))
+			return
+		}
 		body := map[string]any{}
-		if raw, err := io.ReadAll(c.Request.Body); err == nil && len(raw) > 0 {
+		if len(raw) > 0 {
 			var parsed any
 			if json.Unmarshal(raw, &parsed) == nil {
 				if obj, ok := parsed.(map[string]any); ok {
@@ -390,7 +414,8 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 		now := deps.Now()
 		if (flow.Status == store.FlowStatusPending || flow.Status == store.FlowStatusAuthorized) &&
 			!flow.ExpiresAt.After(now) {
-			if _, err := deps.Store.UpdateLoginFlow(ctx, flowID, store.UpdateLoginFlowPatch{Status: ptr(store.FlowStatusExpired)}); err != nil {
+			if _, err := deps.Store.UpdateLoginFlowIfStatus(ctx, flowID, flow.Status,
+				store.UpdateLoginFlowPatch{Status: ptr(store.FlowStatusExpired)}); err != nil {
 				internalError(c, deps, err)
 				return
 			}
@@ -516,7 +541,8 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 		}
 		if !flow.ExpiresAt.After(deps.Now()) {
 			if flow.Status == store.FlowStatusPending {
-				if _, err := deps.Store.UpdateLoginFlow(ctx, flowID, store.UpdateLoginFlowPatch{Status: ptr(store.FlowStatusExpired)}); err != nil {
+				if _, err := deps.Store.UpdateLoginFlowIfStatus(ctx, flowID, store.FlowStatusPending,
+					store.UpdateLoginFlowPatch{Status: ptr(store.FlowStatusExpired)}); err != nil {
 					internalError(c, deps, err)
 					return
 				}
@@ -544,7 +570,11 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 
 	router.POST("/app/platform/login", func(c *gin.Context) {
 		ctx := c.Request.Context()
-		_ = c.Request.ParseForm()
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxLoginFormBytes)
+		if err := c.Request.ParseForm(); err != nil {
+			c.JSON(400, fail(400, "请求参数不合法"))
+			return
+		}
 		flowID := c.Request.FormValue("flow_id")
 		email := strings.TrimSpace(c.Request.FormValue("email"))
 		password := c.Request.FormValue("password")
@@ -563,10 +593,15 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 			})))
 			return
 		}
-		allowed, err := deps.PlatformLoginLimiter.Allow(ctx, resolveLimiterClientIP(c)+":"+strings.ToLower(email))
+		if deps.PlatformLoginLimiter == nil {
+			rootMFAUnavailable(c)
+			return
+		}
+		allowed, err := deps.PlatformLoginLimiter.Allow(ctx, resolveLimiterClientIP(c, deps)+":"+strings.ToLower(email))
 		if err != nil {
-			deps.Logger.Warn("登录限流不可用，按 fail-open 放行", "error", err)
-			allowed = true
+			// 此表单也签发控制台会话；限流故障不能退化为无限次密码验证。
+			c.Data(503, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{Title: "登录暂不可用", Message: "登录验证暂不可用，请稍后重试。", Tone: "error"})))
+			return
 		}
 		if !allowed {
 			c.Data(429, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
@@ -589,6 +624,10 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 			})))
 			return
 		}
+		if !allowRootMFAPlatformPasswordLogin(ctx, deps, c, user) {
+			return
+		}
+		rehashPasswordIfNeeded(ctx, deps, user, password)
 		if err := loginWithSession(ctx, deps, c, user.ID); err != nil {
 			internalError(c, deps, err)
 			return
@@ -598,7 +637,11 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 
 	router.POST("/app/platform/authorize", func(c *gin.Context) {
 		ctx := c.Request.Context()
-		_ = c.Request.ParseForm()
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxLoginFormBytes)
+		if err := c.Request.ParseForm(); err != nil {
+			c.JSON(400, fail(400, "请求参数不合法"))
+			return
+		}
 		flowID := c.Request.FormValue("flow_id")
 		decision := c.Request.FormValue("decision")
 		user, err := readSessionUser(ctx, deps, c)
@@ -636,16 +679,34 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 		}
 		if decision == "approve" {
 			now := deps.Now()
-			if _, err := deps.Store.UpdateLoginFlow(ctx, flowID, store.UpdateLoginFlowPatch{
+			updated, err := deps.Store.UpdateLoginFlowIfStatus(ctx, flowID, store.FlowStatusPending, store.UpdateLoginFlowPatch{
 				Status: ptr(store.FlowStatusAuthorized), UserID: &user.ID, AuthorizedAt: &now,
-			}); err != nil {
+			})
+			if err != nil {
 				internalError(c, deps, err)
+				return
+			}
+			if updated == nil {
+				// 并发的另一授权/拒绝/过期请求已先完成状态转换。
+				current, getErr := deps.Store.GetLoginFlow(ctx, flowID)
+				if getErr != nil {
+					internalError(c, deps, getErr)
+					return
+				}
+				if current != nil && (current.Status == store.FlowStatusAuthorized || current.Status == store.FlowStatusConsumed) {
+					c.Redirect(303, "/app/platform/authorized?flow_id="+flowID)
+					return
+				}
+				c.Data(409, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+					Title: "授权状态已变化", Message: "本次登录授权已被处理，请回到应用重新发起登录。", Tone: "error",
+				})))
 				return
 			}
 			c.Redirect(303, "/app/platform/authorized?flow_id="+flowID)
 			return
 		}
-		if _, err := deps.Store.UpdateLoginFlow(ctx, flowID, store.UpdateLoginFlowPatch{Status: ptr(store.FlowStatusDenied)}); err != nil {
+		if _, err := deps.Store.UpdateLoginFlowIfStatus(ctx, flowID, store.FlowStatusPending,
+			store.UpdateLoginFlowPatch{Status: ptr(store.FlowStatusDenied)}); err != nil {
 			internalError(c, deps, err)
 			return
 		}
@@ -686,19 +747,6 @@ func readPollToken(c *gin.Context) (string, bool) {
 		return "", false
 	}
 	return token, true
-}
-
-// resolveLimiterClientIP:cf-connecting-ip 优先,其次 XFF 首段,兜底 unknown(与 TS 一致)。
-func resolveLimiterClientIP(c *gin.Context) string {
-	if value := strings.TrimSpace(c.GetHeader("cf-connecting-ip")); value != "" {
-		return value
-	}
-	if xff := c.GetHeader("x-forwarded-for"); xff != "" {
-		if first := strings.TrimSpace(strings.Split(xff, ",")[0]); first != "" {
-			return first
-		}
-	}
-	return "unknown"
 }
 
 func ptr[T any](v T) *T { return &v }

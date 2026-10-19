@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"math"
@@ -29,9 +30,13 @@ import (
 )
 
 const (
-	maxMaxTokens          = 256_000
-	defaultMaxTokens      = 4_096
-	maxUpstreamErrorBytes = 1_000_000
+	maxMaxTokens             = 256_000
+	defaultMaxTokens         = 4_096
+	maxUpstreamErrorBytes    = 1_000_000
+	maxGatewayRequestBytes   = 32 << 20 // 32 MiB，覆盖带图片的多模态请求
+	maxUpstreamResponseBytes = 32 << 20
+	maxOutputCandidates      = 16
+	maxRequestIDLength       = 128
 )
 
 type Deps struct {
@@ -85,6 +90,8 @@ type protocolSpec struct {
 type streamScanner interface {
 	Push(chunk string)
 	Usage() UsageCounts
+	// UsageObserved:上游是否真的返回过 usage；零用量与缺少计量必须区分。
+	UsageObserved() bool
 	Dropped() int64
 }
 
@@ -156,11 +163,15 @@ func buildOpenAISpec() protocolSpec {
 				headers["authorization"] = "Bearer " + apiKey
 			}
 			body["model"] = upstreamModel
-			// 流式计量依赖最终 usage chunk:客户端未声明时注入 include_usage。
+			// 计量选项必须由网关强制控制：客户端显式关闭 include_usage 时也要覆盖，
+			// 否则上游不返回最终 usage，会形成“有内容、零扣费”的缺口。
 			if stream {
-				if _, exists := body["stream_options"]; !exists {
-					body["stream_options"] = map[string]any{"include_usage": true}
+				options, _ := body["stream_options"].(map[string]any)
+				if options == nil {
+					options = map[string]any{}
 				}
+				options["include_usage"] = true
+				body["stream_options"] = options
 			}
 			return headers, mustJSON(body)
 		},
@@ -220,10 +231,18 @@ func New(deps Deps) *gin.Engine {
 	// 与 TS 路由逐位兼容:Gin 默认会把未知路径的尾斜杠 301 到去斜杠版本,TS 直接 404。
 	app.RedirectTrailingSlash = false
 	app.RedirectFixedPath = false
-	app.Use(gin.CustomRecovery(func(c *gin.Context, err any) {
-		deps.Logger.Error("网关请求处理失败", "path", c.Request.URL.Path, "error", err)
-		anthropicError(c, 500, "api_error", "网关内部错误")
-	}))
+	app.Use(func(c *gin.Context) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				deps.Logger.Error("网关请求处理失败", "path", c.Request.URL.Path, "error", recovered)
+				if !c.Writer.Written() {
+					anthropicError(c, 500, "api_error", "网关内部错误")
+				}
+				c.Abort()
+			}
+		}()
+		c.Next()
+	})
 	app.GET("/healthz", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
 	app.GET("/v1/models", func(c *gin.Context) { handleModelsRequest(c, deps) })
 	for _, spec := range []protocolSpec{buildAnthropicSpec(), buildOpenAISpec(), buildOpenAIResponsesSpec()} {
@@ -257,8 +276,9 @@ func authenticate(r *http.Request, deps Deps, errorResponse errorResponder, c *g
 		errorResponse(c, 500, "api_error", "网关内部错误")
 		return nil, nil, false
 	}
-	if device == nil || device.RevokedAt != nil {
-		errorResponse(c, 401, "authentication_error", "平台凭据无效或已吊销")
+	if device == nil || device.RevokedAt != nil ||
+		device.Expired(deps.Now(), deps.Env.DeviceTokenTTL) {
+		errorResponse(c, 401, "authentication_error", "平台凭据无效、已吊销或已过期")
 		return nil, nil, false
 	}
 	user, err := deps.Store.FindUserByID(r.Context(), device.UserID)
@@ -274,9 +294,38 @@ func authenticate(r *http.Request, deps Deps, errorResponse errorResponder, c *g
 	return device, user, true
 }
 
-// handleModelsRequest:OpenAI list 兼容的已启用模型清单;仅校验设备凭据有效。
+// resolveGatewayTeam 同时检查团队与成员状态；历史多团队数据不能按列表顺序静默选取。
+func resolveGatewayTeam(c *gin.Context, deps Deps, userID string, errorResponse errorResponder) (*store.TeamMembership, *store.TeamPolicyRecord, bool) {
+	membership, err := store.ResolveUserTeam(c.Request.Context(), deps.Store, userID)
+	if errors.Is(err, store.ErrAmbiguousTeam) {
+		errorResponse(c, 409, "permission_error", "账号存在多个有效团队，请联系管理员明确团队归属")
+		return nil, nil, false
+	}
+	if err != nil {
+		deps.Logger.Error("团队查询失败", "error", err)
+		errorResponse(c, 500, "api_error", "网关内部错误")
+		return nil, nil, false
+	}
+	if membership == nil {
+		errorResponse(c, 403, "permission_error", "账号没有有效团队或团队访问已停用，请联系团队管理员")
+		return nil, nil, false
+	}
+	policy, err := deps.Store.GetTeamPolicy(c.Request.Context(), membership.Team.ID)
+	if err != nil {
+		deps.Logger.Error("团队策略查询失败", "error", err)
+		errorResponse(c, 500, "api_error", "网关内部错误")
+		return nil, nil, false
+	}
+	return membership, policy, true
+}
+
+// handleModelsRequest:OpenAI list 兼容清单，只返回当前有效团队允许使用的模型。
 func handleModelsRequest(c *gin.Context, deps Deps) {
-	_, _, ok := authenticate(c.Request, deps, openAIError, c)
+	_, user, ok := authenticate(c.Request, deps, openAIError, c)
+	if !ok {
+		return
+	}
+	_, policy, ok := resolveGatewayTeam(c, deps, user.ID, openAIError)
 	if !ok {
 		return
 	}
@@ -288,6 +337,9 @@ func handleModelsRequest(c *gin.Context, deps Deps) {
 	}
 	data := make([]gin.H, 0, len(models))
 	for _, model := range models {
+		if !store.TeamModelAllowed(policy, model.ModelID) {
+			continue
+		}
 		data = append(data, gin.H{
 			"id":       model.ModelID,
 			"object":   "model",
@@ -319,6 +371,30 @@ func priceRates(model *store.PlatformModelRecord, at time.Time, holidays map[str
 	}
 }
 
+func requestedOutputCount(body map[string]any, max int64) (int64, bool) {
+	raw, exists := body["n"]
+	if !exists {
+		return 1, true
+	}
+	numeric, ok := raw.(float64)
+	if !ok || math.IsNaN(numeric) || math.IsInf(numeric, 0) ||
+		numeric != math.Trunc(numeric) || numeric < 1 || numeric > float64(max) {
+		return 0, false
+	}
+	return int64(numeric), true
+}
+
+// clampRequestedMaxTokens:内部夹紧值必须同步写回上游，否则准入预留与实际输出上限不一致。
+func clampRequestedMaxTokens(body map[string]any) {
+	for _, key := range []string{"max_completion_tokens", "max_tokens", "max_output_tokens"} {
+		value, ok := body[key].(float64)
+		if !ok || math.IsNaN(value) || math.IsInf(value, 0) || value <= maxMaxTokens {
+			continue
+		}
+		body[key] = float64(maxMaxTokens)
+	}
+}
+
 func readMaxTokensFrom(value any) int64 {
 	if raw, ok := value.(float64); ok {
 		if math.IsNaN(raw) || math.IsInf(raw, 0) || raw <= 0 {
@@ -345,6 +421,17 @@ func clientIPOf(c *gin.Context, deps Deps) *string {
 	return ResolveClientIP(remote, values, present, c.Request.Header.Get("x-real-ip"), deps.Trusted)
 }
 
+func reservationRequestWindows(ttl time.Duration) (requestLifetime, settlementTimeout time.Duration) {
+	if ttl <= 0 {
+		ttl = 30 * time.Minute // 与存储端缺省预留 TTL 保持一致。
+	}
+	settlementTimeout = min(10*time.Second, ttl/10)
+	if settlementTimeout <= 0 {
+		settlementTimeout = time.Nanosecond
+	}
+	return ttl - settlementTimeout, settlementTimeout
+}
+
 func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	ctx := c.Request.Context()
 	// ---- 鉴权 ----
@@ -352,31 +439,26 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	if !ok {
 		return
 	}
-	teams, err := deps.Store.ListTeamsForUser(ctx, user.ID)
-	if err != nil {
-		deps.Logger.Error("团队查询失败", "error", err)
-		spec.errorResponse(c, 500, "api_error", "网关内部错误")
+	membership, policy, ok := resolveGatewayTeam(c, deps, user.ID, spec.errorResponse)
+	if !ok {
 		return
 	}
-	var primary *store.TeamRecord
-	for i := range teams {
-		if teams[i].Team.DisabledAt == nil {
-			primary = &teams[i].Team
-			break
-		}
-	}
-	if primary == nil {
-		spec.errorResponse(c, 403, "permission_error", "账号未加入任何团队，请联系团队管理员")
-		return
-	}
+	effectiveTeam := effectiveTeamLimits(membership.Team, policy)
+	primary := &effectiveTeam
 	if err := deps.Store.TouchDeviceToken(ctx, device.ID, deps.Now()); err != nil {
 		deps.Logger.Warn("设备活跃时间更新失败", "error", err)
 	}
 	clientIP := clientIPOf(c, deps)
 
 	// ---- 请求体校验 ----
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxGatewayRequestBytes)
 	rawBody, err := io.ReadAll(c.Request.Body)
 	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			spec.errorResponse(c, 413, "invalid_request_error", "请求体超过 32 MiB 上限")
+			return
+		}
 		spec.errorResponse(c, 400, "invalid_request_error", "请求体不是合法 JSON")
 		return
 	}
@@ -395,6 +477,11 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		spec.errorResponse(c, 400, "invalid_request_error", "缺少 model 字段")
 		return
 	}
+	// 客户端可改写配置并手工构造 model，模型白名单必须在网关准入执行。
+	if !store.TeamModelAllowed(policy, modelID) {
+		spec.errorResponse(c, 403, "permission_error", "团队未授权使用该模型："+modelID)
+		return
+	}
 	model, err := deps.Store.GetModel(ctx, modelID)
 	if err != nil {
 		deps.Logger.Error("模型查询失败", "error", err)
@@ -407,7 +494,21 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	}
 	stream := spec.isStream(body)
 	maxTokens := spec.readMaxTokens(body)
-	rates := priceRates(model, deps.Now(), deps.Env.PeakHoursHolidays)
+	// n>1 时输出可能成倍放大：预留按 n 倍输出上限计算，超过 16 个候选直接拒绝。
+	outputCount := int64(1)
+	if spec.family == "openai" {
+		parsedCount, okCount := requestedOutputCount(body, maxOutputCandidates)
+		if !okCount {
+			spec.errorResponse(c, 400, "invalid_request_error", "n 必须是 1..16 的整数")
+			return
+		}
+		outputCount = parsedCount
+	}
+	maxTokens *= outputCount
+	clampRequestedMaxTokens(body)
+	priceCapturedAt := deps.Now()
+	rates := priceRates(model, priceCapturedAt, deps.Env.PeakHoursHolidays)
+	priceCapture := captureUsagePricing(ctx, deps, model, priceCapturedAt)
 
 	// ---- 解析上游目标：渠道池按 priority/weight 产出候选；无路由时兼容回退 ----
 	targets, routeErr := resolveTargets(ctx, deps, model, spec)
@@ -417,6 +518,10 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	}
 
 	requestID := strings.TrimSpace(c.Request.Header.Get("x-request-id"))
+	if len(requestID) > maxRequestIDLength {
+		spec.errorResponse(c, 400, "invalid_request_error", "x-request-id 过长")
+		return
+	}
 	if requestID == "" {
 		requestID, _ = contracts.RandomUUIDv4()
 	}
@@ -459,10 +564,16 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	}
 
 	// ---- 额度准入：预留状态机 + request_id 幂等 ----
-	estimateMicro := credits.EstimateMaxMicroCredits(maxTokens, rates.OutputPerMtok)
+	promptTokens := estimatePromptTokens(body)
+	estimateMicro := credits.EstimateReservationMicroCredits(promptTokens, maxTokens, rates)
 	reservationID, _ := contracts.RandomUUIDv4()
-	reserveResult, err := deps.Store.ReserveQuota(ctx, store.ReserveQuotaInput{
-		ID: reservationID, TeamID: primary.ID, RequestID: requestID,
+	// 持续流量会不断重置 idle timer，旧实现可活过预留 TTL，被 sweeper 提前释放后绕过预算。
+	// 从准入开始让所有重试共用总寿命，并在 TTL 前保留结算窗口；短 TTL 按比例留余量。
+	requestLifetime, settlementTimeout := reservationRequestWindows(deps.Env.ReservationTTL)
+	requestCtx, cancelRequest := context.WithTimeout(ctx, requestLifetime)
+	defer cancelRequest()
+	reserveResult, err := deps.Store.ReserveQuota(requestCtx, store.ReserveQuotaInput{
+		ID: reservationID, TeamID: primary.ID, UserID: user.ID, RequestID: requestID,
 		Micro: estimateMicro, TTL: deps.Env.ReservationTTL, CreatedAt: deps.Now(),
 	})
 	if err != nil {
@@ -475,22 +586,21 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		return
 	}
 	if reserveResult != store.ReserveReserved {
-		spec.errorResponse(c, 429, "rate_limit_error", "团队额度已用尽，请联系团队管理员充值 / Team quota exhausted")
+		spec.errorResponse(c, 429, "rate_limit_error", "团队额度或预算已用尽，请联系团队管理员 / Team quota or budget exhausted")
 		return
+	}
+	// 慢客户端也不能把处理器卡在响应写入，拖到预留过期才开始结算。
+	responseController := http.NewResponseController(c.Writer)
+	requestDeadline, _ := requestCtx.Deadline()
+	if responseController.SetWriteDeadline(requestDeadline) == nil {
+		defer responseController.SetWriteDeadline(time.Time{})
 	}
 
 	startedAt := deps.Now()
 	var settled atomic.Bool
 	lastTarget := targets[0]
 
-	buildUsageRecord := func(target upstreamTarget, usage UsageCounts, status store.UsageStatus, errorType string) store.UsageRecord {
-		micro, err := credits.ComputeUsageMicroCredits(credits.UsageTokenCounts{
-			InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens,
-			CacheReadTokens: usage.CacheReadTokens, CacheCreationTokens: usage.CacheCreationTokens,
-		}, rates)
-		if err != nil {
-			micro = 0
-		}
+	buildUsageRecord := func(target upstreamTarget, usage UsageCounts, status store.UsageStatus, errorType string, micro int64) store.UsageRecord {
 		record := store.UsageRecord{
 			RequestID:       requestID,
 			UserID:          user.ID,
@@ -501,10 +611,11 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			InputTokens:     usage.InputTokens,
 			OutputTokens:    usage.OutputTokens,
 			CacheReadTokens: usage.CacheReadTokens, CacheCreationTokens: usage.CacheCreationTokens,
-			CreditsMicro: micro,
-			Status:       status,
-			ProviderID:   target.ProviderID,
-			CreatedAt:    deps.Now(),
+			CreditsMicro:  micro,
+			PriceSnapshot: priceCapture.snapshot(target, usage, status, errorType),
+			Status:        status,
+			ProviderID:    target.ProviderID,
+			CreatedAt:     deps.Now(),
 		}
 		record.ID, _ = contracts.RandomUUIDv4()
 		record.ErrorType = errorType
@@ -516,24 +627,77 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		return record
 	}
 
-	settle := func(target upstreamTarget, usage UsageCounts, status store.UsageStatus, errorType string) {
+	usageMicro := func(usage UsageCounts) int64 {
+		micro, err := credits.ComputeUsageMicroCredits(credits.UsageTokenCounts{
+			InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens,
+			CacheReadTokens: usage.CacheReadTokens, CacheCreationTokens: usage.CacheCreationTokens,
+		}, rates)
+		if err != nil {
+			deps.Logger.Error("用量计价失败", "requestId", requestID, "error", err)
+			return 0
+		}
+		return micro
+	}
+
+	settle := func(target upstreamTarget, usage UsageCounts, status store.UsageStatus, errorType string, microOverride *int64) {
 		if settled.Swap(true) {
 			return
 		}
-		if err := deps.Store.SettleReservation(ctx, reservationID, buildUsageRecord(target, usage, status, errorType)); err != nil {
-			deps.Logger.Error("结算写入失败", "requestId", requestID, "error", err)
+		micro := usageMicro(usage)
+		if microOverride != nil {
+			micro = *microOverride
 		}
+		record := buildUsageRecord(target, usage, status, errorType, micro)
+		if microOverride != nil && record.PriceSnapshot != nil {
+			record.PriceSnapshot.Cost.UsageEstimated = true
+		}
+		// 客户端取消/断连会取消请求 ctx；结算必须使用独立且有界的 ctx，
+		// 否则 Postgres 事务在 Begin 阶段即失败，已发生用量永远落不了库。
+		// 多次重试共享结算窗口，避免每次重新计时后累计超过预留 TTL。
+		settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settlementTimeout)
+		defer cancel()
+		var lastErr error
+		for attempt := 0; attempt < 3; attempt++ {
+			lastErr = deps.Store.SettleReservation(settleCtx, reservationID, record)
+			if lastErr == nil {
+				return
+			}
+			if attempt == 2 {
+				break
+			}
+			select {
+			case <-settleCtx.Done():
+				lastErr = settleCtx.Err()
+			case <-time.After(time.Duration(100*(attempt+1)) * time.Millisecond):
+			}
+			if settleCtx.Err() != nil {
+				break
+			}
+		}
+		deps.Logger.Error("结算写入失败", "requestId", requestID, "error", lastErr)
 	}
 
 	failWithUsage := func(target upstreamTarget, status store.UsageStatus, errorType string) {
-		settle(target, UsageCounts{}, status, errorType)
+		settle(target, UsageCounts{}, status, errorType, nil)
+	}
+
+	// 上游成功返回但缺少 usage：零计费会让所有实际消耗免费，按准入预留额保守结算，
+	// 并以 usage_missing_estimated 标记，供对账/告警人工核销。
+	settleMissingUsage := func(target upstreamTarget, status store.UsageStatus, errorType string) {
+		usage := UsageCounts{InputTokens: promptTokens, OutputTokens: maxTokens}
+		settle(target, usage, status, errorType, &estimateMicro)
+	}
+	respondLifetimeTimeout := func() {
+		// 此时结算已经完成，允许在剩余窗口内把 504 写回尚未开始响应的客户端。
+		_ = responseController.SetWriteDeadline(requestDeadline.Add(settlementTimeout))
+		spec.errorResponse(c, 504, "api_error", "请求总时长超限，请稍后重试")
 	}
 
 	reportFailure := func(providerID, reason string) {
 		if providerID == "" || deps.Env.ProviderAutoDisableThreshold <= 0 {
 			return
 		}
-		disabled, err := deps.Store.ReportUpstreamFailure(ctx, providerID, reason, deps.Env.ProviderAutoDisableThreshold)
+		disabled, err := deps.Store.ReportUpstreamFailure(requestCtx, providerID, reason, deps.Env.ProviderAutoDisableThreshold)
 		if err != nil {
 			deps.Logger.Error("熔断计数失败", "error", err)
 			return
@@ -562,6 +726,11 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	for attempt := int64(0); attempt < maxAttempts; attempt++ {
 		target := targets[attempt]
 		lastTarget = target
+		if errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
+			failWithUsage(target, store.UsageStatusError, "request_lifetime_timeout")
+			respondLifetimeTimeout()
+			return
+		}
 		upstreamConnectTimeoutMs := target.TimeoutMs
 		if upstreamConnectTimeoutMs <= 0 {
 			upstreamConnectTimeoutMs = deps.Env.UpstreamTimeoutMs
@@ -573,7 +742,7 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		upstreamHeaders, upstreamBody := spec.buildUpstream(c.Request, body, target.UpstreamModel, stream, target.APIKey, target.AnthropicVersion)
 		upstreamURL := strings.TrimRight(target.BaseURL, "/") + spec.upstreamPath
 		// 上游请求必须绑定带取消的 ctx:header 超时、空闲看门狗、客户端断连都靠它中断。
-		upstreamCtx, cancelUpstream := context.WithCancel(ctx)
+		upstreamCtx, cancelUpstream := context.WithCancel(requestCtx)
 		req, err := http.NewRequestWithContext(upstreamCtx, http.MethodPost, upstreamURL, bytes.NewReader(upstreamBody))
 		if err != nil {
 			cancelUpstream()
@@ -596,6 +765,11 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		if err != nil {
 			headerTimer.Stop()
 			cancelUpstream()
+			if errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
+				failWithUsage(target, store.UsageStatusError, "request_lifetime_timeout")
+				respondLifetimeTimeout()
+				return
+			}
 			errorType := "upstream_unavailable"
 			if headerTimedOut.Load() {
 				errorType = "upstream_timeout"
@@ -626,6 +800,13 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			text, _ := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamErrorBytes))
 			resp.Body.Close()
 			cancelUpstream()
+			if errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
+				failWithUsage(target, store.UsageStatusError, "request_lifetime_timeout")
+				respondLifetimeTimeout()
+				return
+			}
+			// 上游/中间代理可能在错误正文回显密钥；返回普通调用者前先脱敏。
+			text = redactSecret(text, target.APIKey)
 			errorType := "upstream_" + strconv.Itoa(resp.StatusCode)
 			deps.Logger.Warn("上游返回错误", "requestId", requestID, "attempt", attempt+1,
 				"providerId", target.ProviderID, "status", resp.StatusCode)
@@ -654,18 +835,26 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 
 		// 成功转发到响应头即重置连续失败计数（无渠道池的 env 上游不计数）。
 		if target.ProviderID != "" {
-			if err := deps.Store.ReportUpstreamSuccess(ctx, target.ProviderID); err != nil {
+			if err := deps.Store.ReportUpstreamSuccess(requestCtx, target.ProviderID); err != nil {
 				deps.Logger.Error("熔断计数重置失败", "error", err)
 			}
 		}
 
 		// ---- 非流式:一次结算(header 限时覆盖整个响应体读取) ----
 		if !stream {
-			text, readErr := io.ReadAll(resp.Body)
+			text, readErr := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamResponseBytes+1))
 			resp.Body.Close()
+			if readErr == nil && len(text) > maxUpstreamResponseBytes {
+				readErr = errors.New("上游响应体超过大小上限")
+			}
 			if readErr != nil {
 				headerTimer.Stop()
 				cancelUpstream()
+				if errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
+					settleMissingUsage(target, store.UsageStatusError, "request_lifetime_timeout")
+					respondLifetimeTimeout()
+					return
+				}
 				errorType := "upstream_body_failure"
 				if headerTimedOut.Load() {
 					errorType = "upstream_timeout"
@@ -681,11 +870,13 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			}
 			headerTimer.Stop()
 			cancelUpstream()
-			var usage UsageCounts
-			if parsed := spec.parseUsageJSON(string(text)); parsed != nil {
-				usage = *parsed
+			parsedUsage := spec.parseUsageJSON(string(text))
+			if parsedUsage == nil {
+				deps.Logger.Warn("上游成功响应缺少 usage，按准入预留额保守结算", "requestId", requestID)
+				settleMissingUsage(target, store.UsageStatusError, "usage_missing_estimated")
+			} else {
+				settle(target, *parsedUsage, store.UsageStatusOk, "", nil)
 			}
-			settle(target, usage, store.UsageStatusOk, "")
 			contentType := resp.Header.Get("content-type")
 			if contentType == "" {
 				contentType = "application/json"
@@ -713,7 +904,27 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			if status == store.UsageStatusAborted {
 				errorType = "client_aborted"
 			}
-			settle(target, scanner.Usage(), status, errorType)
+			if !scanner.UsageObserved() {
+				deps.Logger.Warn("流式响应结束但未采集到 usage，按准入预留额保守结算",
+					"requestId", requestID, "status", status)
+				if errorType == "" {
+					settleMissingUsage(target, status, "usage_missing_estimated")
+				} else {
+					// 保留 client_aborted 等既有语义，但同样按预留额保守结算。
+					settle(target, scanner.Usage(), status, errorType, &estimateMicro)
+				}
+				return
+			}
+			settle(target, scanner.Usage(), status, errorType, nil)
+		}
+		finalizeLifetimeTimeout := func() {
+			idleTimer.Stop()
+			cancelUpstream()
+			if !scanner.UsageObserved() {
+				settleMissingUsage(target, store.UsageStatusError, "request_lifetime_timeout")
+				return
+			}
+			settle(target, scanner.Usage(), store.UsageStatusError, "request_lifetime_timeout", nil)
 		}
 
 		contentType := resp.Header.Get("content-type")
@@ -734,6 +945,10 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 				if _, writeErr := c.Writer.Write(buf[:n]); writeErr != nil {
 					// 客户端断开:按已采集 usage 结算。
 					resp.Body.Close()
+					if errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
+						finalizeLifetimeTimeout()
+						return
+					}
 					finalize(store.UsageStatusAborted)
 					return
 				}
@@ -743,6 +958,10 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 				continue
 			}
 			resp.Body.Close()
+			if errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
+				finalizeLifetimeTimeout()
+				return
+			}
 			// 空闲看门狗会取消上游 ctx；取消后上游通常以 EOF 结束，
 			// 必须先判定 idleFired，否则会把超时误记成成功。
 			if idleFired.Load() {
@@ -773,6 +992,13 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		return
 	}
 	spec.errorResponse(c, lastStatus, "api_error", lastMessage)
+}
+
+func redactSecret(text []byte, secret string) []byte {
+	if secret == "" {
+		return text
+	}
+	return []byte(strings.ReplaceAll(string(text), secret, "[redacted]"))
 }
 
 func retryableUpstreamStatus(status int) bool {

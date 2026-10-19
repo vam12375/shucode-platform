@@ -171,6 +171,38 @@ func (s *PostgresStore) UpdateLoginFlow(ctx context.Context, id string, patch Up
 	return scanLoginFlow(rows)
 }
 
+func (s *PostgresStore) UpdateLoginFlowIfStatus(ctx context.Context, id string, expected LoginFlowStatus, patch UpdateLoginFlowPatch) (*LoginFlowRecord, error) {
+	rows, err := s.pool.Query(ctx, `
+		UPDATE login_flows SET
+			status = COALESCE($2, status),
+			user_id = COALESCE($3::uuid, user_id),
+			authorized_at = COALESCE($4::timestamptz, authorized_at),
+			consumed_at = COALESCE($5::timestamptz, consumed_at),
+			token_id = COALESCE($6::uuid, token_id),
+			last_polled_at = COALESCE($7::timestamptz, last_polled_at)
+		WHERE id = $1::uuid AND status = $8
+		RETURNING `+loginFlowCols,
+		id, nullableFlowStatus(patch.Status), nullableStrPtr(patch.UserID),
+		nullableTime(patch.AuthorizedAt), nullableTime(patch.ConsumedAt),
+		nullableStrPtr(patch.TokenID), nullableTime(patch.LastPolledAt), string(expected))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	return scanLoginFlow(rows)
+}
+
+func (s *PostgresStore) DeleteExpiredLoginFlows(ctx context.Context, before time.Time) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM login_flows WHERE expires_at < $1::timestamptz`, before)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (s *PostgresStore) ConsumeLoginFlow(ctx context.Context, id string, consumedAt time.Time) (*LoginFlowRecord, error) {
 	rows, err := s.pool.Query(ctx, `
 		UPDATE login_flows SET status = 'consumed', consumed_at = $2::timestamptz

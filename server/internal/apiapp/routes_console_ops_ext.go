@@ -28,7 +28,7 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 	}
 
 	group.GET("/models/:modelId/routes", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
 			return
 		}
 		routes, err := deps.Store.ListUpstreamRoutes(c.Request.Context(), c.Param("modelId"), true)
@@ -44,7 +44,7 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.POST("/models/:modelId/routes", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
@@ -130,7 +130,7 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.PATCH("/routes/:id", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
@@ -192,7 +192,7 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.DELETE("/routes/:id", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
@@ -216,7 +216,7 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.POST("/providers/:id/recover", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
@@ -251,7 +251,7 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 	// ---- ops ----
 
 	group.GET("/ops/overview", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
 			return
 		}
 		hours := int64(24)
@@ -286,7 +286,7 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.GET("/ops/series", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
 			return
 		}
 		hours := int64(24)
@@ -314,7 +314,7 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.GET("/ops/reconciliation", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
 			return
 		}
 		limit := int64(50)
@@ -406,7 +406,7 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 	}
 
 	group.GET("/ops/alert-rules", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
 			return
 		}
 		rules, err := deps.Store.ListAlertRules(c.Request.Context())
@@ -422,7 +422,7 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.POST("/ops/alert-rules", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
@@ -440,7 +440,7 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.PUT("/ops/alert-rules/:id", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
@@ -468,7 +468,7 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.DELETE("/ops/alert-rules/:id", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
@@ -490,7 +490,7 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.GET("/ops/alerts", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
 			return
 		}
 		limit := int64(50)
@@ -515,7 +515,7 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.POST("/ops/alerts/:id/resolve", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}

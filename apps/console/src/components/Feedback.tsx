@@ -143,6 +143,11 @@ export function confirmDialog(options: ConfirmOptions): Promise<ConfirmResult> {
   });
 }
 
+/** 供其它浮层（如账号详情抽屉）判断是否已有确认弹窗在场，避免 Esc 联动关闭。 */
+export function isDialogOpen(): boolean {
+  return dialogState !== null;
+}
+
 export function DialogHost() {
   const [state, setState] = useState<DialogState | null>(null);
   const [value, setValue] = useState("");

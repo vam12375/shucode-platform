@@ -2,6 +2,7 @@ package apiapp
 
 import (
 	"context"
+	"errors"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/vam12375/shucode-platform/server/internal/netutil"
 	"github.com/vam12375/shucode-platform/server/internal/store"
 )
 
@@ -128,6 +130,206 @@ func TestConfigKVAndPublicEnvelope(t *testing.T) {
 	consoleCfg := dataOf(t, f.do("GET", "/console/api/config", adminCookie, ""))
 	if consoleCfg["help"] == nil || consoleCfg["forceUpdate"] == nil {
 		t.Fatalf("控制台配置读取不符: %v", consoleCfg)
+	}
+}
+
+func TestSecurityHeadersAndCSRFGuard(t *testing.T) {
+	f := newAPIFixture(t)
+
+	health := f.do("GET", "/healthz", "", "")
+	if health.Header().Get("X-Content-Type-Options") != "nosniff" ||
+		health.Header().Get("X-Frame-Options") != "DENY" ||
+		health.Header().Get("Referrer-Policy") != "no-referrer" ||
+		!strings.Contains(health.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") {
+		t.Fatalf("安全响应头缺失: %v", health.Header())
+	}
+	if health.Header().Get("Strict-Transport-Security") != "" {
+		t.Fatal("HTTP 公开地址不应下发 HSTS")
+	}
+
+	// 跨站写请求：即使 cookie 存在也拒绝。
+	loginBody := `{"email":"admin@mendao.chat","password":"mendao-admin"}`
+	req := httptest.NewRequest("POST", "/console/api/auth/login", strings.NewReader(loginBody))
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("origin", "https://evil.example")
+	req.Header.Set("sec-fetch-site", "cross-site")
+	rec := httptest.NewRecorder()
+	f.engine.ServeHTTP(rec, req)
+	if rec.Code != 403 {
+		t.Fatalf("跨站写请求应 403: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// 同源请求（Vite dev 代理场景）允许。
+	req = httptest.NewRequest("POST", "/console/api/auth/login", strings.NewReader(loginBody))
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("origin", "http://localhost:5177")
+	req.Header.Set("sec-fetch-site", "same-origin")
+	rec = httptest.NewRecorder()
+	f.engine.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("同源写请求应放行: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHTTPSEnforcementWhenPublicOriginIsHTTPS(t *testing.T) {
+	f := newAPIFixture(t)
+	f.deps.Env.PublicAPIOrigin = "https://api.example.com"
+	f.deps.Env.PublicAppOrigin = "https://api.example.com"
+	f.deps.Env.SecureCookies = true
+	engine := New(f.deps)
+
+	req := httptest.NewRequest("GET", "/api/v1/client/configs", nil)
+	req.Host = "api.example.com"
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	if rec.Code != 308 || rec.Header().Get("Location") != "https://api.example.com/api/v1/client/configs" {
+		t.Fatalf("明文 GET 应 308: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+
+	req = httptest.NewRequest("POST", "/console/api/auth/login",
+		strings.NewReader(`{"email":"admin@mendao.chat","password":"mendao-admin"}`))
+	req.Host = "api.example.com"
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("x-forwarded-proto", "http")
+	rec = httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	if rec.Code != 403 {
+		t.Fatalf("明文写请求应 403: %d %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest("GET", "/api/v1/client/configs", nil)
+	req.Host = "api.example.com"
+	req.Header.Set("x-forwarded-proto", "https")
+	rec = httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("反代声明 https 后应放行: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLoginLimiterIgnoresSpoofedForwardedHeaders(t *testing.T) {
+	f := newAPIFixture(t)
+	doLogin := func(forwarded string) int {
+		req := httptest.NewRequest("POST", "/console/api/auth/login",
+			strings.NewReader(`{"email":"nobody@mendao.chat","password":"wrong-password"}`))
+		req.Header.Set("content-type", "application/json")
+		if forwarded != "" {
+			req.Header.Set("x-forwarded-for", forwarded)
+		}
+		rec := httptest.NewRecorder()
+		f.engine.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	for i := 0; i < 10; i++ {
+		if code := doLogin("203.0.113." + strings.Repeat("1", i%3+1)); code != 401 {
+			t.Fatalf("前 10 次应为 401: 第 %d 次 %d", i+1, code)
+		}
+	}
+	if code := doLogin("198.51.100.9"); code != 429 {
+		t.Fatalf("不可信对端的 XFF 不应切换限流桶，应 429: %d", code)
+	}
+
+	// 显式可信的 TCP 对端才解析转发头：不同 XFF 进入不同桶。
+	f2 := newAPIFixture(t)
+	f2.deps.Trusted = netutil.NewTrustedProxies([]string{"192.0.2.1"})
+	forwarded := []string{"203.0.113.1", "203.0.113.2", "203.0.113.3", "203.0.113.4", "203.0.113.5"}
+	for i := range forwarded {
+		req := httptest.NewRequest("POST", "/console/api/auth/login",
+			strings.NewReader(`{"email":"nobody@mendao.chat","password":"wrong-password"}`))
+		req.Header.Set("content-type", "application/json")
+		req.Header.Set("x-forwarded-for", forwarded[i])
+		rec := httptest.NewRecorder()
+		f2.engine.ServeHTTP(rec, req)
+		if rec.Code != 401 {
+			t.Fatalf("可信代理的不同客户端应各自计数: %d %s", rec.Code, rec.Body.String())
+		}
+	}
+
+	// 可信代理不会清洗 CF-Connecting-IP：默认必须忽略它，按固定 XFF 桶计数。
+	f3 := newAPIFixture(t)
+	f3.deps.Trusted = netutil.NewTrustedProxies([]string{"192.0.2.1"})
+	for i := 0; i < 10; i++ {
+		req := httptest.NewRequest("POST", "/console/api/auth/login",
+			strings.NewReader(`{"email":"nobody@mendao.chat","password":"wrong-password"}`))
+		req.Header.Set("content-type", "application/json")
+		req.Header.Set("x-forwarded-for", "203.0.113.50")
+		req.Header.Set("cf-connecting-ip", "198.51.100."+string(rune('1'+i%9)))
+		rec := httptest.NewRecorder()
+		f3.engine.ServeHTTP(rec, req)
+		if rec.Code != 401 {
+			t.Fatalf("默认信任模式下前 10 次应为 401: %d", rec.Code)
+		}
+	}
+	req := httptest.NewRequest("POST", "/console/api/auth/login",
+		strings.NewReader(`{"email":"nobody@mendao.chat","password":"wrong-password"}`))
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("x-forwarded-for", "203.0.113.50")
+	req.Header.Set("cf-connecting-ip", "198.51.100.99")
+	rec := httptest.NewRecorder()
+	f3.engine.ServeHTTP(rec, req)
+	if rec.Code != 429 {
+		t.Fatalf("CF-Connecting-IP 不应绕过默认限流桶: %d", rec.Code)
+	}
+}
+
+type failingLimiter struct{}
+
+func (failingLimiter) Allow(context.Context, string) (bool, error) {
+	return false, errors.New("limiter backend down")
+}
+
+func TestConsoleLoginFailsClosedWhenLimiterUnavailable(t *testing.T) {
+	f := newAPIFixture(t)
+	f.deps.ConsoleLoginLimiter = failingLimiter{}
+	rec := f.do("POST", "/console/api/auth/login", "",
+		`{"email":"admin@mendao.chat","password":"mendao-admin"}`)
+	if rec.Code != 503 {
+		t.Fatalf("管理面限流后端故障应 fail-closed: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestProviderBaseURLValidation(t *testing.T) {
+	cases := []struct {
+		raw       string
+		allowHTTP bool
+		want      string
+		wantErr   bool
+	}{
+		{"https://api.example.com/v1", false, "https://api.example.com", false},
+		{"http://api.example.com", false, "", true},
+		{"http://127.0.0.1:8080", true, "http://127.0.0.1:8080", false},
+		{"https://user:pass@api.example.com", false, "", true},
+		{"https://api.example.com?x=1", false, "", true},
+		{"ftp://api.example.com", false, "", true},
+	}
+	for _, tc := range cases {
+		got, err := validateUpstreamBaseURL(tc.raw, tc.allowHTTP)
+		if (err != nil) != tc.wantErr || got != tc.want {
+			t.Fatalf("%s: got=%q err=%v want=%q wantErr=%v", tc.raw, got, err, tc.want, tc.wantErr)
+		}
+	}
+}
+
+func TestRootSetupRequiresBootstrapSecret(t *testing.T) {
+	f := newAPIEmptyFixture(t)
+	f.deps.Env.MemoryDB = false
+	f.deps.Env.BootstrapSecret = ""
+	body := `{"email":"root@mendao.chat","displayName":"Root","password":"root-password-123"}`
+	if rec := f.do("POST", "/console/api/setup/root", "", body); rec.Code != 503 {
+		t.Fatalf("未配置 bootstrap secret 应拒绝初始化: %d %s", rec.Code, rec.Body.String())
+	}
+
+	f.deps.Env.BootstrapSecret = "bootstrap-test-secret"
+	if rec := f.do("POST", "/console/api/setup/root", "", body); rec.Code != 403 {
+		t.Fatalf("缺失/错误 bootstrap secret 应 403: %d %s", rec.Code, rec.Body.String())
+	}
+	req := httptest.NewRequest("POST", "/console/api/setup/root", strings.NewReader(body))
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("x-bootstrap-secret", "bootstrap-test-secret")
+	rec := httptest.NewRecorder()
+	f.engine.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("正确 bootstrap secret 应允许初始化: %d %s", rec.Code, rec.Body.String())
 	}
 }
 

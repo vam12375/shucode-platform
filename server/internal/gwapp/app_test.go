@@ -248,6 +248,14 @@ func TestAuthFailures(t *testing.T) {
 	assertAnthropicError(t, f.do("POST", "/v1/messages", f.token, `{}`), 401, "authentication_error")
 	// 账号禁用。
 	f2 := newGatewayFixture(t, nil)
+	// 全局停用也受最后管理员保护；先保留另一位团队管理员，再验证网关拒绝禁用账号。
+	otherAdmin, err := f2.store.CreateUser(ctx, store.UserInput{Email: "other-admin@test.local", PasswordHash: "x", DisplayName: "A", Role: store.RoleUser})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f2.store.AddMember(ctx, f2.teamID, otherAdmin.ID, store.MemberRoleAdmin); err != nil {
+		t.Fatal(err)
+	}
 	disabledAt := time.Now()
 	if _, err := f2.store.UpdateUser(context.Background(), f2.userID, store.UpdateUserPatch{HasDisabled: true, DisabledAt: &disabledAt}); err != nil {
 		t.Fatal(err)
@@ -354,6 +362,91 @@ func TestNonStreamSuccess(t *testing.T) {
 	}
 	if team := f.team(); team.UsedCredits != "0.001075" || team.ReservedCredits != "0.000000" {
 		t.Fatalf("额度结算不符: used=%s reserved=%s", team.UsedCredits, team.ReservedCredits)
+	}
+}
+
+func TestOpenAIStreamForcesUsageOption(t *testing.T) {
+	f := newGatewayFixture(t, nil)
+	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2}}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	})
+	rec := f.do("POST", "/v1/chat/completions", f.token,
+		`{"model":"claude-sonnet-4-5","stream":true,"stream_options":{"include_usage":false}}`)
+	if rec.Code != 200 {
+		t.Fatalf("流式请求失败: %d %s", rec.Code, rec.Body.String())
+	}
+	_, upBody := f.upstreamRequest()
+	var sent map[string]any
+	if err := json.Unmarshal(upBody, &sent); err != nil {
+		t.Fatal(err)
+	}
+	options, ok := sent["stream_options"].(map[string]any)
+	if !ok || options["include_usage"] != true {
+		t.Fatalf("网关必须强制 include_usage=true: %v", sent["stream_options"])
+	}
+}
+
+func TestMissingUsageConservativeSettlement(t *testing.T) {
+	f := newGatewayFixture(t, nil)
+	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`))
+	})
+	rec := f.do("POST", "/v1/chat/completions", f.token,
+		`{"model":"claude-sonnet-4-5","max_tokens":100}`)
+	if rec.Code != 200 {
+		t.Fatalf("非流式请求失败: %d %s", rec.Code, rec.Body.String())
+	}
+	records := f.usageRecords()
+	if len(records) != 1 {
+		t.Fatalf("应写入一条 usage: %d", len(records))
+	}
+	record := records[0]
+	if record.Status != store.UsageStatusError || record.ErrorType != "usage_missing_estimated" ||
+		record.CreditsMicro <= 0 {
+		t.Fatalf("缺少 usage 应按预留额保守结算: %+v", record)
+	}
+}
+
+func TestStreamingMissingUsageConservativeSettlement(t *testing.T) {
+	f := newGatewayFixture(t, nil)
+	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	})
+	rec := f.do("POST", "/v1/chat/completions", f.token,
+		`{"model":"claude-sonnet-4-5","stream":true,"max_tokens":100}`)
+	if rec.Code != 200 {
+		t.Fatalf("流式请求失败: %d %s", rec.Code, rec.Body.String())
+	}
+	records := f.usageRecords()
+	if len(records) != 1 {
+		t.Fatalf("应写入一条 usage: %d", len(records))
+	}
+	record := records[0]
+	if record.ErrorType != "usage_missing_estimated" || record.CreditsMicro <= 0 {
+		t.Fatalf("流式缺少 usage 应保守结算: %+v", record)
+	}
+}
+
+func TestUpstreamErrorRedactsAPIKey(t *testing.T) {
+	f := newGatewayFixture(t, nil)
+	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(500)
+		_, _ = w.Write([]byte(`{"error":"upstream-key leaked"}`))
+	})
+	rec := f.do("POST", "/v1/messages", f.token, `{"model":"claude-sonnet-4-5"}`)
+	if rec.Code != 500 {
+		t.Fatalf("上游错误状态: %d", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "upstream-key") ||
+		!strings.Contains(rec.Body.String(), "[redacted]") {
+		t.Fatalf("错误正文必须脱敏密钥: %s", rec.Body.String())
 	}
 }
 
@@ -616,8 +709,33 @@ func TestStreamingSuccessAndUsage(t *testing.T) {
 	}
 }
 
+type settleContextStore struct {
+	store.PlatformStore
+	mu        sync.Mutex
+	settleErr error
+}
+
+func (s *settleContextStore) SettleReservation(ctx context.Context, reservationID string, record store.UsageRecord) error {
+	if err := ctx.Err(); err != nil {
+		s.mu.Lock()
+		s.settleErr = err
+		s.mu.Unlock()
+	}
+	return s.PlatformStore.SettleReservation(ctx, reservationID, record)
+}
+
+func (s *settleContextStore) contextError() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.settleErr
+}
+
 func TestStreamingClientAbort(t *testing.T) {
-	f := newGatewayFixture(t, nil)
+	checker := &settleContextStore{}
+	f := newGatewayFixture(t, func(_ *Env, f *gatewayFixture) {
+		checker.PlatformStore = f.store
+		f.store = checker
+	})
 	f.setHandler(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "text/event-stream")
 		flusher := w.(http.Flusher)
@@ -657,6 +775,9 @@ func TestStreamingClientAbort(t *testing.T) {
 			}
 			if team := f.team(); team.ReservedCredits != "0.000000" {
 				t.Fatalf("中断后预留应释放: %s", team.ReservedCredits)
+			}
+			if err := checker.contextError(); err != nil {
+				t.Fatalf("结算必须使用独立 context，不能沿用它已取消的请求 context: %v", err)
 			}
 			return
 		}

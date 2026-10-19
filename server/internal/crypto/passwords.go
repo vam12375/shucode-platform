@@ -13,12 +13,13 @@ import (
 )
 
 // scrypt 口令哈希:格式 scrypt$N$r$p$saltB64$hashB64,与 packages/db/src/passwords.ts
-// 完全一致(默认 N=16384/r=8/p=1/64 字节,salt 与 hash 都是带 padding 的标准 base64)。
-// 存量管理员/用户口令哈希必须能被验证;新哈希同格式。
+// 完全一致;salt 与 hash 都是带 padding 的标准 base64。
+// 新哈希采用 OWASP 推荐的 N=2^14/r=8/p=5（16 MiB、5 轮，避免单次登录占用 128 MiB）；
+// 存量哈希仍按自身参数验证，登录成功后渐进重哈希。
 const (
-	scryptDefaultN = 16384
+	scryptDefaultN = 1 << 14
 	scryptDefaultR = 8
-	scryptDefaultP = 1
+	scryptDefaultP = 5
 	scryptKeyLen   = 64
 	saltLen        = 16
 )
@@ -38,6 +39,23 @@ func HashPassword(password string) (string, error) {
 		base64.StdEncoding.EncodeToString(salt),
 		base64.StdEncoding.EncodeToString(derived),
 	), nil
+}
+
+// NeedsRehash:旧工作因子或非默认长度的哈希应在登录成功后升级。
+func NeedsRehash(stored string) bool {
+	parts := strings.Split(stored, "$")
+	if len(parts) != 6 || parts[0] != "scrypt" {
+		return true
+	}
+	n, errN := strconv.Atoi(parts[1])
+	r, errR := strconv.Atoi(parts[2])
+	p, errP := strconv.Atoi(parts[3])
+	expected, errHash := base64.StdEncoding.DecodeString(parts[5])
+	if errN != nil || errR != nil || errP != nil || errHash != nil {
+		return true
+	}
+	return n != scryptDefaultN || r != scryptDefaultR || p != scryptDefaultP ||
+		len(expected) != scryptKeyLen
 }
 
 func VerifyPassword(password, stored string) bool {

@@ -81,6 +81,7 @@ func (s *memoryStore) InsertAuditLog(_ context.Context, entry InsertAuditLogInpu
 	s.auditLogs = append(s.auditLogs, AdminAuditLogView{
 		ID:          uuid.NewString(),
 		ActorUserID: entry.ActorUserID,
+		TeamID:      entry.TeamID,
 		Action:      entry.Action,
 		TargetType:  entry.TargetType,
 		TargetID:    entry.TargetID,
@@ -96,6 +97,9 @@ func (s *memoryStore) ListAuditLogs(_ context.Context, filter AuditLogFilter) ([
 	limit := clampLimit(filter.Limit)
 	out := make([]AdminAuditLogView, 0, len(s.auditLogs))
 	for _, entry := range s.auditLogs {
+		if filter.TeamID != "" && entry.TeamID != filter.TeamID {
+			continue
+		}
 		if filter.ActorUserID != "" && entry.ActorUserID != filter.ActorUserID {
 			continue
 		}
@@ -105,6 +109,7 @@ func (s *memoryStore) ListAuditLogs(_ context.Context, filter AuditLogFilter) ([
 			}
 		}
 		entry.ActorEmail = s.actorEmailLocked(entry.ActorUserID)
+		entry.Detail = append([]byte(nil), entry.Detail...)
 		out = append(out, entry)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
@@ -194,7 +199,7 @@ func (s *memoryStore) InsertUsage(_ context.Context, record UsageRecord) error {
 	if record.ID == "" {
 		record.ID = uuid.NewString()
 	}
-	s.usage = append(s.usage, record)
+	s.usage = append(s.usage, cloneUsage(record))
 	return nil
 }
 
@@ -205,7 +210,7 @@ func (s *memoryStore) ListUsage(_ context.Context, filter UsageFilter) ([]UsageR
 	out := make([]UsageRecord, 0, len(s.usage))
 	for _, record := range s.usage {
 		if usageMatches(record, filter) {
-			out = append(out, record)
+			out = append(out, cloneUsage(record))
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
@@ -418,7 +423,7 @@ func (s *memoryStore) SettleUsage(_ context.Context, record UsageRecord, reserve
 		team.UsedCredits = credits.FormatMicroCredits(used + record.CreditsMicro)
 		s.teams[record.TeamID] = team
 	}
-	s.usage = append(s.usage, record)
+	s.usage = append(s.usage, cloneUsage(record))
 	return nil
 }
 

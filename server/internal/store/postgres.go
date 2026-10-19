@@ -176,6 +176,29 @@ func (s *PostgresStore) UpdateUser(ctx context.Context, id string, patch UpdateU
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	disabling := patch.HasDisabled && patch.DisabledAt != nil
+	var lockedTeamIDs []string
+	if disabling {
+		// 团队锁必须先于用户锁，与成员写入保持同序；遗留多团队数据按 ID 顺序锁定。
+		// 否则并发停用两位管理员会各自读到另一人可用，或与成员移除形成死锁。
+		rows, err := tx.Query(ctx, `SELECT t.id::text FROM teams t WHERE EXISTS(SELECT 1 FROM team_members m WHERE m.team_id=t.id AND m.user_id=$1::uuid) ORDER BY t.id FOR UPDATE`, id)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var teamID string
+			if err := rows.Scan(&teamID); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			lockedTeamIDs = append(lockedTeamIDs, teamID)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+
 	// 行锁把「判定 root 保护 → 写入」串行化；root 唯一/不可禁用再由 DB 约束兜底。
 	var currentRole string
 	if err := tx.QueryRow(ctx,
@@ -189,7 +212,6 @@ func (s *PostgresStore) UpdateUser(ctx context.Context, id string, patch UpdateU
 	if patch.Role != nil {
 		effectiveRole = string(*patch.Role)
 	}
-	disabling := patch.HasDisabled && patch.DisabledAt != nil
 	if currentRole == string(RoleRoot) &&
 		((patch.Role != nil && *patch.Role != RoleRoot) || disabling) {
 		return nil, ErrRootUserProtected
@@ -206,6 +228,14 @@ func (s *PostgresStore) UpdateUser(ctx context.Context, id string, patch UpdateU
 	}
 	if effectiveRole == string(RoleRoot) && disabling {
 		return nil, ErrRootUserProtected
+	}
+
+	if disabling {
+		for _, teamID := range lockedTeamIDs {
+			if err := protectTeamAdmin(ctx, tx, teamID, id); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	rows, err := tx.Query(ctx, `
@@ -244,18 +274,18 @@ func (s *PostgresStore) UpdateUser(ctx context.Context, id string, patch UpdateU
 
 func (s *PostgresStore) CreateSession(ctx context.Context, record SessionRecord) error {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen_at)
-		VALUES ($1, $2::uuid, $3::timestamptz, $4::timestamptz, $5::timestamptz)`,
-		record.TokenHash, record.UserID, record.CreatedAt, record.ExpiresAt, record.LastSeenAt)
+		INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen_at, security_version)
+		VALUES ($1, $2::uuid, $3::timestamptz, $4::timestamptz, $5::timestamptz, $6)`,
+		record.TokenHash, record.UserID, record.CreatedAt, record.ExpiresAt, record.LastSeenAt, record.SecurityVersion)
 	return err
 }
 
 func (s *PostgresStore) FindSession(ctx context.Context, tokenHash string) (*SessionRecord, error) {
 	var r SessionRecord
 	err := s.pool.QueryRow(ctx, `
-		SELECT token_hash, user_id::text, created_at, expires_at, last_seen_at
+		SELECT token_hash, user_id::text, created_at, expires_at, last_seen_at, security_version
 		FROM sessions WHERE token_hash = $1 LIMIT 1`, tokenHash).
-		Scan(&r.TokenHash, &r.UserID, &r.CreatedAt, &r.ExpiresAt, &r.LastSeenAt)
+		Scan(&r.TokenHash, &r.UserID, &r.CreatedAt, &r.ExpiresAt, &r.LastSeenAt, &r.SecurityVersion)
 	if err != nil {
 		if queryErrNoRows(err) {
 			return nil, nil
@@ -398,7 +428,7 @@ func (s *PostgresStore) UpdateTeam(ctx context.Context, id string, patch UpdateT
 
 func (s *PostgresStore) ListMembers(ctx context.Context, teamID string) ([]TeamMemberView, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT m.role, m.created_at,
+		SELECT m.role, m.created_at, m.disabled_at, COALESCE(m.monthly_budget_credits::text, ''),
 			u.id::text, u.email, u.password_hash, u.display_name, u.role, u.disabled_at, u.created_at
 		FROM team_members m
 		JOIN users u ON u.id = m.user_id
@@ -415,7 +445,7 @@ func (s *PostgresStore) ListMembers(ctx context.Context, teamID string) ([]TeamM
 			memRole  string
 			userRole string
 		)
-		if err := rows.Scan(&memRole, &v.CreatedAt, &v.User.ID, &v.User.Email, &v.User.PasswordHash, &v.User.DisplayName, &userRole, &v.User.DisabledAt, &v.User.CreatedAt); err != nil {
+		if err := rows.Scan(&memRole, &v.CreatedAt, &v.MemberDisabledAt, &v.MonthlyBudgetCredits, &v.User.ID, &v.User.Email, &v.User.PasswordHash, &v.User.DisplayName, &userRole, &v.User.DisabledAt, &v.User.CreatedAt); err != nil {
 			return nil, err
 		}
 		v.User.Role = UserRole(userRole)
@@ -425,24 +455,9 @@ func (s *PostgresStore) ListMembers(ctx context.Context, teamID string) ([]TeamM
 	return out, rows.Err()
 }
 
-func (s *PostgresStore) AddMember(ctx context.Context, teamID, userID string, role TeamMemberRole) error {
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO team_members (team_id, user_id, role)
-		VALUES ($1::uuid, $2::uuid, $3)
-		ON CONFLICT (team_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
-		teamID, userID, string(role))
-	return err
-}
-
-func (s *PostgresStore) RemoveMember(ctx context.Context, teamID, userID string) (bool, error) {
-	tag, err := s.pool.Exec(ctx, `
-		DELETE FROM team_members WHERE team_id = $1::uuid AND user_id = $2::uuid`, teamID, userID)
-	return tag.RowsAffected() > 0, err
-}
-
 func (s *PostgresStore) ListTeamsForUser(ctx context.Context, userID string) ([]TeamMembership, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT m.role AS member_role,
+		SELECT m.role AS member_role, m.disabled_at, COALESCE(m.monthly_budget_credits::text, ''),
 			t.id::text, t.name, t.quota_credits::text, t.used_credits::text, t.reserved_credits::text, t.unlimited,
 			t.rpm_limit, t.tpm_limit, t.concurrency_limit, t.created_at, t.disabled_at
 		FROM team_members m
@@ -456,18 +471,47 @@ func (s *PostgresStore) ListTeamsForUser(ctx context.Context, userID string) ([]
 	out := []TeamMembership{}
 	for rows.Next() {
 		var (
-			role     string
-			member   TeamRecord
-			quota    *string
-			used     *string
-			reserved *string
+			role           string
+			memberDisabled *time.Time
+			memberBudget   string
+			member         TeamRecord
+			quota          *string
+			used           *string
+			reserved       *string
 		)
-		if err := rows.Scan(&role, &member.ID, &member.Name, &quota, &used, &reserved, &member.Unlimited,
+		if err := rows.Scan(&role, &memberDisabled, &memberBudget, &member.ID, &member.Name, &quota, &used, &reserved, &member.Unlimited,
 			&member.RPMLimit, &member.TPMLimit, &member.ConcurrencyLimit, &member.CreatedAt, &member.DisabledAt); err != nil {
 			return nil, err
 		}
 		member.QuotaCredits, member.UsedCredits, member.ReservedCredits = derefString2(quota), derefString2(used), derefString2(reserved)
-		out = append(out, TeamMembership{Team: member, Role: TeamMemberRole(role)})
+		out = append(out, TeamMembership{Team: member, Role: TeamMemberRole(role), MemberDisabledAt: memberDisabled, MonthlyBudgetCredits: memberBudget})
+	}
+	return out, rows.Err()
+}
+
+func (s *PostgresStore) ListAllMemberships(ctx context.Context) ([]AllMembershipRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT m.team_id::text, t.name, m.user_id::text, m.role,
+			COALESCE(m.monthly_budget_credits::text, ''), m.disabled_at, m.created_at
+		FROM team_members m
+		JOIN teams t ON t.id = m.team_id
+		ORDER BY m.created_at ASC, m.team_id ASC, m.user_id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AllMembershipRow{}
+	for rows.Next() {
+		var (
+			row  AllMembershipRow
+			role string
+		)
+		if err := rows.Scan(&row.TeamID, &row.TeamName, &row.UserID, &role,
+			&row.MonthlyBudgetCredits, &row.MemberDisabledAt, &row.JoinedAt); err != nil {
+			return nil, err
+		}
+		row.Role = TeamMemberRole(role)
+		out = append(out, row)
 	}
 	return out, rows.Err()
 }

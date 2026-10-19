@@ -180,6 +180,10 @@ func TestCrossImplParity(t *testing.T) {
 
 func newPostgresForTest(t *testing.T, baseURL, migrationsDir string) (*PostgresStore, func()) {
 	t.Helper()
+	// 跨实现测试直接调用此 helper，缺省目录必须在共用入口补齐。
+	if migrationsDir == "" {
+		migrationsDir = "../../migrations"
+	}
 	ctx := context.Background()
 	admin, err := pgx.Connect(ctx, baseURL)
 	if err != nil {

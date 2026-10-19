@@ -9,6 +9,57 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.24.0] - 2026-10-18
+
+### 新增(多租户团队工作台)
+
+- 控制台按成员关系授权：团队 `owner/admin` 管理本团队，普通成员只读本人用量、设备与资料；全局 `admin` 标记不再授予平台管理权限（见 `specs/tenant-permissions.md`）。
+- 新增团队工作台（概览 / 成员管理 / 预算与限制 / 团队设置）：邀请链接（绑定邮箱、7 天过期、只消费一次、数据库只存摘要）、成员月预算、暂停与恢复、团队日/月预算、模型白名单与预算告警阈值。
+- 非 root 的用量、导出与审计按团队收敛；用量响应剥离上游模型、供应商、客户端 IP 与价格/成本快照；无有效成员关系或团队停用返回 403，多有效团队返回 409。
+- 新增「团队与账号」合并页：团队台账与账号主表同屏，新建账号可直接选择团队，所属团队列内支持加入 / 更换 / 移出；账号详情抽屉汇总近 30 日用量、设备、成员预算与安全操作。
+- 顶部读数条新增「查看范围」段，范围与读数同屏，替代侧栏切换器；用量页移除重复的按团队筛选。
+- 控制台新增权限路由与用量成本测试（`apps/console/tests`），随 `pnpm test` 执行。
+
+### 新增(额度申请与预算管控)
+
+- 团队管理员可提交额度申请，root 审批或驳回；批准与额度增加同事务且只执行一次（迁移 `0014_quota_requests.sql`）。
+- 团队日/月预算与成员月预算在同一预留事务内校验（留空为不限、0 为暂停）；全部未释放预留保守计入当前窗口，避免跨日/月漏算。
+- 团队策略的 RPM/TPM/并发与平台上限取较小值，团队配置不能扩大平台授权；模型白名单对推理、模型目录与用户配置下发一致生效（迁移 `0015_team_policy_limits.sql`）。
+
+### 新增(root MFA 与会话安全版本)
+
+- root 支持 TOTP 双因素认证：绑定、启用、恢复码轮换与登录挑战；MFA 设置与恢复码仅 root 可管理。
+- 新增 `sessions.security_version`（迁移 `0016_session_security_version.sql`）：改密、禁用或吊销凭据时提升安全版本，旧会话即时失效。
+
+### 新增(用量价格快照与成本估算)
+
+- 结算事务冻结成交单价与参考成本快照（迁移 `0013_usage_pricing_snapshot.sql`）；历史记录不随调价回写，旧记录按未知成本处理。
+- 用量页新增当前页历史成本估算与「按当前售价重算」对照，币种独立统计；新增控制台用量成本计算与测试（`apps/console/src/usage-costs.ts`）。
+
+### 安全加固（审计整改）
+
+- 控制面登录/初始化限流改为与网关相同的可信反代规则：只有 TCP 对端命中 `API_TRUSTED_PROXY_IPS` 时才解析 `CF-Connecting-IP` / `X-Forwarded-For`，直连源站无法再通过伪造头切换限流桶。
+- 登录流 `pending → authorized/denied/expired` 改为条件更新，避免旧授权请求把已消费流程回写为 `authorized`；消费仍保持 authorized → consumed 的 CAS。
+- 首次 root 初始化新增 `BOOTSTRAP_SECRET`（请求头 `x-bootstrap-secret`）；生产模式未配置时拒绝初始化，控制台初始化页增加口令输入。
+- 控制面与网关统一禁止上游重定向；供应商 `baseUrl` 强制 https、拒绝 userinfo/查询串；出站默认拒绝回环、私网、链路本地与云元数据地址（`UPSTREAM_ALLOW_PRIVATE_NETWORKS=1` 可放行自建内网）；新建供应商与修改地址/密钥仅 root 可操作。
+- OpenAI 流式计量强制 `stream_options.include_usage=true`；上游成功但缺失 usage 时按准入预留额保守结算并标记 `usage_missing_estimated`。准入预留同时覆盖输入估算、`max_tokens` 夹紧写回上游，`n` 支持 1..16 并按倍率预留。
+- 结算使用 `context.WithoutCancel` + 10s 超时并重试 3 次，客户端取消不再导致 Postgres 事务无法落库；预留回收改为按当前时间比较已带 TTL 的 `expires_at`；Redis 并发槽位增加持槽续租。
+- `request_id` 幂等改为按 `(team_id, request_id)` 隔离，新增迁移 `0011_request_id_scope.sql`。
+- 请求边界：控制台 JSON 1 MiB、登录表单/初始化 64 KiB、网关请求与上游非流式响应各 32 MiB；API/网关设置读取头、读取请求、空闲连接超时；登录流增加匿名初始化限流与过期清理。
+- 安全响应头（CSP、nosniff、DENY、Referrer-Policy、HSTS）与写操作 Origin/Sec-Fetch-Site 校验；HTTPS 公开地址下按已配置 Host 将 http 请求 308 跳转；新增可选 `CONSOLE_ALLOWED_HOSTS` 限制管理面域名。
+- 移除 Gin 默认 recovery（避免 broken-pipe 时 dump Cookie/x-api-key）；上游错误正文返回/落库前脱敏当前供应商密钥；控制台 API Key 输入改为 password 字段。
+- 新口令哈希工作因子升级为 scrypt N=2^14/r=8/p=5，登录成功后对旧哈希渐进重哈希。
+- 新增可选设备凭据寿命 `DEVICE_TOKEN_TTL_DAYS`（默认 0 = 不按年龄过期）；管理面登录/初始化限流在 Redis 故障时改为 fail-closed。
+- 依赖升级：`golang.org/x/net` 0.60.0、`golang.org/x/text` 0.42.0、`quic-go` 0.59.1、Vitest 4.1.12；`pnpm audit` 与 `govulncheck` 均无命中（govulncheck 固定 v1.9.0 并接入 CI）。
+- `.env*` 统一不进 Git/构建上下文；运行镜像改为非 root、只读根文件系统、`cap_drop: ALL`、`no-new-privileges` 与资源上限；基础镜像固定到 manifest digest。
+- CI Actions 固定到 commit SHA、SSH 部署校验证书指纹、部署按 `sha-<commit>` 不可变镜像标签；新增 Dependabot。
+
+### 配置与部署
+
+- 新增环境变量：`API_TRUSTED_PROXY_IPS`、`CONSOLE_ALLOWED_HOSTS`、`BOOTSTRAP_SECRET`、`ALLOW_INSECURE_UPSTREAM_URLS`、`UPSTREAM_ALLOW_PRIVATE_NETWORKS`。
+- 新增宿主机 Nginx 部署配置与指南（`deploy/nginx/`）：提供 HTTPS、证书续期、Cloudflare 真实 IP 与 SSE 反代配置；生产编排强制 api/gateway 只绑回环，CI 同步部署文件供运维安装。
+- `docker-compose.prod.yml` 镜像改用 `IMAGE_TAG`（默认 `latest`），CI 部署注入 `sha-<commit>`。
+
 ## [0.23.0] - 2026-10-18
 
 ### 新增(角色分级与 root 初始化)

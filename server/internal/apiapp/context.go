@@ -11,6 +11,7 @@ import (
 	"github.com/vam12375/shucode-platform/server/internal/contracts"
 	"github.com/vam12375/shucode-platform/server/internal/crypto"
 	"github.com/vam12375/shucode-platform/server/internal/events"
+	"github.com/vam12375/shucode-platform/server/internal/netutil"
 	"github.com/vam12375/shucode-platform/server/internal/ratelimit"
 	"github.com/vam12375/shucode-platform/server/internal/store"
 )
@@ -26,6 +27,7 @@ type Deps struct {
 	PlatformLoginLimiter ratelimit.Limiter
 	Logger               *slog.Logger
 	HTTPClient           *http.Client // 上游探测(模型列表/连通测试)
+	Trusted              netutil.TrustedProxies
 }
 
 // jsonMarshalNoHTML:与 JSON.stringify 一致的紧凑序列化(禁用 <>& 转义)。

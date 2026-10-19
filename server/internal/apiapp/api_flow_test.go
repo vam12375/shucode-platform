@@ -98,6 +98,8 @@ func newAPIFixtureWithSeed(t *testing.T, demoSeed bool) *apiFixture {
 		GatewayBaseURL: "https://gw.mendao.chat", GatewayAPIType: "openai-chat-completions",
 		GatewayAPIBaseURL: "https://gw.mendao.chat/v1",
 		ReleaseBaseURL:    "http://localhost:8787",
+		// 测试上游是 httptest 的 http://127.0.0.1，必须显式放行；生产默认只允许 https。
+		AllowInsecureUpstreamURLs: true,
 	}
 	window := ratelimit.Window{Window: 5 * time.Minute, Max: 10}
 	f.deps = &Deps{
@@ -407,6 +409,75 @@ func TestUserManagement(t *testing.T) {
 	}
 }
 
+// root 账号列表注入团队归属 + 设备列表按 userId 过滤(合并后的「团队与账号」页依赖)。
+func TestUsersListTeamEnrichmentAndDevicesFilter(t *testing.T) {
+	f := newAPIFixture(t)
+	adminCookie := f.loginAdmin()
+	ctx := context.Background()
+
+	createRec := f.do("POST", "/console/api/users", adminCookie,
+		`{"email":"noah@mendao.chat","password":"noah-password","displayName":"Noah","role":"user"}`)
+	if createRec.Code != 200 {
+		t.Fatalf("创建用户: %d %s", createRec.Code, createRec.Body.String())
+	}
+	noahID := dataOf(t, createRec)["user"].(map[string]any)["id"].(string)
+
+	userTeams := func() map[string]map[string]any {
+		t.Helper()
+		rows := dataOf(t, f.do("GET", "/console/api/users", adminCookie, ""))["users"].([]any)
+		out := map[string]map[string]any{}
+		for _, raw := range rows {
+			user := raw.(map[string]any)
+			team, _ := user["team"].(map[string]any)
+			out[user["email"].(string)] = team
+		}
+		return out
+	}
+
+	// 种子的演示成员属于演示团队;新账号未入团队时不带 team 字段。
+	rows := userTeams()
+	if rows["noah@mendao.chat"] != nil {
+		t.Fatalf("未入团队用户不应带 team: %v", rows["noah@mendao.chat"])
+	}
+	member := rows["member@mendao.chat"]
+	if member == nil || member["teamName"] != "演示团队" || member["memberRole"] != "member" || member["monthlyBudgetCredits"] != "" {
+		t.Fatalf("演示成员团队归属不符: %v", member)
+	}
+
+	teamRec := f.do("POST", "/console/api/teams", adminCookie, `{"name":"交付团队","quotaCredits":"500","unlimited":false}`)
+	if teamRec.Code != 200 {
+		t.Fatalf("创建团队: %d %s", teamRec.Code, teamRec.Body.String())
+	}
+	teamID := dataOf(t, teamRec)["team"].(map[string]any)["id"].(string)
+	if rec := f.do("POST", "/console/api/teams/"+teamID+"/members", adminCookie, `{"email":"noah@mendao.chat"}`); rec.Code != 200 {
+		t.Fatalf("加入团队: %d %s", rec.Code, rec.Body.String())
+	}
+	noah := userTeams()["noah@mendao.chat"]
+	if noah == nil || noah["teamId"] != teamID || noah["teamName"] != "交付团队" || noah["memberRole"] != "member" {
+		t.Fatalf("加入后归属未被注入: %v", noah)
+	}
+
+	// 设备列表按 userId 精确过滤(合法/非法/含 teamId 时 userId 优先)。
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	if err := f.store.CreateDeviceToken(ctx, store.DeviceTokenRecord{
+		ID: "00000000-0000-4000-8000-000000000901", UserID: noahID, Name: "Noah 笔记本",
+		Platform: "darwin", TokenHash: "th-noah", TokenCiphertext: "v1.a.b.c", TokenHint: "n901", CreatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	filtered := dataOf(t, f.do("GET", "/console/api/devices?userId="+noahID, adminCookie, ""))["devices"].([]any)
+	if len(filtered) != 1 || filtered[0].(map[string]any)["name"] != "Noah 笔记本" {
+		t.Fatalf("按 userId 过滤设备不符: %v", filtered)
+	}
+	withTeam := dataOf(t, f.do("GET", "/console/api/devices?userId="+noahID+"&teamId="+teamID, adminCookie, ""))["devices"].([]any)
+	if len(withTeam) != 1 {
+		t.Fatalf("userId 过滤应优先于 teamId: %v", withTeam)
+	}
+	if rec := f.do("GET", "/console/api/devices?userId=not-a-uuid", adminCookie, ""); rec.Code != 400 {
+		t.Fatalf("非法 userId 应 400: %d", rec.Code)
+	}
+}
+
 func TestSessionAndDeviceRevocation(t *testing.T) {
 	f := newAPIFixture(t)
 	adminCookie := f.loginAdmin()
@@ -702,15 +773,19 @@ func TestRootRoleHierarchy(t *testing.T) {
 	if opsCookie == "" {
 		t.Fatalf("admin 登录失败: %d %s", opsLogin.Code, opsLogin.Body.String())
 	}
-	// 普通管理员不能创建管理员，只能创建普通用户。
+	// 团队管理员通过邀请管理成员，不能创建全局账号或授予管理员。
 	if rec := f.do("POST", "/console/api/users", opsCookie,
 		`{"email":"bad-admin@mendao.chat","password":"bad-admin-password","displayName":"Bad","role":"admin"}`); rec.Code != 403 {
 		t.Fatalf("admin 创建管理员应 403: %d %s", rec.Code, rec.Body.String())
 	}
-	createUser := f.do("POST", "/console/api/users", opsCookie,
+	if rec := f.do("POST", "/console/api/users", opsCookie,
+		`{"email":"blocked@mendao.chat","password":"alice-password","displayName":"Blocked","role":"user"}`); rec.Code != 403 {
+		t.Fatalf("admin 不得创建全局用户: %d %s", rec.Code, rec.Body.String())
+	}
+	createUser := f.do("POST", "/console/api/users", rootCookie,
 		`{"email":"alice@mendao.chat","password":"alice-password","displayName":"Alice","role":"user"}`)
 	if createUser.Code != 200 {
-		t.Fatalf("admin 创建用户: %d %s", createUser.Code, createUser.Body.String())
+		t.Fatalf("root 创建用户: %d %s", createUser.Code, createUser.Body.String())
 	}
 	aliceID := dataOf(t, createUser)["user"].(map[string]any)["id"].(string)
 	// 普通管理员不能操作 root/其他管理员，也不能改角色。
@@ -723,12 +798,12 @@ func TestRootRoleHierarchy(t *testing.T) {
 	if rec := f.do("PATCH", "/console/api/users/"+aliceID, opsCookie, `{"role":"admin"}`); rec.Code != 403 {
 		t.Fatalf("admin 改角色应 403: %d", rec.Code)
 	}
-	if rec := f.do("PATCH", "/console/api/users/"+opsID, opsCookie, `{"role":"user"}`); rec.Code != 400 {
-		t.Fatalf("admin 改自己角色应 400: %d", rec.Code)
+	if rec := f.do("PATCH", "/console/api/users/"+opsID, opsCookie, `{"role":"user"}`); rec.Code != 403 {
+		t.Fatalf("admin 改自己角色应 403: %d", rec.Code)
 	}
-	// 普通管理员可以管理普通用户。
-	if rec := f.do("PATCH", "/console/api/users/"+aliceID, opsCookie, `{"disabled":true}`); rec.Code != 200 {
-		t.Fatalf("admin 禁用用户: %d %s", rec.Code, rec.Body.String())
+	// 团队管理员不能全局禁用成员账号。
+	if rec := f.do("PATCH", "/console/api/users/"+aliceID, opsCookie, `{"disabled":true}`); rec.Code != 403 {
+		t.Fatalf("admin 禁用用户应403: %d %s", rec.Code, rec.Body.String())
 	}
 	// root 可以升降普通用户角色。
 	if rec := f.do("PATCH", "/console/api/users/"+aliceID, rootCookie, `{"role":"admin"}`); rec.Code != 200 {

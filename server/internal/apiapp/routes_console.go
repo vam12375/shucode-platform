@@ -49,11 +49,24 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(409, fail(409, "系统已完成初始化，请直接登录"))
 			return
 		}
+		// 新部署必须先证明来自部署者：生产模式强制配置一次性 bootstrap secret，
+		// 内存体验模式保留免密初始化以便本地使用。
+		if deps.Env.BootstrapSecret == "" {
+			if !deps.Env.MemoryDB {
+				c.JSON(503, fail(503, "未配置 BOOTSTRAP_SECRET，拒绝首次初始化"))
+				return
+			}
+		} else if !secretsEqual(c.GetHeader("x-bootstrap-secret"), deps.Env.BootstrapSecret) {
+			c.JSON(403, fail(403, "初始化凭据无效"))
+			return
+		}
 		if deps.ConsoleLoginLimiter != nil {
-			allowed, limitErr := deps.ConsoleLoginLimiter.Allow(ctx, resolveLimiterClientIP(c)+":root-setup")
+			allowed, limitErr := deps.ConsoleLoginLimiter.Allow(ctx, resolveLimiterClientIP(c, deps)+":root-setup")
 			if limitErr != nil {
-				deps.Logger.Warn("初始化限流不可用，按 fail-open 放行", "error", limitErr)
-				allowed = true
+				// 管理面不采用 fail-open：限流后端故障时宁可暂停初始化，也不放开爆破窗口。
+				deps.Logger.Error("初始化限流不可用，拒绝初始化", "error", limitErr)
+				c.JSON(503, fail(503, "限流服务不可用，请稍后重试"))
+				return
 			}
 			if !allowed {
 				c.JSON(429, fail(429, "尝试次数过多，请稍后再试"))
@@ -115,16 +128,12 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(400, fail(400, "请求参数不合法"))
 			return
 		}
-		ip := "local"
-		if xff := c.GetHeader("x-forwarded-for"); xff != "" {
-			if first := strings.TrimSpace(strings.Split(xff, ",")[0]); first != "" {
-				ip = first
-			}
-		}
-		allowed, err := deps.ConsoleLoginLimiter.Allow(ctx, ip+":"+strings.ToLower(email))
+		allowed, err := deps.ConsoleLoginLimiter.Allow(ctx, resolveLimiterClientIP(c, deps)+":"+strings.ToLower(email))
 		if err != nil {
-			deps.Logger.Warn("登录限流不可用，按 fail-open 放行", "error", err)
-			allowed = true
+			// 管理面 fail-closed：限流后端故障时不能退化为无限次口令尝试。
+			deps.Logger.Error("登录限流不可用，拒绝登录", "error", err)
+			c.JSON(503, fail(503, "登录限流服务不可用，请稍后重试"))
+			return
 		}
 		if !allowed {
 			c.JSON(429, fail(429, "尝试次数过多，请稍后再试"))
@@ -136,16 +145,24 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		if user == nil || user.DisabledAt != nil ||
-			(user.Role != store.RoleRoot && user.Role != store.RoleAdmin) ||
 			!crypto.VerifyPassword(password, user.PasswordHash) {
 			c.JSON(401, fail(401, "邮箱或密码不正确"))
 			return
 		}
+		if !verifyRootMFA(ctx, deps, c, user, body) {
+			return
+		}
+		rehashPasswordIfNeeded(ctx, deps, user, password)
 		if err := loginWithSession(ctx, deps, c, user.ID); err != nil {
 			internalError(c, deps, err)
 			return
 		}
-		c.JSON(200, okData(gin.H{"user": toPublicUser(user)}))
+		memberships, err := publicMemberships(ctx, deps, user)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		c.JSON(200, okData(gin.H{"user": toPublicUser(user), "memberships": memberships}))
 	})
 
 	group.POST("/auth/logout", func(c *gin.Context) {
@@ -157,17 +174,23 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.GET("/auth/me", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		user, ok := requireConsoleUser(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
-		c.JSON(200, okData(gin.H{"user": toPublicUser(admin)}))
+		memberships, err := publicMemberships(c.Request.Context(), deps, user)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		c.JSON(200, okData(gin.H{"user": toPublicUser(user), "memberships": memberships}))
 	})
 
 	// ---- teams ----
 
 	group.GET("/teams", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		user, ok := requireConsoleUser(c.Request.Context(), deps, c)
+		if !ok {
 			return
 		}
 		teams, err := deps.Store.ListTeams(c.Request.Context())
@@ -175,21 +198,37 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
+		memberships, err := deps.Store.ListTeamsForUser(c.Request.Context(), user.ID)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		allowed := map[string]store.TeamMembership{}
+		for _, membership := range memberships {
+			if membership.Team.DisabledAt == nil && membership.MemberDisabledAt == nil {
+				allowed[membership.Team.ID] = membership
+			}
+		}
 		rows := make([]any, 0, len(teams))
 		for _, entry := range teams {
+			membership, belongs := allowed[entry.Team.ID]
+			if user.Role != store.RoleRoot && !belongs {
+				continue
+			}
 			row := toPublicTeam(&entry.Team)
 			rows = append(rows, gin.H{
 				"id": row.ID, "name": row.Name, "quotaCredits": row.QuotaCredits,
 				"usedCredits": row.UsedCredits, "reservedCredits": row.ReservedCredits,
 				"unlimited": row.Unlimited, "createdAt": row.CreatedAt, "disabledAt": row.DisabledAt,
-				"memberCount": entry.MemberCount,
+				"memberCount": entry.MemberCount, "memberRole": string(membership.Role),
+				"rpmLimit": row.RPMLimit, "tpmLimit": row.TPMLimit, "concurrencyLimit": row.ConcurrencyLimit,
 			})
 		}
 		c.JSON(200, okData(gin.H{"teams": rows}))
 	})
 
 	group.POST("/teams", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
 			return
 		}
 		body, ok := readObjectBody(c)
@@ -231,11 +270,17 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.GET("/teams/:id", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		user, ok := requireConsoleUser(c.Request.Context(), deps, c)
+		if !ok {
 			return
 		}
 		ctx := c.Request.Context()
 		teamID := c.Param("id")
+		membership, ok := requireTeamAccess(c, deps, teamID, false)
+		if !ok {
+			return
+		}
+		canManage := user.Role == store.RoleRoot || store.IsTeamAdmin(membership.Role)
 		team, err := deps.Store.GetTeam(ctx, teamID)
 		if err != nil {
 			internalError(c, deps, err)
@@ -253,6 +298,9 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 		}
 		usageLimit := int64(51)
 		usageFilter := store.UsageFilter{TeamID: teamID, Limit: &usageLimit}
+		if !canManage {
+			usageFilter.UserID = user.ID
+		}
 		if cursorOK {
 			parsed, okTime := parseQueryTime(cursorCreatedAt)
 			if !okTime {
@@ -267,7 +315,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
-		aggregates, err := deps.Store.AggregateUsage(ctx, store.UsageFilter{TeamID: teamID})
+		aggregates, err := deps.Store.AggregateUsage(ctx, store.UsageFilter{TeamID: teamID, UserID: usageFilter.UserID})
 		if err != nil {
 			internalError(c, deps, err)
 			return
@@ -295,22 +343,32 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 		}
 		memberRows := make([]any, 0, len(members))
 		for _, member := range members {
+			if !canManage && member.User.ID != user.ID {
+				continue
+			}
 			memberRows = append(memberRows, gin.H{
-				"user":     toPublicUser(&member.User),
-				"role":     string(member.Role),
-				"joinedAt": isoString(member.CreatedAt),
+				"user":             toPublicUser(&member.User),
+				"role":             string(member.Role),
+				"joinedAt":         isoString(member.CreatedAt),
+				"memberDisabledAt": isoStringPtr(member.MemberDisabledAt), "monthlyBudgetCredits": member.MonthlyBudgetCredits,
 			})
 		}
 		aggregateRows := make([]aggregatePublic, 0, len(aggregates))
 		for _, row := range aggregates {
 			aggregateRows = append(aggregateRows, toPublicAggregate(row))
 		}
-		usageRows := make([]usagePublic, 0, len(recent))
+		usageRows := make([]any, 0, len(recent))
 		for i := range recent {
-			usageRows = append(usageRows, toPublicUsage(&recent[i]))
+			usageRows = append(usageRows, usageForConsole(c, &recent[i]))
 		}
 		adjustmentRows := make([]quotaAdjustmentPublic, 0, len(quotaAdjustments))
 		for _, row := range quotaAdjustments {
+			if !canManage {
+				continue
+			}
+			if user.Role != store.RoleRoot {
+				row.ActorEmail = ""
+			}
 			adjustmentRows = append(adjustmentRows, toPublicQuotaAdjustment(row))
 		}
 		c.JSON(200, okData(gin.H{
@@ -331,7 +389,27 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(400, fail(400, "请求参数不合法"))
 			return
 		}
+		if admin.Role != store.RoleRoot {
+			for field := range body {
+				if field != "name" {
+					c.JSON(403, fail(403, "团队管理员只能修改团队名称；额度和平台上限由超级管理员调整"))
+					return
+				}
+			}
+		}
 		var patch store.UpdateTeamPatch
+		if raw, exists := body["disabled"]; exists {
+			value, ok := boolValue(raw)
+			if !ok {
+				c.JSON(400, fail(400, "disabled 必须是布尔值"))
+				return
+			}
+			patch.HasDisabled = true
+			if value {
+				now := deps.Now()
+				patch.DisabledAt = &now
+			}
+		}
 		if raw, exists := body["name"]; exists {
 			name, okName := trimmedRequired(raw, 1, 80)
 			if !okName {
@@ -403,6 +481,9 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			}
 		}
 		changed := []string{}
+		if patch.HasDisabled {
+			changed = append(changed, "disabled")
+		}
 		if patch.Name != nil && *patch.Name != previousName {
 			changed = append(changed, "name")
 		}
@@ -413,14 +494,15 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			changed = append(changed, "quota")
 		}
 		if len(changed) > 0 {
-			writeAudit(ctx, deps, admin, "team.update", "team", team.ID, map[string]any{"fields": changed})
+			writeTeamAudit(ctx, deps, admin, team.ID, "team.update", "team", team.ID, map[string]any{"fields": changed})
 		}
 		deps.ConfigEvents.Emit(events.DomainTeams)
 		c.JSON(200, okData(gin.H{"team": toPublicTeam(team)}))
 	})
 
 	group.POST("/teams/:id/members", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		actor, ok := requireRoot(c.Request.Context(), deps, c)
+		if !ok {
 			return
 		}
 		ctx := c.Request.Context()
@@ -437,7 +519,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 		role := store.MemberRoleMember
 		if raw, exists := body["role"]; exists {
 			roleStr, okRole := raw.(string)
-			if !okRole || (roleStr != "owner" && roleStr != "member") {
+			if !okRole || (roleStr != "owner" && roleStr != "admin" && roleStr != "member") {
 				c.JSON(400, fail(400, "请求参数不合法"))
 				return
 			}
@@ -453,26 +535,38 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		if err := deps.Store.AddMember(ctx, c.Param("id"), user.ID, role); err != nil {
-			internalError(c, deps, err)
+			tenantStoreError(c, deps, err)
 			return
 		}
+		writeTeamAudit(ctx, deps, actor, c.Param("id"), "member.add", "user", user.ID, map[string]any{"role": string(role)})
 		deps.ConfigEvents.Emit(events.DomainTeams)
 		c.JSON(200, okData(gin.H{"user": toPublicUser(user)}))
 	})
 
 	group.DELETE("/teams/:id/members/:userId", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		actor, ok := requireAdmin(c.Request.Context(), deps, c)
+		if !ok {
+			return
+		}
+		target, err := deps.Store.GetTeamMember(c.Request.Context(), c.Param("id"), c.Param("userId"))
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if target != nil && store.IsTeamAdmin(target.Role) && actor.Role != store.RoleRoot {
+			c.JSON(403, fail(403, "只有超级管理员可以移除团队管理员"))
 			return
 		}
 		removed, err := deps.Store.RemoveMember(c.Request.Context(), c.Param("id"), c.Param("userId"))
 		if err != nil {
-			internalError(c, deps, err)
+			tenantStoreError(c, deps, err)
 			return
 		}
 		if !removed {
 			c.JSON(404, fail(404, "成员不存在"))
 			return
 		}
+		writeTeamAudit(c.Request.Context(), deps, actor, c.Param("id"), "member.remove", "user", c.Param("userId"), nil)
 		deps.ConfigEvents.Emit(events.DomainTeams)
 		c.JSON(200, gin.H{"code": 0})
 	})
@@ -480,23 +574,63 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 	// ---- users ----
 
 	group.GET("/users", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		user, ok := requireConsoleUser(c.Request.Context(), deps, c)
+		if !ok {
 			return
 		}
-		users, err := deps.Store.ListUsers(c.Request.Context())
-		if err != nil {
-			internalError(c, deps, err)
-			return
+		ctx := c.Request.Context()
+		users := []store.UserRecord{}
+		teamByUser := map[string]store.AllMembershipRow{}
+		if user.Role == store.RoleRoot {
+			memberships, err := deps.Store.ListAllMemberships(ctx)
+			if err != nil {
+				internalError(c, deps, err)
+				return
+			}
+			// 单团队约束由写入侧保证;历史脏数据出现多条时取最早一条展示(与列表升序一致)。
+			for _, row := range memberships {
+				if _, exists := teamByUser[row.UserID]; !exists {
+					teamByUser[row.UserID] = row
+				}
+			}
+			users, err = deps.Store.ListUsers(ctx)
+			if err != nil {
+				internalError(c, deps, err)
+				return
+			}
+		} else {
+			membership, ok := selectedTeam(c, deps, false)
+			if !ok {
+				return
+			}
+			if store.IsTeamAdmin(membership.Role) {
+				members, err := deps.Store.ListMembers(ctx, membership.Team.ID)
+				if err != nil {
+					internalError(c, deps, err)
+					return
+				}
+				for _, member := range members {
+					users = append(users, member.User)
+				}
+			} else {
+				users = append(users, *user)
+			}
 		}
 		rows := make([]userPublic, 0, len(users))
 		for i := range users {
-			rows = append(rows, toPublicUser(&users[i]))
+			record := &users[i]
+			row, hasTeam := teamByUser[record.ID]
+			if hasTeam {
+				rows = append(rows, toPublicUserInTeam(record, &row))
+			} else {
+				rows = append(rows, toPublicUser(record))
+			}
 		}
 		c.JSON(200, okData(gin.H{"users": rows}))
 	})
 
 	group.POST("/users", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
@@ -548,7 +682,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.PATCH("/users/:id", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
@@ -673,6 +807,8 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 				c.JSON(400, fail(400, "超级管理员不能被禁用或降级"))
 			case errors.Is(err, store.ErrRootUserExists):
 				c.JSON(409, fail(409, "超级管理员已存在"))
+			case errors.Is(err, store.ErrLastTeamAdmin):
+				c.JSON(409, fail(409, "请先为团队设置其他有效管理员"))
 			default:
 				internalError(c, deps, err)
 			}
@@ -700,7 +836,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 	// ---- releases ----
 
 	group.GET("/releases", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
 			return
 		}
 		releases, err := deps.Store.ListReleases(c.Request.Context())
@@ -718,7 +854,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.GET("/releases/:revision", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
 			return
 		}
 		ctx := c.Request.Context()
@@ -745,7 +881,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.POST("/releases", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
@@ -806,7 +942,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.POST("/releases/:revision/activate", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
@@ -833,23 +969,48 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 	// ---- models ----
 
 	group.GET("/models", func(c *gin.Context) {
-		if _, ok := requireAdmin(c.Request.Context(), deps, c); !ok {
+		user, ok := requireConsoleUser(c.Request.Context(), deps, c)
+		if !ok {
 			return
 		}
-		models, err := deps.Store.ListModels(c.Request.Context(), c.Query("includeDisabled") == "1")
+		var policy *store.TeamPolicyRecord
+		if user.Role != store.RoleRoot {
+			membership, ok := selectedTeam(c, deps, false)
+			if !ok {
+				return
+			}
+			var err error
+			policy, err = deps.Store.GetTeamPolicy(c.Request.Context(), membership.Team.ID)
+			if err != nil {
+				internalError(c, deps, err)
+				return
+			}
+		}
+		models, err := deps.Store.ListModels(c.Request.Context(), user.Role == store.RoleRoot && c.Query("includeDisabled") == "1")
 		if err != nil {
 			internalError(c, deps, err)
 			return
 		}
-		rows := make([]modelPublic, 0, len(models))
+		rows := make([]any, 0, len(models))
 		for i := range models {
-			rows = append(rows, toPublicModel(&models[i]))
+			model := &models[i]
+			if user.Role == store.RoleRoot {
+				rows = append(rows, toPublicModel(model))
+				continue
+			}
+			if !store.TeamModelAllowed(policy, model.ModelID) {
+				continue
+			}
+			rows = append(rows, gin.H{"modelId": model.ModelID, "displayName": model.DisplayName, "enabled": model.Enabled,
+				"inputPricePerMtok": model.InputPricePerMtok, "outputPricePerMtok": model.OutputPricePerMtok,
+				"cacheReadPricePerMtok": model.CacheReadPricePerMtok, "cacheWritePricePerMtok": model.CacheWritePricePerMtok,
+				"offPeakMultiplier": model.OffPeakMultiplier, "sortOrder": model.SortOrder})
 		}
 		c.JSON(200, okData(gin.H{"models": rows}))
 	})
 
 	group.PUT("/models/:modelId", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
@@ -960,7 +1121,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.POST("/models/import", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}
@@ -1062,7 +1223,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 	})
 
 	group.DELETE("/models/:modelId", func(c *gin.Context) {
-		admin, ok := requireAdmin(c.Request.Context(), deps, c)
+		admin, ok := requireRoot(c.Request.Context(), deps, c)
 		if !ok {
 			return
 		}

@@ -3,6 +3,7 @@ package apiapp
 import (
 	"context"
 	"crypto/rand"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -54,12 +55,32 @@ func readSessionUser(ctx context.Context, deps *Deps, c *gin.Context) (*store.Us
 	if user == nil || user.DisabledAt != nil {
 		return nil, nil
 	}
+	if user.Role == store.RoleRoot {
+		state, _, err := readRootMFAState(ctx, deps, user.ID)
+		if err != nil {
+			return nil, err
+		}
+		// 删除旧会话不能覆盖并发签发窗口；安全版本不匹配的迟到会话也必须失效。
+		if session.SecurityVersion != state.SecurityVersion {
+			return nil, nil
+		}
+		cacheSessionSecurityProof(c, user.ID, session.SecurityVersion)
+	}
 	if err := deps.Store.TouchSession(ctx, session.TokenHash, deps.Now()); err != nil {
 		return nil, err
 	}
 	return user, nil
 }
 
+const sessionSecurityProofKey = "session.security-proof"
+
+type sessionSecurityProof struct{ UserID, Version string }
+
+func cacheSessionSecurityProof(c *gin.Context, userID, version string) {
+	c.Set(sessionSecurityProofKey, sessionSecurityProof{UserID: userID, Version: version})
+}
+
+// 仅复制密码/MFA验证或有效会话实际证明过的版本，绝不能读取当前版本补发证明。
 func loginWithSession(ctx context.Context, deps *Deps, c *gin.Context, userID string) error {
 	// TS 生成 `${randomUUID()}.${Math.random().toString(36).slice(2)}` 形态;
 	// token 是不透明凭据,这里保持同形态(uuid + 点 + 基 36 随机后缀)。
@@ -68,19 +89,44 @@ func loginWithSession(ctx context.Context, deps *Deps, c *gin.Context, userID st
 		return err
 	}
 	token := uuid.NewString() + "." + base36(suffixBytes)
+	securityVersion := ""
+	if raw, exists := c.Get(sessionSecurityProofKey); exists {
+		if proof, ok := raw.(sessionSecurityProof); ok && proof.UserID == userID {
+			securityVersion = proof.Version
+		}
+	}
 	now := deps.Now()
 	if err := deps.Store.CreateSession(ctx, store.SessionRecord{
-		TokenHash:  crypto.HashToken(token),
-		UserID:     userID,
-		CreatedAt:  now,
-		ExpiresAt:  now.Add(sessionTTL),
-		LastSeenAt: now,
+		TokenHash:       crypto.HashToken(token),
+		SecurityVersion: securityVersion,
+		UserID:          userID,
+		CreatedAt:       now,
+		ExpiresAt:       now.Add(sessionTTL),
+		LastSeenAt:      now,
 	}); err != nil {
 		return err
 	}
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(sessionCookieName, token, int(sessionTTL.Seconds()), "/", deps.Env.CookieDomain, deps.Env.SecureCookies, true)
 	return nil
+}
+
+// rehashPasswordIfNeeded:登录成功后把旧工作因子的哈希升级为当前参数。
+// 写失败只告警，不影响本次登录。
+func rehashPasswordIfNeeded(ctx context.Context, deps *Deps, user *store.UserRecord, password string) {
+	if user == nil || !crypto.NeedsRehash(user.PasswordHash) {
+		return
+	}
+	hash, err := crypto.HashPassword(password)
+	if err != nil {
+		deps.Logger.Warn("口令重哈希失败", "userId", user.ID, "error", err)
+		return
+	}
+	if _, err := deps.Store.UpdateUser(ctx, user.ID, store.UpdateUserPatch{PasswordHash: &hash}); err != nil {
+		deps.Logger.Warn("口令重哈希写库失败", "userId", user.ID, "error", err)
+		return
+	}
+	user.PasswordHash = hash
 }
 
 func logoutSession(ctx context.Context, deps *Deps, c *gin.Context) error {
@@ -121,7 +167,8 @@ func authenticateDevice(ctx context.Context, deps *Deps, c *gin.Context) (*Authe
 	if err != nil {
 		return nil, err
 	}
-	if device == nil || device.RevokedAt != nil {
+	if device == nil || device.RevokedAt != nil ||
+		device.Expired(deps.Now(), deps.Env.DeviceTokenTTL) {
 		return nil, nil
 	}
 	user, err := deps.Store.FindUserByID(ctx, device.UserID)
@@ -144,6 +191,32 @@ func authenticateDevice(ctx context.Context, deps *Deps, c *gin.Context) (*Authe
 		}
 	}
 	return auth, nil
+}
+
+// StartLoginFlowSweeper:定期删除过期登录流，避免匿名 init 无限写库。
+func StartLoginFlowSweeper(ctx context.Context, deps *Deps, interval time.Duration) {
+	if interval <= 0 {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-ticker.C:
+				count, err := deps.Store.DeleteExpiredLoginFlows(ctx, now.Add(-time.Hour))
+				if err != nil {
+					deps.Logger.Warn("过期登录流清理失败", "error", err)
+					continue
+				}
+				if count > 0 {
+					deps.Logger.Info("已清理过期登录流", slog.Int64("count", count))
+				}
+			}
+		}
+	}()
 }
 
 // base36:把随机字节编码为 [0-9a-z] 串(等价 Math.random().toString(36).slice(2) 的字符集与长度)。

@@ -304,7 +304,9 @@ func probeProvider(ctx context.Context, deps Deps, provider store.UpstreamProvid
 	}
 	client := deps.HTTPClient
 	if client == nil {
-		client = &http.Client{}
+		client = &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return fmt.Errorf("上游重定向被禁止")
+		}}
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -317,10 +319,12 @@ func probeProvider(ctx context.Context, deps Deps, provider store.UpstreamProvid
 	return nil
 }
 
+func estimatePromptTokens(body map[string]any) int64 {
+	return int64(countJSONText(body) / 4)
+}
+
 func estimateRequestTokens(body map[string]any, maxTokens int64) int64 {
-	chars := countJSONText(body)
-	prompt := int64(chars / 4)
-	total := prompt + maxTokens
+	total := estimatePromptTokens(body) + maxTokens
 	if total < 1 {
 		return 1
 	}

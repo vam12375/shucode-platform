@@ -299,8 +299,8 @@ export function ProvidersPage() {
             <input
               className="input masked-input"
               style={{ width: 170 }}
-              type="text"
-              autoComplete="off"
+              type="password"
+              autoComplete="new-password"
               spellCheck={false}
               placeholder={editingId ? "API Key（留空不修改）" : "API Key（可空）"}
               aria-label="API Key"

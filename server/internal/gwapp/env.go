@@ -28,6 +28,10 @@ type Env struct {
 	MaxAttempts                  int64
 	ReservationTTL               time.Duration
 	ProviderProbeInterval        time.Duration
+	// AllowPrivateUpstreamNetworks：允许出站访问私网/回环目标（自建内网上游）。
+	AllowPrivateUpstreamNetworks bool
+	// DeviceTokenTTL：设备凭据最长寿命；0 = 不按年龄过期（仍可吊销）。
+	DeviceTokenTTL time.Duration
 	// PeakHoursHolidays：北京时间法定节假日（YYYY-MM-DD），高峰窗口排除这些日期。
 	PeakHoursHolidays map[string]bool
 }
@@ -67,6 +71,10 @@ func LoadEnv() (*Env, error) {
 	if err != nil {
 		return nil, err
 	}
+	deviceTokenTTLDays, err := readNonNegativeIntEnv("DEVICE_TOKEN_TTL_DAYS", 0)
+	if err != nil {
+		return nil, err
+	}
 	holidays := map[string]bool{}
 	for _, raw := range strings.Split(os.Getenv("PEAK_HOURS_HOLIDAYS"), ",") {
 		value := strings.TrimSpace(raw)
@@ -95,6 +103,8 @@ func LoadEnv() (*Env, error) {
 		MaxAttempts:                  maxAttempts,
 		ReservationTTL:               time.Duration(reservationTTL) * time.Second,
 		ProviderProbeInterval:        time.Duration(probeInterval) * time.Second,
+		AllowPrivateUpstreamNetworks: platformenv.Truthy(os.Getenv("UPSTREAM_ALLOW_PRIVATE_NETWORKS")),
+		DeviceTokenTTL:               time.Duration(deviceTokenTTLDays) * 24 * time.Hour,
 		PeakHoursHolidays:            holidays,
 	}, nil
 }

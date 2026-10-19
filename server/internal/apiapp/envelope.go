@@ -52,7 +52,8 @@ func buildUserConfigEnvelope(input BuildUserConfigInput) map[string]any {
 	providerRule := map[string]any{
 		"providerId":   platformProviderID,
 		"providerName": providerName,
-		"enabled":      true,
+		// 空授权模型集不能让客户端回退到供应商默认目录；显式关闭平台 provider。
+		"enabled": len(input.Models) > 0,
 		"config": map[string]any{
 			"group": "standard-personal",
 			// apiKey 由 withPlatformAccessToken 填入(设备 token);客户端 Registry

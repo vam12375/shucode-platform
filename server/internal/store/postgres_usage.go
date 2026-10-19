@@ -121,18 +121,19 @@ func pricingEntriesDoc(entries []PricingEntry) ([]byte, error) {
 
 func (s *PostgresStore) InsertAuditLog(ctx context.Context, entry InsertAuditLogInput) error {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO admin_audit_logs (actor_user_id, action, target_type, target_id, detail)
-		VALUES ($1::uuid, $2, $3, $4, $5)`,
-		emptyToNil(entry.ActorUserID), entry.Action, emptyToNil(entry.TargetType), emptyToNil(entry.TargetID), nullableBytes(entry.Detail))
+		INSERT INTO admin_audit_logs (actor_user_id, action, target_type, target_id, detail,team_id)
+		VALUES ($1::uuid, $2, $3, $4, $5,$6::uuid)`,
+		emptyToNil(entry.ActorUserID), entry.Action, emptyToNil(entry.TargetType), emptyToNil(entry.TargetID), nullableBytes(entry.Detail), nullIfEmpty(entry.TeamID))
 	return err
 }
 
 func (s *PostgresStore) ListAuditLogs(ctx context.Context, filter AuditLogFilter) ([]AdminAuditLogView, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT a.id::text, a.actor_user_id::text, a.action, a.target_type, a.target_id, a.detail, a.created_at, u.email
+		SELECT a.id::text, COALESCE(a.team_id::text,''), a.actor_user_id::text, a.action, a.target_type, a.target_id, a.detail, a.created_at, u.email
 		FROM admin_audit_logs a
 		LEFT JOIN users u ON u.id = a.actor_user_id
 		WHERE ($1::uuid IS NULL OR a.actor_user_id = $1::uuid)
+			AND ($5::uuid IS NULL OR a.team_id=$5::uuid)
 			AND (
 				$2::timestamptz IS NULL
 				OR (a.created_at, a.id) < ($2::timestamptz, $3::uuid)
@@ -140,7 +141,7 @@ func (s *PostgresStore) ListAuditLogs(ctx context.Context, filter AuditLogFilter
 		ORDER BY a.created_at DESC
 		LIMIT $4`,
 		emptyToNil(filter.ActorUserID), nullableTime(filter.CursorCreatedAt), nullIfEmpty(filter.CursorID),
-		int64(clampLimit(filter.Limit)))
+		int64(clampLimit(filter.Limit)), nullIfEmpty(filter.TeamID))
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +156,7 @@ func (s *PostgresStore) ListAuditLogs(ctx context.Context, filter AuditLogFilter
 			targetID   *string
 			detail     []byte
 		)
-		if err := rows.Scan(&v.ID, &actorID, &v.Action, &targetType, &targetID, &detail, &v.CreatedAt, &email); err != nil {
+		if err := rows.Scan(&v.ID, &v.TeamID, &actorID, &v.Action, &targetType, &targetID, &detail, &v.CreatedAt, &email); err != nil {
 			return nil, err
 		}
 		v.ActorUserID = derefString2(actorID)
@@ -245,25 +246,31 @@ func (s *PostgresStore) SetConfigValue(ctx context.Context, key string, value []
 
 const usageCols = `id::text, request_id, user_id::text, team_id::text, COALESCE(device_token_id::text, '') AS device_token_id,
 	model, upstream_model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-	credits_micro, status, error_type, client_ip, latency_ms, COALESCE(provider_id::text, '') AS provider_id, created_at`
+	credits_micro, status, error_type, client_ip, latency_ms, COALESCE(provider_id::text, '') AS provider_id, created_at, price_snapshot`
 
 func scanUsage(rows pgx.Rows) (*UsageRecord, error) {
 	var (
-		u         UsageRecord
-		errorType *string
-		clientIP  *string
-		latency   *int64
-		status    string
+		u             UsageRecord
+		errorType     *string
+		clientIP      *string
+		latency       *int64
+		status        string
+		priceSnapshot []byte
 	)
 	if err := rows.Scan(&u.ID, &u.RequestID, &u.UserID, &u.TeamID, &u.DeviceTokenID,
 		&u.Model, &u.UpstreamModel, &u.InputTokens, &u.OutputTokens, &u.CacheReadTokens, &u.CacheCreationTokens,
-		&u.CreditsMicro, &status, &errorType, &clientIP, &latency, &u.ProviderID, &u.CreatedAt); err != nil {
+		&u.CreditsMicro, &status, &errorType, &clientIP, &latency, &u.ProviderID, &u.CreatedAt, &priceSnapshot); err != nil {
 		return nil, err
 	}
 	u.Status = UsageStatus(status)
 	u.ErrorType = derefString2(errorType)
 	u.ClientIP = derefString2(clientIP)
 	u.LatencyMs = latency
+	if len(priceSnapshot) > 0 {
+		if err := json.Unmarshal(priceSnapshot, &u.PriceSnapshot); err != nil {
+			return nil, err
+		}
+	}
 	return &u, nil
 }
 

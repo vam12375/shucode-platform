@@ -116,6 +116,24 @@ func TestPasswordVectors(t *testing.T) {
 	}
 }
 
+func TestPasswordRehashDetection(t *testing.T) {
+	made, err := HashPassword("rehash-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if NeedsRehash(made) {
+		t.Fatal("当前参数生成的哈希不应要求重哈希")
+	}
+	// 旧工作因子（N=16384/p=1）仍可验证，但应被标记为需要升级。
+	legacy := "scrypt$16384$8$1$c2FsdHNhbHRzYWx0c2E=$" + strings.Repeat("A", 88)
+	if !NeedsRehash(legacy) {
+		t.Fatal("旧工作因子应要求重哈希")
+	}
+	if !NeedsRehash("not-a-hash") {
+		t.Fatal("非法哈希应要求重哈希")
+	}
+}
+
 func TestTokenFormats(t *testing.T) {
 	token := GenerateDeviceToken()
 	// mdp_ 前缀 + 24 字节 base64url(32 字符)。

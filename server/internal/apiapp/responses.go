@@ -29,13 +29,24 @@ func stringPtrOrNil(value string) *string {
 	return &v
 }
 
+// userTeamBrief:root 账号列表注入的团队归属摘要(单团队约束由应用层保证)。
+type userTeamBrief struct {
+	TeamID               string  `json:"teamId"`
+	TeamName             string  `json:"teamName"`
+	MemberRole           string  `json:"memberRole"`
+	MonthlyBudgetCredits string  `json:"monthlyBudgetCredits"`
+	MemberDisabledAt     *string `json:"memberDisabledAt"`
+	JoinedAt             string  `json:"joinedAt"`
+}
+
 type userPublic struct {
-	ID          string  `json:"id"`
-	Email       string  `json:"email"`
-	DisplayName string  `json:"displayName"`
-	Role        string  `json:"role"`
-	DisabledAt  *string `json:"disabledAt"`
-	CreatedAt   string  `json:"createdAt"`
+	ID          string         `json:"id"`
+	Email       string         `json:"email"`
+	DisplayName string         `json:"displayName"`
+	Role        string         `json:"role"`
+	DisabledAt  *string        `json:"disabledAt"`
+	CreatedAt   string         `json:"createdAt"`
+	Team        *userTeamBrief `json:"team,omitempty"`
 }
 
 func toPublicUser(user *store.UserRecord) userPublic {
@@ -44,6 +55,23 @@ func toPublicUser(user *store.UserRecord) userPublic {
 		Role: string(user.Role), DisabledAt: isoStringPtr(user.DisabledAt),
 		CreatedAt: isoString(user.CreatedAt),
 	}
+}
+
+// toPublicUserInTeam:root 账号列表用，注入团队归属(row 为 nil 表示尚未加入团队)。
+func toPublicUserInTeam(user *store.UserRecord, row *store.AllMembershipRow) userPublic {
+	pub := toPublicUser(user)
+	if row == nil {
+		return pub
+	}
+	pub.Team = &userTeamBrief{
+		TeamID:               row.TeamID,
+		TeamName:             row.TeamName,
+		MemberRole:           string(row.Role),
+		MonthlyBudgetCredits: row.MonthlyBudgetCredits,
+		MemberDisabledAt:     isoStringPtr(row.MemberDisabledAt),
+		JoinedAt:             isoString(row.JoinedAt),
+	}
+	return pub
 }
 
 type teamPublic struct {
@@ -100,29 +128,31 @@ func toPublicModel(model *store.PlatformModelRecord) modelPublic {
 }
 
 type usagePublic struct {
-	ID                  string  `json:"id"`
-	RequestID           string  `json:"requestId"`
-	UserID              string  `json:"userId"`
-	TeamID              string  `json:"teamId"`
-	DeviceTokenID       *string `json:"deviceTokenId"`
-	Model               string  `json:"model"`
-	UpstreamModel       string  `json:"upstreamModel"`
-	ProviderID          *string `json:"providerId"`
-	InputTokens         int64   `json:"inputTokens"`
-	OutputTokens        int64   `json:"outputTokens"`
-	CacheReadTokens     int64   `json:"cacheReadTokens"`
-	CacheCreationTokens int64   `json:"cacheCreationTokens"`
-	CreditsMicro        int64   `json:"creditsMicro"`
-	Status              string  `json:"status"`
-	ErrorType           *string `json:"errorType"`
-	ClientIP            *string `json:"clientIp"`
-	LatencyMs           *int64  `json:"latencyMs"`
-	CreatedAt           string  `json:"createdAt"`
+	PriceSnapshot       *store.UsagePricingSnapshot `json:"priceSnapshot"`
+	ID                  string                      `json:"id"`
+	RequestID           string                      `json:"requestId"`
+	UserID              string                      `json:"userId"`
+	TeamID              string                      `json:"teamId"`
+	DeviceTokenID       *string                     `json:"deviceTokenId"`
+	Model               string                      `json:"model"`
+	UpstreamModel       string                      `json:"upstreamModel"`
+	ProviderID          *string                     `json:"providerId"`
+	InputTokens         int64                       `json:"inputTokens"`
+	OutputTokens        int64                       `json:"outputTokens"`
+	CacheReadTokens     int64                       `json:"cacheReadTokens"`
+	CacheCreationTokens int64                       `json:"cacheCreationTokens"`
+	CreditsMicro        int64                       `json:"creditsMicro"`
+	Status              string                      `json:"status"`
+	ErrorType           *string                     `json:"errorType"`
+	ClientIP            *string                     `json:"clientIp"`
+	LatencyMs           *int64                      `json:"latencyMs"`
+	CreatedAt           string                      `json:"createdAt"`
 }
 
 func toPublicUsage(record *store.UsageRecord) usagePublic {
 	return usagePublic{
-		ID: record.ID, RequestID: record.RequestID, UserID: record.UserID, TeamID: record.TeamID,
+		PriceSnapshot: record.PriceSnapshot,
+		ID:            record.ID, RequestID: record.RequestID, UserID: record.UserID, TeamID: record.TeamID,
 		DeviceTokenID: stringPtrOrNil(record.DeviceTokenID),
 		Model:         record.Model, UpstreamModel: record.UpstreamModel,
 		ProviderID:  stringPtrOrNil(record.ProviderID),

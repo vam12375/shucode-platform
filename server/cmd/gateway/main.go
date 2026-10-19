@@ -16,6 +16,7 @@ import (
 
 	"github.com/vam12375/shucode-platform/server/internal/crypto"
 	"github.com/vam12375/shucode-platform/server/internal/gwapp"
+	"github.com/vam12375/shucode-platform/server/internal/netguard"
 	"github.com/vam12375/shucode-platform/server/internal/platformenv"
 	"github.com/vam12375/shucode-platform/server/internal/ratelimit"
 	"github.com/vam12375/shucode-platform/server/internal/store"
@@ -83,6 +84,7 @@ func main() {
 		Trusted:     gwapp.NewTrustedProxies(env.TrustedProxyIPs),
 		RateLimiter: ratelimit.NewGatewayLimiter(redisClient),
 		HTTPClient: &http.Client{
+			Transport: netguard.NewTransport(env.AllowPrivateUpstreamNetworks),
 			// TS fetch redirect:"error":上游重定向视为连接失败,不跟随。
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return errors.New("上游重定向被禁止")
@@ -100,7 +102,8 @@ func main() {
 			case <-ctx.Done():
 				return
 			case now := <-ticker.C:
-				count, err := platformStore.ExpireStaleReservations(ctx, now.Add(-env.ReservationTTL))
+				// expires_at 在预留创建时已加 TTL，这里直接按当前时间回收，避免再叠加一个 TTL。
+				count, err := platformStore.ExpireStaleReservations(ctx, now)
 				if err != nil {
 					logger.Warn("过期预留回收失败", "error", err)
 					continue
@@ -114,7 +117,15 @@ func main() {
 	gwapp.StartProviderProber(ctx, deps, env.ProviderProbeInterval)
 
 	addr := fmt.Sprintf("%s:%d", env.Host, env.Port)
-	server := &http.Server{Addr: addr, Handler: engine}
+	server := &http.Server{
+		Addr:    addr,
+		Handler: engine,
+		// 流式响应不受 WriteTimeout 约束；客户端上传、请求头与空闲连接有明确上限。
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       120 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
 	go func() {
 		logger.Info("Mendao 模型网关已启动",
 			"listen", "http://"+addr,
