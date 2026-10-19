@@ -9,6 +9,13 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.26.1] - 2026-10-19
+
+### 配置
+
+- `.env.example`、`.env.production.example`、`deploy/nginx/faction168.online.env.example`：新增 `TURNSTILE_SITE_KEY`、`TURNSTILE_SECRET_KEY`、`TURNSTILE_VERIFY_URL` 与 `SETUP_ALLOWED_HOSTS` 模板。
+- `scripts/dev.mjs`、`server/Makefile`：透传新增安全相关环境变量，本地 dev 与容器工具链保持一致。
+
 ## [0.26.0] - 2026-10-19
 
 ### 新增(控制台登录人机验证)
