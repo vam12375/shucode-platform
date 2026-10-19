@@ -20,25 +20,31 @@ services:
 
   migrate:
     # 生产只拉 ghcr 镜像：清除 base 里的 build 段，否则 compose pull 会跳过该服务并提示必须先 build。
+    # IMAGE_TAG 由 CI 注入 sha-<commit>，避免 latest 漂移；手动运维可显式覆盖。
     build: !reset null
-    image: ghcr.io/vam12375/shucode-platform/tools:latest
+    image: ghcr.io/vam12375/shucode-platform/tools:${IMAGE_TAG:-latest}
     environment:
       <<: *prod-database-url
 
   seed:
     build: !reset null
-    image: ghcr.io/vam12375/shucode-platform/tools:latest
+    image: ghcr.io/vam12375/shucode-platform/tools:${IMAGE_TAG:-latest}
     environment:
       <<: *prod-database-url
 
   api:
     build: !reset null
-    image: ghcr.io/vam12375/shucode-platform/api:latest
+    image: ghcr.io/vam12375/shucode-platform/api:${IMAGE_TAG:-latest}
+    # 生产统一由宿主 Nginx 提供 HTTPS；不能继承 base 的公网绑定而绕过入口。
+    ports: !override
+      - "127.0.0.1:${API_HOST_PORT:-8787}:8787"
     environment:
       <<: *prod-database-url
 
   gateway:
     build: !reset null
-    image: ghcr.io/vam12375/shucode-platform/gateway:latest
+    image: ghcr.io/vam12375/shucode-platform/gateway:${IMAGE_TAG:-latest}
+    ports: !override
+      - "127.0.0.1:${GATEWAY_HOST_PORT:-8788}:8788"
     environment:
       <<: *prod-database-url

@@ -1,7 +1,8 @@
 # 生产自动部署：push 到 main → 检查 → 构建 3 个镜像推到 ghcr.io → SSH 到服务器拉取并重启。
 #
 # 前置条件（一次性）：
-#   1. 仓库 Secrets 配置 SSH_HOST / SSH_USER / SSH_KEY（部署专用密钥对的私钥，公钥放服务器 authorized_keys）。
+#   1. 仓库 Secrets 配置 SSH_HOST / SSH_USER / SSH_KEY（部署专用密钥对的私钥，公钥放服务器 authorized_keys），
+#      以及 SSH_HOST_FINGERPRINT（服务器 host key 指纹，如 SHA256:...；强烈建议配置）。
 #   2. 服务器 /opt/shucode-platform/.env 按 .env.production.example 准备好。
 #   3. 服务器已 docker login ghcr.io（镜像仓库私有，需要 read:packages 权限的 PAT）。
 # 服务器部署步骤详见 .env.production.example 头部注释。
@@ -21,14 +22,21 @@ concurrency:
 env:
   # ghcr.io 的镜像命名空间 = 仓库全名（owner/repo 必须全小写）。
   IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+  # 部署按提交固定镜像，避免 latest 在构建与部署之间漂移。
+  IMAGE_TAG: sha-${{ github.sha }}
+
+permissions:
+  contents: read
 
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: pnpm
@@ -36,7 +44,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       # Go 后端(server/,specs/go-rewrite.md):与本地 server/Makefile 的容器口径同版本。
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: "1.26"
           cache-dependency-path: server/go.sum
@@ -46,6 +54,10 @@ jobs:
           test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
           go vet ./...
           go test -race ./...
+      - name: Go 依赖漏洞扫描
+        run: |
+          cd server
+          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
   build:
     needs: check
@@ -58,14 +70,16 @@ jobs:
         # 与 Dockerfile 的 target 一一对应：tools 供 migrate/seed 一次性任务使用。
         target: [api, gateway, tools]
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           target: ${{ matrix.target }}
@@ -80,28 +94,36 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: 同步 compose 文件到服务器
-        uses: appleboy/scp-action@v1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      # Nginx 文件只同步到项目目录，安装站点、证书与 reload 由运维按部署指南执行。
+      - name: 同步 Compose 与 Nginx 部署文件到服务器
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          source: "docker-compose.yml,docker-compose.prod.yml"
+          fingerprint: ${{ secrets.SSH_HOST_FINGERPRINT }}
+          source: "docker-compose.yml,docker-compose.prod.yml,deploy/nginx"
           target: /opt/shucode-platform/
           overwrite: true
       - name: 拉取新镜像并重启
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
+          fingerprint: ${{ secrets.SSH_HOST_FINGERPRINT }}
+          envs: IMAGE_TAG
           # 默认 command_timeout 只有 10m：首部署跨境拉 ghcr.io 镜像远超 10 分钟，会被中途掐断
           command_timeout: 120m
           script: |
             # compose 报错必须中止：没有 set -e 时后续 docker image prune 的 0 退出码会掩盖失败、job 假绿
             set -euo pipefail
             cd /opt/shucode-platform
+            [ -f .env ] && chmod 600 .env
+            export IMAGE_TAG="${IMAGE_TAG:?缺少 IMAGE_TAG}"
             docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
             docker image prune -f

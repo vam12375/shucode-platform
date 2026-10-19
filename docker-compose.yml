@@ -19,7 +19,7 @@ x-app-env: &app-env
 services:
   postgres:
     # 本地开发与 stack 共用，数据在 mendao-pg 卷；生产建议换托管数据库。
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     environment:
       POSTGRES_USER: mendao
       POSTGRES_PASSWORD: mendao
@@ -48,6 +48,12 @@ services:
       postgres:
         condition: service_healthy
     restart: "no"
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    pids_limit: 128
+    mem_limit: ${TOOLS_MEMORY_LIMIT:-256m}
 
   # 一次性任务：种子内置配置 + 默认模型目录（幂等）；root 由控制台首次初始化创建。
   seed:
@@ -61,6 +67,12 @@ services:
       migrate:
         condition: service_completed_successfully
     restart: "no"
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    pids_limit: 128
+    mem_limit: ${TOOLS_MEMORY_LIMIT:-256m}
 
   api:
     # 控制台产物在 api 镜像内（Dockerfile 的 console-build 阶段），以 /console 路径托管。
@@ -73,7 +85,8 @@ services:
       PORT: "8787"
       CONSOLE_DIST_DIR: /app/apps/console/dist
     ports:
-      - "${API_HOST_PORT:-8787}:8787"
+      # 基础编排允许设置监听地址；生产覆写强制绑定 127.0.0.1，由宿主 Nginx 回源。
+      - "${API_HOST_IP:-0.0.0.0}:${API_HOST_PORT:-8787}:8787"
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -86,6 +99,12 @@ services:
       retries: 12
       start_period: 15s
     restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    pids_limit: 256
+    mem_limit: ${API_MEMORY_LIMIT:-512m}
 
   gateway:
     build: { context: ., target: gateway }
@@ -96,7 +115,7 @@ services:
       <<: *app-env
       GATEWAY_PORT: "8788"
     ports:
-      - "${GATEWAY_HOST_PORT:-8788}:8788"
+      - "${GATEWAY_HOST_IP:-0.0.0.0}:${GATEWAY_HOST_PORT:-8788}:8788"
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -107,10 +126,16 @@ services:
       retries: 12
       start_period: 15s
     restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    pids_limit: 256
+    mem_limit: ${GATEWAY_MEMORY_LIMIT:-512m}
 
   # 限流共享窗口与配置事件 pub/sub;应用侧 REDIS_URL 未设时自动回退进程内实现(specs/go-rewrite.md §4)。
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     # 数据可再生(限流窗口/事件),不落盘不保活,故障即重建。
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     healthcheck:

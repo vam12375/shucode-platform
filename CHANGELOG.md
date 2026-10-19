@@ -9,6 +9,14 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.24.1] - 2026-10-19
+
+### 配置与部署
+
+- 新增环境变量：`API_TRUSTED_PROXY_IPS`、`CONSOLE_ALLOWED_HOSTS`、`BOOTSTRAP_SECRET`、`ALLOW_INSECURE_UPSTREAM_URLS`、`UPSTREAM_ALLOW_PRIVATE_NETWORKS`。
+- 新增宿主机 Nginx 部署配置与指南（`deploy/nginx/`）：提供 HTTPS、证书续期、Cloudflare 真实 IP 与 SSE 反代配置；生产编排强制 api/gateway 只绑回环，CI 同步部署文件供运维安装。
+- `docker-compose.prod.yml` 镜像改用 `IMAGE_TAG`（默认 `latest`），CI 部署注入 `sha-<commit>`。
+
 ## [0.24.0] - 2026-10-18
 
 ### 新增(多租户团队工作台)
@@ -53,12 +61,6 @@
 - 依赖升级：`golang.org/x/net` 0.60.0、`golang.org/x/text` 0.42.0、`quic-go` 0.59.1、Vitest 4.1.12；`pnpm audit` 与 `govulncheck` 均无命中（govulncheck 固定 v1.9.0 并接入 CI）。
 - `.env*` 统一不进 Git/构建上下文；运行镜像改为非 root、只读根文件系统、`cap_drop: ALL`、`no-new-privileges` 与资源上限；基础镜像固定到 manifest digest。
 - CI Actions 固定到 commit SHA、SSH 部署校验证书指纹、部署按 `sha-<commit>` 不可变镜像标签；新增 Dependabot。
-
-### 配置与部署
-
-- 新增环境变量：`API_TRUSTED_PROXY_IPS`、`CONSOLE_ALLOWED_HOSTS`、`BOOTSTRAP_SECRET`、`ALLOW_INSECURE_UPSTREAM_URLS`、`UPSTREAM_ALLOW_PRIVATE_NETWORKS`。
-- 新增宿主机 Nginx 部署配置与指南（`deploy/nginx/`）：提供 HTTPS、证书续期、Cloudflare 真实 IP 与 SSE 反代配置；生产编排强制 api/gateway 只绑回环，CI 同步部署文件供运维安装。
-- `docker-compose.prod.yml` 镜像改用 `IMAGE_TAG`（默认 `latest`），CI 部署注入 `sha-<commit>`。
 
 ## [0.23.0] - 2026-10-18
 

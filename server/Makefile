@@ -22,6 +22,13 @@ DEV_ENV := \
   $(if $(COOKIE_DOMAIN),-e COOKIE_DOMAIN="$(COOKIE_DOMAIN)") \
   $(if $(CONSOLE_DIST_DIR),-e CONSOLE_DIST_DIR="$(CONSOLE_DIST_DIR)") \
   $(if $(PUBLIC_CONSOLE_ORIGIN),-e PUBLIC_CONSOLE_ORIGIN="$(PUBLIC_CONSOLE_ORIGIN)") \
+  $(if $(API_TRUSTED_PROXY_IPS),-e API_TRUSTED_PROXY_IPS="$(API_TRUSTED_PROXY_IPS)") \
+  $(if $(TRUST_CF_CONNECTING_IP),-e TRUST_CF_CONNECTING_IP="$(TRUST_CF_CONNECTING_IP)") \
+  $(if $(CONSOLE_ALLOWED_HOSTS),-e CONSOLE_ALLOWED_HOSTS="$(CONSOLE_ALLOWED_HOSTS)") \
+  $(if $(BOOTSTRAP_SECRET),-e BOOTSTRAP_SECRET="$(BOOTSTRAP_SECRET)") \
+  $(if $(ALLOW_INSECURE_UPSTREAM_URLS),-e ALLOW_INSECURE_UPSTREAM_URLS="$(ALLOW_INSECURE_UPSTREAM_URLS)") \
+  $(if $(UPSTREAM_ALLOW_PRIVATE_NETWORKS),-e UPSTREAM_ALLOW_PRIVATE_NETWORKS="$(UPSTREAM_ALLOW_PRIVATE_NETWORKS)") \
+  $(if $(DEVICE_TOKEN_TTL_DAYS),-e DEVICE_TOKEN_TTL_DAYS="$(DEVICE_TOKEN_TTL_DAYS)") \
   $(if $(REDIS_URL),-e REDIS_URL="$(REDIS_URL)") \
   $(if $(UPSTREAM_BASE_URL),-e UPSTREAM_BASE_URL="$(UPSTREAM_BASE_URL)") \
   $(if $(UPSTREAM_API_KEY),-e UPSTREAM_API_KEY="$(UPSTREAM_API_KEY)") \
@@ -38,13 +45,17 @@ DOCKER_BASE := docker run --rm -t \
 DOCKER_RUN   := $(DOCKER_BASE) -e GOPROXY="$(GOPROXY)"
 DOCKER_WORUN := $(DOCKER_BASE) -e GOPROXY="$(GOPROXY)" -e CGO_ENABLED=1
 
-.PHONY: lint test build run-api run-gateway migrate seed tidy sqlc clean
+.PHONY: lint test vuln build run-api run-gateway migrate seed tidy sqlc clean
 
 lint:
 	$(DOCKER_RUN) $(GO_IMAGE) sh -c 'test -z "$$(gofmt -l .)" || { gofmt -l .; exit 1; } && go vet ./...'
 
 test:
 	$(DOCKER_WORUN) $(GO_IMAGE) go test -race ./...
+
+# 依赖漏洞扫描：固定 govulncheck 版本，避免 CI 每次拉取 latest 漂移。
+vuln:
+	$(DOCKER_RUN) $(GO_IMAGE) sh -c 'go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...'
 
 build:
 	$(DOCKER_RUN) -e CGO_ENABLED=0 $(GO_IMAGE) \

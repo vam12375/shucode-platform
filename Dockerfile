@@ -3,7 +3,7 @@
 #   tools：migrate / seed 一次性任务
 # console 仍由 Node 构建(前端仓库未变),后端构建与运行均为 Go。
 
-FROM node:24-alpine AS base
+FROM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS base
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 WORKDIR /app
 RUN corepack enable && chown node:node /app
@@ -19,7 +19,7 @@ COPY --chown=node:node . .
 RUN pnpm --filter @shucode-platform/console build
 
 # Go 后端：静态编译四个二进制（linux/amd64，生产镜像无 CGO 依赖）。
-FROM golang:1.26-alpine AS go-builder
+FROM golang:1.26-alpine@sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec66b295eff4dd87ade AS go-builder
 WORKDIR /src
 ENV CGO_ENABLED=0
 COPY server/go.mod server/go.sum ./
@@ -30,9 +30,13 @@ RUN go build -trimpath -ldflags "-s -w" -o /out/api ./cmd/api \
  && go build -trimpath -ldflags "-s -w" -o /out/migrate ./cmd/migrate \
  && go build -trimpath -ldflags "-s -w" -o /out/seed ./cmd/seed
 
-FROM alpine:3.21 AS runtime
-RUN apk add --no-cache ca-certificates curl
+FROM alpine:3.21@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507 AS runtime
+RUN apk add --no-cache ca-certificates curl \
+ && addgroup -S app \
+ && adduser -S -G app app
 WORKDIR /app
+# 运行时一律非 root；应用只读代码与迁移文件，临时文件由 compose 的 tmpfs 提供。
+USER app
 
 FROM runtime AS api
 COPY --from=go-builder /out/api /app/api
