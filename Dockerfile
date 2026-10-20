@@ -30,7 +30,7 @@ RUN go build -trimpath -ldflags "-s -w" -o /out/api ./cmd/api \
  && go build -trimpath -ldflags "-s -w" -o /out/migrate ./cmd/migrate \
  && go build -trimpath -ldflags "-s -w" -o /out/seed ./cmd/seed
 
-FROM alpine:3.21@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507 AS runtime
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS runtime
 RUN apk add --no-cache ca-certificates curl ffmpeg font-noto-cjk \
  && addgroup -S app \
  && adduser -S -G app app \
