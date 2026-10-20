@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, type ApiError } from "../api.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { EditableCell } from "../components/EditableCell.js";
@@ -75,8 +75,6 @@ function offPeakPrice(value: string, multiplier: string | undefined): string {
 
 export function PricingPage() {
   const [entries, setEntries] = useState<PricingEntry[]>([]);
-  // 当前文档内容版本：保存时携带给后端做乐观锁比对（他人先改则 409）。
-  const [version, setVersion] = useState("");
   const [drafts, setDrafts] = useState<Record<string, PricingDraft>>({});
   const [add, setAdd] = useState({ ...EMPTY_ADD });
   const [pasteText, setPasteText] = useState("");
@@ -84,42 +82,85 @@ export function PricingPage() {
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // 单元格点击编辑：同一时刻只编辑一个格子；Esc 还原，回车/失焦收起，行内「保存」才提交。
+  // 单元格点击编辑：同一时刻只编辑一个格子；Esc 还原，回车/失焦自动保存。
   const [editing, setEditing] = useState<{ modelId: string; field: EditableField } | null>(null);
+
+  // 自动保存要读取最新值：ref 跟随 state 同步更新，避免 blur 时闭包仍持有旧草稿。
+  const entriesRef = useRef<PricingEntry[]>([]);
+  const draftsRef = useRef<Record<string, PricingDraft>>({});
+  const versionRef = useRef("");
+  const dirtyRef = useRef<Set<string>>(new Set());
+  const editRevisionRef = useRef(0);
+  const editingRef = useRef<{ modelId: string; field: EditableField } | null>(null);
+  const autoSaveTimerRef = useRef<number | null>(null);
+  const autoSavePendingRef = useRef(false);
+  // 所有 PUT 串行执行：自动保存与手动保存不会拿着旧 expectedVersion 互相覆盖。
+  const saveChainRef = useRef<Promise<boolean>>(Promise.resolve(true));
+
+  const replaceEntries = useCallback(
+    (nextEntries: PricingEntry[], nextVersion: string, resetDrafts: boolean): void => {
+      entriesRef.current = nextEntries;
+      versionRef.current = nextVersion;
+      setEntries(nextEntries);
+      if (!resetDrafts) return;
+      const nextDrafts = Object.fromEntries(
+        nextEntries.map((entry) => [entry.modelId, toDraft(entry)]),
+      );
+      draftsRef.current = nextDrafts;
+      dirtyRef.current.clear();
+      setDrafts(nextDrafts);
+    },
+    [],
+  );
 
   const load = useCallback(async () => {
     try {
       const data = await api<PricingDoc>("/model-pricing");
-      setEntries(data.entries);
-      setVersion(data.version);
-      setDrafts(
-        Object.fromEntries(data.entries.map((entry) => [entry.modelId, toDraft(entry)])),
-      );
+      replaceEntries(data.entries, data.version, true);
       setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "加载失败");
     }
-  }, []);
+  }, [replaceEntries]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current !== null) window.clearTimeout(autoSaveTimerRef.current);
+    };
+  }, []);
+
   // 全量替换式保存：前端整表 PUT + expectedVersion；版本冲突（他人已改）时不静默覆盖，
   // 提示后自动重载服务端最新值，当前未保存的编辑丢弃。
-  const saveList = async (next: PricingEntry[], successMessage: string): Promise<void> => {
+  const saveList = async (
+    next: PricingEntry[],
+    successMessage: string,
+    silent = false,
+  ): Promise<boolean> => {
     setBusy(true);
+    const revisionAtSave = editRevisionRef.current;
     try {
       const result = await api<PricingDoc>("/model-pricing", {
         method: "PUT",
-        body: JSON.stringify({ entries: next, expectedVersion: version }),
+        body: JSON.stringify({ entries: next, expectedVersion: versionRef.current }),
       });
+      entriesRef.current = result.entries;
+      versionRef.current = result.version;
       setEntries(result.entries);
-      setVersion(result.version);
-      setDrafts(
-        Object.fromEntries(result.entries.map((entry) => [entry.modelId, toDraft(entry)])),
-      );
-      toastOk(successMessage, "已保存");
+      // 保存期间没有新编辑时才用服务端回值覆盖草稿；否则保留本地草稿等下一轮保存。
+      if (editRevisionRef.current === revisionAtSave) {
+        const nextDrafts = Object.fromEntries(
+          result.entries.map((entry) => [entry.modelId, toDraft(entry)]),
+        );
+        draftsRef.current = nextDrafts;
+        dirtyRef.current.clear();
+        setDrafts(nextDrafts);
+      }
+      if (!silent) toastOk(successMessage, "已保存");
+      return true;
     } catch (saveError) {
       if ((saveError as ApiError).code === 409) {
         toastErr("定价库已被他人修改，已为你刷新到最新值", "保存未生效");
@@ -127,34 +168,85 @@ export function PricingPage() {
       } else {
         toastErr(saveError instanceof Error ? saveError.message : "保存失败", "保存失败");
       }
+      return false;
     } finally {
       setBusy(false);
     }
   };
 
+  const buildDraftEntries = useCallback((): PricingEntry[] => {
+    return entriesRef.current.map((entry) => {
+      const draft = draftsRef.current[entry.modelId];
+      return draft ? { modelId: entry.modelId, ...draft } : entry;
+    });
+  }, []);
+
+  // 所有保存串行执行；buildNext 在真正轮到本次保存时才读取最新草稿。
+  const enqueueSave = (
+    buildNext: () => PricingEntry[],
+    successMessage: string,
+    silent = false,
+  ): Promise<boolean> => {
+    const run = (): Promise<boolean> => saveList(buildNext(), successMessage, silent);
+    const task = saveChainRef.current.then(run, run);
+    saveChainRef.current = task;
+    return task;
+  };
+
   const update = (modelId: string, patch: Partial<PricingDraft>): void => {
-    setDrafts((current) => ({
-      ...current,
-      [modelId]: { ...(current[modelId] as PricingDraft), ...patch },
-    }));
+    const nextDrafts = {
+      ...draftsRef.current,
+      [modelId]: { ...(draftsRef.current[modelId] as PricingDraft), ...patch },
+    };
+    draftsRef.current = nextDrafts;
+    dirtyRef.current.add(modelId);
+    editRevisionRef.current += 1;
+    setDrafts(nextDrafts);
   };
 
   // Esc 放弃当前格子的编辑：回退到服务端值并收起。
   const revertCell = (modelId: string, field: EditableField): void => {
-    const entry = entries.find((item) => item.modelId === modelId);
+    const entry = entriesRef.current.find((item) => item.modelId === modelId);
     if (entry) update(modelId, { [field]: entry[field] } as Partial<PricingDraft>);
+    editingRef.current = null;
     setEditing(null);
   };
 
+  function scheduleAutoSave(): void {
+    if (dirtyRef.current.size === 0) return;
+    autoSavePendingRef.current = true;
+    if (autoSaveTimerRef.current !== null) window.clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = window.setTimeout(() => {
+      autoSaveTimerRef.current = null;
+      void flushAutoSave();
+    }, 500);
+  }
+
+  async function flushAutoSave(): Promise<void> {
+    // 用户还在编辑下一格时不要落盘半截值；等该格 blur 后再触发。
+    if (editingRef.current || !autoSavePendingRef.current || dirtyRef.current.size === 0) {
+      return;
+    }
+    autoSavePendingRef.current = false;
+    const revisionAtSave = editRevisionRef.current;
+    const saved = await enqueueSave(buildDraftEntries, "", true);
+    if (saved && editRevisionRef.current !== revisionAtSave) {
+      // 保存期间又有新编辑（通常是另一格已 blur），再补一轮。
+      scheduleAutoSave();
+    }
+  }
+
+  const cancelAutoSave = (): void => {
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    autoSavePendingRef.current = false;
+  };
+
   const saveRow = async (modelId: string): Promise<void> => {
-    const draft = drafts[modelId];
-    if (!draft) return;
-    await saveList(
-      entries.map((entry) =>
-        entry.modelId === modelId ? { modelId, ...draft } : entry,
-      ),
-      `已保存 ${modelId} 的定价`,
-    );
+    cancelAutoSave();
+    await enqueueSave(buildDraftEntries, `已保存 ${modelId} 的定价`);
   };
 
   const removeRow = async (modelId: string): Promise<void> => {
@@ -166,8 +258,9 @@ export function PricingPage() {
       danger: true,
     });
     if (!answer.confirmed) return;
-    await saveList(
-      entries.filter((entry) => entry.modelId !== modelId),
+    cancelAutoSave();
+    await enqueueSave(
+      () => buildDraftEntries().filter((entry) => entry.modelId !== modelId),
       `已移除 ${modelId} 的定价`,
     );
   };
@@ -176,7 +269,7 @@ export function PricingPage() {
     event.preventDefault();
     const modelId = add.modelId.trim();
     if (!modelId) return;
-    if (entries.some((entry) => entry.modelId === modelId)) {
+    if (entriesRef.current.some((entry) => entry.modelId === modelId)) {
       toastErr(`${modelId} 已在定价库中，直接在表格里编辑即可`, "已存在");
       return;
     }
@@ -190,7 +283,11 @@ export function PricingPage() {
       cacheCreationCostPerMillion: add.cacheCreationCostPerMillion || "0",
       offPeakMultiplier: add.offPeakMultiplier || "1",
     };
-    await saveList([...entries, entry], `已新增 ${modelId} 的定价`);
+    cancelAutoSave();
+    await enqueueSave(
+      () => [...buildDraftEntries(), entry],
+      `已新增 ${modelId} 的定价`,
+    );
     setAdd({ ...EMPTY_ADD });
   };
 
@@ -211,15 +308,11 @@ export function PricingPage() {
       return;
     }
     const incoming = rawEntries as Array<Record<string, unknown>>;
-    const merged = new Map(entries.map((entry) => [entry.modelId, entry]));
-    let added = 0;
-    let overridden = 0;
+    const parsed: PricingEntry[] = [];
     for (const raw of incoming) {
       const modelId = typeof raw.modelId === "string" ? raw.modelId.trim() : "";
       if (!modelId) continue;
-      if (merged.has(modelId)) overridden += 1;
-      else added += 1;
-      merged.set(modelId, {
+      parsed.push({
         modelId,
         displayName:
           typeof raw.displayName === "string" && raw.displayName.trim()
@@ -233,10 +326,19 @@ export function PricingPage() {
         offPeakMultiplier: String(raw.offPeakMultiplier ?? "1"),
       });
     }
-    await saveList(
-      [...merged.values()],
-      `粘贴导入完成：新增 ${added} / 覆盖 ${overridden} 条定价`,
-    );
+    if (parsed.length === 0) {
+      toastErr("未解析到有效条目", "解析失败");
+      return;
+    }
+    const existingIds = new Set(buildDraftEntries().map((entry) => entry.modelId));
+    const added = parsed.filter((entry) => !existingIds.has(entry.modelId)).length;
+    const overridden = parsed.length - added;
+    cancelAutoSave();
+    await enqueueSave(() => {
+      const merged = new Map(buildDraftEntries().map((entry) => [entry.modelId, entry]));
+      for (const entry of parsed) merged.set(entry.modelId, entry);
+      return [...merged.values()];
+    }, `粘贴导入完成：新增 ${added} / 覆盖 ${overridden} 条定价`);
     setPasteText("");
   };
 
@@ -254,10 +356,17 @@ export function PricingPage() {
     editing: editing?.modelId === modelId && editing.field === field,
     num,
     ariaLabel: `${modelId} ${field}`,
-    onStartEdit: () => setEditing({ modelId, field }),
-    onEndEdit: () => setEditing(null),
+    onStartEdit: () => {
+      editingRef.current = { modelId, field };
+      setEditing({ modelId, field });
+    },
+    onEndEdit: () => {
+      editingRef.current = null;
+      setEditing(null);
+    },
     onChange: (next: string) => update(modelId, { [field]: next } as Partial<PricingDraft>),
     onRevert: () => revertCell(modelId, field),
+    onCommit: scheduleAutoSave,
   });
 
   return (
@@ -267,13 +376,16 @@ export function PricingPage() {
           <p className="eyebrow">下发 / 参考</p>
           <h1>模型定价库</h1>
         </div>
-        <span className="readout">{entries.length} 条 · 每 1M token 成本价（币种见条目）</span>
+        <span className="readout">
+          {entries.length} 条 · 每 1M token 成本价（币种见条目）·{" "}
+          {busy ? "保存中…" : "失焦自动保存"}
+        </span>
       </header>
       <p className="readout" style={{ margin: 0, marginBottom: 18 }}>
         成本价库：入价 / 出价 / 缓存读 / 缓存写，每 1M token。DeepSeek 条目已切换为人民币官方价，
         空闲倍率 0.5（空闲价 = 高峰价 × 倍率）。高峰时段为北京时间周一至周五 09:00-12:00、
         14:00-18:00（法定节假日除外）。历史条目若仍为 USD 参考值，请按供应商人民币价目逐项核对。
-        单元格默认只读展示，点击进入编辑，回车/失焦收起。
+        单元格默认只读展示，点击进入编辑，回车/失焦自动保存，Esc 放弃修改。
       </p>
 
       {error ? (
