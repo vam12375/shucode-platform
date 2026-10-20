@@ -91,6 +91,43 @@ func TestModelProbeStreamsFirstTokenForRoot(t *testing.T) {
 	}
 }
 
+func TestModelProbeVersionedAPIPrefix(t *testing.T) {
+	for _, tc := range []struct {
+		protocol store.UpstreamProtocol
+		path     string
+	}{
+		{store.ProtocolOpenAIChatCompletions, "/api/v3/chat/completions"},
+		{store.ProtocolOpenAIResponses, "/api/v3/responses"},
+		{store.ProtocolAnthropicMessages, "/api/v3/messages"},
+	} {
+		t.Run(string(tc.protocol), func(t *testing.T) {
+			f := newTenantFixture(t)
+			providerID := seedProbeModel(t, f)
+			baseURL := f.upstream.URL + "/api/v3/"
+			if _, err := f.store.UpdateUpstreamProvider(context.Background(), providerID, store.UpdateUpstreamProviderPatch{
+				BaseURL: &baseURL, Protocol: &tc.protocol,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			f.upstreamFn = func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != tc.path {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("content-type", "text/event-stream")
+				_, _ = w.Write([]byte("data: {\"content\":\"pong\"}\n\n"))
+			}
+			rec := f.do("POST", "/console/api/models/probe-model/test", f.rootCookie, "")
+			if rec.Code != 200 || dataOf(t, rec)["ok"] != true {
+				t.Fatalf("模型探测应保留 API 版本前缀: %d %s", rec.Code, rec.Body.String())
+			}
+			if hit := f.lastUpstreamHit(); hit.method != "POST" || hit.url != tc.path {
+				t.Fatalf("探测请求不符: %s %s", hit.method, hit.url)
+			}
+		})
+	}
+}
+
 func TestModelProbeFailsOverToNextRoute(t *testing.T) {
 	f := newTenantFixture(t)
 	ctx := context.Background()

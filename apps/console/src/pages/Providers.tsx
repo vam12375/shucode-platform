@@ -60,8 +60,8 @@ function testKindLabel(kind: string | null): string {
 }
 
 function protocolLabel(protocol: ProviderRow["protocol"]): string {
-  if (protocol === "anthropic-messages") return "anthropic · /v1/messages";
-  if (protocol === "openai-responses") return "openai responses · /v1/responses（专用）";
+  if (protocol === "anthropic-messages") return "anthropic · /messages";
+  if (protocol === "openai-responses") return "openai responses · /responses（专用）";
   // OpenAI 兼容家族：chat 与 responses 两个端点都透传给该供应商。
   return "openai · /chat/completions · /responses";
 }
@@ -252,7 +252,7 @@ export function ProvidersPage() {
       </header>
       <p className="readout" style={{ margin: 0, marginBottom: 18 }}>
         模型转发目标：控制台按需接入多家模型商，模型在「模型目录」绑定供应商；未绑定的模型走网关默认上游。
-        API Key 加密存储、只显示后四位；base_url 填协议根（自动去掉尾部 /v1，路径由平台拼接）。
+        API Key 加密存储、只显示后四位；Base URL 可填服务根地址或以 /v1、/v3 等版本号结尾的 API 前缀（火山引擎填 /api/v3）。
       </p>
 
       {error ? (
@@ -292,8 +292,8 @@ export function ProvidersPage() {
               onChange={(value) => setForm({ ...form, protocol: value as ProviderRow["protocol"] })}
               options={[
                 { value: "openai-chat-completions", label: "OpenAI 兼容（/chat/completions · /responses）" },
-                { value: "openai-responses", label: "OpenAI Responses（/v1/responses 专用）" },
-                { value: "anthropic-messages", label: "Anthropic（/v1/messages）" },
+                { value: "openai-responses", label: "OpenAI Responses（/responses 专用）" },
+                { value: "anthropic-messages", label: "Anthropic（/messages）" },
               ]}
             />
             <input

@@ -151,6 +151,7 @@ VITE_SHUCODE_BASE_URL=https://api.mendao.chat # Web 端
 - **网关设备 token 必须写入 provider 规则的 `config.access.apiKey`**：客户端 Registry 完整校验要求 Provider access 完整，缺 apiKey 时 Provider 会被整份丢弃（provider-not-found → 信封回滚）。
 - **偏好默认模型**：`defaultModelSelection` 只作"偏好"，客户端应用前会剥离并由 Registry 档位事实补全。
 - **下发协议默认 OpenAI chat**（`GATEWAY_API_TYPE`，baseUrl 带 `/v1` 前缀）：网关三条协议路由（chat / messages / responses）共享鉴权与额度管道；**模型目录中的模型名必须与上游真实模型名一致**，或用控制台的 `upstreamModel` 字段映射。
+- **上游 Base URL**：可填服务根地址（自动追加 `/v1`）或以 `/v数字` 结尾的 API 前缀（直接追加端点）；例如火山引擎的 `/api/v3` 会请求 `/api/v3/chat/completions` 或 `/api/v3/responses`。供应商测试、模型列表、模型探测与网关转发共用该规则，已有配置无需迁移。
 - **额度执行只在网关**：准入按 `max_tokens × 输出单价` 原子预留，结束后按上游 usage 结算（预留转实扣与账本写入同一事务）；上游失败/客户端中断释放预留并记录 error/aborted。
 - **设备凭据只签发一次**（`consumeLoginFlow` 条件更新）；token 以 sha256 哈希索引 + AES-256-GCM 密文保存，吊销即时生效。
 - **Release 发布**：自动分配下一个 revision 并设为生效；服务端只做结构粗检，最终校验在客户端。

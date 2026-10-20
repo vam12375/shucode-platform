@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/vam12375/shucode-platform/server/internal/store"
+	"github.com/vam12375/shucode-platform/server/internal/upstreamurl"
 )
 
 // 平台超级管理员的运维诊断：走真实渠道池，不经过团队计费链路。
@@ -164,7 +165,7 @@ func attemptModelProbe(ctx context.Context, deps *Deps, target modelProbeTarget,
 	requestCtx, cancel := context.WithTimeout(ctx, modelProbeTimeout(provider))
 	defer cancel()
 	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost,
-		strings.TrimRight(provider.BaseURL, "/")+path, bytes.NewReader(payload))
+		upstreamurl.Join(provider.BaseURL, path), bytes.NewReader(payload))
 	if err != nil {
 		result.Kind = "config"
 		return result

@@ -28,6 +28,7 @@ import (
 	"github.com/vam12375/shucode-platform/server/internal/pricing"
 	"github.com/vam12375/shucode-platform/server/internal/ratelimit"
 	"github.com/vam12375/shucode-platform/server/internal/store"
+	"github.com/vam12375/shucode-platform/server/internal/upstreamurl"
 )
 
 const (
@@ -941,7 +942,7 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			upstreamIdleTimeoutMs = deps.Env.UpstreamIdleTimeoutMs
 		}
 		upstreamHeaders, upstreamBody := spec.buildUpstream(c.Request, body, target.UpstreamModel, stream, target.APIKey, target.AnthropicVersion)
-		upstreamURL := strings.TrimRight(target.BaseURL, "/") + spec.upstreamPath
+		upstreamURL := upstreamurl.Join(target.BaseURL, spec.upstreamPath)
 		// 上游请求必须绑定带取消的 ctx:header 超时、空闲看门狗、客户端断连都靠它中断。
 		upstreamCtx, cancelUpstream := context.WithCancel(requestCtx)
 		req, err := http.NewRequestWithContext(upstreamCtx, http.MethodPost, upstreamURL, bytes.NewReader(upstreamBody))

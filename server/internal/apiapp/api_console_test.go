@@ -149,6 +149,68 @@ func TestProviderModelsAndBinding(t *testing.T) {
 	}
 }
 
+func TestProviderVersionedAPIPrefix(t *testing.T) {
+	for _, tc := range []struct {
+		protocol, path string
+	}{
+		{"openai-chat-completions", "/chat/completions"},
+		{"openai-responses", "/responses"},
+		{"anthropic-messages", "/messages"},
+	} {
+		t.Run(tc.protocol, func(t *testing.T) {
+			f := newAPIFixture(t)
+			cookie := f.loginAdmin()
+			f.upstreamFn = func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/v3/models" && r.URL.Path != "/api/v3"+tc.path {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("content-type", "application/json")
+				_, _ = w.Write([]byte(`{"data":[{"id":"ark-model"}]}`))
+			}
+			create := f.do("POST", "/console/api/providers", cookie,
+				`{"name":"Ark","baseUrl":"`+f.upstream.URL+`/api/v3/","protocol":"`+tc.protocol+`","apiKey":"sk-prefix-test"}`)
+			if create.Code != 200 {
+				t.Fatalf("创建供应商: %d %s", create.Code, create.Body.String())
+			}
+			provider := dataOf(t, create)["provider"].(map[string]any)
+			if provider["baseUrl"] != f.upstream.URL+"/api/v3" {
+				t.Fatalf("应保留供应商版本前缀: %v", provider["baseUrl"])
+			}
+			providerID := provider["id"].(string)
+			for _, query := range []string{"", "?base=prefix"} {
+				f.upstreamMu.Lock()
+				before := len(f.upstreamHits)
+				f.upstreamMu.Unlock()
+				rec := f.do("GET", "/console/api/providers/"+providerID+"/models"+query, cookie, "")
+				if rec.Code != 200 || len(dataOf(t, rec)["models"].([]any)) != 1 {
+					t.Fatalf("获取模型列表: %d %s", rec.Code, rec.Body.String())
+				}
+				f.upstreamMu.Lock()
+				count := len(f.upstreamHits) - before
+				f.upstreamMu.Unlock()
+				if hit := f.lastUpstreamHit(); hit.url != "/api/v3/models" || count != 1 {
+					t.Fatalf("模型列表应只请求正确前缀一次: %s", hit.url)
+				}
+			}
+			for _, body := range []string{`{}`, `{"model":"ark-model"}`} {
+				rec := f.do("POST", "/console/api/providers/"+providerID+"/test", cookie, body)
+				if rec.Code != 200 || dataOf(t, rec)["ok"] != true {
+					t.Fatalf("供应商测试: %d %s", rec.Code, rec.Body.String())
+				}
+				hit := f.lastUpstreamHit()
+				want := "/api/v3/models"
+				if body != `{}` {
+					want = "/api/v3" + tc.path
+				}
+				if hit.url != want {
+					t.Fatalf("探测路径: got %s want %s", hit.url, want)
+				}
+			}
+		})
+	}
+}
+
 func TestModelImport(t *testing.T) {
 	f := newAPIFixture(t)
 	adminCookie := f.loginAdmin()
@@ -308,9 +370,9 @@ func TestPublicConfigsAndReleases(t *testing.T) {
 func TestProviderModelsMediaPrefixFallback(t *testing.T) {
 	f := newAPIFixture(t)
 	adminCookie := f.loginAdmin()
-	// 完整 API 前缀下没有 /models 时回退到 /v1/models，兼容代理型媒体供应商。
+	// 无版本号的代理根下没有 /models 时，保留回退到 /v1/models 的兼容行为。
 	f.upstreamFn = func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v3/v1/models" {
+		if r.URL.Path != "/proxy/v1/models" {
 			http.NotFound(w, r)
 			return
 		}
@@ -318,7 +380,7 @@ func TestProviderModelsMediaPrefixFallback(t *testing.T) {
 		_, _ = w.Write([]byte(`{"data":[{"id":"media-model-b"},{"id":"media-model-a"}]}`))
 	}
 	createRec := f.do("POST", "/console/api/providers", adminCookie,
-		`{"name":"Media Ark","baseUrl":"`+f.upstream.URL+`/api/v3","apiKey":"sk-test-5678","protocol":"openai-chat-completions"}`)
+		`{"name":"Media Proxy","baseUrl":"`+f.upstream.URL+`/proxy","apiKey":"sk-test-5678","protocol":"openai-chat-completions"}`)
 	if createRec.Code != 200 {
 		t.Fatalf("创建媒体供应商: %d %s", createRec.Code, createRec.Body.String())
 	}
@@ -334,7 +396,7 @@ func TestProviderModelsMediaPrefixFallback(t *testing.T) {
 	f.upstreamMu.Lock()
 	hits := append([]upstreamHit(nil), f.upstreamHits...)
 	f.upstreamMu.Unlock()
-	if len(hits) != 2 || hits[0].url != "/api/v3/models" || hits[1].url != "/api/v3/v1/models" {
+	if len(hits) != 2 || hits[0].url != "/proxy/models" || hits[1].url != "/proxy/v1/models" {
 		t.Fatalf("前缀回退路径不符: %+v", hits)
 	}
 }

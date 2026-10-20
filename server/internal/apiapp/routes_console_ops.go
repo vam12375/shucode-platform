@@ -19,6 +19,7 @@ import (
 	"github.com/vam12375/shucode-platform/server/internal/events"
 	"github.com/vam12375/shucode-platform/server/internal/pricing"
 	"github.com/vam12375/shucode-platform/server/internal/store"
+	"github.com/vam12375/shucode-platform/server/internal/upstreamurl"
 )
 
 // console.ts 运维面:上游供应商 / 定价库 / 平台配置 / 用量 / 设备 / 审计。
@@ -61,7 +62,7 @@ func validateUpstreamBaseURL(raw string, allowInsecure bool) (string, error) {
 func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 	group := router.Group("/console/api")
 
-	// 按协议构造最小推理探测请求(路径与网关同口径:base_url 是协议根,/v1 由平台拼接)。
+	// 探测与网关共用标准协议路径，由 upstreamurl.Join 适配供应商 API 版本前缀。
 	probeRequest := func(protocol store.UpstreamProtocol, model string) (string, []byte) {
 		switch protocol {
 		case store.ProtocolOpenAIResponses:
@@ -387,12 +388,13 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		} else if apiKey != "" {
 			headers["authorization"] = "Bearer " + apiKey
 		}
-		// 媒体模型的 baseUrl 是完整 API 前缀（如 Ark 的 /api/v3），模型列表应在
-		// 前缀下直接拼 /models；标准 LLM 供应商仍走 /v1/models。两者都尝试一次，
-		// 避免同一供应商在两类目录页里需要两份配置。
-		paths := []string{"/v1/models"}
+		urls := []string{upstreamurl.Join(provider.BaseURL, "/v1/models")}
+		// 保留媒体页对无版本前缀的显式支持；版本化前缀已由共用规则处理，不能重复探测。
 		if c.Query("base") == "prefix" {
-			paths = []string{"/models", "/v1/models"}
+			directURL := strings.TrimRight(provider.BaseURL, "/") + "/models"
+			if directURL != urls[0] {
+				urls = append([]string{directURL}, urls...)
+			}
 		}
 		var (
 			bodyBytes  []byte
@@ -400,9 +402,9 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 			lastDetail string
 			networkErr error
 		)
-		for _, suffix := range paths {
+		for _, upstreamURL := range urls {
 			requestCtx, cancel := context.WithTimeout(ctx, upstreamModelListTimeout*time.Millisecond)
-			req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, provider.BaseURL+suffix, nil)
+			req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, upstreamURL, nil)
 			if err != nil {
 				cancel()
 				internalError(c, deps, err)
@@ -525,12 +527,12 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		} else if apiKey != "" {
 			headers["authorization"] = "Bearer " + apiKey
 		}
-		url := provider.BaseURL + "/v1/models"
+		url := upstreamurl.Join(provider.BaseURL, "/v1/models")
 		var bodyBytes []byte
 		method := http.MethodGet
 		if probeModel != "" {
 			path, payload := probeRequest(provider.Protocol, probeModel)
-			url = provider.BaseURL + path
+			url = upstreamurl.Join(provider.BaseURL, path)
 			bodyBytes = payload
 			method = http.MethodPost
 		}

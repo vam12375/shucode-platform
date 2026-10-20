@@ -329,6 +329,7 @@ func TestProviderBaseURLValidation(t *testing.T) {
 		wantErr   bool
 	}{
 		{"https://api.example.com/v1", false, "https://api.example.com", false},
+		{"https://api.example.com/api/v3/", false, "https://api.example.com/api/v3", false},
 		{"http://api.example.com", false, "", true},
 		{"http://127.0.0.1:8080", true, "http://127.0.0.1:8080", false},
 		{"https://user:pass@api.example.com", false, "", true},

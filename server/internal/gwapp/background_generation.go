@@ -18,6 +18,7 @@ import (
 
 	"github.com/vam12375/shucode-platform/server/internal/credits"
 	"github.com/vam12375/shucode-platform/server/internal/store"
+	"github.com/vam12375/shucode-platform/server/internal/upstreamurl"
 )
 
 const backgroundPollLease = time.Minute
@@ -295,7 +296,7 @@ func backgroundResponseURL(baseURL, responseID string, cancel bool) string {
 	if cancel {
 		path += "/cancel"
 	}
-	return strings.TrimRight(baseURL, "/") + path
+	return upstreamurl.Join(baseURL, path)
 }
 
 func backgroundHTTPClient(client *http.Client) *http.Client {

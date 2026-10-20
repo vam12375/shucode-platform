@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/vam12375/shucode-platform/server/internal/store"
+	"github.com/vam12375/shucode-platform/server/internal/upstreamurl"
 )
 
 // upstreamTarget:一次请求可尝试的具体上游。渠道池按 priority/weight 产出候选，
@@ -285,7 +286,7 @@ func probeAutoDisabledProviders(ctx context.Context, deps Deps) {
 func probeProvider(ctx context.Context, deps Deps, provider store.UpstreamProviderRecord, apiKey string) error {
 	probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	url := strings.TrimRight(provider.BaseURL, "/") + "/v1/models"
+	url := upstreamurl.Join(provider.BaseURL, "/v1/models")
 	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
