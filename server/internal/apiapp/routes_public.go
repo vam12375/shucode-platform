@@ -14,17 +14,19 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/vam12375/shucode-platform/server/internal/contracts"
+	"github.com/vam12375/shucode-platform/server/internal/credits"
 	"github.com/vam12375/shucode-platform/server/internal/crypto"
 	"github.com/vam12375/shucode-platform/server/internal/store"
 )
 
-// 公共路由:公开配置 / Release / user-config / SSE / 设备登录流(镜像 api 的六个 route 文件)。
+// 公共路由:公开配置 / Release / user-config / 额度投影 / SSE / 设备登录流(镜像 api 的六个 route 文件)。
 
 func registerPublicRoutes(router *gin.Engine, deps *Deps) {
 	registerClientConfigRoutes(router, deps)
 	registerReleaseRoutes(router, deps)
 	registerPlatformAuthRoutes(router, deps)
 	registerUserConfigRoutes(router, deps)
+	registerClientCreditRoutes(router, deps)
 	registerClientEventRoutes(router, deps)
 }
 
@@ -224,6 +226,79 @@ func registerUserConfigRoutes(router *gin.Engine, deps *Deps) {
 		c.Header("etag", etag)
 		c.Header("cache-control", "private, no-cache")
 		c.Data(200, "application/json; charset=utf-8", body)
+	})
+}
+
+// ---- client-credit ----
+
+// registerClientCreditRoutes:客户端模型菜单展示用的只读团队额度投影。
+// 额度执行点仍在网关；这里只把余额、预留和已用比例回给设备，不参与本地扣减。
+func registerClientCreditRoutes(router *gin.Engine, deps *Deps) {
+	router.GET("/api/v1/client/credit", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		auth, err := authenticateDevice(ctx, deps, c)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if auth == nil {
+			c.JSON(401, fail(401, "凭据无效或已吊销"))
+			return
+		}
+		membership, err := store.ResolveUserTeam(ctx, deps.Store, auth.User.ID)
+		if errors.Is(err, store.ErrAmbiguousTeam) {
+			c.JSON(409, fail(409, "账号存在多个有效团队，请联系管理员明确团队归属"))
+			return
+		}
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if membership == nil {
+			c.JSON(403, fail(403, "账号没有有效团队或团队访问已停用，请联系团队管理员"))
+			return
+		}
+		team := membership.Team
+		quotaMicro, err := credits.ParseCreditsToMicro(team.QuotaCredits)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		usedMicro, err := credits.ParseCreditsToMicro(team.UsedCredits)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		reservedMicro, err := credits.ParseCreditsToMicro(team.ReservedCredits)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		remainingMicro := quotaMicro - usedMicro - reservedMicro
+		if remainingMicro < 0 {
+			remainingMicro = 0
+		}
+		usedRatio := 0.0
+		if !team.Unlimited && quotaMicro > 0 {
+			usedRatio = float64(usedMicro+reservedMicro) / float64(quotaMicro)
+			if usedRatio < 0 {
+				usedRatio = 0
+			}
+			if usedRatio > 1 {
+				usedRatio = 1
+			}
+		}
+		c.Header("cache-control", "private, no-cache")
+		c.JSON(200, okData(gin.H{
+			"teamId":           team.ID,
+			"teamName":         team.Name,
+			"unlimited":        team.Unlimited,
+			"quotaCredits":     credits.FormatMicroCredits(quotaMicro),
+			"usedCredits":      credits.FormatMicroCredits(usedMicro),
+			"reservedCredits":  credits.FormatMicroCredits(reservedMicro),
+			"remainingCredits": credits.FormatMicroCredits(remainingMicro),
+			"usedRatio":        usedRatio,
+		}))
 	})
 }
 
