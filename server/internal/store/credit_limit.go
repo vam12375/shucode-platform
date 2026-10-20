@@ -4,6 +4,20 @@ import "github.com/vam12375/shucode-platform/server/internal/credits"
 
 const maxCreditFieldMicro int64 = 999_999_999_999_999_999
 
+func prepareTeamCreditIncrease(oldQuota string, patch UpdateTeamPatch, audit *InsertAuditLogInput) (UpdateTeamPatch, error) {
+	if patch.QuotaIncreaseMicro == nil {
+		return patch, nil
+	}
+	amount := *patch.QuotaIncreaseMicro
+	old, err := credits.ParseCreditsToMicro(oldQuota)
+	if audit == nil || audit.EventID == "" || patch.QuotaCredits != nil || amount <= 0 || amount > maxCreditFieldMicro || err != nil || old < 0 || old > maxCreditFieldMicro-amount {
+		return patch, ErrInvalidInput
+	}
+	quota := credits.FormatMicroCredits(old + amount)
+	patch.QuotaCredits = &quota
+	return patch, nil
+}
+
 func teamCreditCeiling(quotaMicro int64) int64 {
 	if quotaMicro > maxCreditFieldMicro-TeamCreditDebtLimitMicro {
 		return maxCreditFieldMicro

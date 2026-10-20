@@ -403,6 +403,9 @@ func (s *PostgresStore) ListTeams(ctx context.Context) ([]TeamWithUsage, error) 
 }
 
 func (s *PostgresStore) UpdateTeam(ctx context.Context, id string, patch UpdateTeamPatch) (*TeamRecord, error) {
+	if patch.QuotaIncreaseMicro != nil {
+		return nil, ErrInvalidInput
+	}
 	rows, err := s.pool.Query(ctx, `
 		UPDATE teams SET
 			name = COALESCE($2, name),
@@ -441,6 +444,23 @@ func (s *PostgresStore) UpdateTeamWithAccounting(ctx context.Context, id string,
 	if queryErrNoRows(err) {
 		return nil, nil
 	}
+	if err != nil {
+		return nil, err
+	}
+	if patch.QuotaIncreaseMicro != nil && audit != nil && audit.EventID != "" {
+		// 金额累加和事件去重都在同一团队锁内，网络重试不能重复到账。
+		var duplicate bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM admin_audit_logs WHERE event_id=$1)`, audit.EventID).Scan(&duplicate); err != nil {
+			return nil, err
+		}
+		if duplicate {
+			if err := tx.Commit(ctx); err != nil {
+				return nil, err
+			}
+			return s.GetTeam(ctx, id)
+		}
+	}
+	patch, err = prepareTeamCreditIncrease(oldQuota, patch, audit)
 	if err != nil {
 		return nil, err
 	}

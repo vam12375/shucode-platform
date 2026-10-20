@@ -94,6 +94,11 @@ func TestTenantPlatformManagementIsRootOnly(t *testing.T) {
 			t.Errorf("admin cannot grant credit/ceilings: %d %s", rec.Code, rec.Body.String())
 		}
 	}
+	for _, cookie := range []string{f.adminCookie, f.memberCookie, f.unassignedCookie} {
+		if rec := f.do("POST", "/console/api/teams/"+f.team.ID+"/credits", cookie, `{"amountCredits":"10","requestId":"00000000-0000-4000-8000-000000000001"}`); rec.Code != 403 {
+			t.Errorf("非超级管理员不能添加余额: %d %s", rec.Code, rec.Body.String())
+		}
+	}
 	if rec := f.do("PATCH", "/console/api/teams/"+f.team.ID, f.adminCookie, `{"name":"团队A改名"}`); rec.Code != 200 {
 		t.Fatalf("team manager should rename own team: %d %s", rec.Code, rec.Body.String())
 	}

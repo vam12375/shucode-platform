@@ -242,6 +242,7 @@ func testTeams(t *testing.T, ctx context.Context, s PlatformStore) {
 }
 
 func testTeamAccounting(t *testing.T, ctx context.Context, s PlatformStore) {
+	t.Run("add_credit", func(t *testing.T) { testAddTeamCredit(t, ctx, s) })
 	suffix := fmt.Sprint(time.Now().UnixNano())
 	admin := mustUser(t, ctx, s, "accounting-"+suffix+"@test.local")
 	team, err := s.CreateTeam(ctx, CreateTeamInput{Name: "accounting-team-" + suffix, QuotaCredits: "5.000000"})

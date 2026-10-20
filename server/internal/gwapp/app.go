@@ -766,7 +766,7 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		job := store.BackgroundGenerationJob{
 			ReservationID: reservationID, ResponseID: responseID, ProviderID: target.ProviderID,
 			BaseURL: target.BaseURL, TeamID: primary.ID, UserID: user.ID,
-			Record: record, CreatedAt: startedAt, NextPollAt: deps.Now(),
+			Record: record, Limited: !primary.Unlimited, CreatedAt: startedAt, NextPollAt: deps.Now(),
 			Rates: store.UsageChargeRates{
 				InputPerMtok: rates.InputPerMtok, OutputPerMtok: rates.OutputPerMtok,
 				CacheReadPerMtok: rates.CacheReadPerMtok, CacheWritePerMtok: rates.CacheWritePerMtok,
@@ -1077,33 +1077,26 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			cancelUpstream()
 			recordAttempt(target, attempt, attemptStarted, &resp.StatusCode, "", providerRequestIDFrom(resp), true)
 			reportSuccess(target.ProviderID)
-			backgroundCompleted := false
 			if backgroundGeneration {
 				responseID, responseStatus := backgroundResponseIdentity(text)
-				if !terminalBackgroundStatus(responseStatus) {
-					// 后台任务已被接受仍会继续计费；此处不能释放预留或按零 usage 完结。
-					if !persistBackground(target, responseID) {
-						spec.errorResponse(c, 502, "api_error", "后台任务已提交但状态暂不可确认，额度保持冻结，请联系管理员")
-						return
-					}
-					c.Data(200, "application/json", text)
-					return
-				}
-				// 创建即完成的响应也必须留存，GET/DELETE 才能命中同一个后台任务。
 				if !persistBackground(target, responseID) {
-					spec.errorResponse(c, 502, "api_error", "后台任务已提交但结果留存失败，额度保持冻结，请联系管理员")
+					spec.errorResponse(c, 502, "api_error", "后台任务已提交但状态暂不可确认，额度保持冻结，请联系管理员")
 					return
 				}
-				backgroundCompleted = true
+				if terminalBackgroundStatus(responseStatus) {
+					job, jobErr := deps.Store.FindBackgroundGeneration(context.WithoutCancel(ctx), primary.ID, responseID)
+					if jobErr == nil && job != nil {
+						finishBackgroundGeneration(ctx, deps, *job, redactSecret(text, target.APIKey), responseStatus, resp.Header.Get("content-type"))
+					}
+				}
+				c.Data(200, "application/json", text)
+				return
 			}
+
 			parsedUsage := spec.parseUsageJSON(string(text))
 			if parsedUsage == nil {
 				deps.Logger.Warn("上游成功响应缺少 usage，按准入预留额保守结算", "requestId", requestID)
-				if backgroundGeneration {
-					settle(target, UsageCounts{}, store.UsageStatusError, "background_usage_missing_estimated", &estimateMicro)
-				} else {
-					settleMissingUsage(target, store.UsageStatusError, "usage_missing_estimated")
-				}
+				settleMissingUsage(target, store.UsageStatusError, "usage_missing_estimated")
 			} else if usageMicro(*parsedUsage) > estimateMicro {
 				settle(target, *parsedUsage, store.UsageStatusError, "credit_reservation_exceeded", nil)
 				spec.errorResponse(c, 502, "api_error", "上游用量超出预留，响应已拒绝，请联系管理员对账")
@@ -1114,13 +1107,6 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			contentType := resp.Header.Get("content-type")
 			if contentType == "" {
 				contentType = "application/json"
-			}
-			if backgroundCompleted {
-				finishCtx, cancelFinish := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-				if err := deps.Store.FinishBackgroundGeneration(finishCtx, reservationID, text, http.StatusOK, contentType, deps.Now()); err != nil {
-					deps.Logger.Error("后台生成结果留存失败", "reservationId", reservationID, "error", err)
-				}
-				cancelFinish()
 			}
 			c.Data(200, contentType, text)
 			return

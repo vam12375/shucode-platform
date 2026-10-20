@@ -488,11 +488,11 @@ func (s *PostgresStore) CreateBackgroundGeneration(ctx context.Context, job Back
 	_, err = tx.Exec(ctx, `
 		INSERT INTO gateway_background_generations (
 			reservation_id, response_id, provider_id, base_url, team_id, user_id,
-			record_template, charge_rates, next_poll_at, attempts, last_error, created_at
-		) VALUES ($1::uuid, $2, $3::uuid, $4, $5::uuid, $6::uuid, $7::jsonb, $8::jsonb, $9, $10, $11, $12)
+			record_template, charge_rates, limited, next_poll_at, attempts, last_error, created_at
+		) VALUES ($1::uuid, $2, $3::uuid, $4, $5::uuid, $6::uuid, $7::jsonb, $8::jsonb, $13, $9, $10, $11, $12)
 		ON CONFLICT (reservation_id) DO NOTHING`,
 		job.ReservationID, job.ResponseID, nullIfEmpty(job.ProviderID), job.BaseURL, job.TeamID, job.UserID,
-		record, rates, job.NextPollAt, job.Attempts, emptyToNil(job.LastError), job.CreatedAt)
+		record, rates, job.NextPollAt, job.Attempts, emptyToNil(job.LastError), job.CreatedAt, job.Limited)
 	if err != nil {
 		return err
 	}
@@ -505,7 +505,7 @@ func scanBackgroundGeneration(row pgx.Row) (*BackgroundGenerationJob, error) {
 	var lastError *string
 	var providerID *string
 	if err := row.Scan(&job.ReservationID, &job.ResponseID, &providerID, &job.BaseURL, &job.TeamID, &job.UserID,
-		&recordJSON, &ratesJSON, &job.NextPollAt, &job.Attempts, &lastError, &job.CreatedAt,
+		&recordJSON, &ratesJSON, &job.Limited, &job.NextPollAt, &job.Attempts, &lastError, &job.CreatedAt,
 		&job.FinalResponse, &job.FinalStatus, &job.FinalType, &job.CompletedAt); err != nil {
 		return nil, err
 	}
@@ -521,7 +521,7 @@ func scanBackgroundGeneration(row pgx.Row) (*BackgroundGenerationJob, error) {
 }
 
 const backgroundGenerationCols = `reservation_id::text, response_id, provider_id::text, base_url, team_id::text, user_id::text,
-	record_template, charge_rates, next_poll_at, attempts, last_error, created_at,
+	record_template, charge_rates, limited, next_poll_at, attempts, last_error, created_at,
 	COALESCE(final_response, ''::bytea), COALESCE(final_status, 0), COALESCE(final_content_type, ''), completed_at`
 
 func (s *PostgresStore) FindBackgroundGeneration(ctx context.Context, teamID, responseID string) (*BackgroundGenerationJob, error) {

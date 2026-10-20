@@ -106,7 +106,7 @@ func processBackgroundGeneration(ctx context.Context, deps Deps, job store.Backg
 				InputPerMtok: job.Rates.InputPerMtok, OutputPerMtok: job.Rates.OutputPerMtok,
 				CacheReadPerMtok: job.Rates.CacheReadPerMtok, CacheWritePerMtok: job.Rates.CacheWritePerMtok,
 			})
-			if costErr == nil && micro >= job.Record.CreditsMicro {
+			if job.Limited && costErr == nil && micro >= job.Record.CreditsMicro {
 				// 无限额度团队没有冻结额，不能按估算预留额取消真实生成。
 				unlimited := false
 				if team, teamErr := deps.Store.GetTeam(ctx, job.TeamID); teamErr == nil && team != nil {
@@ -124,6 +124,15 @@ func processBackgroundGeneration(ctx context.Context, deps Deps, job store.Backg
 		return
 	}
 
+	finishBackgroundGeneration(ctx, deps, job, redactSecret(body, apiKey), status, resp.Header.Get("content-type"))
+}
+
+// 创建请求、轮询与删除共用终态结算；不能在删除上游结果前丢失最终 usage。
+func finishBackgroundGeneration(ctx context.Context, deps Deps, job store.BackgroundGenerationJob, body []byte, status, contentType string) bool {
+	var payload map[string]any
+	if json.Unmarshal(body, &payload) != nil || !terminalBackgroundStatus(status) {
+		return false
+	}
 	completedAt := deps.Now()
 	record := job.Record
 	record.CreatedAt = completedAt
@@ -180,9 +189,9 @@ func processBackgroundGeneration(ctx context.Context, deps Deps, job store.Backg
 	cancelSettle()
 	if settleErr != nil && !errors.Is(settleErr, store.ErrCreditChargeCapped) {
 		retryBackgroundGeneration(ctx, deps, job, "后台生成结算失败: "+settleErr.Error())
-		return
+		return false
 	}
-	contentType := strings.TrimSpace(resp.Header.Get("content-type"))
+	contentType = strings.TrimSpace(contentType)
 	if contentType == "" {
 		contentType = "application/json"
 	}
@@ -191,11 +200,12 @@ func processBackgroundGeneration(ctx context.Context, deps Deps, job store.Backg
 	cancelFinish()
 	if finishErr != nil {
 		deps.Logger.Error("后台生成已结算但最终响应留存失败", "reservationId", job.ReservationID, "error", finishErr)
-		return
+		return false
 	}
 	if errors.Is(settleErr, store.ErrCreditChargeCapped) {
 		deps.Logger.Warn("后台生成结算已按团队额度下限封顶", "requestId", record.RequestID, "reservationId", job.ReservationID)
 	}
+	return true
 }
 
 func cancelBackgroundUpstream(ctx context.Context, deps Deps, baseURL, apiKey, responseID string) error {
@@ -354,61 +364,7 @@ func handleBackgroundResponseProxy(c *gin.Context, deps Deps, method string, can
 		openAIError(c, 404, "not_found_error", "后台生成任务不存在")
 		return
 	}
-	if method == http.MethodDelete && job.CompletedAt == nil {
-		// 删除前强制 worker 轮询一次并结算；未终结任务不能删除或释放额度。
-		if err := deps.Store.RetryBackgroundGeneration(c.Request.Context(), job.ReservationID, deps.Now().Add(-time.Second), ""); err != nil {
-			openAIError(c, 500, "api_error", "后台任务状态更新失败")
-			return
-		}
-		reconcileBackgroundGenerations(c.Request.Context(), deps)
-		job, err = deps.Store.FindBackgroundGeneration(c.Request.Context(), membership.Team.ID, c.Param("responseID"))
-		if err != nil {
-			openAIError(c, 500, "api_error", "网关内部错误")
-			return
-		}
-		if job == nil {
-			openAIError(c, 404, "not_found_error", "后台生成任务不存在")
-			return
-		}
-		if job.CompletedAt == nil {
-			openAIError(c, 409, "conflict_error", "后台任务尚未完成，暂不能删除")
-			return
-		}
-	}
-	if job.CompletedAt != nil {
-		if method == http.MethodDelete {
-			baseURL, apiKey, err := backgroundProvider(c.Request.Context(), deps, *job)
-			if err != nil {
-				deps.Logger.Warn("读取后台生成供应商失败", "reservationId", job.ReservationID, "error", err)
-				openAIError(c, 502, "api_error", "后台任务供应商暂时不可用，额度仍在预留")
-				return
-			}
-			deleteCtx, cancelDelete := context.WithTimeout(c.Request.Context(), 20*time.Second)
-			defer cancelDelete()
-			req, err := http.NewRequestWithContext(deleteCtx, http.MethodDelete, backgroundResponseURL(baseURL, job.ResponseID, false), nil)
-			if err != nil {
-				openAIError(c, 500, "api_error", "网关内部错误")
-				return
-			}
-			setOpenAIAuth(req, apiKey)
-			resp, err := backgroundHTTPClient(deps.HTTPClient).Do(req)
-			if err != nil {
-				openAIError(c, 502, "api_error", "上游后台任务暂时不可用")
-				return
-			}
-			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxUpstreamResponseBytes))
-			resp.Body.Close()
-			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-				openAIError(c, 502, "api_error", "上游后台任务删除失败")
-				return
-			}
-			if err := deps.Store.DeleteBackgroundGeneration(c.Request.Context(), job.ReservationID); err != nil {
-				openAIError(c, 500, "api_error", "删除后台生成留存失败")
-				return
-			}
-			c.JSON(200, gin.H{"id": job.ResponseID, "object": "response", "deleted": true})
-			return
-		}
+	if job.CompletedAt != nil && method != http.MethodDelete {
 		contentType := job.FinalType
 		if contentType == "" {
 			contentType = "application/json"
@@ -422,10 +378,19 @@ func handleBackgroundResponseProxy(c *gin.Context, deps Deps, method string, can
 		openAIError(c, 502, "api_error", "后台任务供应商暂时不可用，额度仍在预留")
 		return
 	}
-	upstreamMethod := method
-	if cancel {
-		upstreamMethod = http.MethodPost
+	if method == http.MethodDelete && job.CompletedAt == nil {
+		if err := cancelBackgroundUpstream(c.Request.Context(), deps, baseURL, apiKey, job.ResponseID); err != nil {
+			openAIError(c, 502, "api_error", "后台任务取消尚未确认，额度保持冻结")
+			return
+		}
+		processBackgroundGeneration(c.Request.Context(), deps, *job)
+		job, err = deps.Store.FindBackgroundGeneration(c.Request.Context(), membership.Team.ID, job.ResponseID)
+		if err != nil || job == nil || job.CompletedAt == nil {
+			openAIError(c, 409, "conflict_error", "后台任务正在取消或等待最终用量，额度保持冻结，请稍后重试删除")
+			return
+		}
 	}
+	upstreamMethod := method
 	req, err := http.NewRequestWithContext(c.Request.Context(), upstreamMethod, backgroundResponseURL(baseURL, job.ResponseID, cancel), nil)
 	if err != nil {
 		openAIError(c, 500, "api_error", "网关内部错误")
@@ -448,6 +413,14 @@ func handleBackgroundResponseProxy(c *gin.Context, deps Deps, method string, can
 	contentType := strings.TrimSpace(resp.Header.Get("content-type"))
 	if contentType == "" {
 		contentType = "application/json"
+	}
+	if method == http.MethodDelete && (resp.StatusCode >= 200 && resp.StatusCode < 300 || resp.StatusCode == http.StatusNotFound) {
+		if err := deps.Store.DeleteBackgroundGeneration(c.Request.Context(), job.ReservationID); err != nil {
+			openAIError(c, 500, "api_error", "删除后台生成留存失败，请重试")
+			return
+		}
+		c.JSON(200, gin.H{"id": job.ResponseID, "object": "response", "deleted": true})
+		return
 	}
 	c.Data(resp.StatusCode, contentType, redactSecret(body, apiKey))
 }

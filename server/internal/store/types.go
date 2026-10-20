@@ -286,6 +286,7 @@ type BackgroundGenerationJob struct {
 	UserID        string           `json:"userId"`
 	Record        UsageRecord      `json:"record"`
 	Rates         UsageChargeRates `json:"rates"`
+	Limited       bool             `json:"limited"`
 	NextPollAt    time.Time        `json:"nextPollAt"`
 	Attempts      int64            `json:"attempts"`
 	LastError     string           `json:"lastError,omitempty"`
@@ -466,14 +467,15 @@ type UpdateUserPatch struct {
 }
 
 type UpdateTeamPatch struct {
-	Name             *string
-	QuotaCredits     *string
-	Unlimited        *bool
-	RPMLimit         *int64
-	TPMLimit         *int64
-	ConcurrencyLimit *int64
-	HasDisabled      bool
-	DisabledAt       *time.Time
+	Name               *string
+	QuotaCredits       *string
+	QuotaIncreaseMicro *int64 // 仅 UpdateTeamWithAccounting 支持：锁内累加而非用客户端旧快照覆盖。
+	Unlimited          *bool
+	RPMLimit           *int64
+	TPMLimit           *int64
+	ConcurrencyLimit   *int64
+	HasDisabled        bool
+	DisabledAt         *time.Time
 }
 
 type UpdateLoginFlowPatch struct {

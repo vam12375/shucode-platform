@@ -342,6 +342,9 @@ func applyTeamPatch(team *TeamRecord, patch UpdateTeamPatch) {
 }
 
 func (s *memoryStore) UpdateTeam(_ context.Context, id string, patch UpdateTeamPatch) (*TeamRecord, error) {
+	if patch.QuotaIncreaseMicro != nil {
+		return nil, ErrInvalidInput
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	team, ok := s.teams[id]
@@ -361,6 +364,15 @@ func (s *memoryStore) UpdateTeamWithAccounting(_ context.Context, id string, pat
 		return nil, nil
 	}
 	oldQuota, oldUnlimited := team.QuotaCredits, team.Unlimited
+	if patch.QuotaIncreaseMicro != nil && audit != nil && audit.EventID != "" {
+		if _, exists := s.auditEventIDs[audit.EventID]; exists {
+			return cloneTeam(&team), nil
+		}
+	}
+	patch, err := prepareTeamCreditIncrease(oldQuota, patch, audit)
+	if err != nil {
+		return nil, err
+	}
 	applyTeamPatch(&team, patch)
 	s.teams[id] = team
 	if adjustmentAction != "" {
