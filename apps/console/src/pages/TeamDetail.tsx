@@ -177,8 +177,8 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
           <h1>{team.name}</h1>
         </div>
         <span className="readout m0">
-          共 {totalRequests.toLocaleString("en-US")} 次请求 · ¥
-          {credits(totalCredits)}
+          共 {totalRequests.toLocaleString("en-US")} 次请求 ·{" "}
+          {credits(totalCredits)} credit
         </span>
       </header>
 
@@ -203,8 +203,8 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
               style={{ width: 160 }}
               value={quota}
               onChange={(event) => setQuota(event.target.value)}
-              placeholder="额度 ¥"
-              aria-label="额度 ¥"
+              placeholder="额度 credit"
+              aria-label="额度 credit"
               disabled={unlimited}
             />
             <label className="form-row" style={{ gap: 8 }}>
@@ -237,8 +237,8 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
             </button>
           </div>
           <p className="readout" style={{ margin: 0, marginTop: 10 }}>
-            已用 ¥{formatCreditsDisplay(used)} · 预留 ¥
-            {formatCreditsDisplay(reserved)}
+            已用 {formatCreditsDisplay(used)} credit · 预留{" "}
+            {formatCreditsDisplay(reserved)} credit
             。额度扣减发生在模型网关，页面展示为实时汇总。
           </p>
         </div>
@@ -504,7 +504,7 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
                   输出 Token
                 </th>
                 <th scope="col" className="num">
-                  费用（¥）
+                  积分（credit）
                 </th>
               </tr>
             </thead>
@@ -573,7 +573,7 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
                   Token（入 / 出）
                 </th>
                 <th scope="col" className="num">
-                  费用
+                  积分（credit）
                 </th>
               </tr>
             </thead>

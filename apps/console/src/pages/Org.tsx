@@ -511,8 +511,8 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
               <input
                 className="input num"
                 style={{ width: 150 }}
-                placeholder="额度 ¥"
-                aria-label="额度 ¥"
+                placeholder="额度 credit"
+                aria-label="额度 credit"
                 value={teamQuota}
                 onChange={(event) => setTeamQuota(event.target.value)}
               />
@@ -525,7 +525,7 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
               </button>
             </form>
             <p className="readout" style={{ margin: 0, marginTop: 10 }}>
-              额度以人民币计（1 credit = ¥1，按模型单价折算）；团队成员共享同一额度池。
+              额度以 credit 计（1 credit = ¥1，按模型单价折算）；团队成员共享同一额度池。
             </p>
           </div>
         </section>
@@ -590,7 +590,9 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
               <tr>
                 <td>合计 · {teamRows.length} 个团队</td>
                 <td className="num">{totalMembers}</td>
-                <td colSpan={2}>已用 ¥{formatCreditsDisplay(totalUsed)}</td>
+                <td colSpan={2}>
+                  已用 {formatCreditsDisplay(totalUsed)} credit
+                </td>
                 <td />
               </tr>
             </tfoot>
@@ -688,10 +690,11 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
                               ) : null}
                               {brief.monthlyBudgetCredits ? (
                                 <span className="readout">
-                                  月预算 ¥
+                                  月预算{" "}
                                   {formatCreditsDisplay(
                                     brief.monthlyBudgetCredits,
-                                  )}
+                                  )}{" "}
+                                  credit
                                 </span>
                               ) : null}
                             </span>
@@ -1158,8 +1161,8 @@ function UserDrawer({
             ) : (
               <>
                 <p className="drawer-readouts">
-                  <b>{totalRequests.toLocaleString("en-US")}</b> 次请求 · ¥
-                  <b>{formatCreditsDisplay(totalCredits)}</b> ·{" "}
+                  <b>{totalRequests.toLocaleString("en-US")}</b> 次请求 ·{" "}
+                  <b>{formatCreditsDisplay(totalCredits)}</b> credit ·{" "}
                   {usage.length} 个模型
                 </p>
                 {topModels.length === 0 ? (
@@ -1173,7 +1176,7 @@ function UserDrawer({
                           请求
                         </th>
                         <th scope="col" className="num">
-                          费用 ¥
+                          积分（credit）
                         </th>
                       </tr>
                     </thead>

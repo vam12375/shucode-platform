@@ -399,7 +399,7 @@ export function ModelsPage() {
             </button>
           </div>
           <p className="readout" style={{ margin: 0, marginTop: 10 }}>
-            售价单位：¥ / 1M token（1 credit = ¥1）· 空闲倍率用于按北京时间高峰窗口自动打折 ·
+            售价单位：credit / 1M token（1 credit = ¥1）· 空闲倍率用于按北京时间高峰窗口自动打折 ·
             上游模型留空按模型 ID 转发。模型卡片同时展示定价库里的成本价（只读），便于核对毛利。
             DeepSeek 已按官方人民币价核对；其他模型若原为 USD 参考价，请按供应商人民币价目更新后再启用。
           </p>
@@ -549,11 +549,11 @@ export function ModelsPage() {
                   </div>
                   <div className="model-card-row">
                     <label className="field">
-                      <span className="field-label">售价·入（¥/1M）</span>
+                      <span className="field-label">售价·入（credit/1M）</span>
                       <EditableCell {...editableCellProps(model.modelId, "inputPricePerMtok", true)} />
                     </label>
                     <label className="field">
-                      <span className="field-label">售价·出（¥/1M）</span>
+                      <span className="field-label">售价·出（credit/1M）</span>
                       <EditableCell {...editableCellProps(model.modelId, "outputPricePerMtok", true)} />
                     </label>
                     <label className="field">

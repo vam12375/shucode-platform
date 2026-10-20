@@ -118,7 +118,7 @@ const METRIC_OPTIONS = [
   { value: "open_reservations", label: "未释放预留数" },
   { value: "pending_settlements", label: "待结算补偿数" },
   { value: "audit_outbox", label: "待入库审计数" },
-  { value: "daily_credits", label: "窗口消费 (¥)" },
+  { value: "daily_credits", label: "窗口消费 (credit)" },
   { value: "provider_failures", label: "上游错误数" },
 ];
 
@@ -132,8 +132,14 @@ const METRIC_DEFAULT_THRESHOLDS: Record<string, string> = {
   provider_failures: "10",
 };
 
-function formatCny(micro: number): string {
-  return `¥${(micro / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 4 })}`;
+function formatCredits(micro: number): string {
+  return (micro / 1_000_000).toLocaleString("en-US", {
+    maximumFractionDigits: 4,
+  });
+}
+
+function formatCreditLabel(micro: number): string {
+  return `${formatCredits(micro)} credit`;
 }
 
 function formatLatency(value: number | null): string {
@@ -220,7 +226,7 @@ export function OpsPage() {
   );
   const creditsSeries: ChartSeries[] = useMemo(
     () => [{
-      key: "credits", label: "消费 (¥)", color: "var(--amber)", kind: "bar",
+      key: "credits", label: "积分 (credit)", color: "var(--amber)", kind: "bar",
       format: (v) => v.toFixed(4), axisFormat: (v) => v.toFixed(2),
     }],
     [],
@@ -354,9 +360,9 @@ export function OpsPage() {
           </p>
         </div>
         <div className="ops-metric">
-          <p className="stat-label">窗口消费</p>
-          <p className="stat-value">{formatCny(overview?.creditsMicro ?? 0)}</p>
-          <p className="stat-sub">¥ · 网关计量</p>
+          <p className="stat-label">窗口积分</p>
+          <p className="stat-value">{formatCreditLabel(overview?.creditsMicro ?? 0)}</p>
+          <p className="stat-sub">credit · 网关计量</p>
         </div>
         <div className="ops-metric">
           <p className="stat-label">活跃设备</p>
@@ -393,8 +399,8 @@ export function OpsPage() {
         <ChartFrame title="流量与错误" subtitle="灰色为请求数，红色为错误数，蓝线为 P95 延迟">
           <ComposedTrendChart data={trafficData} series={trafficSeries} height={260} emptyText="窗口内暂无请求。" />
         </ChartFrame>
-        <ChartFrame title="消费趋势" subtitle="按 5 分钟分桶的 ¥ 消费">
-          <ComposedTrendChart data={creditsData} series={creditsSeries} height={260} emptyText="窗口内暂无消费。" />
+        <ChartFrame title="消费趋势" subtitle="按 5 分钟分桶的 credit 消费">
+          <ComposedTrendChart data={creditsData} series={creditsSeries} height={260} emptyText="窗口内暂无积分数据。" />
         </ChartFrame>
       </div>
 
@@ -584,7 +590,7 @@ export function OpsPage() {
                 <th scope="col">团队</th>
                 <th scope="col">补偿状态</th>
                 <th scope="col">用量状态</th>
-                <th scope="col" className="num">费用 ¥</th>
+                <th scope="col" className="num">积分（credit）</th>
                 <th scope="col" className="num">次数</th>
                 <th scope="col">最近错误</th>
               </tr>
@@ -602,7 +608,7 @@ export function OpsPage() {
                     </Chip>
                   </td>
                   <td>{row.usageStatus}</td>
-                  <td className="num">{formatCny(row.creditsMicro)}</td>
+                  <td className="num">{formatCredits(row.creditsMicro)}</td>
                   <td className="num">{row.attempts}</td>
                   <td title={row.lastError}>{row.lastError || "—"}</td>
                 </tr>
@@ -632,7 +638,7 @@ export function OpsPage() {
                 <th scope="col">过期时间</th>
                 <th scope="col">request ID</th>
                 <th scope="col">团队</th>
-                <th scope="col" className="num">预留 ¥</th>
+                <th scope="col" className="num">预留（credit）</th>
               </tr>
             </thead>
             <tbody>
@@ -642,7 +648,7 @@ export function OpsPage() {
                   <td className="num">{formatShanghaiTime(row.expiresAt)}</td>
                   <td><code>{row.requestId}</code></td>
                   <td>{row.teamId.slice(0, 8)}</td>
-                  <td className="num">{formatCny(row.reservedCreditsMicro)}</td>
+                  <td className="num">{formatCredits(row.reservedCreditsMicro)}</td>
                 </tr>
               ))}
               {(reconciliation?.open.length ?? 0) === 0 ? (

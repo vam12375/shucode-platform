@@ -1,3 +1,4 @@
+import { formatCreditsDisplay } from "@shucode-platform/contracts/credits";
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { useAuth } from "../auth.js";
 import { api } from "../api.js";
@@ -96,7 +97,7 @@ async function loadRail(isRoot: boolean, teamId: string): Promise<RailData> {
   };
 }
 
-/** 顶部读数条（签名元素）：今日请求 / 今日费用 / 活跃设备 / 生效版本，数值带进位动效。 */
+/** 顶部读数条（签名元素）：今日请求 / 今日积分 / 活跃设备 / 生效版本，数值带进位动效。 */
 export function ReadoutRail() {
   const { isRoot, canManageTeam, teamId, team, teams, selectTeam, user, refreshSession } =
     useAuth();
@@ -136,6 +137,27 @@ export function ReadoutRail() {
   const requestWidth = `${(ratio(displayed.requests, displayed.avgRequests) * 100).toFixed(1)}%`;
   const creditWidth = `${(ratio(displayed.creditsMicro, displayed.avgCredits) * 100).toFixed(1)}%`;
   const deviceWidth = `${(ratio(displayed.activeDevices, displayed.totalDevices) * 100).toFixed(1)}%`;
+  // 团队余额按 credit 展示，进度条表示剩余额度占总额度的比例。
+  // 原实现固定 100%/0%，与真实余额无关；近额时填充转为信号色。
+  const quotaCredits = Number(team?.quotaCredits ?? 0);
+  const remainingCredits = team
+    ? Math.max(
+        0,
+        quotaCredits -
+          Number(team.usedCredits) -
+          Number(team.reservedCredits ?? 0),
+      )
+    : 0;
+  const remainingPercent =
+    team?.unlimited === true
+      ? 100
+      : quotaCredits > 0
+        ? Math.min((remainingCredits / quotaCredits) * 100, 100)
+        : 0;
+  const balanceWidth = `${remainingPercent.toFixed(1)}%`;
+  const balanceLow = Boolean(
+    !isRoot && team && !team.unlimited && remainingPercent <= 10,
+  );
   // 只有 root 或多团队用户需要切换;单团队展示静态团队名,避免无意义的单选项下拉。
   const showScopeSelect = isRoot || teams.length > 1;
 
@@ -180,7 +202,7 @@ export function ReadoutRail() {
           </button>
         ) : null}
       </div>
-      <div className="read">
+      <div className="read" title="今日请求相对近 14 日均值">
         <div className="label">今日请求</div>
         <div className="value">
           {data ? (
@@ -200,13 +222,13 @@ export function ReadoutRail() {
           <i />
         </div>
       </div>
-      <div className="read">
-        <div className="label">今日费用</div>
+      <div className="read" title="今日积分相对近 14 日均值">
+        <div className="label">今日积分</div>
         <div className="value">
           {data ? (
             <>
               {creditsText}
-              <span className="unit">¥</span>
+              <span className="unit">credit</span>
             </>
           ) : (
             "—"
@@ -240,7 +262,18 @@ export function ReadoutRail() {
           <i />
         </div>
       </div>
-      <div className="read">
+      <div
+        className="read"
+        title={
+          isRoot
+            ? undefined
+            : team
+              ? team.unlimited
+                ? "团队额度不限"
+                : `剩余 ${formatCreditsDisplay(remainingCredits)} / ${formatCreditsDisplay(quotaCredits)} credit`
+              : undefined
+        }
+      >
         <div className="label">
           {isRoot ? "生效版本" : team ? "团队余额" : "当前账户"}
         </div>
@@ -252,17 +285,30 @@ export function ReadoutRail() {
             : team
               ? team.unlimited
                 ? "不限"
-                : `¥${Math.max(0, Number(team.quotaCredits) - Number(team.usedCredits) - Number(team.reservedCredits ?? 0)).toFixed(2)}`
+                : (
+                    <>
+                      {formatCreditsDisplay(remainingCredits)}
+                      <span className="unit">credit</span>
+                    </>
+                  )
               : user.email.split("@")[0]}
         </div>
         <div
           className="mini"
           aria-hidden="true"
           style={
-            { "--w": data?.revision == null ? "0%" : "100%" } as CSSProperties
+            {
+              "--w": isRoot
+                ? data?.revision == null
+                  ? "0%"
+                  : "100%"
+                : team
+                  ? balanceWidth
+                  : "0%",
+            } as CSSProperties
           }
         >
-          <i />
+          <i className={balanceLow ? "hot" : undefined} />
         </div>
       </div>
     </header>

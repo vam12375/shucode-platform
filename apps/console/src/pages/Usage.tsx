@@ -333,7 +333,7 @@ export function UsagePage() {
   }, [isRoot, canManageTeam, user]);
 
   // 趋势图为平台口径，与页内筛选无关；一次 series 请求按上海墙钟分桶，
-  // 前端补零对齐时间轴（费用图与缓存率图共用这份数据）。
+  // 前端补零对齐时间轴（积分图与缓存率图共用这份数据）。
   useEffect(() => {
     void (async () => {
       const { from, to } = presetRange(chartPreset);
@@ -556,7 +556,7 @@ export function UsagePage() {
   const presetLabel =
     CHART_PRESETS.find((item) => item.value === chartPreset)?.label ?? "";
 
-  // 模型分布环形图：Token 口径 = 总 prompt（入 + 缓存读 + 缓存写），费用口径 = CR。
+  // 模型分布环形图：Token 口径 = 总 prompt（入 + 缓存读 + 缓存写），积分口径 = credit。
   const donutSegments = useMemo(() => {
     const valueOf = (row: AggregateRow) =>
       donutBy === "tokens"
@@ -610,7 +610,7 @@ export function UsagePage() {
   const costSeries: ChartSeries[] = [
     {
       key: "credits",
-      label: "费用 (¥)",
+      label: "积分 (credit)",
       color: "var(--amber)",
       kind: "bar",
       format: (value) =>
@@ -677,7 +677,7 @@ export function UsagePage() {
         <p className="readout m0">
           {dataUnavailable
             ? "用量数据加载失败"
-            : `共 ${totalRequests.toLocaleString("en-US")} 次请求 · ¥${credits(totalCredits)}`}
+            : `共 ${totalRequests.toLocaleString("en-US")} 次请求 · ${credits(totalCredits)} credit`}
         </p>
       </header>
 
@@ -757,10 +757,10 @@ export function UsagePage() {
           </p>
         </div>
         <div className="stat-card">
-          <p className="stat-label">总消费</p>
+          <p className="stat-label">总积分消耗</p>
           <p className="stat-value stat-amber">
             {dataUnavailable ? "—" : credits(totalCredits)}
-            <span className="unit">¥</span>
+            <span className="unit">credit</span>
           </p>
           <p className="stat-sub">
             {dataUnavailable ? "加载失败，请重试" : "网关计量 · 团队账单口径"}
@@ -785,16 +785,16 @@ export function UsagePage() {
       </section>
 
       <p className="readout" style={{ margin: "0 0 18px" }}>
-        计费口径：总消费为请求发生时实扣，历史记录不随调价回写；缓存命中按缓存读单价计费，通常远低于输入价。
-        当前售价对照（不代表历史实扣）：¥
+        计费口径：总积分为请求发生时实扣，历史记录不随调价回写；缓存命中按缓存读单价计费，通常远低于输入价。
+        当前售价对照（不代表历史实扣）：
         {currentPriceEstimate.offPeak.toLocaleString("en-US", {
           maximumFractionDigits: 4,
-        })}
-        （全空闲）~ ¥
+        })}{" "}
+        credit（全空闲）~
         {currentPriceEstimate.peak.toLocaleString("en-US", {
           maximumFractionDigits: 4,
-        })}
-        （全高峰）
+        })}{" "}
+        credit（全高峰）
         {currentPriceEstimate.missingModels > 0
           ? `；${currentPriceEstimate.missingModels} 个模型未配置售价，未计入估算`
           : ""}
@@ -908,7 +908,7 @@ export function UsagePage() {
 
       <section className="pane d1">
         <div className="pane-h">
-          <h2>费用趋势 · {presetLabel}</h2>
+          <h2>积分趋势 · {presetLabel}</h2>
           <div className="form-row" style={{ gap: 8 }}>
             <Select
               ariaLabel="趋势时间范围"
@@ -942,7 +942,7 @@ export function UsagePage() {
               ]}
             />
             <span className="readout">
-              {chartRange.from} ~ {chartRange.to} · 单位 ¥
+              {chartRange.from} ~ {chartRange.to} · 单位 credit
             </span>
           </div>
         </div>
@@ -952,7 +952,7 @@ export function UsagePage() {
             series={costSeries}
             height={280}
             emptyText={
-              seriesError ? "趋势数据加载失败，请重试。" : "所选范围暂无费用数据。"
+              seriesError ? "趋势数据加载失败，请重试。" : "所选范围暂无积分数据。"
             }
           />
         </div>
@@ -1003,7 +1003,7 @@ export function UsagePage() {
               style={donutBy === "credits" ? undefined : { opacity: 0.55 }}
               onClick={() => setDonutBy("credits")}
             >
-              按实际消费
+              按积分
             </button>
           </div>
         </div>
@@ -1013,12 +1013,12 @@ export function UsagePage() {
               <div
                 style={{ width: 280, flex: "0 0 auto" }}
                 role="img"
-                aria-label={`按${donutBy === "tokens" ? "Token" : "实际消费"}的模型分布`}
+                aria-label={`按${donutBy === "tokens" ? "Token" : "积分"}的模型分布`}
               >
                 <ModelDonutChart
                   segments={donutSegments.segments}
                   total={donutSegments.total}
-                  totalUnit={donutBy === "tokens" ? "tok" : "¥"}
+                  totalUnit={donutBy === "tokens" ? "tok" : "credit"}
                   formatValue={(value) =>
                     donutBy === "tokens" ? compactToken(value) : credits(value)
                   }
@@ -1073,7 +1073,7 @@ export function UsagePage() {
                   缓存命中率
                 </th>
                 <th scope="col" className="num">
-                  费用（¥）
+                  积分（credit）
                 </th>
               </tr>
             </thead>
@@ -1179,7 +1179,7 @@ export function UsagePage() {
                   <th>币种</th>
                   <th>已知成本请求</th>
                   <th>历史成本估算</th>
-                  <th>对应实扣（CNY）</th>
+                  <th>对应实扣（credit）</th>
                   <th>CNY 估算差额</th>
                 </tr>
               </thead>
@@ -1192,7 +1192,7 @@ export function UsagePage() {
                     <td className="num">
                       {money(row.costMicro / 1_000_000, row.currency)}
                     </td>
-                    <td className="num">¥{credits(row.chargedMicro)}</td>
+                    <td className="num">{credits(row.chargedMicro)}</td>
                     <td className="num">
                       {row.currency === "CNY"
                         ? money(
@@ -1220,7 +1220,7 @@ export function UsagePage() {
                     <td className="num">
                       {money(total.costMicro / 1_000_000, currency)}
                     </td>
-                    <td className="num">¥{credits(total.chargedMicro)}</td>
+                    <td className="num">{credits(total.chargedMicro)}</td>
                     <td className="num">
                       {currency === "CNY"
                         ? money(
@@ -1255,7 +1255,7 @@ export function UsagePage() {
                   Token（入 / 出）
                 </th>
                 <th scope="col" className="num">
-                  费用
+                  积分
                 </th>
                 <th scope="col" aria-label="操作" />
               </tr>
@@ -1381,8 +1381,8 @@ export function UsagePage() {
                     {detail.cacheReadTokens.toLocaleString("en-US")} /{" "}
                     {detail.cacheCreationTokens.toLocaleString("en-US")}
                   </DetailRow>
-                  <DetailRow k="费用">
-                    ¥{credits(detail.creditsMicro)}
+                  <DetailRow k="积分">
+                    {credits(detail.creditsMicro)} credit
                   </DetailRow>
                   <DetailRow k="延迟">
                     {detail.latencyMs === null ? "—" : `${detail.latencyMs} ms`}

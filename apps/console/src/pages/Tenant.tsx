@@ -190,11 +190,11 @@ export function TenantPage({ section }: { section: string }) {
                 quota={team.unlimited ? null : Number(team.quotaCredits)}
               />
               <p className="readout">
-                已消费 ¥{money(team.usedCredits)} · 预留 ¥
-                {money(team.reservedCredits)} ·{" "}
+                已消费 {money(team.usedCredits)} credit · 预留{" "}
+                {money(team.reservedCredits)} credit ·{" "}
                 {team.unlimited
                   ? "额度不限"
-                  : `剩余 ¥${money(String(Math.max(0, Number(team.quotaCredits) - Number(team.usedCredits) - Number(team.reservedCredits ?? 0))))}`}
+                  : `剩余 ${money(String(Math.max(0, Number(team.quotaCredits) - Number(team.usedCredits) - Number(team.reservedCredits ?? 0))))} credit`}
               </p>
               <p className="readout">
                 增加团队总额度可提交人工额度申请。团队预算用于限制消费，不能增加可用余额。
@@ -206,7 +206,7 @@ export function TenantPage({ section }: { section: string }) {
               <p className="stat-label">每日预算</p>
               <p className="stat-value">
                 {policy.dailyBudgetCredits
-                  ? `¥${money(policy.dailyBudgetCredits)}`
+                  ? `${money(policy.dailyBudgetCredits)} credit`
                   : "不限"}
               </p>
             </div>
@@ -214,7 +214,7 @@ export function TenantPage({ section }: { section: string }) {
               <p className="stat-label">每月预算</p>
               <p className="stat-value">
                 {policy.monthlyBudgetCredits
-                  ? `¥${money(policy.monthlyBudgetCredits)}`
+                  ? `${money(policy.monthlyBudgetCredits)} credit`
                   : "不限"}
               </p>
             </div>
@@ -267,7 +267,7 @@ export function TenantPage({ section }: { section: string }) {
                     <th>成员</th>
                     <th>身份</th>
                     <th>状态</th>
-                    <th>每月预算（¥）</th>
+                    <th>每月预算（credit）</th>
                     <th>操作</th>
                   </tr>
                 </thead>
@@ -558,7 +558,7 @@ export function TenantPage({ section }: { section: string }) {
             }}
           >
             <label>
-              每日预算（¥）
+              每日预算（credit）
               <input
                 className="input"
                 type="number"
@@ -572,7 +572,7 @@ export function TenantPage({ section }: { section: string }) {
               />
             </label>
             <label>
-              每月预算（¥）
+              每月预算（credit）
               <input
                 className="input"
                 type="number"
@@ -734,7 +734,7 @@ export function CatalogPage() {
           <p className="eyebrow">计量 / 模型与售价</p>
           <h1>可用模型</h1>
         </div>
-        <span className="readout">售价只读 · ¥ / 百万 Token</span>
+        <span className="readout">售价只读 · credit / 百万 Token</span>
       </header>
       {error ? <Notice tone="stop">{error}</Notice> : null}
       <Notice k="计费说明">

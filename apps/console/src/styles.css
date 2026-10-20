@@ -177,26 +177,45 @@ a:hover {
 
 .mini {
   position: relative;
-  height: 9px;
+  height: 6px;
   margin-top: 8px;
-  border-bottom: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+
+/* 刻度线叠加在进度条上，保留「计量台」的刻度语言。 */
+.mini::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   background-image: repeating-linear-gradient(
     90deg,
     var(--line) 0 1px,
     transparent 1px 12px
   );
-  background-position: bottom;
-  background-size: 100% 5px;
-  background-repeat: no-repeat;
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .mini i {
   position: absolute;
   left: 0;
-  bottom: 3px;
-  height: 2px;
+  top: 0;
+  bottom: 0;
   background: var(--amber);
   width: var(--w, 0%);
+  border-radius: inherit;
+}
+
+.mini i.hot {
+  background: var(--signal);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mini i {
+    transition: width 0.45s ease-out;
+  }
 }
 
 /* ---- 侧栏 ---- */

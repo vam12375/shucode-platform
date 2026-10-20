@@ -44,7 +44,7 @@ export function QuotaRequestsPage() {
     const answer = await confirmDialog({
       title:
         decision === "approve"
-          ? `批准增加 ¥${formatCreditsDisplay(Number(request.amountCredits))} 额度？`
+          ? `批准增加 ${formatCreditsDisplay(Number(request.amountCredits))} credit 额度？`
           : "拒绝本次额度申请？",
       message:
         decision === "approve"
@@ -120,7 +120,7 @@ export function QuotaRequestsPage() {
             }}
           >
             <label>
-              申请增加金额（¥）
+              申请增加金额（credit）
               <input
                 className="input"
                 type="number"
@@ -180,7 +180,7 @@ export function QuotaRequestsPage() {
                       request.teamId}
                   </td>
                   <td className="num">
-                    ¥{formatCreditsDisplay(Number(request.amountCredits))}
+                    {formatCreditsDisplay(Number(request.amountCredits))} credit
                   </td>
                   <td
                     style={{
