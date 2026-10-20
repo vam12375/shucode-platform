@@ -2,81 +2,76 @@ package gwapp
 
 import (
 	"math"
+	"strings"
 
 	"github.com/vam12375/shucode-platform/server/internal/credits"
 	"github.com/vam12375/shucode-platform/server/internal/store"
 )
 
-// 未在请求中显式携带的输入、后台生成和供应商托管工具没有可验证的费用上界，不能透传。
-func boundedGeneration(body map[string]any) bool {
-	for _, key := range []string{"previous_response_id", "conversation", "best_of", "prompt", "mcp_servers", "container", "context_management"} {
-		if value, exists := body[key]; exists && value != nil {
-			return false
+// 隐藏输入、远端媒体和托管工具仍可用，但必须先冻结团队全部可用余额。
+// 仅检查真实消息输入，不能把工具 JSON Schema 中同名属性误认为媒体引用。
+func requiresFullCreditPrecharge(body map[string]any) bool {
+	for _, key := range []string{"previous_response_id", "conversation", "prompt", "mcp_servers", "container", "context_management", "best_of"} {
+		if value, exists := body[key]; exists && value != nil && value != "" {
+			return true
 		}
 	}
-	if value, exists := body["background"]; exists && value != false && value != nil {
-		return false
-	}
-	if value, exists := body["modalities"]; exists {
-		values, ok := value.([]any)
-		if !ok {
-			return false
-		}
-		for _, v := range values {
-			if v != "text" {
-				return false
-			}
-		}
-	}
-	var walk func(any) bool
-	walk = func(value any) bool {
-		switch v := value.(type) {
-		case []any:
-			for _, item := range v {
-				if !walk(item) {
-					return false
-				}
-			}
-		case map[string]any:
-			if typ, ok := v["type"].(string); ok {
-				switch typ {
-				case "image", "image_url", "input_image", "input_audio", "audio", "video", "input_video", "document", "file", "input_file", "file_reference", "item_reference":
-					return false
-				}
-			}
-			for key, item := range v {
-				switch key {
-				case "image_url", "file_id", "file_data", "input_audio", "audio_url", "video_url":
-					return false
-				}
-				if !walk(item) {
-					return false
-				}
-			}
-		}
+	if value, exists := body["background"]; exists && value != nil && value != false {
 		return true
 	}
-	if !walk(body) {
-		return false
-	}
-	if tools, exists := body["tools"]; exists && tools != nil {
-		values, ok := tools.([]any)
-		if !ok {
-			return false
+	if modalities, ok := body["modalities"].([]any); ok {
+		for _, modality := range modalities {
+			if modality != "text" {
+				return true
+			}
 		}
-		for _, value := range values {
+	}
+	for _, key := range []string{"messages", "input"} {
+		if containsMediaReference(body[key]) {
+			return true
+		}
+	}
+	if tools, ok := body["tools"].([]any); ok {
+		for _, value := range tools {
 			tool, ok := value.(map[string]any)
 			if !ok {
-				return false
+				return true
 			}
-			// Anthropic 用户函数工具无 type 或 custom；OpenAI 使用 function。
 			typ, _ := tool["type"].(string)
-			if typ != "" && typ != "function" && typ != "custom" {
-				return false
+			if typ != "" && !strings.EqualFold(typ, "function") && !strings.EqualFold(typ, "custom") {
+				return true
 			}
 		}
 	}
-	return true
+	return false
+}
+
+func containsMediaReference(value any) bool {
+	switch typed := value.(type) {
+	case []any:
+		for _, item := range typed {
+			if containsMediaReference(item) {
+				return true
+			}
+		}
+	case map[string]any:
+		if typ, ok := typed["type"].(string); ok {
+			switch strings.ToLower(typ) {
+			case "image", "image_url", "input_image", "input_audio", "audio", "video", "input_video", "document", "file", "input_file", "file_reference", "item_reference":
+				return true
+			}
+		}
+		for key, item := range typed {
+			switch key {
+			case "image_url", "file_id", "file_data", "input_audio", "audio_url", "video_url":
+				return true
+			}
+			if containsMediaReference(item) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func validPriceRates(rates credits.ModelPriceRates) bool {

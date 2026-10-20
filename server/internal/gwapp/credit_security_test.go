@@ -13,22 +13,61 @@ import (
 	"github.com/vam12375/shucode-platform/server/internal/store"
 )
 
-func TestUnboundedGenerationRejectedBeforeUpstream(t *testing.T) {
+func TestMediaAndHostedToolsPrechargeBeforeUpstream(t *testing.T) {
 	for _, extra := range []string{
-		`"background":true`, `"previous_response_id":"resp_hidden"`, `"conversation":"conv_hidden"`, `"prompt":{"id":"prompt_hidden"}`, `"mcp_servers":[{}]`,
-		`"best_of":2`, `"input":[{"type":"item_reference","id":"hidden"}]`, `"tools":[{"type":"web_search"}]`,
+		`"previous_response_id":"resp_hidden"`, `"conversation":"conv_hidden"`, `"prompt":{"id":"prompt_hidden"}`, `"mcp_servers":[{}]`,
+		`"best_of":2`,
+		`"input":[{"type":"item_reference","id":"hidden"}]`, `"tools":[{"type":"web_search"}]`,
+		`"tools":[{"type":"mcp","server_url":"https://example.invalid/mcp"}]`,
 		`"input":[{"type":"input_image","image_url":"https://example.invalid/a.png"}]`,
+		`"input":[{"type":"input_image","image_url":"data:image/png;base64,aGVsbG8="}]`,
 		`"input":[{"type":"input_file","file_id":"file_hidden"}]`,
+		`"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGVsbG8="}}]}]`,
 		`"modalities":["text","audio"]`,
 	} {
 		t.Run(extra, func(t *testing.T) {
 			f := newGatewayFixture(t, nil)
+			f.setHandler(func(w http.ResponseWriter, r *http.Request) {
+				team := f.team()
+				if team.ReservedCredits != "100.000000" || team.UsedCredits != "0.000000" {
+					t.Errorf("发送上游前应全额冻结，不先记作实扣: %+v", team)
+				}
+				records, err := f.store.ListOpenReservations(context.Background(), 10)
+				if err != nil || len(records) != 1 || records[0].ReservedMicro != 100_000_000 {
+					t.Errorf("应有持久预留记录: %+v %v", records, err)
+				}
+				fmt.Fprint(w, `{"usage":{"input_tokens":100,"output_tokens":20}}`)
+			})
 			rec := f.do("POST", "/v1/responses", f.token, `{"model":"claude-sonnet-4-5",`+extra+`}`)
-			if rec.Code != 400 {
-				t.Fatalf("不可约束的费用路径必须准入前拒绝: %d %s", rec.Code, rec.Body.String())
+			if rec.Code != 200 {
+				t.Fatalf("媒体/托管工具必须兼容: %d %s", rec.Code, rec.Body.String())
 			}
-			if r, _ := f.upstreamRequest(); r != nil {
-				t.Fatal("不应调用上游")
+			team := f.team()
+			if team.ReservedCredits != "0.000000" || team.UsedCredits != "0.000600" {
+				t.Fatalf("按真实用量结算并解冻余额: %+v", team)
+			}
+		})
+	}
+}
+
+func TestFunctionToolSchemaDoesNotTriggerMediaPrecharge(t *testing.T) {
+	for _, tools := range []string{
+		`[{"type":"function","function":{"name":"read_file","parameters":{"type":"object","properties":{"file_id":{"type":"string"},"image_url":{"type":"string"},"file_data":{"type":"string"},"background":{"type":"boolean"}}}}}]`,
+		`[{"name":"read_file","input_schema":{"type":"object","properties":{"type":{"const":"input_image"},"input_audio":{"type":"string"}}}}]`,
+	} {
+		t.Run(tools, func(t *testing.T) {
+			f := newGatewayFixture(t, nil)
+			f.setHandler(func(w http.ResponseWriter, r *http.Request) {
+				team := f.team()
+				reserved, _ := credits.ParseCreditsToMicro(team.ReservedCredits)
+				if reserved <= 0 || reserved >= 100_000_000 {
+					t.Errorf("本地工具应按输入/输出估算预扣: %+v", team)
+				}
+				fmt.Fprint(w, `{"usage":{"prompt_tokens":1,"completion_tokens":1}}`)
+			})
+			rec := f.do("POST", "/v1/chat/completions", f.token, `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}],"tools":`+tools+`}`)
+			if rec.Code != 200 {
+				t.Fatalf("工具 schema 属性不能误拒绝: %d %s", rec.Code, rec.Body.String())
 			}
 		})
 	}

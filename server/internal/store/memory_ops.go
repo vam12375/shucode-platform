@@ -151,6 +151,15 @@ func (s *memoryStore) ReserveQuota(_ context.Context, input ReserveQuotaInput) (
 	if createdAt.IsZero() {
 		createdAt = time.Now()
 	}
+	if input.ReserveAllAvailable && !team.Unlimited {
+		quota, e1 := credits.ParseCreditsToMicro(team.QuotaCredits)
+		used, e2 := credits.ParseCreditsToMicro(team.UsedCredits)
+		reserved, e3 := credits.ParseCreditsToMicro(team.ReservedCredits)
+		if e1 != nil || e2 != nil || e3 != nil {
+			return ReserveDenied, ErrInvalidCreditCharge
+		}
+		input.Micro = maxInt64(0, quota-used-reserved)
+	}
 	decision, err := s.reservationBudgetAllowedLocked(input, createdAt)
 	if err != nil {
 		return "", err
@@ -183,6 +192,24 @@ func (s *memoryStore) ReserveQuota(_ context.Context, input ReserveQuotaInput) (
 	team.ReservedCredits = credits.FormatMicroCredits(reserved + input.Micro)
 	s.teams[team.ID] = team
 	return ReserveReserved, nil
+}
+
+func (s *memoryStore) GetQuotaReservation(_ context.Context, id string) (*QuotaReservationRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	reservation, ok := s.reservations[id]
+	if !ok {
+		return nil, nil
+	}
+	if reservation.SettledAt != nil {
+		at := *reservation.SettledAt
+		reservation.SettledAt = &at
+	}
+	if reservation.ReleasedAt != nil {
+		at := *reservation.ReleasedAt
+		reservation.ReleasedAt = &at
+	}
+	return &reservation, nil
 }
 
 func (s *memoryStore) SettleReservation(_ context.Context, reservationID string, record UsageRecord) error {
@@ -319,6 +346,113 @@ func (s *memoryStore) ListOpenReservations(_ context.Context, limit int64) ([]Qu
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+func (s *memoryStore) CreateBackgroundGeneration(_ context.Context, job BackgroundGenerationJob) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if job.ReservationID == "" || job.ResponseID == "" || (job.ProviderID == "" && job.BaseURL == "") {
+		return ErrInvalidInput
+	}
+	reservation, ok := s.reservations[job.ReservationID]
+	if !ok || reservation.Status != ReservationReserved || reservation.TeamID != job.TeamID || reservation.UserID != job.UserID {
+		return ErrReservationMismatch
+	}
+	if _, exists := s.backgroundJobs[job.ReservationID]; exists {
+		return nil
+	}
+	for id, existing := range s.backgroundJobs {
+		if id != job.ReservationID && existing.TeamID == job.TeamID && existing.ResponseID == job.ResponseID {
+			return ErrDuplicate
+		}
+	}
+	job.Record = cloneUsage(job.Record)
+	job.FinalResponse = append([]byte(nil), job.FinalResponse...)
+	s.backgroundJobs[job.ReservationID] = job
+	return nil
+}
+
+func (s *memoryStore) FindBackgroundGeneration(_ context.Context, teamID, responseID string) (*BackgroundGenerationJob, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, job := range s.backgroundJobs {
+		if job.TeamID == teamID && job.ResponseID == responseID {
+			job.Record = cloneUsage(job.Record)
+			job.FinalResponse = append([]byte(nil), job.FinalResponse...)
+			if job.CompletedAt != nil {
+				completedAt := *job.CompletedAt
+				job.CompletedAt = &completedAt
+			}
+			return &job, nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *memoryStore) ClaimBackgroundGenerations(_ context.Context, now, leaseUntil time.Time, limit int64) ([]BackgroundGenerationJob, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	out := make([]BackgroundGenerationJob, 0, limit)
+	for _, job := range s.backgroundJobs {
+		if job.CompletedAt == nil && !job.NextPollAt.After(now) {
+			out = append(out, job)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].NextPollAt.Before(out[j].NextPollAt) })
+	if int64(len(out)) > limit {
+		out = out[:limit]
+	}
+	for i := range out {
+		job := out[i]
+		job.Attempts++
+		job.NextPollAt = leaseUntil
+		job.Record = cloneUsage(job.Record)
+		job.FinalResponse = append([]byte(nil), job.FinalResponse...)
+		s.backgroundJobs[job.ReservationID] = job
+		job.Record = cloneUsage(job.Record)
+		job.FinalResponse = append([]byte(nil), job.FinalResponse...)
+		out[i] = job
+	}
+	return out, nil
+}
+
+func (s *memoryStore) RetryBackgroundGeneration(_ context.Context, reservationID string, nextPollAt time.Time, lastError string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	job, ok := s.backgroundJobs[reservationID]
+	if ok {
+		job.NextPollAt = nextPollAt
+		job.LastError = lastError
+		s.backgroundJobs[reservationID] = job
+	}
+	return nil
+}
+
+func (s *memoryStore) DeleteBackgroundGeneration(_ context.Context, reservationID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.backgroundJobs, reservationID)
+	return nil
+}
+
+func (s *memoryStore) FinishBackgroundGeneration(_ context.Context, reservationID string, response []byte, status int, contentType string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	job, ok := s.backgroundJobs[reservationID]
+	if !ok {
+		return nil
+	}
+	job.FinalResponse = append([]byte(nil), response...)
+	job.FinalStatus = status
+	job.FinalType = contentType
+	completedAt := at
+	job.CompletedAt = &completedAt
+	job.LastError = ""
+	s.backgroundJobs[reservationID] = job
+	return nil
 }
 
 // ---- 结算失败补偿 ----

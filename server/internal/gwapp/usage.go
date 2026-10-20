@@ -408,11 +408,12 @@ func (s *AnthropicScanner) Dropped() int64 { return s.malformed + s.splitter.dro
 // ---- Responses 扫描器(terminal 事件携带累计 usage) ----
 
 type ResponsesScanner struct {
-	usage     UsageCounts
-	observed  bool
-	terminal  bool
-	malformed int64
-	splitter  *sseSplitter
+	responseID string
+	usage      UsageCounts
+	observed   bool
+	terminal   bool
+	malformed  int64
+	splitter   *sseSplitter
 }
 
 func NewResponsesScanner() *ResponsesScanner {
@@ -432,6 +433,11 @@ func NewResponsesScanner() *ResponsesScanner {
 				continue
 			}
 			if record, ok := parsed.(map[string]any); ok {
+				if response, ok := record["response"].(map[string]any); ok {
+					if id, ok := response["id"].(string); ok && id != "" {
+						scanner.responseID = id
+					}
+				}
 				switch record["type"] {
 				case "response.completed", "response.incomplete", "response.failed":
 					scanner.terminal = true
@@ -448,6 +454,7 @@ func NewResponsesScanner() *ResponsesScanner {
 }
 
 func (s *ResponsesScanner) Push(chunk string)   { s.splitter.push(chunk) }
+func (s *ResponsesScanner) ResponseID() string  { return s.responseID }
 func (s *ResponsesScanner) Usage() UsageCounts  { return s.usage }
 func (s *ResponsesScanner) UsageObserved() bool { return s.observed }
 func (s *ResponsesScanner) UsageComplete() bool { return s.observed && s.terminal }

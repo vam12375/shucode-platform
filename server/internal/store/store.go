@@ -149,6 +149,7 @@ type PlatformStore interface {
 	// ---- quota(Gateway 临界区) ----
 	// 原子「检查 + 预留 + 幂等占位」:request_id 重复返回 duplicate。
 	ReserveQuota(ctx context.Context, input ReserveQuotaInput) (ReserveResult, error)
+	GetQuotaReservation(ctx context.Context, id string) (*QuotaReservationRecord, error)
 	// SettleReservation:同事务完成预留状态、团队额度与 usage 落库；重复结算幂等。
 	SettleReservation(ctx context.Context, reservationID string, record UsageRecord) error
 	// ReleaseReservationByID:仅 reserved 状态可释放，释放团队预留。
@@ -156,6 +157,12 @@ type PlatformStore interface {
 	// ExpireStaleReservations:回收过期预留，返回本次回收条数。
 	ExpireStaleReservations(ctx context.Context, before time.Time) (int64, error)
 	ListOpenReservations(ctx context.Context, limit int64) ([]QuotaReservationRecord, error)
+	CreateBackgroundGeneration(ctx context.Context, job BackgroundGenerationJob) error
+	FindBackgroundGeneration(ctx context.Context, teamID, responseID string) (*BackgroundGenerationJob, error)
+	ClaimBackgroundGenerations(ctx context.Context, now, leaseUntil time.Time, limit int64) ([]BackgroundGenerationJob, error)
+	RetryBackgroundGeneration(ctx context.Context, reservationID string, nextPollAt time.Time, lastError string) error
+	FinishBackgroundGeneration(ctx context.Context, reservationID string, response []byte, status int, contentType string, at time.Time) error
+	DeleteBackgroundGeneration(ctx context.Context, reservationID string) error
 
 	// ---- 结算失败补偿 ----
 	// EnqueuePendingSettlement:结算重试耗尽后持久化整条 usage；同一预留幂等。
@@ -228,6 +235,8 @@ var (
 	ErrCreditChargeCapped      = errors.New("实扣金额已按团队额度下限封顶")
 	ErrInvalidCreditCharge     = errors.New("credit 金额非法或超出存储范围")
 	ErrReservationMismatch     = errors.New("reservation owner mismatch")
+	ErrInvalidInput            = errors.New("invalid store input")
+	ErrDuplicate               = errors.New("duplicate store input")
 )
 
 // ResolveUserTeam 显式拒绝既存多团队歧义，避免按列表顺序错误扣费。

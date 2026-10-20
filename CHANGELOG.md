@@ -9,6 +9,21 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.34.0] - 2026-10-20
+
+### 新增(后台生成)
+
+- 支持 OpenAI Responses 后台生成（`background=true`）：网关按团队全部可用余额预冻结，任务持久化后由 worker 轮询上游终态，按完整 usage 结算，最终响应留存并通过 `GET/DELETE /v1/responses/{id}`、`POST /v1/responses/{id}/cancel` 代理。
+- 新增 `gateway_background_generations`（迁移 0023）及领取/重试/结算/留存存储接口；网络错误或未知终态保持额度冻结，避免误释放仍在计费的任务。
+- 隐藏输入、远端媒体与托管工具不再直接拒绝，改为要求先冻结团队全部可用余额；`best_of` 仍因不受单次输出上限约束而拒绝。
+- 新增后台生成与额度安全回归测试。
+
+### 测试
+
+- `make -C server lint test`
+- `go test -count=1 -race ./...`
+- `pnpm typecheck`、`pnpm test`、`pnpm lint`
+
 ## [0.33.0] - 2026-10-20
 
 ### 新增(模型能力与诊断)

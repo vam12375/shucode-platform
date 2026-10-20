@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -165,6 +166,19 @@ func (s *PostgresStore) ReserveQuota(ctx context.Context, input ReserveQuotaInpu
 	if duplicate {
 		return ReserveDuplicate, nil
 	}
+	if input.ReserveAllAvailable {
+		var available string
+		var unlimited bool
+		if err := tx.QueryRow(ctx, `SELECT GREATEST(quota_credits-used_credits-reserved_credits, 0)::text, unlimited FROM teams WHERE id=$1::uuid`, input.TeamID).Scan(&available, &unlimited); err != nil {
+			return "", err
+		}
+		if !unlimited {
+			input.Micro, err = parseMicroString(available)
+			if err != nil {
+				return "", err
+			}
+		}
+	}
 	decision, err := reservationBudgetAllowed(ctx, tx, input, createdAt)
 	if err != nil {
 		return "", err
@@ -208,6 +222,24 @@ func (s *PostgresStore) ReserveQuota(ctx context.Context, input ReserveQuotaInpu
 		return "", err
 	}
 	return ReserveReserved, nil
+}
+
+func (s *PostgresStore) GetQuotaReservation(ctx context.Context, id string) (*QuotaReservationRecord, error) {
+	var record QuotaReservationRecord
+	var reserved string
+	err := s.pool.QueryRow(ctx, `SELECT id::text,team_id::text,COALESCE(user_id::text,''),request_id,reserved_credits::text,status,
+		created_at,expires_at,settled_at,released_at,COALESCE(usage_id::text,''),held_by_task,retain_until_settled
+		FROM quota_reservations WHERE id=$1::uuid`, id).Scan(&record.ID, &record.TeamID, &record.UserID, &record.RequestID,
+		&reserved, &record.Status, &record.CreatedAt, &record.ExpiresAt, &record.SettledAt, &record.ReleasedAt,
+		&record.UsageID, &record.HeldByTask, &record.RetainUntilSettled)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	record.ReservedMicro, err = parseMicroString(reserved)
+	return &record, err
 }
 
 func (s *PostgresStore) SettleReservation(ctx context.Context, reservationID string, record UsageRecord) error {
@@ -423,6 +455,144 @@ func (s *PostgresStore) ListOpenReservations(ctx context.Context, limit int64) (
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+func (s *PostgresStore) CreateBackgroundGeneration(ctx context.Context, job BackgroundGenerationJob) error {
+	if job.ReservationID == "" || job.ResponseID == "" || (job.ProviderID == "" && job.BaseURL == "") {
+		return ErrInvalidInput
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var teamID, userID string
+	var status QuotaReservationStatus
+	if err := tx.QueryRow(ctx, `SELECT team_id::text,COALESCE(user_id::text,''),status FROM quota_reservations WHERE id=$1::uuid FOR SHARE`, job.ReservationID).Scan(&teamID, &userID, &status); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrReservationMismatch
+		}
+		return err
+	}
+	if teamID != job.TeamID || userID != job.UserID || status != ReservationReserved {
+		return ErrReservationMismatch
+	}
+	record, err := json.Marshal(job.Record)
+	if err != nil {
+		return err
+	}
+	rates, err := json.Marshal(job.Rates)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO gateway_background_generations (
+			reservation_id, response_id, provider_id, base_url, team_id, user_id,
+			record_template, charge_rates, next_poll_at, attempts, last_error, created_at
+		) VALUES ($1::uuid, $2, $3::uuid, $4, $5::uuid, $6::uuid, $7::jsonb, $8::jsonb, $9, $10, $11, $12)
+		ON CONFLICT (reservation_id) DO NOTHING`,
+		job.ReservationID, job.ResponseID, nullIfEmpty(job.ProviderID), job.BaseURL, job.TeamID, job.UserID,
+		record, rates, job.NextPollAt, job.Attempts, emptyToNil(job.LastError), job.CreatedAt)
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func scanBackgroundGeneration(row pgx.Row) (*BackgroundGenerationJob, error) {
+	var job BackgroundGenerationJob
+	var recordJSON, ratesJSON []byte
+	var lastError *string
+	var providerID *string
+	if err := row.Scan(&job.ReservationID, &job.ResponseID, &providerID, &job.BaseURL, &job.TeamID, &job.UserID,
+		&recordJSON, &ratesJSON, &job.NextPollAt, &job.Attempts, &lastError, &job.CreatedAt,
+		&job.FinalResponse, &job.FinalStatus, &job.FinalType, &job.CompletedAt); err != nil {
+		return nil, err
+	}
+	job.ProviderID = derefString2(providerID)
+	if err := json.Unmarshal(recordJSON, &job.Record); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(ratesJSON, &job.Rates); err != nil {
+		return nil, err
+	}
+	job.LastError = derefString2(lastError)
+	return &job, nil
+}
+
+const backgroundGenerationCols = `reservation_id::text, response_id, provider_id::text, base_url, team_id::text, user_id::text,
+	record_template, charge_rates, next_poll_at, attempts, last_error, created_at,
+	COALESCE(final_response, ''::bytea), COALESCE(final_status, 0), COALESCE(final_content_type, ''), completed_at`
+
+func (s *PostgresStore) FindBackgroundGeneration(ctx context.Context, teamID, responseID string) (*BackgroundGenerationJob, error) {
+	job, err := scanBackgroundGeneration(s.pool.QueryRow(ctx,
+		`SELECT `+backgroundGenerationCols+` FROM gateway_background_generations WHERE team_id=$1::uuid AND response_id=$2`,
+		teamID, responseID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return job, err
+}
+
+func (s *PostgresStore) ClaimBackgroundGenerations(ctx context.Context, now, leaseUntil time.Time, limit int64) ([]BackgroundGenerationJob, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	rows, err := tx.Query(ctx, `
+		WITH due AS (
+			SELECT reservation_id FROM gateway_background_generations
+			WHERE completed_at IS NULL AND next_poll_at <= $1
+			ORDER BY next_poll_at
+			FOR UPDATE SKIP LOCKED
+			LIMIT $2
+		)
+		UPDATE gateway_background_generations j
+		SET next_poll_at=$3, attempts=j.attempts+1
+		FROM due WHERE j.reservation_id=due.reservation_id
+		RETURNING `+strings.ReplaceAll(backgroundGenerationCols, "reservation_id::text", "j.reservation_id::text"), now, limit, leaseUntil)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	jobs := make([]BackgroundGenerationJob, 0, limit)
+	for rows.Next() {
+		job, err := scanBackgroundGeneration(rows)
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, *job)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return jobs, nil
+}
+
+func (s *PostgresStore) RetryBackgroundGeneration(ctx context.Context, reservationID string, nextPollAt time.Time, lastError string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE gateway_background_generations SET next_poll_at=$2, last_error=$3 WHERE reservation_id=$1::uuid`,
+		reservationID, nextPollAt, emptyToNil(lastError))
+	return err
+}
+
+func (s *PostgresStore) DeleteBackgroundGeneration(ctx context.Context, reservationID string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM gateway_background_generations WHERE reservation_id=$1::uuid`, reservationID)
+	return err
+}
+
+func (s *PostgresStore) FinishBackgroundGeneration(ctx context.Context, reservationID string, response []byte, status int, contentType string, at time.Time) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE gateway_background_generations
+		SET final_response=$2, final_status=$3, final_content_type=$4, completed_at=$5, last_error=NULL
+		WHERE reservation_id=$1::uuid`, reservationID, response, status, contentType, at)
+	return err
 }
 
 // ---- 结算失败补偿 ----

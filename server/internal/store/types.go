@@ -241,15 +241,16 @@ const (
 )
 
 type ReserveQuotaInput struct {
-	RetainUntilSettled bool
-	HeldByTask         bool
-	UserID             string
-	ID                 string
-	TeamID             string
-	RequestID          string
-	Micro              int64
-	TTL                time.Duration
-	CreatedAt          time.Time
+	ReserveAllAvailable bool
+	RetainUntilSettled  bool
+	HeldByTask          bool
+	UserID              string
+	ID                  string
+	TeamID              string
+	RequestID           string
+	Micro               int64
+	TTL                 time.Duration
+	CreatedAt           time.Time
 }
 
 type QuotaReservationRecord struct {
@@ -266,6 +267,33 @@ type QuotaReservationRecord struct {
 	SettledAt          *time.Time
 	ReleasedAt         *time.Time
 	UsageID            string
+}
+
+type UsageChargeRates struct {
+	InputPerMtok      float64 `json:"inputPerMtok"`
+	OutputPerMtok     float64 `json:"outputPerMtok"`
+	CacheReadPerMtok  float64 `json:"cacheReadPerMtok"`
+	CacheWritePerMtok float64 `json:"cacheWritePerMtok"`
+}
+
+// BackgroundGenerationJob keeps the reservation owner and billing snapshot until an upstream Responses task is terminal.
+type BackgroundGenerationJob struct {
+	ReservationID string           `json:"reservationId"`
+	ResponseID    string           `json:"responseId"`
+	ProviderID    string           `json:"providerId"`
+	BaseURL       string           `json:"baseUrl,omitempty"`
+	TeamID        string           `json:"teamId"`
+	UserID        string           `json:"userId"`
+	Record        UsageRecord      `json:"record"`
+	Rates         UsageChargeRates `json:"rates"`
+	NextPollAt    time.Time        `json:"nextPollAt"`
+	Attempts      int64            `json:"attempts"`
+	LastError     string           `json:"lastError,omitempty"`
+	CreatedAt     time.Time        `json:"createdAt"`
+	FinalResponse []byte           `json:"finalResponse,omitempty"`
+	FinalStatus   int              `json:"finalStatus,omitempty"`
+	FinalType     string           `json:"finalContentType,omitempty"`
+	CompletedAt   *time.Time       `json:"completedAt,omitempty"`
 }
 
 // OpsProviderStat:运维大盘的供应商维度。

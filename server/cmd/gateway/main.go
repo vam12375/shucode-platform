@@ -126,6 +126,7 @@ func main() {
 	// 结算补偿与预留回收并行：前者把失败结算从 spool/待结算表重放进权威事务。
 	settlementCompensator.Run(ctx, 30*time.Second)
 	gwapp.StartProviderProber(ctx, deps, env.ProviderProbeInterval)
+	gwapp.StartBackgroundGenerationWorker(ctx, deps, 2*time.Second)
 
 	addr := fmt.Sprintf("%s:%d", env.Host, env.Port)
 	server := &http.Server{

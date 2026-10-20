@@ -52,6 +52,7 @@ type memoryStore struct {
 	quotaAdjusts       []quotaAdjustmentRow
 	upstreamRoutes     map[string]UpstreamRouteRecord
 	reservations       map[string]QuotaReservationRecord
+	backgroundJobs     map[string]BackgroundGenerationJob
 	pendingSettlements map[string]PendingSettlementRecord
 	gatewayAttempts    []GatewayAttemptRecord
 	alertRules         map[string]AlertRuleRecord
@@ -86,6 +87,7 @@ func NewMemoryStore(ctx context.Context, opts MemoryOptions) (*memoryStore, erro
 		auditEventIDs:      map[string]struct{}{},
 		upstreamRoutes:     map[string]UpstreamRouteRecord{},
 		reservations:       map[string]QuotaReservationRecord{},
+		backgroundJobs:     map[string]BackgroundGenerationJob{},
 		pendingSettlements: map[string]PendingSettlementRecord{},
 		alertRules:         map[string]AlertRuleRecord{},
 	}
