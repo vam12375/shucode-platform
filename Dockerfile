@@ -33,7 +33,9 @@ RUN go build -trimpath -ldflags "-s -w" -o /out/api ./cmd/api \
 FROM alpine:3.21@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507 AS runtime
 RUN apk add --no-cache ca-certificates curl \
  && addgroup -S app \
- && adduser -S -G app app
+ && adduser -S -G app app \
+ && mkdir -p /app/data/pending-settlements /app/data/audit-outbox \
+ && chown -R app:app /app/data
 WORKDIR /app
 # 运行时一律非 root；应用只读代码与迁移文件，临时文件由 compose 的 tmpfs 提供。
 USER app

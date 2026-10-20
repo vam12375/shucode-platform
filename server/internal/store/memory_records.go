@@ -173,6 +173,24 @@ func (s *memoryStore) DeleteExpiredLoginFlows(_ context.Context, before time.Tim
 	return count, nil
 }
 
+func (s *memoryStore) RevokeLoginFlowsForUser(_ context.Context, userID string, _ time.Time) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var count int64
+	for id, flow := range s.flows {
+		if flow.UserID != userID {
+			continue
+		}
+		if flow.Status != FlowStatusPending && flow.Status != FlowStatusAuthorized {
+			continue
+		}
+		flow.Status = FlowStatusExpired
+		s.flows[id] = flow
+		count++
+	}
+	return count, nil
+}
+
 func (s *memoryStore) ConsumeLoginFlow(_ context.Context, id string, consumedAt time.Time) (*LoginFlowRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

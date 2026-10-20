@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -37,6 +38,9 @@ type gatewayFixture struct {
 	token  string
 	userID string
 	teamID string
+
+	settlementFallback SettlementFallback
+	attemptRecorder    AttemptRecorder
 }
 
 func newGatewayFixture(t *testing.T, patch func(env *Env, f *gatewayFixture)) *gatewayFixture {
@@ -110,8 +114,10 @@ func newGatewayFixture(t *testing.T, patch func(env *Env, f *gatewayFixture)) *g
 		HTTPClient: &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return fmt.Errorf("redirect blocked")
 		}},
-		Trusted:     NewTrustedProxies(f.env.TrustedProxyIPs),
-		RateLimiter: ratelimit.NewGatewayLimiter(nil),
+		Trusted:            NewTrustedProxies(f.env.TrustedProxyIPs),
+		RateLimiter:        ratelimit.NewGatewayLimiter(nil),
+		SettlementFallback: f.settlementFallback,
+		AttemptRecorder:    f.attemptRecorder,
 	})
 	return f
 }
@@ -810,6 +816,10 @@ func TestStreamingIdleTimeout(t *testing.T) {
 			if records[0].Status != store.UsageStatusError || records[0].ErrorType != "upstream_idle_timeout" {
 				t.Fatalf("空闲超时记录不符: %+v", records[0])
 			}
+			// 没有采集到 usage 时按预留额估算，不能按零结算。
+			if records[0].CreditsMicro <= 0 {
+				t.Fatalf("空闲超时应保守结算而不是零计费: %+v", records[0])
+			}
 			if team := f.team(); team.ReservedCredits != "0.000000" {
 				t.Fatalf("空闲超时应释放预留: %s", team.ReservedCredits)
 			}
@@ -818,4 +828,183 @@ func TestStreamingIdleTimeout(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("空闲超时后未写入 usage 记录")
+}
+
+type failingSettleStore struct {
+	store.PlatformStore
+}
+
+func (s *failingSettleStore) SettleReservation(context.Context, string, store.UsageRecord) error {
+	return errors.New("database unavailable")
+}
+
+type recordingSettlementFallback struct {
+	mu      sync.Mutex
+	records []store.UsageRecord
+	ids     []string
+}
+
+func (f *recordingSettlementFallback) Persist(_ context.Context, reservationID string, record store.UsageRecord) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ids = append(f.ids, reservationID)
+	f.records = append(f.records, record)
+	return nil
+}
+
+func TestSettlementFailurePersistsToFallback(t *testing.T) {
+	fallback := &recordingSettlementFallback{}
+	f := newGatewayFixture(t, func(_ *Env, f *gatewayFixture) {
+		f.settlementFallback = fallback
+		f.store = &failingSettleStore{PlatformStore: f.store}
+	})
+	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"usage":{"input_tokens":100,"output_tokens":50}}`))
+	})
+	rec := f.do("POST", "/v1/messages", f.token,
+		`{"model":"claude-sonnet-4-5","max_tokens":100}`)
+	if rec.Code != 200 {
+		t.Fatalf("请求应成功返回: %d %s", rec.Code, rec.Body.String())
+	}
+	fallback.mu.Lock()
+	defer fallback.mu.Unlock()
+	if len(fallback.records) != 1 || fallback.ids[0] == "" {
+		t.Fatalf("结算重试耗尽后应写入补偿队列: ids=%v records=%d", fallback.ids, len(fallback.records))
+	}
+	record := fallback.records[0]
+	if record.InputTokens != 100 || record.OutputTokens != 50 || record.CreditsMicro <= 0 ||
+		record.Status != store.UsageStatusOk {
+		t.Fatalf("补偿记录应保留完整 usage: %+v", record)
+	}
+}
+
+func TestDefaultOutputLimitWrittenUpstream(t *testing.T) {
+	cases := []struct {
+		name string
+		path string
+		key  string
+		body string
+	}{
+		{"anthropic", "/v1/messages", "max_tokens", `{"model":"claude-sonnet-4-5"}`},
+		{"openai-chat", "/v1/chat/completions", "max_tokens", `{"model":"claude-sonnet-4-5"}`},
+		{"openai-responses", "/v1/responses", "max_output_tokens", `{"model":"claude-sonnet-4-5"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newGatewayFixture(t, nil)
+			f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("content-type", "application/json")
+				_, _ = w.Write([]byte(`{}`))
+			})
+			if rec := f.do("POST", tc.path, f.token, tc.body); rec.Code != 200 {
+				t.Fatalf("请求失败: %d %s", rec.Code, rec.Body.String())
+			}
+			_, upBody := f.upstreamRequest()
+			var sent map[string]any
+			if err := json.Unmarshal(upBody, &sent); err != nil {
+				t.Fatal(err)
+			}
+			if got, ok := sent[tc.key].(float64); !ok || int64(got) != 4096 {
+				t.Fatalf("缺省输出上限必须写回上游 %s=4096: %v", tc.key, sent[tc.key])
+			}
+		})
+	}
+	// 超过平台上限时夹紧值也要同步写回，否则上游仍可能输出超过预留。
+	f := newGatewayFixture(t, nil)
+	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	})
+	if rec := f.do("POST", "/v1/chat/completions", f.token,
+		`{"model":"claude-sonnet-4-5","max_completion_tokens":999999}`); rec.Code != 200 {
+		t.Fatalf("请求失败: %d %s", rec.Code, rec.Body.String())
+	}
+	_, upBody := f.upstreamRequest()
+	var sent map[string]any
+	_ = json.Unmarshal(upBody, &sent)
+	if got, ok := sent["max_completion_tokens"].(float64); !ok || int64(got) != maxMaxTokens {
+		t.Fatalf("夹紧后的 max_completion_tokens 不符: %v", sent["max_completion_tokens"])
+	}
+}
+
+func TestStreamingFailureKeepsObservedUsage(t *testing.T) {
+	f := newGatewayFixture(t, func(env *Env, _ *gatewayFixture) {
+		env.UpstreamIdleTimeoutMs = 80
+	})
+	f.setHandler(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":40}}\n\n"))
+		w.(http.Flusher).Flush()
+		select {
+		case <-time.After(2 * time.Second):
+		case <-r.Context().Done():
+		}
+	})
+	rec := f.do("POST", "/v1/chat/completions", f.token,
+		`{"model":"claude-sonnet-4-5","stream":true,"max_tokens":10}`)
+	if rec.Code != 200 {
+		t.Fatalf("流式头应已返回: %d", rec.Code)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		records := f.usageRecords()
+		if len(records) == 1 {
+			record := records[0]
+			if record.Status != store.UsageStatusError || record.ErrorType != "upstream_idle_timeout" {
+				t.Fatalf("状态不符: %+v", record)
+			}
+			// 已经收到 usage 时必须保留真实用量，而不是按零结算。
+			if record.InputTokens != 100 || record.OutputTokens != 40 || record.CreditsMicro <= 0 {
+				t.Fatalf("异常流式请求应保留已采集 usage: %+v", record)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("异常流式请求未写入 usage 记录")
+}
+
+func TestStreamingIdleFailureCountsTowardFuse(t *testing.T) {
+	ctx := context.Background()
+	f := newGatewayFixture(t, func(env *Env, _ *gatewayFixture) {
+		env.UpstreamIdleTimeoutMs = 50
+		env.ProviderAutoDisableThreshold = 2
+	})
+	provider, err := f.store.CreateUpstreamProvider(ctx, store.CreateUpstreamProviderInput{
+		Name: "stream-fuse-provider", BaseURL: f.upstream.URL, Protocol: store.ProtocolOpenAIChatCompletions,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.UpsertModel(ctx, store.UpsertModelInput{
+		ModelID: "claude-sonnet-4-5", DisplayName: "x", InputPricePerMtok: "3", OutputPricePerMtok: "15",
+		ProvideUpstreamProviderID: true, UpstreamProviderID: provider.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f.setHandler(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n"))
+		w.(http.Flusher).Flush()
+		select {
+		case <-time.After(2 * time.Second):
+		case <-r.Context().Done():
+		}
+	})
+	for i := 0; i < 2; i++ {
+		f.do("POST", "/v1/chat/completions", f.token, `{"model":"claude-sonnet-4-5","stream":true}`)
+		got, err := f.store.GetUpstreamProvider(ctx, provider.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 && (got.ConsecutiveFailures != 1 || !got.Enabled) {
+			t.Fatalf("流式空闲失败应计入熔断而不是被响应头重置: %+v", got)
+		}
+	}
+	got, _ := f.store.GetUpstreamProvider(ctx, provider.ID)
+	if got.Enabled || got.DisabledMode != "auto" || got.AutoDisabledReason != "upstream_idle_timeout" {
+		t.Fatalf("连续流式空闲失败应触发熔断: %+v", got)
+	}
 }

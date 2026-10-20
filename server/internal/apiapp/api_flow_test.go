@@ -820,3 +820,54 @@ func TestRootRoleHierarchy(t *testing.T) {
 		t.Fatalf("root 禁用自己应 400: %d", rec.Code)
 	}
 }
+
+func TestPasswordResetRevokesAuthorizedLoginFlow(t *testing.T) {
+	f := newAPIFixture(t)
+	ctx := context.Background()
+
+	initRec := httptest.NewRecorder()
+	initReq := httptest.NewRequest("POST", "/api/v1/platform/auth/init",
+		strings.NewReader(`{"device_name":"撤销测试机","platform":"darwin-arm64"}`))
+	initReq.Header.Set("authorization", "Bearer "+testPollToken)
+	initReq.Header.Set("content-type", "application/json")
+	f.engine.ServeHTTP(initRec, initReq)
+	if initRec.Code != 200 {
+		t.Fatalf("init: %d %s", initRec.Code, initRec.Body.String())
+	}
+	flowID := dataOf(t, initRec)["flow_id"].(string)
+
+	loginRec := f.form("/app/platform/login", "", map[string]string{
+		"flow_id": flowID, "email": "member@mendao.chat", "password": "mendao-member",
+	})
+	if loginRec.Code != 303 {
+		t.Fatalf("表单登录: %d", loginRec.Code)
+	}
+	if rec := f.form("/app/platform/authorize", sessionCookie(loginRec), map[string]string{
+		"flow_id": flowID, "decision": "approve",
+	}); rec.Code != 303 {
+		t.Fatalf("授权: %d", rec.Code)
+	}
+
+	member, err := f.store.FindUserByEmail(ctx, "member@mendao.chat")
+	if err != nil || member == nil {
+		t.Fatalf("演示成员不存在: %v", err)
+	}
+	adminCookie := f.loginAdmin()
+	reset := f.do("PATCH", "/console/api/users/"+member.ID, adminCookie, `{"password":"newpassword123"}`)
+	if reset.Code != 200 {
+		t.Fatalf("重置密码: %d %s", reset.Code, reset.Body.String())
+	}
+
+	pollRec := httptest.NewRecorder()
+	pollReq := httptest.NewRequest("GET", "/api/v1/platform/auth/poll/"+flowID, nil)
+	pollReq.Header.Set("authorization", "Bearer "+testPollToken)
+	f.engine.ServeHTTP(pollRec, pollReq)
+	polled := dataOf(t, pollRec)
+	// 未消费的登录流已作废：不能再兑换设备凭据。
+	if polled["status"] != "expired" {
+		t.Fatalf("改密后未消费登录流应失效: %v", polled)
+	}
+	if _, exists := polled["credentials"]; exists {
+		t.Fatalf("失效登录流不得签发凭据: %v", polled)
+	}
+}

@@ -426,6 +426,83 @@ func (s *PostgresStore) UpdateTeam(ctx context.Context, id string, patch UpdateT
 	return scanTeamTeamRow(rows)
 }
 
+// UpdateTeamWithAccounting:锁团队行 → 更新 → 额度流水/审计 → 提交。
+// 旧额度从锁内读取，避免“先查旧值、再更新”之间的并发覆盖。
+func (s *PostgresStore) UpdateTeamWithAccounting(ctx context.Context, id string, patch UpdateTeamPatch, adjustmentAction string, audit *InsertAuditLogInput) (*TeamRecord, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	var oldQuota string
+	var oldUnlimited bool
+	err = tx.QueryRow(ctx, `SELECT quota_credits::text, unlimited FROM teams WHERE id = $1::uuid FOR UPDATE`, id).
+		Scan(&oldQuota, &oldUnlimited)
+	if queryErrNoRows(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(ctx, `
+		UPDATE teams SET
+			name = COALESCE($2, name),
+			quota_credits = COALESCE($3::numeric, quota_credits),
+			unlimited = COALESCE($4::boolean, unlimited),
+			rpm_limit = COALESCE($7::integer, rpm_limit),
+			tpm_limit = COALESCE($8::integer, tpm_limit),
+			concurrency_limit = COALESCE($9::integer, concurrency_limit),
+			disabled_at = CASE WHEN $5::boolean THEN $6::timestamptz ELSE disabled_at END
+		WHERE id = $1::uuid
+		RETURNING `+teamCols,
+		id, patch.Name, patch.QuotaCredits, patch.Unlimited, patch.HasDisabled, nullableTime(patch.DisabledAt),
+		patch.RPMLimit, patch.TPMLimit, patch.ConcurrencyLimit)
+	if err != nil {
+		return nil, err
+	}
+	if !rows.Next() {
+		rows.Close()
+		return nil, rows.Err()
+	}
+	team, err := scanTeamTeamRow(rows)
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	if adjustmentAction != "" {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO team_quota_adjustments (
+				team_id, actor_user_id, action,
+				old_quota_credits, new_quota_credits, old_unlimited, new_unlimited
+			) VALUES ($1::uuid, $2::uuid, $3, $4::numeric, $5::numeric, $6, $7)`,
+			id, emptyToNil(auditActorID(audit)), adjustmentAction,
+			oldQuota, team.QuotaCredits, oldUnlimited, team.Unlimited); err != nil {
+			return nil, err
+		}
+	}
+	if audit != nil {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO admin_audit_logs (event_id, actor_user_id, action, target_type, target_id, detail, team_id)
+			VALUES (NULLIF($7, ''), $1::uuid, $2, $3, $4, $5, $6::uuid)
+			ON CONFLICT DO NOTHING`,
+			emptyToNil(audit.ActorUserID), audit.Action, emptyToNil(audit.TargetType), emptyToNil(audit.TargetID),
+			nullableBytes(audit.Detail), nullIfEmpty(audit.TeamID), audit.EventID); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return team, nil
+}
+
+func auditActorID(entry *InsertAuditLogInput) string {
+	if entry == nil {
+		return ""
+	}
+	return entry.ActorUserID
+}
+
 func (s *PostgresStore) ListMembers(ctx context.Context, teamID string) ([]TeamMemberView, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT m.role, m.created_at, m.disabled_at, COALESCE(m.monthly_budget_credits::text, ''),

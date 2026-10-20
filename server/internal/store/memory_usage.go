@@ -78,6 +78,12 @@ func mustJoinArray(items []json.RawMessage) json.RawMessage {
 func (s *memoryStore) InsertAuditLog(_ context.Context, entry InsertAuditLogInput) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if entry.EventID != "" {
+		if _, exists := s.auditEventIDs[entry.EventID]; exists {
+			return nil
+		}
+		s.auditEventIDs[entry.EventID] = struct{}{}
+	}
 	s.auditLogs = append(s.auditLogs, AdminAuditLogView{
 		ID:          uuid.NewString(),
 		ActorUserID: entry.ActorUserID,

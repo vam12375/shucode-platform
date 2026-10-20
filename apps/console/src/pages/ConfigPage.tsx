@@ -10,6 +10,7 @@ interface PlatformConfig {
     feedback_use_external_form?: boolean;
   } | null;
   forceUpdate: { minimalVersion?: string } | null;
+  releaseManifestEnabled: boolean;
 }
 
 function FieldRow({ label, children }: { label: string; children: ReactNode }) {
@@ -29,6 +30,7 @@ export function ConfigPage() {
   const [communityEn, setCommunityEn] = useState("");
   const [feedbackExternalForm, setFeedbackExternalForm] = useState(false);
   const [minimalVersion, setMinimalVersion] = useState("");
+  const [releaseManifestEnabled, setReleaseManifestEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -39,7 +41,10 @@ export function ConfigPage() {
       setCommunityZh(data.help?.community_urls?.["zh-CN"] ?? "");
       setCommunityEn(data.help?.community_urls?.["en-US"] ?? "");
       setFeedbackExternalForm(data.help?.feedback_use_external_form === true);
-      setMinimalVersion(data.forceUpdate?.minimalVersion ?? "");
+      setReleaseManifestEnabled(data.releaseManifestEnabled === true);
+      setMinimalVersion(
+        data.releaseManifestEnabled ? (data.forceUpdate?.minimalVersion ?? "") : "",
+      );
       setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "加载失败");
@@ -65,7 +70,10 @@ export function ConfigPage() {
             },
             feedback_use_external_form: feedbackExternalForm,
           },
-          forceUpdate: minimalVersion.trim() ? { minimalVersion: minimalVersion.trim() } : null,
+          forceUpdate:
+            releaseManifestEnabled && minimalVersion.trim()
+              ? { minimalVersion: minimalVersion.trim() }
+              : null,
         }),
       });
       await load();
@@ -155,10 +163,13 @@ export function ConfigPage() {
               value={minimalVersion}
               onChange={(event) => setMinimalVersion(event.target.value)}
               placeholder="最低版本，如 0.19.12"
+              disabled={!releaseManifestEnabled}
             />
           </FieldRow>
           <p className="readout" style={{ margin: 0 }}>
-            留空表示不强制更新。当前平台未托管安装包，自动更新清单返回“无更新”，填写前请确认发行流程已就绪（见 README「桌面更新」一节）。
+            {releaseManifestEnabled
+              ? "留空表示不强制更新。强制更新会让低于该版本的客户端在启动时被要求升级。"
+              : "当前未接入安装包分发，自动更新清单仍返回“无更新”，因此强制更新已禁用；保存其他配置时也会清空已填写的版本号。"}
           </p>
         </div>
       </section>

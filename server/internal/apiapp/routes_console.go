@@ -477,7 +477,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			*target = &value
 		}
 		teamID := c.Param("id")
-		// 额度调整流水:旧值必须在 update 之前取标量快照。
+		// 仅用于 404 与名称变更提示；额度旧值由存储层在事务内锁定读取。
 		previousTeam, err := deps.Store.GetTeam(ctx, teamID)
 		if err != nil {
 			internalError(c, deps, err)
@@ -487,26 +487,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(404, fail(404, "团队不存在"))
 			return
 		}
-		previousQuota, previousUnlimited, previousName := previousTeam.QuotaCredits, previousTeam.Unlimited, previousTeam.Name
-		team, err := deps.Store.UpdateTeam(ctx, teamID, patch)
-		if err != nil {
-			internalError(c, deps, err)
-			return
-		}
-		if team == nil {
-			c.JSON(404, fail(404, "团队不存在"))
-			return
-		}
-		if patch.QuotaCredits != nil || patch.Unlimited != nil {
-			if err := deps.Store.InsertQuotaAdjustment(ctx, store.InsertQuotaAdjustmentInput{
-				TeamID: teamID, ActorUserID: admin.ID, Action: "set_quota",
-				OldQuotaCredits: previousQuota, NewQuotaCredits: team.QuotaCredits,
-				OldUnlimited: previousUnlimited, NewUnlimited: team.Unlimited,
-			}); err != nil {
-				internalError(c, deps, err)
-				return
-			}
-		}
+		previousName := previousTeam.Name
 		changed := []string{}
 		if patch.HasDisabled {
 			changed = append(changed, "disabled")
@@ -520,8 +501,32 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 		if patch.QuotaCredits != nil || patch.Unlimited != nil {
 			changed = append(changed, "quota")
 		}
+		// 团队更新、额度流水与审计在同一事务提交：任何一步失败都不留下
+		// “额度已改但流水/审计缺失”的半完成状态。
+		var auditEntry *store.InsertAuditLogInput
 		if len(changed) > 0 {
-			writeTeamAudit(ctx, deps, admin, team.ID, "team.update", "team", team.ID, map[string]any{"fields": changed})
+			raw, marshalErr := jsonMarshalNoHTML(map[string]any{"fields": changed})
+			if marshalErr != nil {
+				raw = []byte(`{}`)
+			}
+			eventID, _ := contracts.RandomUUIDv4()
+			auditEntry = &store.InsertAuditLogInput{
+				EventID: eventID, TeamID: teamID, ActorUserID: admin.ID,
+				Action: "team.update", TargetType: "team", TargetID: teamID, Detail: raw,
+			}
+		}
+		adjustmentAction := ""
+		if patch.QuotaCredits != nil || patch.Unlimited != nil {
+			adjustmentAction = "set_quota"
+		}
+		team, err := deps.Store.UpdateTeamWithAccounting(ctx, teamID, patch, adjustmentAction, auditEntry)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if team == nil {
+			c.JSON(404, fail(404, "团队不存在"))
+			return
 		}
 		deps.ConfigEvents.Emit(events.DomainTeams)
 		c.JSON(200, okData(gin.H{"team": toPublicTeam(team)}))
@@ -846,12 +851,17 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		// 重置密码 / 禁用 / 降级后吊销全部登录态(启用不触发回补)。
+		// 登录流也是凭据签发入口：已授权未消费的流若不作废，仍可在有效期内兑换新设备 token。
 		if hasPassword || (hasDisabled && disabledVal) || role != nil {
 			if err := deps.Store.DeleteSessionsForUser(ctx, user.ID); err != nil {
 				internalError(c, deps, err)
 				return
 			}
 			if _, err := deps.Store.RevokeDeviceTokensForUser(ctx, user.ID, deps.Now()); err != nil {
+				internalError(c, deps, err)
+				return
+			}
+			if _, err := deps.Store.RevokeLoginFlowsForUser(ctx, user.ID, deps.Now()); err != nil {
 				internalError(c, deps, err)
 				return
 			}

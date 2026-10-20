@@ -32,6 +32,9 @@ type PlatformStore interface {
 	GetTeam(ctx context.Context, id string) (*TeamRecord, error)
 	ListTeams(ctx context.Context) ([]TeamWithUsage, error)
 	UpdateTeam(ctx context.Context, id string, patch UpdateTeamPatch) (*TeamRecord, error)
+	// UpdateTeamWithAccounting:团队更新 + 额度流水 + 审计同事务提交。
+	// adjustmentAction 为空表示本次不改额度；audit 为 nil 表示调用方另行写入。
+	UpdateTeamWithAccounting(ctx context.Context, id string, patch UpdateTeamPatch, adjustmentAction string, audit *InsertAuditLogInput) (*TeamRecord, error)
 	ListMembers(ctx context.Context, teamID string) ([]TeamMemberView, error)
 	GetTeamMember(ctx context.Context, teamID, userID string) (*TeamMemberView, error)
 	UpdateTeamMember(ctx context.Context, teamID, userID string, patch TeamMemberPatch) (*TeamMemberView, error)
@@ -71,6 +74,9 @@ type PlatformStore interface {
 	// UpdateLoginFlowIfStatus:仅当前状态等于 expected 时应用 patch。
 	// 授权/拒绝/过期都走条件更新，避免旧请求把 consumed 回写成 authorized。
 	UpdateLoginFlowIfStatus(ctx context.Context, id string, expected LoginFlowStatus, patch UpdateLoginFlowPatch) (*LoginFlowRecord, error)
+	// RevokeLoginFlowsForUser:密码重置/禁用/降级时作废该用户所有未消费登录流。
+	// 只处理 pending/authorized，已消费/已拒绝/已过期保持原状。
+	RevokeLoginFlowsForUser(ctx context.Context, userID string, at time.Time) (int64, error)
 	// 条件消费:仅 status=authorized 时置 consumed 并返回——并发轮询只签发一次。
 	ConsumeLoginFlow(ctx context.Context, id string, consumedAt time.Time) (*LoginFlowRecord, error)
 	// DeleteExpiredLoginFlows:清理已过期的登录流，返回删除条数。
@@ -147,6 +153,18 @@ type PlatformStore interface {
 	ExpireStaleReservations(ctx context.Context, before time.Time) (int64, error)
 	ListOpenReservations(ctx context.Context, limit int64) ([]QuotaReservationRecord, error)
 
+	// ---- 结算失败补偿 ----
+	// EnqueuePendingSettlement:结算重试耗尽后持久化整条 usage；同一预留幂等。
+	EnqueuePendingSettlement(ctx context.Context, reservationID string, record UsageRecord) error
+	// ListPendingSettlements:按状态/到期时间列出补偿任务（worker 用 pending+due）。
+	ListPendingSettlements(ctx context.Context, filter PendingSettlementFilter) ([]PendingSettlementRecord, error)
+	MarkPendingSettlementApplied(ctx context.Context, reservationID string, at time.Time) error
+	MarkPendingSettlementRetry(ctx context.Context, reservationID string, attempts int64, lastError string, nextAttemptAt time.Time) error
+	MarkPendingSettlementFailed(ctx context.Context, reservationID string, attempts int64, lastError string) error
+	CountPendingSettlements(ctx context.Context, status PendingSettlementStatus) (int64, error)
+	// InsertGatewayAttempt:追加一次上游尝试轨迹（供应商请求 ID/状态码/最终 outcome）。
+	InsertGatewayAttempt(ctx context.Context, record GatewayAttemptRecord) error
+
 	// ---- ops / alerts ----
 	OpsOverview(ctx context.Context, since time.Time) (*OpsOverview, error)
 	OpsSeries(ctx context.Context, since time.Time, bucketMinutes int64) ([]OpsSeriesPoint, error)
@@ -202,6 +220,7 @@ var (
 	ErrProviderNameTaken       = errors.New("供应商名已存在")
 	ErrRootUserExists          = errors.New("超级管理员已存在")
 	ErrRootUserProtected       = errors.New("超级管理员不能被禁用或降级")
+	ErrReservationNotFound     = errors.New("额度预留不存在")
 )
 
 // ResolveUserTeam 显式拒绝既存多团队歧义，避免按列表顺序错误扣费。

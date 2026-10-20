@@ -34,6 +34,8 @@ type Env struct {
 	DeviceTokenTTL time.Duration
 	// PeakHoursHolidays：北京时间法定节假日（YYYY-MM-DD），高峰窗口排除这些日期。
 	PeakHoursHolidays map[string]bool
+	// PendingSettlementDir：数据库不可用时结算补偿的本地 spool 目录。
+	PendingSettlementDir string
 }
 
 func LoadEnv() (*Env, error) {
@@ -106,6 +108,7 @@ func LoadEnv() (*Env, error) {
 		AllowPrivateUpstreamNetworks: platformenv.Truthy(os.Getenv("UPSTREAM_ALLOW_PRIVATE_NETWORKS")),
 		DeviceTokenTTL:               time.Duration(deviceTokenTTLDays) * 24 * time.Hour,
 		PeakHoursHolidays:            holidays,
+		PendingSettlementDir:         platformenv.EnvOr("PENDING_SETTLEMENT_DIR", "./data/pending-settlements"),
 	}, nil
 }
 

@@ -19,8 +19,10 @@ func runSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 	t.Run("users", func(t *testing.T) { testUsers(t, ctx, s) })
 	t.Run("sessions", func(t *testing.T) { testSessions(t, ctx, s) })
 	t.Run("teams", func(t *testing.T) { testTeams(t, ctx, s) })
+	t.Run("team-accounting", func(t *testing.T) { testTeamAccounting(t, ctx, s) })
 	t.Run("quota-critical-section", func(t *testing.T) { testQuota(t, ctx, s) })
 	t.Run("quota-reservations", func(t *testing.T) { testReservations(t, ctx, s) })
+	t.Run("pending-settlements", func(t *testing.T) { testPendingSettlements(t, ctx, s) })
 	t.Run("upstream-routes", func(t *testing.T) { testUpstreamRoutes(t, ctx, s) })
 	t.Run("ops-alerts", func(t *testing.T) { testOpsAlerts(t, ctx, s) })
 	t.Run("device-tokens", func(t *testing.T) { testDeviceTokens(t, ctx, s) })
@@ -237,6 +239,43 @@ func testTeams(t *testing.T, ctx context.Context, s PlatformStore) {
 	}
 }
 
+func testTeamAccounting(t *testing.T, ctx context.Context, s PlatformStore) {
+	suffix := fmt.Sprint(time.Now().UnixNano())
+	admin := mustUser(t, ctx, s, "accounting-"+suffix+"@test.local")
+	team, err := s.CreateTeam(ctx, CreateTeamInput{Name: "accounting-team-" + suffix, QuotaCredits: "5.000000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	quota := "20.000000"
+	eventID := fmt.Sprintf("00000000-0000-4000-8000-%012d", time.Now().UnixNano()%1_000_000_000_000)
+	entry := &InsertAuditLogInput{
+		EventID: eventID, TeamID: team.ID, ActorUserID: admin.ID,
+		Action: "team.update", TargetType: "team", TargetID: team.ID,
+		Detail: []byte(`{"fields":["quota"]}`),
+	}
+	updated, err := s.UpdateTeamWithAccounting(ctx, team.ID, UpdateTeamPatch{QuotaCredits: &quota}, "set_quota", entry)
+	if err != nil || updated == nil || updated.QuotaCredits != "20.000000" {
+		t.Fatalf("团队原子更新失败: %+v %v", updated, err)
+	}
+	adjustments, err := s.ListQuotaAdjustments(ctx, team.ID, 10)
+	if err != nil || len(adjustments) != 1 {
+		t.Fatalf("额度流水应与团队更新同事务写入: %d %v", len(adjustments), err)
+	}
+	if adjustments[0].OldQuotaCredits != "5.000000" || adjustments[0].NewQuotaCredits != "20.000000" {
+		t.Fatalf("额度流水快照不符: %+v", adjustments[0])
+	}
+	limit := int64(10)
+	logs, err := s.ListAuditLogs(ctx, AuditLogFilter{TeamID: team.ID, ActorUserID: admin.ID, Limit: &limit})
+	if err != nil || len(logs) != 1 || logs[0].Action != "team.update" {
+		t.Fatalf("团队审计应与更新同事务写入: %+v %v", logs, err)
+	}
+	// 同一事务方法对不存在的团队返回 nil，不写流水/审计。
+	missing, err := s.UpdateTeamWithAccounting(ctx, "00000000-0000-4000-8000-999999999999", UpdateTeamPatch{QuotaCredits: &quota}, "set_quota", entry)
+	if err != nil || missing != nil {
+		t.Fatalf("不存在的团队应返回 nil: %+v %v", missing, err)
+	}
+}
+
 func testQuota(t *testing.T, ctx context.Context, s PlatformStore) {
 	u := mustUser(t, ctx, s, "quota@test.local")
 	team, err := s.CreateTeam(ctx, CreateTeamInput{Name: "配额团队-" + fmt.Sprint(time.Now().UnixNano()), QuotaCredits: "5.000000"})
@@ -403,6 +442,22 @@ func testReservations(t *testing.T, ctx context.Context, s PlatformStore) {
 	if open, _ := s.ListOpenReservations(ctx, 10); len(open) != 0 {
 		t.Fatalf("不应有未释放预留: %+v", open)
 	}
+
+	// 媒体任务持有预留，通用 TTL 清扫不能抢先释放仍在运行或核对中的额度。
+	held := ReserveQuotaInput{ID: "00000000-0000-4000-8000-000000009607", TeamID: team.ID, RequestID: "media-held-" + suffix, Micro: 100_000, TTL: time.Minute, CreatedAt: now.Add(-2 * time.Hour), HeldByTask: true}
+	if result, err := s.ReserveQuota(ctx, held); err != nil || result != ReserveReserved {
+		t.Fatalf("held reserve: %s %v", result, err)
+	}
+	if count, err := s.ExpireStaleReservations(ctx, now); err != nil || count != 0 {
+		t.Fatalf("held expired: %d %v", count, err)
+	}
+	if open, err := s.ListOpenReservations(ctx, 10); err != nil || len(open) != 1 || !open[0].HeldByTask {
+		t.Fatalf("held ownership: %+v %v", open, err)
+	}
+	if err := s.ReleaseReservationByID(ctx, held.ID, now); err != nil {
+		t.Fatal(err)
+	}
+
 	// 超配额拒绝。
 	over := ReserveQuotaInput{
 		ID: "00000000-0000-4000-8000-000000000606", TeamID: team.ID,
@@ -410,6 +465,101 @@ func testReservations(t *testing.T, ctx context.Context, s PlatformStore) {
 	}
 	if result, _ := s.ReserveQuota(ctx, over); result != ReserveDenied {
 		t.Fatalf("超配额应拒绝: %s", result)
+	}
+}
+
+func testPendingSettlements(t *testing.T, ctx context.Context, s PlatformStore) {
+	suffix := fmt.Sprint(time.Now().UnixNano())
+	u := mustUser(t, ctx, s, "pending-"+suffix+"@test.local")
+	team, err := s.CreateTeam(ctx, CreateTeamInput{Name: "pending-team-" + suffix, QuotaCredits: "10.000000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddMember(ctx, team.ID, u.ID, MemberRoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	reservationID := fmt.Sprintf("00000000-0000-4000-8000-%012d", time.Now().UnixNano()%1_000_000_000_000)
+	input := ReserveQuotaInput{
+		ID: reservationID, TeamID: team.ID, UserID: u.ID,
+		RequestID: "pending-req-" + suffix, Micro: 1000, TTL: time.Hour, CreatedAt: now,
+	}
+	if result, err := s.ReserveQuota(ctx, input); err != nil || result != ReserveReserved {
+		t.Fatalf("预留失败: %s %v", result, err)
+	}
+	record := UsageRecord{
+		ID:            fmt.Sprintf("00000000-0000-4000-8000-%012d", (time.Now().UnixNano()+1)%1_000_000_000_000),
+		RequestID:     input.RequestID,
+		UserID:        u.ID,
+		TeamID:        team.ID,
+		Model:         "pending-model",
+		UpstreamModel: "pending-upstream",
+		CreditsMicro:  500,
+		PriceSnapshot: &UsagePricingSnapshot{SchemaVersion: 1, CapturedAt: now},
+		Status:        UsageStatusError,
+		ErrorType:     "upstream_idle_timeout",
+		CreatedAt:     now,
+	}
+	if err := s.EnqueuePendingSettlement(ctx, reservationID, record); err != nil {
+		t.Fatal(err)
+	}
+	// 重复入队幂等。
+	if err := s.EnqueuePendingSettlement(ctx, reservationID, record); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := s.ListPendingSettlements(ctx, PendingSettlementFilter{
+		Status: PendingSettlementPending, Limit: 10,
+	})
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("待结算列表不符: %d %v", len(pending), err)
+	}
+	item := pending[0]
+	if item.ReservationID != reservationID || item.Record.RequestID != input.RequestID ||
+		item.Record.CreditsMicro != 500 || item.Record.Status != UsageStatusError ||
+		item.Record.PriceSnapshot == nil || item.Attempts != 0 {
+		t.Fatalf("待结算记录不符: %+v", item)
+	}
+	if count, err := s.CountPendingSettlements(ctx, PendingSettlementPending); err != nil || count != 1 {
+		t.Fatalf("待结算计数不符: %d %v", count, err)
+	}
+	next := now.Add(time.Minute)
+	if err := s.MarkPendingSettlementRetry(ctx, reservationID, 1, "db unavailable", next); err != nil {
+		t.Fatal(err)
+	}
+	dueNow, _ := s.ListPendingSettlements(ctx, PendingSettlementFilter{
+		Status: PendingSettlementPending, DueBefore: &now,
+	})
+	if len(dueNow) != 0 {
+		t.Fatalf("未到重试时间不应被取出: %+v", dueNow)
+	}
+	dueLater, _ := s.ListPendingSettlements(ctx, PendingSettlementFilter{
+		Status: PendingSettlementPending, DueBefore: &next,
+	})
+	if len(dueLater) != 1 || dueLater[0].Attempts != 1 || dueLater[0].LastError != "db unavailable" {
+		t.Fatalf("重试状态不符: %+v", dueLater)
+	}
+	if err := s.MarkPendingSettlementApplied(ctx, reservationID, now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if count, err := s.CountPendingSettlements(ctx, PendingSettlementPending); err != nil || count != 0 {
+		t.Fatalf("补偿完成后不应再有 pending: %d %v", count, err)
+	}
+	applied, err := s.ListPendingSettlements(ctx, PendingSettlementFilter{
+		Status: PendingSettlementApplied, Limit: 10,
+	})
+	if err != nil || len(applied) != 1 {
+		t.Fatalf("applied 状态不符: %d %v", len(applied), err)
+	}
+	// 已完成的补偿不能被后续幂等入队重置回 pending。
+	if err := s.EnqueuePendingSettlement(ctx, reservationID, record); err != nil {
+		t.Fatal(err)
+	}
+	if count, _ := s.CountPendingSettlements(ctx, PendingSettlementPending); count != 0 {
+		t.Fatalf("重复入队不应重置已完成的补偿: %d", count)
+	}
+	// 预留行不存在时结算必须显式报错，不能静默丢弃 usage。
+	if err := s.SettleReservation(ctx, "00000000-0000-4000-8000-999999999998", record); !errors.Is(err, ErrReservationNotFound) {
+		t.Fatalf("不存在的预留应返回 ErrReservationNotFound: %v", err)
 	}
 }
 
@@ -650,6 +800,53 @@ func testLoginFlows(t *testing.T, ctx context.Context, s PlatformStore) {
 	if got, _ := s.UpdateLoginFlow(ctx, flow.ID, UpdateLoginFlowPatch{LastPolledAt: &polledAt}); got.LastPolledAt == nil || !got.LastPolledAt.Equal(polledAt) {
 		t.Fatal("轮询时间更新失败")
 	}
+	// 密码重置/禁用时作废未消费登录流：pending + authorized 都失效，consumed 保持原状。
+	for _, id := range []string{
+		"00000000-0000-4000-8000-000000000303",
+		"00000000-0000-4000-8000-000000000304",
+	} {
+		record := LoginFlowRecord{
+			ID: id, PollTokenHash: "revoke-hash-" + id, Status: FlowStatusPending,
+			DeviceName: "待撤销机", CreatedAt: now, ExpiresAt: now.Add(10 * time.Minute),
+		}
+		if err := s.CreateLoginFlow(ctx, record); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.UpdateLoginFlowIfStatus(ctx, id, FlowStatusPending,
+			UpdateLoginFlowPatch{Status: ptr(FlowStatusAuthorized), UserID: &userID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	consumedFlow := LoginFlowRecord{
+		ID: "00000000-0000-4000-8000-000000000305", PollTokenHash: "revoke-hash-consumed",
+		Status: FlowStatusPending, DeviceName: "已消费机", CreatedAt: now, ExpiresAt: now.Add(10 * time.Minute),
+	}
+	if err := s.CreateLoginFlow(ctx, consumedFlow); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateLoginFlowIfStatus(ctx, consumedFlow.ID, FlowStatusPending,
+		UpdateLoginFlowPatch{Status: ptr(FlowStatusAuthorized), UserID: &userID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ConsumeLoginFlow(ctx, consumedFlow.ID, now); err != nil {
+		t.Fatal(err)
+	}
+	if count, err := s.RevokeLoginFlowsForUser(ctx, userID, now); err != nil || count != 2 {
+		t.Fatalf("应作废 2 条未消费登录流: %d %v", count, err)
+	}
+	for _, id := range []string{
+		"00000000-0000-4000-8000-000000000303",
+		"00000000-0000-4000-8000-000000000304",
+	} {
+		got, err := s.GetLoginFlow(ctx, id)
+		if err != nil || got == nil || got.Status != FlowStatusExpired {
+			t.Fatalf("未消费登录流应已作废: %v %+v", err, got)
+		}
+	}
+	if got, _ := s.GetLoginFlow(ctx, consumedFlow.ID); got == nil || got.Status != FlowStatusConsumed {
+		t.Fatalf("已消费登录流不应被改状态: %+v", got)
+	}
+
 	// 过期登录流清理。
 	expiredFlow := LoginFlowRecord{
 		ID: "00000000-0000-4000-8000-000000000302", PollTokenHash: "poll-hash-2",
@@ -931,19 +1128,21 @@ func testAudit(t *testing.T, ctx context.Context, s PlatformStore) {
 		t.Fatal(err)
 	}
 	time.Sleep(2 * time.Millisecond)
-	if err := s.InsertAuditLog(ctx, InsertAuditLogInput{Action: "provider.delete", Detail: []byte(`null`)}); err != nil {
+	if err := s.InsertAuditLog(ctx, InsertAuditLogInput{ActorUserID: actor.ID, Action: "provider.delete", Detail: []byte(`null`)}); err != nil {
 		t.Fatal(err)
 	}
 	logs, _ := s.ListAuditLogs(ctx, AuditLogFilter{ActorUserID: actor.ID})
-	if len(logs) != 1 || logs[0].ActorEmail != "actor@test.local" || logs[0].TargetID != "u-1" {
+	if len(logs) != 2 || logs[0].ActorEmail != "actor@test.local" || logs[1].TargetID != "u-1" {
 		t.Fatalf("审计过滤/邮箱 join: %+v", logs)
 	}
-	all, _ := s.ListAuditLogs(ctx, AuditLogFilter{})
+	all, _ := s.ListAuditLogs(ctx, AuditLogFilter{ActorUserID: actor.ID})
 	if len(all) != 2 || all[0].Action != "provider.delete" {
 		t.Fatalf("审计列表应按时间倒序: %+v", all)
 	}
 	cursor := all[0]
-	page2, _ := s.ListAuditLogs(ctx, AuditLogFilter{CursorCreatedAt: &cursor.CreatedAt, CursorID: cursor.ID})
+	page2, _ := s.ListAuditLogs(ctx, AuditLogFilter{
+		ActorUserID: actor.ID, CursorCreatedAt: &cursor.CreatedAt, CursorID: cursor.ID,
+	})
 	if len(page2) != 1 || page2[0].Action != "user.update" {
 		t.Fatalf("审计游标翻页: %+v", page2)
 	}

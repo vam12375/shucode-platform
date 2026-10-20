@@ -232,16 +232,18 @@ const (
 )
 
 type ReserveQuotaInput struct {
-	UserID    string
-	ID        string
-	TeamID    string
-	RequestID string
-	Micro     int64
-	TTL       time.Duration
-	CreatedAt time.Time
+	HeldByTask bool
+	UserID     string
+	ID         string
+	TeamID     string
+	RequestID  string
+	Micro      int64
+	TTL        time.Duration
+	CreatedAt  time.Time
 }
 
 type QuotaReservationRecord struct {
+	HeldByTask    bool
 	UserID        string
 	ID            string
 	TeamID        string
@@ -280,7 +282,11 @@ type OpsOverview struct {
 	P99LatencyMs        *float64
 	ActiveDevices       int64
 	OpenReservations    int64
-	ProviderStats       []OpsProviderStat
+	// PendingSettlements:结算失败后等待补偿的请求数（含已转人工的 failed）。
+	PendingSettlements int64
+	// PendingAuditLogs:审计 outbox 中尚未入库的事件数（由 api 层填充，非存储查询）。
+	PendingAuditLogs int64
+	ProviderStats    []OpsProviderStat
 }
 
 type OpsSeriesPoint struct {
@@ -325,25 +331,68 @@ type AlertEventRecord struct {
 }
 
 type UsageRecord struct {
-	ID                  string
-	RequestID           string
-	UserID              string
-	TeamID              string
-	DeviceTokenID       string
-	Model               string
-	UpstreamModel       string
-	ProviderID          string
-	InputTokens         int64
-	OutputTokens        int64
-	CacheReadTokens     int64
-	CacheCreationTokens int64
-	CreditsMicro        int64
-	PriceSnapshot       *UsagePricingSnapshot
-	Status              UsageStatus
-	ErrorType           string
-	ClientIP            string
-	LatencyMs           *int64
-	CreatedAt           time.Time
+	ID                  string                `json:"id"`
+	RequestID           string                `json:"requestId"`
+	UserID              string                `json:"userId"`
+	TeamID              string                `json:"teamId"`
+	DeviceTokenID       string                `json:"deviceTokenId,omitempty"`
+	Model               string                `json:"model"`
+	UpstreamModel       string                `json:"upstreamModel"`
+	ProviderID          string                `json:"providerId,omitempty"`
+	InputTokens         int64                 `json:"inputTokens"`
+	OutputTokens        int64                 `json:"outputTokens"`
+	CacheReadTokens     int64                 `json:"cacheReadTokens"`
+	CacheCreationTokens int64                 `json:"cacheCreationTokens"`
+	CreditsMicro        int64                 `json:"creditsMicro"`
+	PriceSnapshot       *UsagePricingSnapshot `json:"priceSnapshot,omitempty"`
+	Status              UsageStatus           `json:"status"`
+	ErrorType           string                `json:"errorType,omitempty"`
+	ClientIP            string                `json:"clientIp,omitempty"`
+	LatencyMs           *int64                `json:"latencyMs,omitempty"`
+	CreatedAt           time.Time             `json:"createdAt"`
+}
+
+// PendingSettlementStatus:结算失败后的持久化补偿状态。
+// pending 会按退避重试；超过上限后转 failed，等待人工对账。
+type PendingSettlementStatus string
+
+const (
+	PendingSettlementPending PendingSettlementStatus = "pending"
+	PendingSettlementApplied PendingSettlementStatus = "applied"
+	PendingSettlementFailed  PendingSettlementStatus = "failed"
+)
+
+type PendingSettlementRecord struct {
+	ReservationID string
+	Record        UsageRecord
+	Status        PendingSettlementStatus
+	Attempts      int64
+	LastError     string
+	NextAttemptAt time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+type PendingSettlementFilter struct {
+	Status    PendingSettlementStatus // 空 = 全部状态
+	DueBefore *time.Time              // 仅 next_attempt_at <= 该时刻
+	Limit     int64
+}
+
+// GatewayAttemptRecord:一次上游尝试的轨迹（故障转移/对账用）。
+type GatewayAttemptRecord struct {
+	RequestID         string
+	ReservationID     string
+	Attempt           int64
+	ProviderID        string
+	UpstreamModel     string
+	BaseHost          string
+	StatusCode        *int
+	ErrorType         string
+	ProviderRequestID string
+	StartedAt         time.Time
+	DurationMs        int64
+	Final             bool
 }
 
 type ProviderTestOutcome struct {
@@ -493,12 +542,14 @@ type TeamQuotaAdjustmentView struct {
 }
 
 type InsertAuditLogInput struct {
-	TeamID      string
-	ActorUserID string
-	Action      string
-	TargetType  string
-	TargetID    string
-	Detail      []byte
+	// EventID 用于可靠 outbox 重放去重；旧调用方可留空。
+	EventID     string `json:"eventId"`
+	TeamID      string `json:"teamId,omitempty"`
+	ActorUserID string `json:"actorUserId,omitempty"`
+	Action      string `json:"action"`
+	TargetType  string `json:"targetType,omitempty"`
+	TargetID    string `json:"targetId,omitempty"`
+	Detail      []byte `json:"detail,omitempty"`
 }
 
 type InsertQuotaAdjustmentInput struct {

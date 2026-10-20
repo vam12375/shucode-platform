@@ -21,13 +21,15 @@ import {
   type ChartDatum,
   type ChartSeries,
 } from "../components/charts.js";
-import { toastErr } from "../components/Feedback.js";
+import { showToast, toastErr } from "../components/Feedback.js";
 import { formatPct } from "../components/Gauge.js";
 import { Select } from "../components/Select.js";
 import { Chip, Notice, type ChipTone } from "../components/StatusChip.js";
 import {
   formatShanghaiTime,
   shanghaiDateOf,
+  shanghaiDayEndUtc,
+  shanghaiDayStartUtc,
   shanghaiMonthRange,
 } from "../time.js";
 
@@ -296,6 +298,8 @@ export function UsagePage() {
     useState<ChartGranularity>("hour");
   const [donutBy, setDonutBy] = useState<"tokens" | "credits">("tokens");
   const [error, setError] = useState<string | null>(null);
+  const [seriesError, setSeriesError] = useState<string | null>(null);
+  const [seriesReloadKey, setSeriesReloadKey] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -347,14 +351,16 @@ export function UsagePage() {
         ]),
       );
       const query = new URLSearchParams({
-        from,
-        to: `${to}T23:59:59`,
+        // 查询边界是上海自然日，但服务端按 UTC 解析，必须先换算即时点。
+        from: shanghaiDayStartUtc(from),
+        to: shanghaiDayEndUtc(to),
         granularity: chartGranularity,
       });
-      const data = await api<{ series: SeriesRow[] }>(
-        `/usage/series?${query.toString()}`,
-      ).catch(() => null);
-      if (data) {
+      setSeriesError(null);
+      try {
+        const data = await api<{ series: SeriesRow[] }>(
+          `/usage/series?${query.toString()}`,
+        );
         for (const row of data.series) {
           const bucket = zeroed.get(row.bucketStart);
           if (!bucket) continue;
@@ -364,16 +370,25 @@ export function UsagePage() {
           bucket.promptTokens =
             row.inputTokens + row.cacheReadTokens + row.cacheCreationTokens;
         }
+        setDays([...zeroed.values()]);
+      } catch (seriesLoadError) {
+        // 失败不能把空桶当成真实零用量展示。
+        setDays([]);
+        setSeriesError(
+          seriesLoadError instanceof Error
+            ? seriesLoadError.message
+            : "趋势数据加载失败",
+        );
       }
-      setDays([...zeroed.values()]);
     })();
-  }, [chartPreset, chartGranularity]);
+  }, [chartPreset, chartGranularity, seriesReloadKey]);
 
   const usageParams = useCallback(
     (cursor?: string) => {
       const params = new URLSearchParams();
-      if (from) params.set("from", `${from}T00:00:00`);
-      if (to) params.set("to", `${to}T23:59:59`);
+      // 服务端把无时区时间按 UTC 解析；这里把上海自然日边界换算成 UTC。
+      if (from) params.set("from", shanghaiDayStartUtc(from));
+      if (to) params.set("to", shanghaiDayEndUtc(to));
       if (filterUserId) params.set("userId", filterUserId);
       if (filterModel) params.set("model", filterModel);
       if (filterProviderId) params.set("providerId", filterProviderId);
@@ -416,6 +431,7 @@ export function UsagePage() {
       toastErr(`导出失败 (${response.status})`, "导出失败");
       return;
     }
+    const truncated = response.headers.get("x-usage-export-truncated") === "1";
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -423,6 +439,12 @@ export function UsagePage() {
     anchor.download = `usage-${new Date().toISOString().slice(0, 19).replaceAll(":", "")}.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
+    if (truncated) {
+      showToast(
+        "导出达到 100000 条上限，结果可能被截断；请缩小日期范围或增加筛选条件。",
+        { tone: "warn", k: "导出可能不完整" },
+      );
+    }
   }, [usageParams]);
 
   const load = useCallback(async () => {
@@ -480,6 +502,8 @@ export function UsagePage() {
     (sum, row) => sum + row.latencyMsSum,
     0,
   );
+  // 加载失败且没有任何已加载数据时，不能用 0 冒充真实用量。
+  const dataUnavailable = error !== null && aggregates.length === 0;
   // 平均耗时仅在既有延迟记录时给出（部分错误/中断记录无 latency）。
   const avgLatencyS =
     totalLatencyMs > 0 && totalRequests > 0
@@ -651,14 +675,35 @@ export function UsagePage() {
           <h1>{isRoot ? "用量" : canManageTeam ? "用量与消费" : "我的用量"}</h1>
         </div>
         <p className="readout m0">
-          共 {totalRequests.toLocaleString("en-US")} 次请求 · ¥
-          {credits(totalCredits)}
+          {dataUnavailable
+            ? "用量数据加载失败"
+            : `共 ${totalRequests.toLocaleString("en-US")} 次请求 · ¥${credits(totalCredits)}`}
         </p>
       </header>
 
       {error ? (
         <Notice tone="stop" k="加载失败">
-          {error}
+          {error}{" "}
+          <button
+            className="btn btn-sm"
+            type="button"
+            disabled={loading}
+            onClick={() => void load()}
+          >
+            重试
+          </button>
+        </Notice>
+      ) : null}
+      {seriesError ? (
+        <Notice tone="stop" k="趋势数据加载失败">
+          {seriesError}{" "}
+          <button
+            className="btn btn-sm"
+            type="button"
+            onClick={() => setSeriesReloadKey((value) => value + 1)}
+          >
+            重试
+          </button>
         </Notice>
       ) : null}
       {nearQuotaTeam ? (
@@ -683,46 +728,58 @@ export function UsagePage() {
         <div className="stat-card">
           <p className="stat-label">总请求数</p>
           <p className="stat-value">
-            {totalRequests.toLocaleString("en-US")}
+            {dataUnavailable ? "—" : totalRequests.toLocaleString("en-US")}
             <span className="unit">次</span>
           </p>
           <p className="stat-sub">
-            所选范围内{from || to ? "（含日期筛选）" : ""}
+            {dataUnavailable
+              ? "加载失败，请重试"
+              : `所选范围内${from || to ? "（含日期筛选）" : ""}`}
           </p>
         </div>
         <div className="stat-card">
           <p className="stat-label">总 Token</p>
           <p className="stat-value">
-            {compactToken(
-              totalInputTokens + totalOutputTokens + totalCacheTokens,
-            )}
+            {dataUnavailable
+              ? "—"
+              : compactToken(
+                  totalInputTokens + totalOutputTokens + totalCacheTokens,
+                )}
             <span className="unit">tok</span>
           </p>
           <p
             className="stat-sub"
             title="缓存命中按缓存读单价计费，通常远低于输入价"
           >
-            输入 {compactToken(totalInputTokens)} · 输出{" "}
-            {compactToken(totalOutputTokens)} · 缓存{" "}
-            {compactToken(totalCacheTokens)}（按缓存价）
+            {dataUnavailable
+              ? "加载失败，请重试"
+              : `输入 ${compactToken(totalInputTokens)} · 输出 ${compactToken(totalOutputTokens)} · 缓存 ${compactToken(totalCacheTokens)}（按缓存价）`}
           </p>
         </div>
         <div className="stat-card">
           <p className="stat-label">总消费</p>
           <p className="stat-value stat-amber">
-            {credits(totalCredits)}
+            {dataUnavailable ? "—" : credits(totalCredits)}
             <span className="unit">¥</span>
           </p>
-          <p className="stat-sub">网关计量 · 团队账单口径</p>
+          <p className="stat-sub">
+            {dataUnavailable ? "加载失败，请重试" : "网关计量 · 团队账单口径"}
+          </p>
         </div>
         <div className="stat-card">
           <p className="stat-label">平均耗时</p>
           <p className="stat-value">
-            {avgLatencyS === null ? "—" : avgLatencyS.toFixed(2)}
+            {dataUnavailable || avgLatencyS === null
+              ? "—"
+              : avgLatencyS.toFixed(2)}
             <span className="unit">s</span>
           </p>
           <p className="stat-sub">
-            {avgLatencyS === null ? "范围内暂无带延迟记录" : "成功请求均值"}
+            {dataUnavailable
+              ? "加载失败，请重试"
+              : avgLatencyS === null
+                ? "范围内暂无带延迟记录"
+                : "成功请求均值"}
           </p>
         </div>
       </section>
@@ -894,7 +951,9 @@ export function UsagePage() {
             data={costTrend}
             series={costSeries}
             height={280}
-            emptyText="所选范围暂无费用数据。"
+            emptyText={
+              seriesError ? "趋势数据加载失败，请重试。" : "所选范围暂无费用数据。"
+            }
           />
         </div>
       </section>
@@ -903,9 +962,11 @@ export function UsagePage() {
         <div className="pane-h">
           <h2>缓存率趋势 · {presetLabel}</h2>
           <span className="readout">
-            {chartCachePrompt > 0
-              ? `命中 ${compactToken(chartCacheRead)} tok · ${formatPct(chartCacheRate ?? 0)}`
-              : "范围内暂无 prompt"}
+            {seriesError
+              ? "趋势加载失败"
+              : chartCachePrompt > 0
+                ? `命中 ${compactToken(chartCacheRead)} tok · ${formatPct(chartCacheRate ?? 0)}`
+                : "范围内暂无 prompt"}
           </span>
         </div>
         <div className="pane-b">
@@ -913,7 +974,11 @@ export function UsagePage() {
             data={cacheTrend}
             series={cacheSeries}
             height={240}
-            emptyText="所选范围暂无 prompt 数据。"
+            emptyText={
+              seriesError
+                ? "趋势数据加载失败，请重试。"
+                : "所选范围暂无 prompt 数据。"
+            }
           />
         </div>
       </section>

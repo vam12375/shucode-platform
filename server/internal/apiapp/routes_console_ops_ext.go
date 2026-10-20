@@ -264,6 +264,15 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
+		auditPending := int64(0)
+		if deps.AuditSink != nil {
+			count, countErr := deps.AuditSink.PendingCount()
+			if countErr != nil {
+				deps.Logger.Warn("读取审计 outbox 数量失败", "error", countErr)
+			} else {
+				auditPending = count
+			}
+		}
 		providerStats := make([]gin.H, 0, len(overview.ProviderStats))
 		for _, stat := range overview.ProviderStats {
 			providerStats = append(providerStats, gin.H{
@@ -281,7 +290,9 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 			"p50LatencyMs": overview.P50LatencyMs, "p95LatencyMs": overview.P95LatencyMs,
 			"p99LatencyMs":  overview.P99LatencyMs,
 			"activeDevices": overview.ActiveDevices, "openReservations": overview.OpenReservations,
-			"providerStats": providerStats,
+			"pendingSettlements": overview.PendingSettlements,
+			"auditOutboxPending": auditPending,
+			"providerStats":      providerStats,
 		}))
 	})
 
@@ -339,7 +350,38 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 				"createdAt":            isoString(reservation.CreatedAt), "expiresAt": isoString(reservation.ExpiresAt),
 			})
 		}
-		c.JSON(200, okData(gin.H{"open": rows, "openCount": len(rows), "staleCount": stale}))
+		pending, err := deps.Store.ListPendingSettlements(c.Request.Context(), store.PendingSettlementFilter{
+			Status: store.PendingSettlementPending, Limit: limit,
+		})
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		failed, err := deps.Store.ListPendingSettlements(c.Request.Context(), store.PendingSettlementFilter{
+			Status: store.PendingSettlementFailed, Limit: limit,
+		})
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		pendingCount := len(pending)
+		failedCount := len(failed)
+		pendingRows := make([]gin.H, 0, pendingCount+failedCount)
+		for _, item := range append(pending, failed...) {
+			pendingRows = append(pendingRows, gin.H{
+				"reservationId": item.ReservationID, "requestId": item.Record.RequestID,
+				"teamId": item.Record.TeamID, "creditsMicro": item.Record.CreditsMicro,
+				"settlementStatus": item.Status, "usageStatus": item.Record.Status,
+				"attempts":  item.Attempts,
+				"lastError": item.LastError, "nextAttemptAt": isoString(item.NextAttemptAt),
+				"createdAt": isoString(item.CreatedAt),
+			})
+		}
+		c.JSON(200, okData(gin.H{
+			"open": rows, "openCount": len(rows), "staleCount": stale,
+			"pendingSettlements": pendingRows, "pendingSettlementCount": pendingCount,
+			"failedSettlementCount": failedCount,
+		}))
 	})
 
 	// ---- alerts ----
@@ -362,6 +404,7 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 
 	alertMetrics := map[string]bool{
 		"error_rate": true, "p95_latency_ms": true, "open_reservations": true,
+		"pending_settlements": true, "audit_outbox": true,
 		"daily_credits": true, "provider_failures": true,
 	}
 
@@ -552,6 +595,10 @@ func opsAlertMetricValue(metric string, overview *store.OpsOverview) (float64, s
 		return *overview.P95LatencyMs, "P95 延迟(ms)"
 	case "open_reservations":
 		return float64(overview.OpenReservations), "未释放预留数"
+	case "pending_settlements":
+		return float64(overview.PendingSettlements), "待结算补偿数"
+	case "audit_outbox":
+		return float64(overview.PendingAuditLogs), "待入库审计数"
 	case "daily_credits":
 		return float64(overview.CreditsMicro) / 1_000_000, "窗口内消费(CR)"
 	case "provider_failures":

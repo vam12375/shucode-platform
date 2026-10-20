@@ -60,8 +60,12 @@ func registerClientConfigRoutes(router *gin.Engine, deps *Deps) {
 		if plugin, err := jsonDecode(pluginRaw); err == nil && plugin != nil {
 			input.PluginStoreOrder = plugin
 		}
-		if force, err := jsonDecode(forceRaw); err == nil {
-			input.ForceUpdateMinimalVersion = readForceUpdateMinimalVersion(force)
+		// 更新清单仍是 stub 时，即使数据库里残留旧配置也不下发给客户端：
+		// 否则客户端会被要求升级却拉不到安装包。
+		if deps.Env.ReleaseManifestEnabled {
+			if force, err := jsonDecode(forceRaw); err == nil {
+				input.ForceUpdateMinimalVersion = readForceUpdateMinimalVersion(force)
+			}
 		}
 		// 客户端 download 边界只接受 https 绝对地址;非 https(本地开发)不下发。
 		if active != nil && strings.HasPrefix(deps.Env.ReleaseBaseURL, "https://") {
@@ -314,6 +318,20 @@ const (
 )
 
 func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
+	router.GET("/api/v1/platform/account", func(c *gin.Context) {
+		// 应用登录与视频复用同一设备会话；账号校验不依赖团队或媒体配置。
+		auth, err := authenticateDevice(c.Request.Context(), deps, c)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if auth == nil {
+			c.JSON(401, fail(401, "请先登录"))
+			return
+		}
+		c.JSON(200, okData(gin.H{"id": auth.User.ID, "email": auth.User.Email, "display_name": auth.User.DisplayName}))
+	})
+
 	router.POST("/api/v1/platform/auth/init", func(c *gin.Context) {
 		ctx := c.Request.Context()
 		// 匿名入口：先限流再读 body，避免被用来无限写 login_flows 或耗尽内存。

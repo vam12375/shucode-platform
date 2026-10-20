@@ -80,6 +80,12 @@ func evaluateAlerts(ctx context.Context, deps *Deps) {
 				deps.Logger.Warn("告警指标计算失败", "ruleId", rule.ID, "error", err)
 				continue
 			}
+			// 审计 outbox 是进程本地队列，指标由 api 层补充。
+			if deps.AuditSink != nil {
+				if count, countErr := deps.AuditSink.PendingCount(); countErr == nil {
+					computed.PendingAuditLogs = count
+				}
+			}
 			overview = computed
 			overviews[window] = overview
 		}

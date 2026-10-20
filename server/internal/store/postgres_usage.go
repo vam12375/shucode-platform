@@ -121,9 +121,11 @@ func pricingEntriesDoc(entries []PricingEntry) ([]byte, error) {
 
 func (s *PostgresStore) InsertAuditLog(ctx context.Context, entry InsertAuditLogInput) error {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO admin_audit_logs (actor_user_id, action, target_type, target_id, detail,team_id)
-		VALUES ($1::uuid, $2, $3, $4, $5,$6::uuid)`,
-		emptyToNil(entry.ActorUserID), entry.Action, emptyToNil(entry.TargetType), emptyToNil(entry.TargetID), nullableBytes(entry.Detail), nullIfEmpty(entry.TeamID))
+		INSERT INTO admin_audit_logs (event_id, actor_user_id, action, target_type, target_id, detail, team_id)
+		VALUES (NULLIF($7, ''), $1::uuid, $2, $3, $4, $5, $6::uuid)
+		ON CONFLICT DO NOTHING`,
+		emptyToNil(entry.ActorUserID), entry.Action, emptyToNil(entry.TargetType), emptyToNil(entry.TargetID),
+		nullableBytes(entry.Detail), nullIfEmpty(entry.TeamID), entry.EventID)
 	return err
 }
 

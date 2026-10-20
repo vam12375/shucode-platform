@@ -108,6 +108,8 @@ func TestConsoleCORS(t *testing.T) {
 
 func TestConfigKVAndPublicEnvelope(t *testing.T) {
 	f := newAPIFixture(t)
+	// 本用例验证配置透传；强制更新本身需要显式启用真实更新清单。
+	f.deps.Env.ReleaseManifestEnabled = true
 	adminCookie := f.loginAdmin()
 	put := f.do("PUT", "/console/api/config", adminCookie,
 		`{"help":{"feedback_url":"https://help.example.com","feedback_use_external_form":true},"forceUpdate":{"minimalVersion":" 9.9.9 "}}`)
@@ -130,6 +132,37 @@ func TestConfigKVAndPublicEnvelope(t *testing.T) {
 	consoleCfg := dataOf(t, f.do("GET", "/console/api/config", adminCookie, ""))
 	if consoleCfg["help"] == nil || consoleCfg["forceUpdate"] == nil {
 		t.Fatalf("控制台配置读取不符: %v", consoleCfg)
+	}
+}
+
+func TestForceUpdateRejectedUntilManifestEnabled(t *testing.T) {
+	f := newAPIFixture(t)
+	adminCookie := f.loginAdmin()
+	rejected := f.do("PUT", "/console/api/config", adminCookie,
+		`{"forceUpdate":{"minimalVersion":"9.9.9"}}`)
+	if rejected.Code != 400 || !strings.Contains(rejected.Body.String(), "更新清单") {
+		t.Fatalf("未接入更新清单时应拒绝强制更新: %d %s", rejected.Code, rejected.Body.String())
+	}
+	// 数据库里即使残留旧版本号，未启用更新清单时公开配置也不得下发。
+	if err := f.store.SetConfigValue(context.Background(), "forceUpdate",
+		[]byte(`{"minimalVersion":"9.9.9"}`)); err != nil {
+		t.Fatal(err)
+	}
+	publicRec := f.do("GET", "/api/v1/client/configs", "", "")
+	configs := dataOf(t, publicRec)["configs"].(map[string]any)
+	if _, exists := configs["forceUpdate"]; exists {
+		t.Fatalf("未启用更新清单时不应下发 forceUpdate: %v", configs)
+	}
+	f.deps.Env.ReleaseManifestEnabled = true
+	accepted := f.do("PUT", "/console/api/config", adminCookie,
+		`{"forceUpdate":{"minimalVersion":"9.9.9"}}`)
+	if accepted.Code != 200 {
+		t.Fatalf("启用更新清单后应允许强制更新: %d %s", accepted.Code, accepted.Body.String())
+	}
+	publicRec = f.do("GET", "/api/v1/client/configs", "", "")
+	configs = dataOf(t, publicRec)["configs"].(map[string]any)
+	if configs["forceUpdate"] == nil {
+		t.Fatalf("启用更新清单后应下发 forceUpdate: %v", configs)
 	}
 }
 

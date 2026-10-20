@@ -182,7 +182,7 @@ func (s *memoryStore) ReserveQuota(_ context.Context, input ReserveQuotaInput) (
 	}
 	reservation := QuotaReservationRecord{
 		ID: id, TeamID: input.TeamID, UserID: input.UserID, RequestID: input.RequestID,
-		ReservedMicro: input.Micro, Status: ReservationReserved,
+		ReservedMicro: input.Micro, Status: ReservationReserved, HeldByTask: input.HeldByTask,
 		CreatedAt: createdAt, ExpiresAt: createdAt.Add(ttl),
 	}
 	s.reservations[id] = reservation
@@ -197,7 +197,7 @@ func (s *memoryStore) SettleReservation(_ context.Context, reservationID string,
 	defer s.mu.Unlock()
 	reservation, ok := s.reservations[reservationID]
 	if !ok {
-		return nil
+		return ErrReservationNotFound
 	}
 	if reservation.Status == ReservationSettled || reservation.Status == ReservationReleased {
 		return nil
@@ -261,7 +261,7 @@ func (s *memoryStore) ExpireStaleReservations(_ context.Context, before time.Tim
 	perTeam := map[string]int64{}
 	var count int64
 	for id, reservation := range s.reservations {
-		if reservation.Status != ReservationReserved || !reservation.ExpiresAt.Before(before) {
+		if reservation.HeldByTask || reservation.Status != ReservationReserved || !reservation.ExpiresAt.Before(before) {
 			continue
 		}
 		perTeam[reservation.TeamID] += reservation.ReservedMicro
@@ -304,6 +304,127 @@ func (s *memoryStore) ListOpenReservations(_ context.Context, limit int64) ([]Qu
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+// ---- 结算失败补偿 ----
+
+func (s *memoryStore) EnqueuePendingSettlement(_ context.Context, reservationID string, record UsageRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.pendingSettlements[reservationID]; exists {
+		return nil
+	}
+	now := time.Now()
+	s.pendingSettlements[reservationID] = PendingSettlementRecord{
+		ReservationID: reservationID,
+		Record:        cloneUsage(record),
+		Status:        PendingSettlementPending,
+		NextAttemptAt: now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	return nil
+}
+
+func (s *memoryStore) ListPendingSettlements(_ context.Context, filter PendingSettlementFilter) ([]PendingSettlementRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	out := []PendingSettlementRecord{}
+	for _, item := range s.pendingSettlements {
+		if filter.Status != "" && item.Status != filter.Status {
+			continue
+		}
+		if filter.DueBefore != nil && item.NextAttemptAt.After(*filter.DueBefore) {
+			continue
+		}
+		item.Record = cloneUsage(item.Record)
+		out = append(out, item)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if !out[i].NextAttemptAt.Equal(out[j].NextAttemptAt) {
+			return out[i].NextAttemptAt.Before(out[j].NextAttemptAt)
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	if int64(len(out)) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (s *memoryStore) MarkPendingSettlementApplied(_ context.Context, reservationID string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.pendingSettlements[reservationID]
+	if !ok {
+		return nil
+	}
+	item.Status = PendingSettlementApplied
+	item.LastError = ""
+	item.UpdatedAt = at
+	s.pendingSettlements[reservationID] = item
+	return nil
+}
+
+func (s *memoryStore) MarkPendingSettlementRetry(_ context.Context, reservationID string, attempts int64, lastError string, nextAttemptAt time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.pendingSettlements[reservationID]
+	if !ok {
+		return nil
+	}
+	item.Status = PendingSettlementPending
+	item.Attempts = attempts
+	item.LastError = lastError
+	item.NextAttemptAt = nextAttemptAt
+	item.UpdatedAt = time.Now()
+	s.pendingSettlements[reservationID] = item
+	return nil
+}
+
+func (s *memoryStore) MarkPendingSettlementFailed(_ context.Context, reservationID string, attempts int64, lastError string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	item, ok := s.pendingSettlements[reservationID]
+	if !ok {
+		return nil
+	}
+	item.Status = PendingSettlementFailed
+	item.Attempts = attempts
+	item.LastError = lastError
+	item.UpdatedAt = time.Now()
+	s.pendingSettlements[reservationID] = item
+	return nil
+}
+
+func (s *memoryStore) InsertGatewayAttempt(_ context.Context, record GatewayAttemptRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if record.StatusCode != nil {
+		status := *record.StatusCode
+		record.StatusCode = &status
+	}
+	s.gatewayAttempts = append(s.gatewayAttempts, record)
+	return nil
+}
+
+func (s *memoryStore) CountPendingSettlements(_ context.Context, status PendingSettlementStatus) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var count int64
+	for _, item := range s.pendingSettlements {
+		if status == "" || item.Status == status {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (s *memoryStore) ListUsageForExport(_ context.Context, filter UsageFilter, max int64) ([]UsageRecord, error) {
@@ -405,6 +526,11 @@ func (s *memoryStore) OpsOverview(_ context.Context, since time.Time) (*OpsOverv
 	for _, reservation := range s.reservations {
 		if reservation.Status == ReservationReserved {
 			out.OpenReservations++
+		}
+	}
+	for _, pending := range s.pendingSettlements {
+		if pending.Status == PendingSettlementPending || pending.Status == PendingSettlementFailed {
+			out.PendingSettlements++
 		}
 	}
 	// 供应商 P95 需要单独收集，按 provider 分组重扫。

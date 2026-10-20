@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { useAuth } from "../auth.js";
 import { api } from "../api.js";
-import { shanghaiDateOf } from "../time.js";
+import {
+  shanghaiDateOf,
+  shanghaiDayEndUtc,
+  shanghaiDayStartUtc,
+} from "../time.js";
 import { useCountUp } from "./Gauge.js";
 import { Select } from "./Select.js";
 
@@ -56,15 +60,15 @@ function sumAggregates(rows: UsageAggregate[]): {
 async function loadRail(isRoot: boolean, teamId: string): Promise<RailData> {
   const scope = teamId ? `&teamId=${encodeURIComponent(teamId)}` : "";
   const now = new Date();
-  // 展示按上海日期取今日；查询参数沿用服务端的 UTC naive 时间契约。
+  // 展示按上海日期取今日；服务端按 UTC 解析 from/to，必须换算上海日界。
   const today = shanghaiDateOf(now);
   const start = shanghaiDateOf(new Date(now.getTime() - 13 * 86_400_000));
   const [todayUsage, windowUsage, devicesRes, releasesRes] = await Promise.all([
     api<{ aggregates: UsageAggregate[] }>(
-      `/usage?from=${today}T00:00:00&to=${today}T23:59:59${scope}`,
+      `/usage?from=${shanghaiDayStartUtc(today)}&to=${shanghaiDayEndUtc(today)}${scope}`,
     ),
     api<{ aggregates: UsageAggregate[] }>(
-      `/usage?from=${start}T00:00:00&to=${today}T23:59:59${scope}`,
+      `/usage?from=${shanghaiDayStartUtc(start)}&to=${shanghaiDayEndUtc(today)}${scope}`,
     ),
     api<{ devices: DeviceRow[] }>(
       `/devices${teamId ? `?teamId=${encodeURIComponent(teamId)}` : ""}`,
@@ -96,12 +100,20 @@ async function loadRail(isRoot: boolean, teamId: string): Promise<RailData> {
 export function ReadoutRail() {
   const { isRoot, canManageTeam, teamId, team, teams, selectTeam, user, refreshSession } =
     useAuth();
-  const [data, setData] = useState<RailData>(EMPTY);
+  const [data, setData] = useState<RailData | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     loadRail(isRoot, teamId)
-      .then(setData)
-      .catch(() => setData(EMPTY));
+      .then((next) => {
+        setData(next);
+        setLoadError(null);
+      })
+      .catch((error: unknown) => {
+        // 失败时保留 null，读数显示“—”而不是 0，避免把故障伪装成真实零用量。
+        setData(null);
+        setLoadError(error instanceof Error ? error.message : "读数加载失败");
+      });
   }, [isRoot, teamId]);
 
   useEffect(() => {
@@ -114,15 +126,16 @@ export function ReadoutRail() {
     return () => window.clearInterval(timer);
   }, [refresh, refreshSession]);
 
-  const requestsText = useCountUp(data.requests, 0);
-  const creditsText = useCountUp(data.creditsMicro / 1_000_000, 2);
-  const devicesText = useCountUp(data.activeDevices, 0);
+  const displayed = data ?? EMPTY;
+  const requestsText = useCountUp(displayed.requests, 0);
+  const creditsText = useCountUp(displayed.creditsMicro / 1_000_000, 2);
+  const devicesText = useCountUp(displayed.activeDevices, 0);
 
   const ratio = (value: number, baseline: number) =>
     baseline > 0 ? Math.min(value / baseline, 1) : 0;
-  const requestWidth = `${(ratio(data.requests, data.avgRequests) * 100).toFixed(1)}%`;
-  const creditWidth = `${(ratio(data.creditsMicro, data.avgCredits) * 100).toFixed(1)}%`;
-  const deviceWidth = `${(ratio(data.activeDevices, data.totalDevices) * 100).toFixed(1)}%`;
+  const requestWidth = `${(ratio(displayed.requests, displayed.avgRequests) * 100).toFixed(1)}%`;
+  const creditWidth = `${(ratio(displayed.creditsMicro, displayed.avgCredits) * 100).toFixed(1)}%`;
+  const deviceWidth = `${(ratio(displayed.activeDevices, displayed.totalDevices) * 100).toFixed(1)}%`;
   // 只有 root 或多团队用户需要切换;单团队展示静态团队名,避免无意义的单选项下拉。
   const showScopeSelect = isRoot || teams.length > 1;
 
@@ -155,12 +168,29 @@ export function ReadoutRail() {
             {team?.name ?? "尚未加入团队"}
           </div>
         )}
+        {loadError ? (
+          <button
+            className="btn btn-sm"
+            type="button"
+            title={loadError}
+            style={{ marginTop: 6, width: "100%" }}
+            onClick={refresh}
+          >
+            读数加载失败 · 重试
+          </button>
+        ) : null}
       </div>
       <div className="read">
         <div className="label">今日请求</div>
         <div className="value">
-          {requestsText}
-          <span className="unit">次</span>
+          {data ? (
+            <>
+              {requestsText}
+              <span className="unit">次</span>
+            </>
+          ) : (
+            "—"
+          )}
         </div>
         <div
           className="mini"
@@ -173,8 +203,14 @@ export function ReadoutRail() {
       <div className="read">
         <div className="label">今日费用</div>
         <div className="value">
-          {creditsText}
-          <span className="unit">¥</span>
+          {data ? (
+            <>
+              {creditsText}
+              <span className="unit">¥</span>
+            </>
+          ) : (
+            "—"
+          )}
         </div>
         <div
           className="mini"
@@ -187,8 +223,14 @@ export function ReadoutRail() {
       <div className="read" title="近 24 小时有调用且未吊销的设备数">
         <div className="label">{isRoot ? "活跃设备" : "本人活跃设备"}</div>
         <div className="value">
-          {devicesText}
-          <span className="unit">台</span>
+          {data ? (
+            <>
+              {devicesText}
+              <span className="unit">台</span>
+            </>
+          ) : (
+            "—"
+          )}
         </div>
         <div
           className="mini"
@@ -204,7 +246,7 @@ export function ReadoutRail() {
         </div>
         <div className="value">
           {isRoot
-            ? data.revision === null
+            ? data?.revision == null
               ? "—"
               : `R${data.revision}`
             : team
@@ -217,7 +259,7 @@ export function ReadoutRail() {
           className="mini"
           aria-hidden="true"
           style={
-            { "--w": data.revision === null ? "0%" : "100%" } as CSSProperties
+            { "--w": data?.revision == null ? "0%" : "100%" } as CSSProperties
           }
         >
           <i />

@@ -14,6 +14,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/vam12375/shucode-platform/server/internal/compensation"
 	"github.com/vam12375/shucode-platform/server/internal/crypto"
 	"github.com/vam12375/shucode-platform/server/internal/gwapp"
 	"github.com/vam12375/shucode-platform/server/internal/netguard"
@@ -78,14 +79,19 @@ func main() {
 		logger.Info("已启用 Redis 共享限流")
 	}
 
+	settlementCompensator := compensation.NewSettlementCompensator(
+		platformStore, env.PendingSettlementDir, logger, time.Now)
+
 	deps := gwapp.Deps{
-		Store:       platformStore,
-		Env:         env,
-		Now:         time.Now,
-		Logger:      logger,
-		SecretBox:   secretBox,
-		Trusted:     gwapp.NewTrustedProxies(env.TrustedProxyIPs),
-		RateLimiter: ratelimit.NewGatewayLimiter(redisClient),
+		Store:              platformStore,
+		Env:                env,
+		Now:                time.Now,
+		Logger:             logger,
+		SecretBox:          secretBox,
+		Trusted:            gwapp.NewTrustedProxies(env.TrustedProxyIPs),
+		RateLimiter:        ratelimit.NewGatewayLimiter(redisClient),
+		SettlementFallback: settlementCompensator,
+		AttemptRecorder:    platformStore,
 		HTTPClient: &http.Client{
 			Transport: netguard.NewTransport(env.AllowPrivateUpstreamNetworks),
 			// TS fetch redirect:"error":上游重定向视为连接失败,不跟随。
@@ -117,6 +123,8 @@ func main() {
 			}
 		}
 	}()
+	// 结算补偿与预留回收并行：前者把失败结算从 spool/待结算表重放进权威事务。
+	settlementCompensator.Run(ctx, 30*time.Second)
 	gwapp.StartProviderProber(ctx, deps, env.ProviderProbeInterval)
 
 	addr := fmt.Sprintf("%s:%d", env.Host, env.Port)

@@ -701,7 +701,10 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		}
 		help, _ := jsonDecode(helpRaw)
 		force, _ := jsonDecode(forceRaw)
-		c.JSON(200, okData(gin.H{"help": help, "forceUpdate": force}))
+		c.JSON(200, okData(gin.H{
+			"help": help, "forceUpdate": force,
+			"releaseManifestEnabled": deps.Env.ReleaseManifestEnabled,
+		}))
 	})
 
 	group.PUT("/config", func(c *gin.Context) {
@@ -713,6 +716,15 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		if !ok {
 			c.JSON(400, fail(400, "请求参数不合法"))
 			return
+		}
+		// 更新清单仍是固定 0.0.0 stub；此时启用强制更新会让客户端要求升级却拉不到包。
+		if raw, exists := body["forceUpdate"]; exists && !deps.Env.ReleaseManifestEnabled {
+			if obj, isObject := raw.(map[string]any); isObject {
+				if value, isString := obj["minimalVersion"].(string); isString && strings.TrimSpace(value) != "" {
+					c.JSON(400, fail(400, "桌面更新清单尚未接入安装包分发，不能启用强制更新"))
+					return
+				}
+			}
 		}
 		for _, field := range []string{"help", "forceUpdate"} {
 			if raw, exists := body[field]; exists {
@@ -911,6 +923,13 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		c.Header("content-type", "text/csv; charset=utf-8")
 		c.Header("content-disposition", `attachment; filename="`+filename+`"`)
 		c.Header("cache-control", "no-store")
+		c.Header("x-usage-export-count", strconv.Itoa(len(records)))
+		c.Header("x-usage-export-limit", "100000")
+		// 查询上限是 100000；达到上限时无法区分“恰好 10 万条”和“被截断”，
+		// 明确标记为可能截断，由控制台提示用户缩小范围。
+		if len(records) >= 100_000 {
+			c.Header("x-usage-export-truncated", "1")
+		}
 		_, _ = c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
 		writer := csv.NewWriter(c.Writer)
 		header := []string{"时间(UTC)", "request_id", "用户ID", "团队ID", "设备ID", "模型", "输入Token", "输出Token", "缓存读", "缓存写", "费用microCR", "状态", "错误类型", "延迟ms"}

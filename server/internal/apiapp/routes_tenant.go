@@ -23,10 +23,10 @@ func writeTeamAudit(ctx context.Context, deps *Deps, actor *store.UserRecord, te
 	if err != nil {
 		raw = []byte(`{}`)
 	}
-	if err := deps.Store.InsertAuditLog(ctx, store.InsertAuditLogInput{TeamID: teamID, ActorUserID: actor.ID,
-		Action: action, TargetType: targetType, TargetID: targetID, Detail: raw}); err != nil {
-		deps.Logger.Warn("团队审计写入失败", "action", action, "error", err)
-	}
+	persistAudit(ctx, deps, store.InsertAuditLogInput{
+		EventID: uuid.NewString(), TeamID: teamID, ActorUserID: actor.ID,
+		Action: action, TargetType: targetType, TargetID: targetID, Detail: raw,
+	})
 }
 
 func tenantStoreError(c *gin.Context, deps *Deps, err error) {
@@ -152,6 +152,11 @@ func registerTenantRoutes(router *gin.Engine, deps *Deps) {
 				return
 			}
 			if _, err := deps.Store.RevokeDeviceTokensForUser(ctx, user.ID, deps.Now()); err != nil {
+				internalError(c, deps, err)
+				return
+			}
+			// 已授权未消费的登录流同样能签发设备凭据，改密后必须一并作废。
+			if _, err := deps.Store.RevokeLoginFlowsForUser(ctx, user.ID, deps.Now()); err != nil {
 				internalError(c, deps, err)
 				return
 			}

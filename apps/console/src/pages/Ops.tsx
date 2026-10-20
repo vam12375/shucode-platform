@@ -36,6 +36,8 @@ interface OpsOverview {
   p99LatencyMs: number | null;
   activeDevices: number;
   openReservations: number;
+  pendingSettlements: number;
+  auditOutboxPending: number;
   providerStats: ProviderStat[];
 }
 
@@ -80,10 +82,26 @@ interface ReservationRow {
   expiresAt: string;
 }
 
+interface PendingSettlementRow {
+  reservationId: string;
+  requestId: string;
+  teamId: string;
+  creditsMicro: number;
+  settlementStatus: "pending" | "failed";
+  usageStatus: string;
+  attempts: number;
+  lastError: string;
+  nextAttemptAt: string;
+  createdAt: string;
+}
+
 interface Reconciliation {
   open: ReservationRow[];
   openCount: number;
   staleCount: number;
+  pendingSettlements: PendingSettlementRow[];
+  pendingSettlementCount: number;
+  failedSettlementCount: number;
 }
 
 const HOUR_OPTIONS = [
@@ -98,6 +116,8 @@ const METRIC_OPTIONS = [
   { value: "error_rate", label: "错误率" },
   { value: "p95_latency_ms", label: "P95 延迟 (ms)" },
   { value: "open_reservations", label: "未释放预留数" },
+  { value: "pending_settlements", label: "待结算补偿数" },
+  { value: "audit_outbox", label: "待入库审计数" },
   { value: "daily_credits", label: "窗口消费 (¥)" },
   { value: "provider_failures", label: "上游错误数" },
 ];
@@ -106,6 +126,8 @@ const METRIC_DEFAULT_THRESHOLDS: Record<string, string> = {
   error_rate: "0.1",
   p95_latency_ms: "5000",
   open_reservations: "10",
+  pending_settlements: "1",
+  audit_outbox: "1",
   daily_credits: "100",
   provider_failures: "10",
 };
@@ -348,6 +370,23 @@ export function OpsPage() {
             过期 {reconciliation?.staleCount ?? 0} 条
           </p>
         </div>
+        <div className="ops-metric">
+          <p className="stat-label">待结算补偿</p>
+          <p className="stat-value">
+            {overview?.pendingSettlements.toLocaleString("en-US") ?? "—"}
+          </p>
+          <p className="stat-sub">
+            待重试 {reconciliation?.pendingSettlementCount ?? 0} · 人工{" "}
+            {reconciliation?.failedSettlementCount ?? 0}
+          </p>
+        </div>
+        <div className="ops-metric">
+          <p className="stat-label">审计 outbox</p>
+          <p className="stat-value">
+            {overview?.auditOutboxPending.toLocaleString("en-US") ?? "—"}
+          </p>
+          <p className="stat-sub">待入库事件 · 进程本地持久化</p>
+        </div>
       </section>
 
       <div className="chart-grid">
@@ -524,6 +563,57 @@ export function OpsPage() {
               </tbody>
             </table>
           </div>
+        </div>
+      </section>
+
+      <section className="pane d2">
+        <div className="pane-h">
+          <h2>待结算补偿</h2>
+          <span className="readout">
+            待重试 {reconciliation?.pendingSettlementCount ?? 0} · 转人工{" "}
+            {reconciliation?.failedSettlementCount ?? 0}
+          </span>
+        </div>
+        <div className="pane-b flush table-scroll">
+          <table className="table">
+            <thead>
+              <tr>
+                <th scope="col">创建时间</th>
+                <th scope="col">下次重试</th>
+                <th scope="col">request ID</th>
+                <th scope="col">团队</th>
+                <th scope="col">补偿状态</th>
+                <th scope="col">用量状态</th>
+                <th scope="col" className="num">费用 ¥</th>
+                <th scope="col" className="num">次数</th>
+                <th scope="col">最近错误</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(reconciliation?.pendingSettlements ?? []).map((row) => (
+                <tr key={row.reservationId}>
+                  <td className="num">{formatShanghaiTime(row.createdAt)}</td>
+                  <td className="num">{formatShanghaiTime(row.nextAttemptAt)}</td>
+                  <td><code>{row.requestId}</code></td>
+                  <td>{row.teamId.slice(0, 8)}</td>
+                  <td>
+                    <Chip tone={row.settlementStatus === "failed" ? "stop" : "hot"}>
+                      {row.settlementStatus === "failed" ? "转人工" : "待重试"}
+                    </Chip>
+                  </td>
+                  <td>{row.usageStatus}</td>
+                  <td className="num">{formatCny(row.creditsMicro)}</td>
+                  <td className="num">{row.attempts}</td>
+                  <td title={row.lastError}>{row.lastError || "—"}</td>
+                </tr>
+              ))}
+              {(reconciliation?.pendingSettlements.length ?? 0) === 0 ? (
+                <tr>
+                  <td colSpan={9} className="readout">没有待重试或转人工的结算补偿。</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
         </div>
       </section>
 

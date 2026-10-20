@@ -14,6 +14,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -49,6 +50,18 @@ type Deps struct {
 	Trusted    trustedProxies
 	// RateLimiter 为 nil 时跳过团队级限流（测试/极简部署）。
 	RateLimiter *ratelimit.GatewayLimiter
+	// SettlementFallback:结算重试耗尽后的持久化补偿（nil 时只记日志）。
+	SettlementFallback SettlementFallback
+	// AttemptRecorder:记录每个上游 attempt（含供应商请求 ID），便于故障转移对账。
+	AttemptRecorder AttemptRecorder
+}
+
+type SettlementFallback interface {
+	Persist(ctx context.Context, reservationID string, record store.UsageRecord) error
+}
+
+type AttemptRecorder interface {
+	InsertGatewayAttempt(ctx context.Context, record store.GatewayAttemptRecord) error
 }
 
 type errorResponder func(c *gin.Context, status int, typ, message string)
@@ -75,16 +88,19 @@ func mustJSON(v any) []byte {
 }
 
 type protocolSpec struct {
-	routePath      string
-	upstreamPath   string
-	family         string // "openai" | "anthropic"
-	errorResponse  errorResponder
-	readModelID    func(body map[string]any) string
-	readMaxTokens  func(body map[string]any) int64
-	isStream       func(body map[string]any) bool
-	buildUpstream  func(r *http.Request, body map[string]any, upstreamModel string, stream bool, apiKey, anthropicVersion string) (map[string]string, []byte)
-	parseUsageJSON func(text string) *UsageCounts
-	newScanner     func() streamScanner
+	routePath     string
+	upstreamPath  string
+	family        string // "openai" | "anthropic"
+	errorResponse errorResponder
+	readModelID   func(body map[string]any) string
+	readMaxTokens func(body map[string]any) int64
+	// applyOutputLimit:把平台实际采用的输出上限写回上游请求。
+	// 缺省值/夹紧值必须与额度预留使用同一个数，否则上游可能超出预留。
+	applyOutputLimit func(body map[string]any, limit int64)
+	isStream         func(body map[string]any) bool
+	buildUpstream    func(r *http.Request, body map[string]any, upstreamModel string, stream bool, apiKey, anthropicVersion string) (map[string]string, []byte)
+	parseUsageJSON   func(text string) *UsageCounts
+	newScanner       func() streamScanner
 }
 
 type streamScanner interface {
@@ -108,7 +124,10 @@ func buildAnthropicSpec() protocolSpec {
 			return ""
 		},
 		readMaxTokens: func(body map[string]any) int64 { return readMaxTokensFrom(body["max_tokens"]) },
-		isStream:      func(body map[string]any) bool { return body["stream"] == true },
+		applyOutputLimit: func(body map[string]any, limit int64) {
+			body["max_tokens"] = float64(limit)
+		},
+		isStream: func(body map[string]any) bool { return body["stream"] == true },
 		buildUpstream: func(r *http.Request, body map[string]any, upstreamModel string, _ bool, apiKey, anthropicVersion string) (map[string]string, []byte) {
 			headers := map[string]string{
 				"content-type":      "application/json",
@@ -155,6 +174,14 @@ func buildOpenAISpec() protocolSpec {
 				return readMaxTokensFrom(body["max_completion_tokens"])
 			}
 			return readMaxTokensFrom(body["max_tokens"])
+		},
+		applyOutputLimit: func(body map[string]any, limit int64) {
+			// 保留客户端使用的字段：新版推理模型只认 max_completion_tokens。
+			if _, ok := body["max_completion_tokens"]; ok {
+				body["max_completion_tokens"] = float64(limit)
+				return
+			}
+			body["max_tokens"] = float64(limit)
 		},
 		isStream: func(body map[string]any) bool { return body["stream"] == true },
 		buildUpstream: func(_ *http.Request, body map[string]any, upstreamModel string, stream bool, apiKey, _ string) (map[string]string, []byte) {
@@ -203,6 +230,17 @@ func buildOpenAIResponsesSpec() protocolSpec {
 				return readMaxTokensFrom(body["max_output_tokens"])
 			}
 			return readMaxTokensFrom(body["max_tokens"])
+		},
+		applyOutputLimit: func(body map[string]any, limit int64) {
+			if _, ok := body["max_output_tokens"]; ok {
+				body["max_output_tokens"] = float64(limit)
+				return
+			}
+			if _, ok := body["max_tokens"]; ok {
+				body["max_tokens"] = float64(limit)
+				return
+			}
+			body["max_output_tokens"] = float64(limit)
 		},
 		isStream: func(body map[string]any) bool { return body["stream"] == true },
 		buildUpstream: func(_ *http.Request, body map[string]any, upstreamModel string, _ bool, apiKey, _ string) (map[string]string, []byte) {
@@ -493,8 +531,8 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		return
 	}
 	stream := spec.isStream(body)
-	maxTokens := spec.readMaxTokens(body)
-	// n>1 时输出可能成倍放大：预留按 n 倍输出上限计算，超过 16 个候选直接拒绝。
+	// 预留按“单次输出上限 × n”计算；写回上游的是单次上限，不能把 n 倍额度当成单条上限。
+	perRequestMaxTokens := spec.readMaxTokens(body)
 	outputCount := int64(1)
 	if spec.family == "openai" {
 		parsedCount, okCount := requestedOutputCount(body, maxOutputCandidates)
@@ -504,8 +542,9 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		}
 		outputCount = parsedCount
 	}
-	maxTokens *= outputCount
+	maxTokens := perRequestMaxTokens * outputCount
 	clampRequestedMaxTokens(body)
+	spec.applyOutputLimit(body, perRequestMaxTokens)
 	priceCapturedAt := deps.Now()
 	rates := priceRates(model, priceCapturedAt, deps.Env.PeakHoursHolidays)
 	priceCapture := captureUsagePricing(ctx, deps, model, priceCapturedAt)
@@ -600,6 +639,45 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	var settled atomic.Bool
 	lastTarget := targets[0]
 
+	providerHost := func(target upstreamTarget) string {
+		parsed, err := url.Parse(target.BaseURL)
+		if err != nil || parsed.Host == "" {
+			return target.BaseURL
+		}
+		return parsed.Host
+	}
+	providerRequestIDFrom := func(resp *http.Response) string {
+		if resp == nil {
+			return ""
+		}
+		for _, key := range []string{"x-request-id", "request-id", "openai-request-id", "x-amz-request-id"} {
+			if value := strings.TrimSpace(resp.Header.Get(key)); value != "" {
+				return value
+			}
+		}
+		return ""
+	}
+	// 记录每个候选的完整轨迹；写失败只告警，不影响已经完成的转发与结算。
+	recordAttempt := func(target upstreamTarget, attempt int64, attemptStarted time.Time, statusCode *int, errorType, providerRequestID string, final bool) {
+		if deps.AttemptRecorder == nil {
+			return
+		}
+		recordCtx, cancelRecord := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancelRecord()
+		err := deps.AttemptRecorder.InsertGatewayAttempt(recordCtx, store.GatewayAttemptRecord{
+			RequestID: requestID, ReservationID: reservationID, Attempt: attempt + 1,
+			ProviderID: target.ProviderID, UpstreamModel: target.UpstreamModel,
+			BaseHost: providerHost(target), StatusCode: statusCode,
+			ErrorType: errorType, ProviderRequestID: providerRequestID,
+			StartedAt: attemptStarted, DurationMs: deps.Now().Sub(attemptStarted).Milliseconds(),
+			Final: final,
+		})
+		if err != nil {
+			deps.Logger.Warn("上游尝试记录失败", "requestId", requestID, "attempt", attempt+1,
+				"providerId", target.ProviderID, "error", err)
+		}
+	}
+
 	buildUsageRecord := func(target upstreamTarget, usage UsageCounts, status store.UsageStatus, errorType string, micro int64) store.UsageRecord {
 		record := store.UsageRecord{
 			RequestID:       requestID,
@@ -674,6 +752,20 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 				break
 			}
 		}
+		if deps.SettlementFallback != nil {
+			// 补偿写入必须脱离客户端请求 ctx（客户端可能已断开），并给独立短超时。
+			fallbackCtx, cancelFallback := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			persistErr := deps.SettlementFallback.Persist(fallbackCtx, reservationID, record)
+			cancelFallback()
+			if persistErr != nil {
+				deps.Logger.Error("结算写入失败且持久化补偿入队失败",
+					"requestId", requestID, "error", lastErr, "persistError", persistErr)
+			} else {
+				deps.Logger.Warn("结算写入失败，已转入持久化补偿队列",
+					"requestId", requestID, "error", lastErr)
+			}
+			return
+		}
 		deps.Logger.Error("结算写入失败", "requestId", requestID, "error", lastErr)
 	}
 
@@ -693,17 +785,32 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		spec.errorResponse(c, 504, "api_error", "请求总时长超限，请稍后重试")
 	}
 
+	// 熔断计数必须用脱离请求取消的短上下文：客户端断连/总时长超时后仍要能记账。
 	reportFailure := func(providerID, reason string) {
 		if providerID == "" || deps.Env.ProviderAutoDisableThreshold <= 0 {
 			return
 		}
-		disabled, err := deps.Store.ReportUpstreamFailure(requestCtx, providerID, reason, deps.Env.ProviderAutoDisableThreshold)
+		reportCtx, cancelReport := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+		defer cancelReport()
+		disabled, err := deps.Store.ReportUpstreamFailure(reportCtx, providerID, reason, deps.Env.ProviderAutoDisableThreshold)
 		if err != nil {
 			deps.Logger.Error("熔断计数失败", "error", err)
 			return
 		}
 		if disabled {
 			deps.Logger.Warn("上游供应商连续失败，已自动停用", "providerId", providerID, "reason", reason)
+		}
+	}
+	// 只有完整成功（非流式响应体读完 / 流式正常结束）才清零连续失败计数。
+	// 写出 2xx 响应头不代表上游成功：流式空闲超时/中断同样可能发生在头之后。
+	reportSuccess := func(providerID string) {
+		if providerID == "" {
+			return
+		}
+		reportCtx, cancelReport := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+		defer cancelReport()
+		if err := deps.Store.ReportUpstreamSuccess(reportCtx, providerID); err != nil {
+			deps.Logger.Error("熔断计数重置失败", "error", err)
 		}
 	}
 
@@ -726,7 +833,10 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	for attempt := int64(0); attempt < maxAttempts; attempt++ {
 		target := targets[attempt]
 		lastTarget = target
+		attemptStarted := deps.Now()
 		if errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
+			recordAttempt(target, attempt, attemptStarted, nil, "request_lifetime_timeout", "", true)
+			reportFailure(target.ProviderID, "request_lifetime_timeout")
 			failWithUsage(target, store.UsageStatusError, "request_lifetime_timeout")
 			respondLifetimeTimeout()
 			return
@@ -766,6 +876,8 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			headerTimer.Stop()
 			cancelUpstream()
 			if errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
+				recordAttempt(target, attempt, attemptStarted, nil, "request_lifetime_timeout", "", true)
+				reportFailure(target.ProviderID, "request_lifetime_timeout")
 				failWithUsage(target, store.UsageStatusError, "request_lifetime_timeout")
 				respondLifetimeTimeout()
 				return
@@ -778,6 +890,7 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 				"providerId", target.ProviderID, "timedOut", headerTimedOut.Load(), "error", err)
 			reportFailure(target.ProviderID, errorType)
 			if ctx.Err() != nil {
+				recordAttempt(target, attempt, attemptStarted, nil, "client_aborted", "", true)
 				failWithUsage(target, store.UsageStatusAborted, "client_aborted")
 				return
 			}
@@ -788,8 +901,10 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 				lastStatus, lastMessage = 504, "上游响应超时，请稍后重试"
 			}
 			if attempt+1 < maxAttempts {
+				recordAttempt(target, attempt, attemptStarted, nil, errorType, "", false)
 				continue
 			}
+			recordAttempt(target, attempt, attemptStarted, nil, errorType, "", true)
 			failWithUsage(target, store.UsageStatusError, errorType)
 			spec.errorResponse(c, lastStatus, "api_error", lastMessage)
 			return
@@ -801,6 +916,8 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			resp.Body.Close()
 			cancelUpstream()
 			if errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
+				recordAttempt(target, attempt, attemptStarted, &resp.StatusCode, "request_lifetime_timeout", providerRequestIDFrom(resp), true)
+				reportFailure(target.ProviderID, "request_lifetime_timeout")
 				failWithUsage(target, store.UsageStatusError, "request_lifetime_timeout")
 				respondLifetimeTimeout()
 				return
@@ -822,8 +939,10 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			lastBody, lastContentType = text, contentType
 			lastMessage = "upstream error"
 			if retryableUpstreamStatus(resp.StatusCode) && attempt+1 < maxAttempts {
+				recordAttempt(target, attempt, attemptStarted, &resp.StatusCode, errorType, providerRequestIDFrom(resp), false)
 				continue
 			}
+			recordAttempt(target, attempt, attemptStarted, &resp.StatusCode, errorType, providerRequestIDFrom(resp), true)
 			failWithUsage(target, store.UsageStatusError, errorType)
 			if len(text) == 0 {
 				spec.errorResponse(c, resp.StatusCode, "api_error", "upstream error")
@@ -831,13 +950,6 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			}
 			c.Data(resp.StatusCode, contentType, text)
 			return
-		}
-
-		// 成功转发到响应头即重置连续失败计数（无渠道池的 env 上游不计数）。
-		if target.ProviderID != "" {
-			if err := deps.Store.ReportUpstreamSuccess(requestCtx, target.ProviderID); err != nil {
-				deps.Logger.Error("熔断计数重置失败", "error", err)
-			}
 		}
 
 		// ---- 非流式:一次结算(header 限时覆盖整个响应体读取) ----
@@ -851,6 +963,8 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 				headerTimer.Stop()
 				cancelUpstream()
 				if errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
+					recordAttempt(target, attempt, attemptStarted, &resp.StatusCode, "request_lifetime_timeout", providerRequestIDFrom(resp), true)
+					reportFailure(target.ProviderID, "request_lifetime_timeout")
 					settleMissingUsage(target, store.UsageStatusError, "request_lifetime_timeout")
 					respondLifetimeTimeout()
 					return
@@ -859,7 +973,9 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 				if headerTimedOut.Load() {
 					errorType = "upstream_timeout"
 				}
+				recordAttempt(target, attempt, attemptStarted, &resp.StatusCode, errorType, providerRequestIDFrom(resp), true)
 				deps.Logger.Warn("上游响应体读取失败", "requestId", requestID, "errorType", errorType)
+				reportFailure(target.ProviderID, errorType)
 				failWithUsage(target, store.UsageStatusError, errorType)
 				if headerTimedOut.Load() {
 					spec.errorResponse(c, 504, "api_error", "上游响应异常，请稍后重试")
@@ -870,6 +986,8 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			}
 			headerTimer.Stop()
 			cancelUpstream()
+			recordAttempt(target, attempt, attemptStarted, &resp.StatusCode, "", providerRequestIDFrom(resp), true)
+			reportSuccess(target.ProviderID)
 			parsedUsage := spec.parseUsageJSON(string(text))
 			if parsedUsage == nil {
 				deps.Logger.Warn("上游成功响应缺少 usage，按准入预留额保守结算", "requestId", requestID)
@@ -900,10 +1018,15 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			if dropped := scanner.Dropped(); dropped > 0 {
 				deps.Logger.Warn("流式 usage 存在无法解析/被截断的事件帧", "requestId", requestID, "dropped", dropped)
 			}
+			// 客户端主动中断时上游流本身是健康的，仍算一次成功转发。
+			if status == store.UsageStatusOk || status == store.UsageStatusAborted {
+				reportSuccess(target.ProviderID)
+			}
 			errorType := ""
 			if status == store.UsageStatusAborted {
 				errorType = "client_aborted"
 			}
+			recordAttempt(target, attempt, attemptStarted, &resp.StatusCode, errorType, providerRequestIDFrom(resp), true)
 			if !scanner.UsageObserved() {
 				deps.Logger.Warn("流式响应结束但未采集到 usage，按准入预留额保守结算",
 					"requestId", requestID, "status", status)
@@ -920,11 +1043,22 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		finalizeLifetimeTimeout := func() {
 			idleTimer.Stop()
 			cancelUpstream()
+			recordAttempt(target, attempt, attemptStarted, &resp.StatusCode, "request_lifetime_timeout", providerRequestIDFrom(resp), true)
+			reportFailure(target.ProviderID, "request_lifetime_timeout")
 			if !scanner.UsageObserved() {
 				settleMissingUsage(target, store.UsageStatusError, "request_lifetime_timeout")
 				return
 			}
 			settle(target, scanner.Usage(), store.UsageStatusError, "request_lifetime_timeout", nil)
+		}
+		// 流式异常不能按零结算：已收到 usage 就保留已知用量；完全没收到 usage
+		// 才回退到准入预留额，并用 usage_missing_estimated 标记待对账。
+		failStreamWithUsage := func(errorType string) {
+			if scanner.UsageObserved() {
+				settle(target, scanner.Usage(), store.UsageStatusError, errorType, nil)
+				return
+			}
+			settleMissingUsage(target, store.UsageStatusError, errorType)
 		}
 
 		contentType := resp.Header.Get("content-type")
@@ -966,7 +1100,8 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			// 必须先判定 idleFired，否则会把超时误记成成功。
 			if idleFired.Load() {
 				deps.Logger.Warn("上游流式传输空闲超时", "requestId", requestID)
-				failWithUsage(target, store.UsageStatusError, "upstream_idle_timeout")
+				recordAttempt(target, attempt, attemptStarted, &resp.StatusCode, "upstream_idle_timeout", providerRequestIDFrom(resp), true)
+				failStreamWithUsage("upstream_idle_timeout")
 				reportFailure(target.ProviderID, "upstream_idle_timeout")
 				return
 			}
@@ -980,7 +1115,9 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 				return
 			}
 			deps.Logger.Warn("上游流式中断", "requestId", requestID, "error", readErr)
-			failWithUsage(target, store.UsageStatusError, "upstream_stream_failure")
+			recordAttempt(target, attempt, attemptStarted, &resp.StatusCode, "upstream_stream_failure", providerRequestIDFrom(resp), true)
+			failStreamWithUsage("upstream_stream_failure")
+			reportFailure(target.ProviderID, "upstream_stream_failure")
 			return
 		}
 	}

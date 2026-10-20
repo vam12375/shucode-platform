@@ -29,30 +29,33 @@ type MemoryOptions struct {
 type memoryStore struct {
 	mu sync.Mutex
 
-	users          map[string]UserRecord
-	sessions       map[string]SessionRecord
-	teams          map[string]TeamRecord
-	members        map[string]map[string]struct{} // teamID -> userIDs
-	memberRoles    map[string]TeamMemberRole      // "teamId:userId"
-	memberDisabled map[string]*time.Time
-	memberBudgets  map[string]string
-	teamPolicies   map[string]TeamPolicyRecord
-	invitations    map[string]TeamInvitationRecord
-	quotaRequests  map[string]QuotaRequestRecord
-	memberJoinedAt map[string]time.Time
-	deviceTokens   map[string]DeviceTokenRecord
-	flows          map[string]LoginFlowRecord
-	releases       map[int64]ReleaseRecord
-	models         map[string]PlatformModelRecord
-	providers      map[string]UpstreamProviderRecord
-	config         map[string][]byte
-	usage          []UsageRecord
-	auditLogs      []AdminAuditLogView
-	quotaAdjusts   []quotaAdjustmentRow
-	upstreamRoutes map[string]UpstreamRouteRecord
-	reservations   map[string]QuotaReservationRecord
-	alertRules     map[string]AlertRuleRecord
-	alertEvents    []AlertEventRecord
+	users              map[string]UserRecord
+	sessions           map[string]SessionRecord
+	teams              map[string]TeamRecord
+	members            map[string]map[string]struct{} // teamID -> userIDs
+	memberRoles        map[string]TeamMemberRole      // "teamId:userId"
+	memberDisabled     map[string]*time.Time
+	memberBudgets      map[string]string
+	teamPolicies       map[string]TeamPolicyRecord
+	invitations        map[string]TeamInvitationRecord
+	quotaRequests      map[string]QuotaRequestRecord
+	memberJoinedAt     map[string]time.Time
+	deviceTokens       map[string]DeviceTokenRecord
+	flows              map[string]LoginFlowRecord
+	releases           map[int64]ReleaseRecord
+	models             map[string]PlatformModelRecord
+	providers          map[string]UpstreamProviderRecord
+	config             map[string][]byte
+	usage              []UsageRecord
+	auditLogs          []AdminAuditLogView
+	auditEventIDs      map[string]struct{}
+	quotaAdjusts       []quotaAdjustmentRow
+	upstreamRoutes     map[string]UpstreamRouteRecord
+	reservations       map[string]QuotaReservationRecord
+	pendingSettlements map[string]PendingSettlementRecord
+	gatewayAttempts    []GatewayAttemptRecord
+	alertRules         map[string]AlertRuleRecord
+	alertEvents        []AlertEventRecord
 }
 
 type quotaAdjustmentRow struct {
@@ -63,26 +66,28 @@ type quotaAdjustmentRow struct {
 
 func NewMemoryStore(ctx context.Context, opts MemoryOptions) (*memoryStore, error) {
 	s := &memoryStore{
-		users:          map[string]UserRecord{},
-		sessions:       map[string]SessionRecord{},
-		teams:          map[string]TeamRecord{},
-		members:        map[string]map[string]struct{}{},
-		memberRoles:    map[string]TeamMemberRole{},
-		memberJoinedAt: map[string]time.Time{},
-		memberDisabled: map[string]*time.Time{},
-		memberBudgets:  map[string]string{},
-		teamPolicies:   map[string]TeamPolicyRecord{},
-		invitations:    map[string]TeamInvitationRecord{},
-		quotaRequests:  map[string]QuotaRequestRecord{},
-		deviceTokens:   map[string]DeviceTokenRecord{},
-		flows:          map[string]LoginFlowRecord{},
-		releases:       map[int64]ReleaseRecord{},
-		models:         map[string]PlatformModelRecord{},
-		providers:      map[string]UpstreamProviderRecord{},
-		config:         map[string][]byte{},
-		upstreamRoutes: map[string]UpstreamRouteRecord{},
-		reservations:   map[string]QuotaReservationRecord{},
-		alertRules:     map[string]AlertRuleRecord{},
+		users:              map[string]UserRecord{},
+		sessions:           map[string]SessionRecord{},
+		teams:              map[string]TeamRecord{},
+		members:            map[string]map[string]struct{}{},
+		memberRoles:        map[string]TeamMemberRole{},
+		memberJoinedAt:     map[string]time.Time{},
+		memberDisabled:     map[string]*time.Time{},
+		memberBudgets:      map[string]string{},
+		teamPolicies:       map[string]TeamPolicyRecord{},
+		invitations:        map[string]TeamInvitationRecord{},
+		quotaRequests:      map[string]QuotaRequestRecord{},
+		deviceTokens:       map[string]DeviceTokenRecord{},
+		flows:              map[string]LoginFlowRecord{},
+		releases:           map[int64]ReleaseRecord{},
+		models:             map[string]PlatformModelRecord{},
+		providers:          map[string]UpstreamProviderRecord{},
+		config:             map[string][]byte{},
+		auditEventIDs:      map[string]struct{}{},
+		upstreamRoutes:     map[string]UpstreamRouteRecord{},
+		reservations:       map[string]QuotaReservationRecord{},
+		pendingSettlements: map[string]PendingSettlementRecord{},
+		alertRules:         map[string]AlertRuleRecord{},
 	}
 	if opts.DemoSeed {
 		if err := s.seedDemo(ctx); err != nil {
@@ -310,13 +315,7 @@ func (s *memoryStore) ListTeams(_ context.Context) ([]TeamWithUsage, error) {
 	return out, nil
 }
 
-func (s *memoryStore) UpdateTeam(_ context.Context, id string, patch UpdateTeamPatch) (*TeamRecord, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	team, ok := s.teams[id]
-	if !ok {
-		return nil, nil
-	}
+func applyTeamPatch(team *TeamRecord, patch UpdateTeamPatch) {
 	if patch.Name != nil {
 		team.Name = *patch.Name
 	}
@@ -338,7 +337,68 @@ func (s *memoryStore) UpdateTeam(_ context.Context, id string, patch UpdateTeamP
 	if patch.HasDisabled {
 		team.DisabledAt = copyTime(patch.DisabledAt)
 	}
+}
+
+func (s *memoryStore) UpdateTeam(_ context.Context, id string, patch UpdateTeamPatch) (*TeamRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	team, ok := s.teams[id]
+	if !ok {
+		return nil, nil
+	}
+	applyTeamPatch(&team, patch)
 	s.teams[id] = team
+	return cloneTeam(&team), nil
+}
+
+func (s *memoryStore) UpdateTeamWithAccounting(_ context.Context, id string, patch UpdateTeamPatch, adjustmentAction string, audit *InsertAuditLogInput) (*TeamRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	team, ok := s.teams[id]
+	if !ok {
+		return nil, nil
+	}
+	oldQuota, oldUnlimited := team.QuotaCredits, team.Unlimited
+	applyTeamPatch(&team, patch)
+	s.teams[id] = team
+	if adjustmentAction != "" {
+		actorID := ""
+		if audit != nil {
+			actorID = audit.ActorUserID
+		}
+		s.quotaAdjusts = append(s.quotaAdjusts, quotaAdjustmentRow{
+			TeamQuotaAdjustmentView: TeamQuotaAdjustmentView{
+				ID:              uuid.NewString(),
+				Action:          adjustmentAction,
+				OldQuotaCredits: oldQuota,
+				NewQuotaCredits: team.QuotaCredits,
+				OldUnlimited:    oldUnlimited,
+				NewUnlimited:    team.Unlimited,
+				CreatedAt:       time.Now(),
+			},
+			TeamID:      id,
+			ActorUserID: actorID,
+		})
+	}
+	auditDuplicate := false
+	if audit != nil && audit.EventID != "" {
+		_, auditDuplicate = s.auditEventIDs[audit.EventID]
+	}
+	if audit != nil && !auditDuplicate {
+		if audit.EventID != "" {
+			s.auditEventIDs[audit.EventID] = struct{}{}
+		}
+		s.auditLogs = append(s.auditLogs, AdminAuditLogView{
+			ID:          uuid.NewString(),
+			ActorUserID: audit.ActorUserID,
+			TeamID:      audit.TeamID,
+			Action:      audit.Action,
+			TargetType:  audit.TargetType,
+			TargetID:    audit.TargetID,
+			Detail:      append([]byte(nil), audit.Detail...),
+			CreatedAt:   time.Now(),
+		})
+	}
 	return cloneTeam(&team), nil
 }
 

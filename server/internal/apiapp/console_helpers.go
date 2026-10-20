@@ -6,8 +6,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"github.com/vam12375/shucode-platform/server/internal/store"
 )
@@ -88,7 +90,8 @@ func requireAdmin(ctx context.Context, deps *Deps, c *gin.Context) (*store.UserR
 }
 
 // writeAudit:管理动作审计;只放元数据,凭据/密码/请求正文永不入审计。
-// 写失败只告警不阻塞主操作。
+// 入库失败时落本地 outbox，后台按 event_id 幂等重放；两者都失败才只告警。
+// 使用脱离请求取消的 ctx，客户端断开不能吞掉刚完成操作的审计。
 func writeAudit(ctx context.Context, deps *Deps, actor *store.UserRecord, action, targetType, targetID string, detail any) {
 	if detail == nil {
 		detail = map[string]any{}
@@ -97,9 +100,25 @@ func writeAudit(ctx context.Context, deps *Deps, actor *store.UserRecord, action
 	if err != nil {
 		raw = []byte(`{}`)
 	}
-	if err := deps.Store.InsertAuditLog(ctx, store.InsertAuditLogInput{
-		ActorUserID: actor.ID, Action: action, TargetType: targetType, TargetID: targetID, Detail: raw,
-	}); err != nil {
-		deps.Logger.Warn("审计写入失败", "action", action, "error", err)
+	persistAudit(ctx, deps, store.InsertAuditLogInput{
+		EventID: uuid.NewString(), ActorUserID: actor.ID,
+		Action: action, TargetType: targetType, TargetID: targetID, Detail: raw,
+	})
+}
+
+func persistAudit(ctx context.Context, deps *Deps, entry store.InsertAuditLogInput) {
+	auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if deps.AuditSink != nil {
+		spooled, writeErr := deps.AuditSink.Write(auditCtx, entry)
+		if writeErr != nil {
+			deps.Logger.Error("审计写入失败且 outbox 落盘失败", "action", entry.Action, "error", writeErr)
+		} else if spooled {
+			deps.Logger.Warn("审计入库失败，已转入本地 outbox", "action", entry.Action)
+		}
+		return
+	}
+	if err := deps.Store.InsertAuditLog(auditCtx, entry); err != nil {
+		deps.Logger.Warn("审计写入失败", "action", entry.Action, "error", err)
 	}
 }

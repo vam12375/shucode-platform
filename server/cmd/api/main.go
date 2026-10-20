@@ -21,6 +21,8 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/vam12375/shucode-platform/server/internal/apiapp"
+	"github.com/vam12375/shucode-platform/server/internal/audit"
+	"github.com/vam12375/shucode-platform/server/internal/compensation"
 	"github.com/vam12375/shucode-platform/server/internal/crypto"
 	"github.com/vam12375/shucode-platform/server/internal/events"
 	"github.com/vam12375/shucode-platform/server/internal/netguard"
@@ -184,6 +186,7 @@ func main() {
 		Turnstile:            turnstileVerifier,
 		Logger:               logger,
 		Trusted:              netutil.NewTrustedProxies(env.TrustedProxyIPs),
+		AuditSink:            audit.NewSink(platformStore, env.AuditOutboxDir, logger),
 		HTTPClient: &http.Client{
 			Transport: netguard.NewTransport(env.AllowPrivateUpstreamNetworks),
 			// 管理端探测同样禁止跟随重定向，避免解密后的上游密钥被带到新目标。
@@ -205,6 +208,9 @@ func main() {
 	apiapp.StartAlertEvaluator(runCtx, deps, time.Minute)
 	apiapp.StartReservationSweeper(runCtx, deps, time.Minute)
 	apiapp.StartLoginFlowSweeper(runCtx, deps, 10*time.Minute)
+	compensation.NewSettlementCompensator(platformStore, env.PendingSettlementDir, logger, time.Now).
+		Run(runCtx, 30*time.Second)
+	deps.AuditSink.Run(runCtx, 30*time.Second)
 
 	engine := apiapp.New(deps)
 	addr := fmt.Sprintf("%s:%d", env.Host, env.Port)

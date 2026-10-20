@@ -54,6 +54,12 @@ type Env struct {
 	TurnstileSiteKey   string
 	TurnstileSecretKey string
 	TurnstileVerifyURL string
+	// PendingSettlementDir:结算补偿 spool 目录（与网关共享卷时由 api 也能回灌）。
+	PendingSettlementDir string
+	// AuditOutboxDir:审计写入失败时的本地持久化队列。
+	AuditOutboxDir string
+	// ReleaseManifestEnabled:桌面更新清单已接入真实安装包分发；未启用时禁止强制更新。
+	ReleaseManifestEnabled bool
 }
 
 func LoadPlatformEnv() (*Env, error) {
@@ -147,13 +153,16 @@ func LoadPlatformEnv() (*Env, error) {
 			os.Getenv("ALLOW_INSECURE_UPSTREAM_URLS")),
 		AllowPrivateUpstreamNetworks: platformenv.Truthy(
 			os.Getenv("UPSTREAM_ALLOW_PRIVATE_NETWORKS")),
-		TrustCFConnectingIP: platformenv.Truthy(os.Getenv("TRUST_CF_CONNECTING_IP")),
-		ConsoleAllowedHosts: consoleAllowedHosts,
-		SetupAllowedHosts:   setupAllowedHosts,
-		DeviceTokenTTL:      time.Duration(deviceTokenTTLDays) * 24 * time.Hour,
-		TurnstileSiteKey:    turnstileSiteKey,
-		TurnstileSecretKey:  turnstileSecretKey,
-		TurnstileVerifyURL:  platformenv.EnvOr("TURNSTILE_VERIFY_URL", turnstile.DefaultEndpoint),
+		TrustCFConnectingIP:    platformenv.Truthy(os.Getenv("TRUST_CF_CONNECTING_IP")),
+		ConsoleAllowedHosts:    consoleAllowedHosts,
+		SetupAllowedHosts:      setupAllowedHosts,
+		DeviceTokenTTL:         time.Duration(deviceTokenTTLDays) * 24 * time.Hour,
+		TurnstileSiteKey:       turnstileSiteKey,
+		TurnstileSecretKey:     turnstileSecretKey,
+		TurnstileVerifyURL:     platformenv.EnvOr("TURNSTILE_VERIFY_URL", turnstile.DefaultEndpoint),
+		PendingSettlementDir:   platformenv.EnvOr("PENDING_SETTLEMENT_DIR", "./data/pending-settlements"),
+		AuditOutboxDir:         platformenv.EnvOr("AUDIT_OUTBOX_DIR", "./data/audit-outbox"),
+		ReleaseManifestEnabled: platformenv.Truthy(os.Getenv("RELEASE_MANIFEST_ENABLED")),
 	}, nil
 }
 

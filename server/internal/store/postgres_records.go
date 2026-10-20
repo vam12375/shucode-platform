@@ -203,6 +203,16 @@ func (s *PostgresStore) DeleteExpiredLoginFlows(ctx context.Context, before time
 	return tag.RowsAffected(), nil
 }
 
+func (s *PostgresStore) RevokeLoginFlowsForUser(ctx context.Context, userID string, _ time.Time) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE login_flows SET status = 'expired'
+		WHERE user_id = $1::uuid AND status IN ('pending', 'authorized')`, userID)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (s *PostgresStore) ConsumeLoginFlow(ctx context.Context, id string, consumedAt time.Time) (*LoginFlowRecord, error) {
 	rows, err := s.pool.Query(ctx, `
 		UPDATE login_flows SET status = 'consumed', consumed_at = $2::timestamptz

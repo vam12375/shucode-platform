@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/vam12375/shucode-platform/server/internal/audit"
 	"github.com/vam12375/shucode-platform/server/internal/contracts"
 	"github.com/vam12375/shucode-platform/server/internal/crypto"
 	"github.com/vam12375/shucode-platform/server/internal/events"
@@ -33,6 +34,8 @@ type Deps struct {
 	Logger     *slog.Logger
 	HTTPClient *http.Client // 上游探测(模型列表/连通测试)
 	Trusted    netutil.TrustedProxies
+	// AuditSink:审计入库失败时的本地可靠 outbox；nil 时退回旧的最佳努力行为。
+	AuditSink *audit.Sink
 }
 
 // jsonMarshalNoHTML:与 JSON.stringify 一致的紧凑序列化(禁用 <>& 转义)。

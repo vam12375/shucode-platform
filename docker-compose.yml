@@ -101,6 +101,10 @@ services:
     restart: unless-stopped
     read_only: true
     tmpfs: ["/tmp"]
+    volumes:
+      # 结算补偿与审计 outbox：数据库不可用时仍能持久化到本地卷。
+      - shucode-pending-settlements:/app/data/pending-settlements
+      - shucode-audit-outbox:/app/data/audit-outbox
     security_opt: ["no-new-privileges:true"]
     cap_drop: ["ALL"]
     pids_limit: 256
@@ -128,6 +132,9 @@ services:
     restart: unless-stopped
     read_only: true
     tmpfs: ["/tmp"]
+    volumes:
+      # 与 api 共享：网关写入 spool，任一进程恢复后都能回灌待结算表。
+      - shucode-pending-settlements:/app/data/pending-settlements
     security_opt: ["no-new-privileges:true"]
     cap_drop: ["ALL"]
     pids_limit: 256
@@ -148,3 +155,5 @@ services:
 
 volumes:
   mendao-pg:
+  shucode-pending-settlements:
+  shucode-audit-outbox:

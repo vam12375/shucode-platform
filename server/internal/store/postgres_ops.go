@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -170,12 +171,12 @@ func (s *PostgresStore) ReserveQuota(ctx context.Context, input ReserveQuotaInpu
 	}
 	var inserted string
 	err = tx.QueryRow(ctx, `
-		INSERT INTO quota_reservations (id, team_id, request_id, reserved_credits, status, created_at, expires_at, user_id)
-		VALUES ($1::uuid, $2::uuid, $3, $4::numeric, 'reserved', $5::timestamptz, $6::timestamptz, $7::uuid)
+		INSERT INTO quota_reservations (id, team_id, request_id, reserved_credits, status, created_at, expires_at, user_id, held_by_task)
+		VALUES ($1::uuid, $2::uuid, $3, $4::numeric, 'reserved', $5::timestamptz, $6::timestamptz, $7::uuid, $8)
 		ON CONFLICT (team_id, request_id) DO NOTHING
 		RETURNING id::text`,
 		id, input.TeamID, input.RequestID, creditMicroString(input.Micro),
-		createdAt, expiresAt, nullIfEmpty(input.UserID)).Scan(&inserted)
+		createdAt, expiresAt, nullIfEmpty(input.UserID), input.HeldByTask).Scan(&inserted)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return ReserveDuplicate, nil
@@ -220,6 +221,9 @@ func (s *PostgresStore) SettleReservation(ctx context.Context, reservationID str
 		FROM quota_reservations WHERE id = $1::uuid FOR UPDATE`, reservationID).
 		Scan(&teamID, &reserved, &status)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrReservationNotFound
+		}
 		return err
 	}
 	if status == string(ReservationSettled) || status == string(ReservationReleased) {
@@ -303,7 +307,7 @@ func (s *PostgresStore) ExpireStaleReservations(ctx context.Context, before time
 	rows, err := tx.Query(ctx, `
 		UPDATE quota_reservations
 		SET status = 'expired', released_at = $1::timestamptz
-		WHERE status = 'reserved' AND expires_at < $1::timestamptz
+		WHERE status = 'reserved' AND expires_at < $1::timestamptz AND held_by_task = false
 		RETURNING team_id::text, reserved_credits::text`, before)
 	if err != nil {
 		return 0, err
@@ -350,7 +354,7 @@ func (s *PostgresStore) ListOpenReservations(ctx context.Context, limit int64) (
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT id::text, team_id::text, COALESCE(user_id::text,''), request_id, reserved_credits::text, status,
-			created_at, expires_at, settled_at, released_at, COALESCE(usage_id::text, '')
+			created_at, expires_at, settled_at, released_at, COALESCE(usage_id::text, ''), held_by_task
 		FROM quota_reservations
 		WHERE status = 'reserved'
 		ORDER BY created_at ASC
@@ -367,7 +371,7 @@ func (s *PostgresStore) ListOpenReservations(ctx context.Context, limit int64) (
 			status   string
 		)
 		if err := rows.Scan(&r.ID, &r.TeamID, &r.UserID, &r.RequestID, &reserved, &status,
-			&r.CreatedAt, &r.ExpiresAt, &r.SettledAt, &r.ReleasedAt, &r.UsageID); err != nil {
+			&r.CreatedAt, &r.ExpiresAt, &r.SettledAt, &r.ReleasedAt, &r.UsageID, &r.HeldByTask); err != nil {
 			return nil, err
 		}
 		r.ReservedMicro, _ = parseMicroString(reserved)
@@ -375,6 +379,141 @@ func (s *PostgresStore) ListOpenReservations(ctx context.Context, limit int64) (
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// ---- 结算失败补偿 ----
+
+func (s *PostgresStore) EnqueuePendingSettlement(ctx context.Context, reservationID string, record UsageRecord) error {
+	var snapshotJSON []byte
+	if record.PriceSnapshot != nil {
+		var err error
+		snapshotJSON, err = json.Marshal(record.PriceSnapshot)
+		if err != nil {
+			return err
+		}
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO pending_settlements (
+			reservation_id, request_id, user_id, team_id, device_token_id, model, upstream_model,
+			provider_id, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+			credits_micro, price_snapshot, usage_status, error_type, client_ip, latency_ms,
+			usage_created_at
+		) VALUES (
+			$1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6, $7,
+			$8::uuid, $9, $10, $11, $12, $13, $14::jsonb, $15, $16, $17, $18, $19::timestamptz
+		)
+		ON CONFLICT (reservation_id) DO NOTHING`,
+		reservationID, record.RequestID, record.UserID, record.TeamID, nullIfEmpty(record.DeviceTokenID),
+		record.Model, record.UpstreamModel, nullIfEmpty(record.ProviderID),
+		record.InputTokens, record.OutputTokens, record.CacheReadTokens, record.CacheCreationTokens,
+		record.CreditsMicro, nullableBytes(snapshotJSON), string(record.Status),
+		nullIfEmpty(record.ErrorType), nullIfEmpty(record.ClientIP), record.LatencyMs, record.CreatedAt)
+	return err
+}
+
+func (s *PostgresStore) ListPendingSettlements(ctx context.Context, filter PendingSettlementFilter) ([]PendingSettlementRecord, error) {
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT reservation_id::text, request_id, user_id::text, team_id::text,
+			COALESCE(device_token_id::text, ''), model, upstream_model,
+			COALESCE(provider_id::text, ''), input_tokens, output_tokens,
+			cache_read_tokens, cache_creation_tokens, credits_micro, price_snapshot,
+			usage_status, COALESCE(error_type, ''), COALESCE(client_ip, ''), latency_ms,
+			usage_created_at, status, attempts, COALESCE(last_error, ''),
+			next_attempt_at, created_at, updated_at
+		FROM pending_settlements
+		WHERE ($1::text = '' OR status = $1)
+			AND ($2::timestamptz IS NULL OR next_attempt_at <= $2::timestamptz)
+		ORDER BY next_attempt_at ASC, created_at ASC
+		LIMIT $3`, string(filter.Status), nullableTime(filter.DueBefore), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []PendingSettlementRecord{}
+	for rows.Next() {
+		var (
+			item       PendingSettlementRecord
+			record     UsageRecord
+			snapshot   []byte
+			status     string
+			usageState string
+		)
+		if err := rows.Scan(&item.ReservationID, &record.RequestID, &record.UserID, &record.TeamID,
+			&record.DeviceTokenID, &record.Model, &record.UpstreamModel, &record.ProviderID,
+			&record.InputTokens, &record.OutputTokens, &record.CacheReadTokens, &record.CacheCreationTokens,
+			&record.CreditsMicro, &snapshot, &usageState, &record.ErrorType, &record.ClientIP,
+			&record.LatencyMs, &record.CreatedAt, &status, &item.Attempts, &item.LastError,
+			&item.NextAttemptAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		record.Status = UsageStatus(usageState)
+		if len(snapshot) > 0 {
+			if err := json.Unmarshal(snapshot, &record.PriceSnapshot); err != nil {
+				return nil, err
+			}
+		}
+		item.Record = record
+		item.Status = PendingSettlementStatus(status)
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (s *PostgresStore) MarkPendingSettlementApplied(ctx context.Context, reservationID string, at time.Time) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE pending_settlements
+		SET status = 'applied', last_error = NULL, updated_at = $2::timestamptz
+		WHERE reservation_id = $1::uuid`, reservationID, at)
+	return err
+}
+
+func (s *PostgresStore) MarkPendingSettlementRetry(ctx context.Context, reservationID string, attempts int64, lastError string, nextAttemptAt time.Time) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE pending_settlements
+		SET status = 'pending', attempts = $2, last_error = $3,
+			next_attempt_at = $4::timestamptz, updated_at = now()
+		WHERE reservation_id = $1::uuid`, reservationID, attempts, lastError, nextAttemptAt)
+	return err
+}
+
+func (s *PostgresStore) MarkPendingSettlementFailed(ctx context.Context, reservationID string, attempts int64, lastError string) error {
+	_, err := s.pool.Exec(ctx, `
+		UPDATE pending_settlements
+		SET status = 'failed', attempts = $2, last_error = $3, updated_at = now()
+		WHERE reservation_id = $1::uuid`, reservationID, attempts, lastError)
+	return err
+}
+
+func (s *PostgresStore) CountPendingSettlements(ctx context.Context, status PendingSettlementStatus) (int64, error) {
+	var count int64
+	err := s.pool.QueryRow(ctx, `
+		SELECT count(*)::bigint FROM pending_settlements
+		WHERE ($1::text = '' OR status = $1)`, string(status)).Scan(&count)
+	return count, err
+}
+
+func (s *PostgresStore) InsertGatewayAttempt(ctx context.Context, record GatewayAttemptRecord) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO gateway_attempts (
+			request_id, reservation_id, attempt, provider_id, upstream_model,
+			base_host, status_code, error_type, provider_request_id,
+			started_at, duration_ms, final
+		) VALUES (
+			$1, $2::uuid, $3, $4::uuid, $5, $6, $7, $8, $9,
+			$10::timestamptz, $11, $12
+		)`,
+		record.RequestID, record.ReservationID, record.Attempt,
+		nullIfEmpty(record.ProviderID), record.UpstreamModel, record.BaseHost,
+		record.StatusCode, nullIfEmpty(record.ErrorType), nullIfEmpty(record.ProviderRequestID),
+		record.StartedAt, record.DurationMs, record.Final)
+	return err
 }
 
 // ---- usage export ----
@@ -477,12 +616,13 @@ func (s *PostgresStore) OpsOverview(ctx context.Context, since time.Time) (*OpsO
 			percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE latency_ms IS NOT NULL),
 			percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE latency_ms IS NOT NULL),
 			(SELECT count(DISTINCT device_token_id) FROM usage_records WHERE created_at >= $1 AND device_token_id IS NOT NULL)::bigint,
-			(SELECT count(*) FROM quota_reservations WHERE status = 'reserved')::bigint
+			(SELECT count(*) FROM quota_reservations WHERE status = 'reserved')::bigint,
+			(SELECT count(*) FROM pending_settlements WHERE status IN ('pending', 'failed'))::bigint
 		FROM usage_records WHERE created_at >= $1`, since).
 		Scan(&out.Requests, &out.SuccessRequests, &out.ErrorRequests, &out.AbortedRequests,
 			&out.InputTokens, &out.OutputTokens, &out.CacheReadTokens, &out.CacheCreationTokens,
 			&out.CreditsMicro, &out.P50LatencyMs, &out.P95LatencyMs, &out.P99LatencyMs,
-			&out.ActiveDevices, &out.OpenReservations)
+			&out.ActiveDevices, &out.OpenReservations, &out.PendingSettlements)
 	if err != nil {
 		return nil, err
 	}
