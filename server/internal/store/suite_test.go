@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -286,7 +287,7 @@ func testQuota(t *testing.T, ctx context.Context, s PlatformStore) {
 		t.Fatal("恰好用满配额应成功")
 	}
 	if ok, _ := s.TryReserveQuota(ctx, team.ID, 1); ok {
-		t.Fatal("超配额应拒绝(1 micro 也不行)")
+		t.Fatal("余额到 0 后应拒绝(1 micro 也不行)")
 	}
 	if err := s.ReleaseReservation(ctx, team.ID, 5_000_000); err != nil {
 		t.Fatal(err)
@@ -456,6 +457,27 @@ func testReservations(t *testing.T, ctx context.Context, s PlatformStore) {
 	}
 	if err := s.ReleaseReservationByID(ctx, held.ID, now); err != nil {
 		t.Fatal(err)
+	}
+
+	// 新网关的未知成本即使过期仍占用额度，直至明确结算。
+	held.ID = "00000000-0000-4000-8000-000000009608"
+	held.RequestID = "gateway-retain-" + suffix
+	held.HeldByTask, held.RetainUntilSettled = false, true
+	if result, err := s.ReserveQuota(ctx, held); err != nil || result != ReserveReserved {
+		t.Fatalf("retain reserve: %s %v", result, err)
+	}
+	if count, err := s.ExpireStaleReservations(ctx, now); err != nil || count != 0 {
+		t.Fatalf("retain expired: %d %v", count, err)
+	}
+	if open, err := s.ListOpenReservations(ctx, 10); err != nil || len(open) != 1 || !open[0].RetainUntilSettled {
+		t.Fatalf("retain ownership: %+v %v", open, err)
+	}
+	record.ID, record.RequestID, record.CreditsMicro = "00000000-0000-4000-8000-000000009609", held.RequestID, 100_000
+	if err := s.SettleReservation(ctx, held.ID, record); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetTeam(ctx, team.ID); got.ReservedCredits != "0.000000" {
+		t.Fatalf("retain settlement: %+v", got)
 	}
 
 	// 超配额拒绝。
@@ -895,6 +917,14 @@ func testReleases(t *testing.T, ctx context.Context, s PlatformStore) {
 	}
 }
 
+func sameJSONBytes(left, right []byte) bool {
+	var leftValue, rightValue any
+	if json.Unmarshal(left, &leftValue) != nil || json.Unmarshal(right, &rightValue) != nil {
+		return false
+	}
+	return reflect.DeepEqual(leftValue, rightValue)
+}
+
 func testModels(t *testing.T, ctx context.Context, s PlatformStore) {
 	model, err := s.UpsertModel(ctx, UpsertModelInput{
 		ModelID: "m-test", DisplayName: "M", InputPricePerMtok: "3", OutputPricePerMtok: "15",
@@ -904,6 +934,31 @@ func testModels(t *testing.T, ctx context.Context, s PlatformStore) {
 	}
 	if model.OffPeakMultiplier != "1.000000" {
 		t.Fatalf("空闲倍率默认应为 1: %+v", model)
+	}
+	if model.ConfigMode != "recommended" || len(model.ModelConfig) != 0 {
+		t.Fatalf("模型配置默认应跟随官方推荐: %+v", model)
+	}
+	manualConfig := []byte(`{"properties":{"contextWindow":200000}}`)
+	// 存储层按原始 JSONB 返回；调用方（API）写入的是紧凑 JSON，测试保持同一口径。
+	if updated, err := s.SetModelConfig(ctx, "m-test", "manual", manualConfig); err != nil ||
+		updated == nil || updated.ConfigMode != "manual" || !sameJSONBytes(updated.ModelConfig, manualConfig) {
+		t.Fatalf("手动模型配置写入失败: %v %+v", err, updated)
+	}
+	// Upsert 只改目录字段，不能丢失能力配置。
+	if _, err := s.UpsertModel(ctx, UpsertModelInput{
+		ModelID: "m-test", DisplayName: "M-config", InputPricePerMtok: "3", OutputPricePerMtok: "15",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetModel(ctx, "m-test"); got == nil || got.ConfigMode != "manual" || !sameJSONBytes(got.ModelConfig, manualConfig) {
+		t.Fatalf("Upsert 应保留模型配置: %+v", got)
+	}
+	if updated, err := s.SetModelConfig(ctx, "m-test", "recommended", nil); err != nil ||
+		updated == nil || updated.ConfigMode != "recommended" || len(updated.ModelConfig) != 0 {
+		t.Fatalf("恢复官方配置失败: %v %+v", err, updated)
+	}
+	if missing, err := s.SetModelConfig(ctx, "missing", "manual", manualConfig); err != nil || missing != nil {
+		t.Fatalf("不存在模型应返回 nil: %v %+v", err, missing)
 	}
 	offPeak := "0.500000"
 	if updated, err := s.UpsertModel(ctx, UpsertModelInput{
@@ -1206,13 +1261,25 @@ func testUsage(t *testing.T, ctx context.Context, s PlatformStore) {
 	base := time.Date(2026, 10, 18, 1, 0, 0, 0, time.UTC)
 	for i := 0; i < 5; i++ {
 		latency := int64(100 + i)
+		var snapshot *UsagePricingSnapshot
+		if i < 2 {
+			snapshot = &UsagePricingSnapshot{
+				SchemaVersion: 1, CapturedAt: base,
+				Cost: UsageCostSnapshot{
+					Status: "estimated", EstimatedMicro: ptr(int64(40 + i*20)),
+					UsageEstimated: i == 0,
+					Rates:          &UsagePriceSnapshot{Currency: "CNY"},
+				},
+			}
+		}
 		if err := s.InsertUsage(ctx, UsageRecord{
 			ID:        fmt.Sprintf("00000000-0000-4000-8000-%012d", 400+i),
 			RequestID: fmt.Sprintf("req-%d", i),
 			UserID:    u.ID, TeamID: team.ID, Model: "m-a", UpstreamModel: "m-a-up",
 			InputTokens: 10, OutputTokens: 20, CreditsMicro: int64(100 * (i + 1)),
 			Status: UsageStatusOk, ClientIP: "198.51.100.9", LatencyMs: &latency,
-			CreatedAt: base.Add(time.Duration(i) * time.Hour),
+			PriceSnapshot: snapshot,
+			CreatedAt:     base.Add(time.Duration(i) * time.Hour),
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -1221,6 +1288,13 @@ func testUsage(t *testing.T, ctx context.Context, s PlatformStore) {
 		ID: "00000000-0000-4000-8000-000000000500", RequestID: "req-err",
 		UserID: u.ID, TeamID: team.ID, Model: "m-b", UpstreamModel: "m-b-up",
 		CreditsMicro: 50, Status: UsageStatusError, ErrorType: "upstream_500",
+		PriceSnapshot: &UsagePricingSnapshot{
+			SchemaVersion: 1, CapturedAt: base,
+			Cost: UsageCostSnapshot{
+				Status: "estimated", EstimatedMicro: ptr(int64(25)),
+				Rates: &UsagePriceSnapshot{Currency: "USD"},
+			},
+		},
 		CreatedAt: base.Add(10 * time.Hour),
 	}); err != nil {
 		t.Fatal(err)
@@ -1247,6 +1321,35 @@ func testUsage(t *testing.T, ctx context.Context, s PlatformStore) {
 		agg[0].InputTokens != 50 || agg[0].OutputTokens != 100 ||
 		agg[0].CreditsMicro != 1500 || agg[0].LatencyMsSum != 510 {
 		t.Fatalf("聚合不符: %+v", agg)
+	}
+	costSummary, err := s.AggregateUsageCosts(ctx, UsageFilter{TeamID: team.ID})
+	if err != nil {
+		t.Fatalf("成本汇总失败: %v", err)
+	}
+	if costSummary.EstimatedRequests != 3 || costSummary.MissingCostRequests != 3 ||
+		costSummary.EstimatedUsageRequests != 1 || len(costSummary.Groups) != 2 ||
+		len(costSummary.Totals) != 2 {
+		t.Fatalf("成本汇总计数不符: %+v", costSummary)
+	}
+	if costSummary.Groups[0].Model != "m-a" || costSummary.Groups[0].Currency != "CNY" ||
+		costSummary.Groups[0].Requests != 2 || costSummary.Groups[0].CostMicro != 100 ||
+		costSummary.Groups[0].ChargedMicro != 300 || costSummary.Groups[0].EstimatedUsageRequests != 1 {
+		t.Fatalf("CNY 成本分组不符: %+v", costSummary.Groups[0])
+	}
+	if costSummary.Groups[1].Model != "m-b" || costSummary.Groups[1].Currency != "USD" ||
+		costSummary.Groups[1].Requests != 1 || costSummary.Groups[1].CostMicro != 25 ||
+		costSummary.Groups[1].ChargedMicro != 50 {
+		t.Fatalf("USD 成本分组不符: %+v", costSummary.Groups[1])
+	}
+	if costSummary.Totals[0].Currency != "CNY" || costSummary.Totals[0].Requests != 2 ||
+		costSummary.Totals[0].CostMicro != 100 || costSummary.Totals[0].ChargedMicro != 300 ||
+		costSummary.Totals[1].Currency != "USD" || costSummary.Totals[1].CostMicro != 25 {
+		t.Fatalf("成本合计不符: %+v", costSummary.Totals)
+	}
+	filteredCosts, err := s.AggregateUsageCosts(ctx, UsageFilter{TeamID: team.ID, From: &from})
+	if err != nil || filteredCosts.EstimatedRequests != 1 || filteredCosts.MissingCostRequests != 3 ||
+		len(filteredCosts.Groups) != 1 || filteredCosts.Groups[0].Currency != "USD" {
+		t.Fatalf("成本汇总范围过滤不符: %v %+v", err, filteredCosts)
 	}
 	day, _ := s.AggregateUsageSeries(ctx, UsageFilter{TeamID: team.ID}, SeriesGranularityDay)
 	// base=01:00Z(+8 → 09:00) 当天,10:00Z→18:00 当天:全部同一天。

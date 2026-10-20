@@ -85,6 +85,10 @@ func (b *SecretBox) Decrypt(payload string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// GCM.Open 遇到错误 nonce 长度会 panic，先校验密文结构再认证，篡改一律拒绝。
+	if len(iv) != gcm.NonceSize() || len(tag) != gcm.Overhead() {
+		return "", errors.New("无法识别的凭据密文")
+	}
 	out, err := gcm.Open(nil, iv, append(ct, tag...), nil)
 	if err != nil {
 		return "", errors.New("无法识别的凭据密文")

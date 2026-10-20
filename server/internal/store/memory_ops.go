@@ -133,6 +133,9 @@ func (s *memoryStore) RecoverUpstreamProvider(_ context.Context, id string, _ ti
 // ---- quota reservations ----
 
 func (s *memoryStore) ReserveQuota(_ context.Context, input ReserveQuotaInput) (ReserveResult, error) {
+	if input.Micro < 0 || input.Micro > maxCreditFieldMicro {
+		return ReserveDenied, nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, reservation := range s.reservations {
@@ -142,35 +145,25 @@ func (s *memoryStore) ReserveQuota(_ context.Context, input ReserveQuotaInput) (
 	}
 	team, ok := s.teams[input.TeamID]
 	if !ok || team.DisabledAt != nil {
-		return ReserveDenied, nil
+		return ReserveDeniedInactive, nil
 	}
 	createdAt := input.CreatedAt
 	if createdAt.IsZero() {
 		createdAt = time.Now()
 	}
-	allowed, err := s.reservationBudgetAllowedLocked(input, createdAt)
+	decision, err := s.reservationBudgetAllowedLocked(input, createdAt)
 	if err != nil {
 		return "", err
 	}
-	if !allowed {
-		return ReserveDenied, nil
+	if decision != ReserveReserved {
+		return decision, nil
 	}
-	if !team.Unlimited {
-		used, err := credits.ParseCreditsToMicro(team.UsedCredits)
-		if err != nil {
-			return "", err
-		}
-		reserved, err := credits.ParseCreditsToMicro(team.ReservedCredits)
-		if err != nil {
-			return "", err
-		}
-		quota, err := credits.ParseCreditsToMicro(team.QuotaCredits)
-		if err != nil {
-			return "", err
-		}
-		if input.Micro > quota || addBudgetSpent(used, reserved) > quota-input.Micro {
-			return ReserveDenied, nil
-		}
+	withinLimit, err := teamCreditWithinLimit(team.UsedCredits, team.ReservedCredits, team.QuotaCredits, team.Unlimited, input.Micro)
+	if err != nil {
+		return "", err
+	}
+	if !withinLimit {
+		return ReserveDenied, nil
 	}
 	ttl := input.TTL
 	if ttl <= 0 {
@@ -182,7 +175,7 @@ func (s *memoryStore) ReserveQuota(_ context.Context, input ReserveQuotaInput) (
 	}
 	reservation := QuotaReservationRecord{
 		ID: id, TeamID: input.TeamID, UserID: input.UserID, RequestID: input.RequestID,
-		ReservedMicro: input.Micro, Status: ReservationReserved, HeldByTask: input.HeldByTask,
+		ReservedMicro: input.Micro, Status: ReservationReserved, HeldByTask: input.HeldByTask, RetainUntilSettled: input.RetainUntilSettled,
 		CreatedAt: createdAt, ExpiresAt: createdAt.Add(ttl),
 	}
 	s.reservations[id] = reservation
@@ -195,6 +188,9 @@ func (s *memoryStore) ReserveQuota(_ context.Context, input ReserveQuotaInput) (
 func (s *memoryStore) SettleReservation(_ context.Context, reservationID string, record UsageRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if record.CreditsMicro < 0 {
+		return ErrInvalidCreditCharge
+	}
 	reservation, ok := s.reservations[reservationID]
 	if !ok {
 		return ErrReservationNotFound
@@ -202,20 +198,36 @@ func (s *memoryStore) SettleReservation(_ context.Context, reservationID string,
 	if reservation.Status == ReservationSettled || reservation.Status == ReservationReleased {
 		return nil
 	}
+	if record.TeamID != reservation.TeamID || (reservation.UserID != "" && record.UserID != reservation.UserID) {
+		return ErrReservationMismatch
+	}
 	team, ok := s.teams[reservation.TeamID]
+	capped := false
 	if ok {
 		used, err := credits.ParseCreditsToMicro(team.UsedCredits)
 		if err != nil {
 			return err
 		}
+		reservedBefore := team.ReservedCredits
+		releasedMicro := int64(0)
 		if reservation.Status == ReservationReserved {
-			reserved, err := credits.ParseCreditsToMicro(team.ReservedCredits)
+			reserved, err := credits.ParseCreditsToMicro(reservedBefore)
 			if err != nil {
 				return err
 			}
 			team.ReservedCredits = credits.FormatMicroCredits(maxInt64(0, reserved-reservation.ReservedMicro))
+			releasedMicro = reservation.ReservedMicro
 		}
-		team.UsedCredits = credits.FormatMicroCredits(used + record.CreditsMicro)
+		charge, wasCapped, err := capTeamCreditCharge(team.UsedCredits, reservedBefore, team.QuotaCredits, team.Unlimited, releasedMicro, record.CreditsMicro)
+		if err != nil {
+			return err
+		}
+		capped = wasCapped
+		record.CreditsMicro = charge
+		if wasCapped {
+			markCreditChargeCapped(&record)
+		}
+		team.UsedCredits = credits.FormatMicroCredits(used + charge)
 		s.teams[team.ID] = team
 	}
 	if record.ID == "" {
@@ -230,6 +242,9 @@ func (s *memoryStore) SettleReservation(_ context.Context, reservationID string,
 	reservation.UsageID = record.ID
 	s.reservations[reservation.ID] = reservation
 	s.usage = append(s.usage, cloneUsage(record))
+	if capped {
+		return ErrCreditChargeCapped
+	}
 	return nil
 }
 
@@ -261,7 +276,7 @@ func (s *memoryStore) ExpireStaleReservations(_ context.Context, before time.Tim
 	perTeam := map[string]int64{}
 	var count int64
 	for id, reservation := range s.reservations {
-		if reservation.HeldByTask || reservation.Status != ReservationReserved || !reservation.ExpiresAt.Before(before) {
+		if reservation.RetainUntilSettled || reservation.HeldByTask || reservation.Status != ReservationReserved || !reservation.ExpiresAt.Before(before) {
 			continue
 		}
 		perTeam[reservation.TeamID] += reservation.ReservedMicro

@@ -241,18 +241,21 @@ func (s *memoryStore) AcceptTeamInvitation(_ context.Context, tokenHash, userID 
 	return &copy, nil
 }
 
-func (s *memoryStore) reservationBudgetAllowedLocked(input ReserveQuotaInput, at time.Time) (bool, error) {
+func (s *memoryStore) reservationBudgetAllowedLocked(input ReserveQuotaInput, at time.Time) (ReserveResult, error) {
 	var memberBudget string
 	if input.UserID != "" {
 		member := s.memberViewLocked(input.TeamID, input.UserID)
 		if member == nil || member.MemberDisabledAt != nil || member.User.DisabledAt != nil {
-			return false, nil
+			return ReserveDeniedInactive, nil
 		}
 		memberBudget = member.MonthlyBudgetCredits
 	}
 	policy := s.teamPolicies[input.TeamID]
 	if memberBudget == "" && policy.DailyBudgetCredits == "" && policy.MonthlyBudgetCredits == "" {
-		return input.Micro >= 0, nil
+		if input.Micro >= 0 {
+			return ReserveReserved, nil
+		}
+		return ReserveDeniedBudget, nil
 	}
 	day, endDay, month, endMonth := budgetWindow(at)
 	var daily, monthly, personal int64
@@ -286,11 +289,14 @@ func (s *memoryStore) reservationBudgetAllowedLocked(input ReserveQuotaInput, at
 		spent int64
 	}{{policy.DailyBudgetCredits, daily}, {policy.MonthlyBudgetCredits, monthly}, {memberBudget, personal}} {
 		allowed, err := budgetAllows(check.limit, check.spent, input.Micro)
-		if err != nil || !allowed {
-			return allowed, err
+		if err != nil {
+			return "", err
+		}
+		if !allowed {
+			return ReserveDeniedBudget, nil
 		}
 	}
-	return true, nil
+	return ReserveReserved, nil
 }
 
 func (s *memoryStore) FindTeamInvitationByHash(_ context.Context, tokenHash string) (*TeamInvitationRecord, error) {

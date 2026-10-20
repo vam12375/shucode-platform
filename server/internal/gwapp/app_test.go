@@ -439,6 +439,26 @@ func TestStreamingMissingUsageConservativeSettlement(t *testing.T) {
 	}
 }
 
+func TestStreamingUsageBeyondReservationIsInterrupted(t *testing.T) {
+	f := newGatewayFixture(t, nil)
+	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"too much\"}}],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":100}}\n\n"))
+	})
+	rec := f.do("POST", "/v1/chat/completions", f.token,
+		`{"model":"claude-sonnet-4-5","stream":true,"max_tokens":1}`)
+	if rec.Code != 200 {
+		t.Fatalf("流式请求状态: %d %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "rate_limit_error") || strings.Contains(rec.Body.String(), "too much") {
+		t.Fatalf("超出预留后必须停止透传并返回额度错误事件: %s", rec.Body.String())
+	}
+	records := f.usageRecords()
+	if len(records) != 1 || records[0].ErrorType != "credit_reservation_exceeded" {
+		t.Fatalf("中断原因必须进入用量账本: %+v", records)
+	}
+}
+
 func TestUpstreamErrorRedactsAPIKey(t *testing.T) {
 	f := newGatewayFixture(t, nil)
 	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
@@ -942,7 +962,7 @@ func TestStreamingFailureKeepsObservedUsage(t *testing.T) {
 		}
 	})
 	rec := f.do("POST", "/v1/chat/completions", f.token,
-		`{"model":"claude-sonnet-4-5","stream":true,"max_tokens":10}`)
+		`{"model":"claude-sonnet-4-5","stream":true,"max_tokens":100}`)
 	if rec.Code != 200 {
 		t.Fatalf("流式头应已返回: %d", rec.Code)
 	}
@@ -954,8 +974,8 @@ func TestStreamingFailureKeepsObservedUsage(t *testing.T) {
 			if record.Status != store.UsageStatusError || record.ErrorType != "upstream_idle_timeout" {
 				t.Fatalf("状态不符: %+v", record)
 			}
-			// 已经收到 usage 时必须保留真实用量，而不是按零结算。
-			if record.InputTokens != 100 || record.OutputTokens != 40 || record.CreditsMicro <= 0 {
+			// 中间 usage 只证明已观察部分用量；未知尾部按预留估算且保留已观察的 token。
+			if record.InputTokens != 100 || record.OutputTokens != 40 || record.CreditsMicro <= 0 || record.PriceSnapshot == nil || !record.PriceSnapshot.Cost.UsageEstimated {
 				t.Fatalf("异常流式请求应保留已采集 usage: %+v", record)
 			}
 			return

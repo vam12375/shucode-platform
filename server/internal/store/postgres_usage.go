@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"sort"
 
 	"github.com/jackc/pgx/v5"
 
@@ -378,6 +379,68 @@ func (s *PostgresStore) AggregateUsage(ctx context.Context, filter UsageFilter) 
 	return out, rows.Err()
 }
 
+func (s *PostgresStore) AggregateUsageCosts(ctx context.Context, filter UsageFilter) (*UsageCostSummary, error) {
+	where, args := listUsageWhere(filter)
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			model,
+			price_snapshot->'cost'->'rates'->>'currency',
+			count(*)::bigint,
+			COALESCE(sum((price_snapshot->'cost'->>'estimatedMicro')::bigint), 0)::bigint,
+			COALESCE(sum(credits_micro), 0)::bigint,
+			count(*) FILTER (WHERE price_snapshot->'cost'->>'usageEstimated' = 'true')::bigint
+		FROM usage_records `+where+`
+			AND price_snapshot->'cost'->>'status' = 'estimated'
+			AND price_snapshot->'cost'->'rates'->>'currency' <> ''
+			AND price_snapshot->'cost'->>'estimatedMicro' ~ '^[0-9]+$'
+		GROUP BY 1, 2
+		ORDER BY 1, 2`, args...)
+	if err != nil {
+		return nil, err
+	}
+	summary := &UsageCostSummary{Groups: []UsageCostGroup{}, Totals: []UsageCostTotal{}}
+	totals := map[string]*UsageCostTotal{}
+	for rows.Next() {
+		var group UsageCostGroup
+		if err := rows.Scan(&group.Model, &group.Currency, &group.Requests,
+			&group.CostMicro, &group.ChargedMicro, &group.EstimatedUsageRequests); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		summary.Groups = append(summary.Groups, group)
+		summary.EstimatedRequests += group.Requests
+		summary.EstimatedUsageRequests += group.EstimatedUsageRequests
+		total := totals[group.Currency]
+		if total == nil {
+			total = &UsageCostTotal{Currency: group.Currency}
+			totals[group.Currency] = total
+		}
+		total.Requests += group.Requests
+		total.CostMicro += group.CostMicro
+		total.ChargedMicro += group.ChargedMicro
+		total.EstimatedUsageRequests += group.EstimatedUsageRequests
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, total := range totals {
+		summary.Totals = append(summary.Totals, *total)
+	}
+	sort.SliceStable(summary.Totals, func(i, j int) bool {
+		return summary.Totals[i].Currency < summary.Totals[j].Currency
+	})
+	var totalRequests int64
+	if err := s.pool.QueryRow(ctx, `SELECT count(*)::bigint FROM usage_records `+where, args...).Scan(&totalRequests); err != nil {
+		return nil, err
+	}
+	summary.MissingCostRequests = totalRequests - summary.EstimatedRequests
+	if summary.MissingCostRequests < 0 {
+		summary.MissingCostRequests = 0
+	}
+	return summary, nil
+}
+
 // isGlobalUsageFilter:无任何维度/游标条件时，趋势图可走小时 rollup。
 func isGlobalUsageFilter(filter UsageFilter) bool {
 	return filter.TeamID == "" && filter.UserID == "" && filter.Model == "" &&
@@ -467,13 +530,18 @@ func argsList(args []any, extra ...any) []any {
 // ---- quota(Gateway 临界区) ----
 
 func (s *PostgresStore) TryReserveQuota(ctx context.Context, teamID string, micro int64) (bool, error) {
+	if micro < 0 || micro > maxCreditFieldMicro {
+		return false, nil
+	}
 	creditStr := credits.FormatMicroCredits(micro)
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE teams
 		SET reserved_credits = reserved_credits + $2::numeric
 		WHERE id = $1::uuid
 			AND disabled_at IS NULL
-			AND (unlimited OR used_credits + reserved_credits + $2::numeric <= quota_credits)`,
+			AND $2::numeric >= 0
+			AND (unlimited OR (used_credits + reserved_credits < quota_credits
+				AND used_credits + reserved_credits + $2::numeric <= quota_credits))`,
 		teamID, creditStr)
 	if err != nil {
 		return false, err
@@ -482,6 +550,9 @@ func (s *PostgresStore) TryReserveQuota(ctx context.Context, teamID string, micr
 }
 
 func (s *PostgresStore) SettleUsage(ctx context.Context, record UsageRecord, reservedMicro int64) error {
+	if record.CreditsMicro < 0 || reservedMicro < 0 || reservedMicro > maxCreditFieldMicro {
+		return ErrInvalidCreditCharge
+	}
 	if record.ID == "" {
 		record.ID = newUUID()
 	}
@@ -490,8 +561,24 @@ func (s *PostgresStore) SettleUsage(ctx context.Context, record UsageRecord, res
 		return err
 	}
 	defer tx.Rollback(ctx)
+	var quota, used, teamReserved string
+	var unlimited bool
+	if err := tx.QueryRow(ctx, `
+		SELECT quota_credits::text, used_credits::text, reserved_credits::text, unlimited
+		FROM teams WHERE id = $1::uuid FOR UPDATE`, record.TeamID).
+		Scan(&quota, &used, &teamReserved, &unlimited); err != nil {
+		return err
+	}
+	charge, capped, err := capTeamCreditCharge(used, teamReserved, quota, unlimited, reservedMicro, record.CreditsMicro)
+	if err != nil {
+		return err
+	}
+	record.CreditsMicro = charge
+	if capped {
+		markCreditChargeCapped(&record)
+	}
 	reservedCredits := credits.FormatMicroCredits(reservedMicro)
-	actualCredits := credits.FormatMicroCredits(record.CreditsMicro)
+	actualCredits := credits.FormatMicroCredits(charge)
 	// 扣减与结算在同一事务:更强一行的更新先做,再写 usage 账本。
 	if _, err := tx.Exec(ctx, `
 		UPDATE teams SET
@@ -507,10 +594,19 @@ func (s *PostgresStore) SettleUsage(ctx context.Context, record UsageRecord, res
 	if err := upsertRollupExec(ctx, tx, record); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	if capped {
+		return ErrCreditChargeCapped
+	}
+	return nil
 }
 
 func (s *PostgresStore) ReleaseReservation(ctx context.Context, teamID string, micro int64) error {
+	if micro < 0 || micro > maxCreditFieldMicro {
+		return ErrInvalidCreditCharge
+	}
 	creditStr := credits.FormatMicroCredits(micro)
 	_, err := s.pool.Exec(ctx, `
 		UPDATE teams SET reserved_credits = GREATEST(reserved_credits - $2::numeric, 0) WHERE id = $1::uuid`,

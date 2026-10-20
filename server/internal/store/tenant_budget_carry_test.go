@@ -42,7 +42,7 @@ func testTenantBudgetCarriesActiveReservations(t *testing.T, ctx context.Context
 				t.Fatalf("旧周期请求应成功预留: %s %v", old, err)
 			}
 			next, err := s.ReserveQuota(ctx, ReserveQuotaInput{ID: uuid.NewString(), TeamID: team.ID, UserID: user.ID, RequestID: "carry-new-denied-" + kind, Micro: 500000, CreatedAt: after})
-			if err != nil || next != ReserveDenied {
+			if err != nil || next != ReserveDeniedBudget {
 				t.Fatalf("旧周期在途预留仍需占用新周期预算: %s %v", next, err)
 			}
 			if err := s.ReleaseReservationByID(ctx, oldID, after); err != nil {

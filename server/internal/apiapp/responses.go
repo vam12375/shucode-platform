@@ -99,22 +99,28 @@ func toPublicTeam(team *store.TeamRecord) teamPublic {
 }
 
 type modelPublic struct {
-	ModelID                string  `json:"modelId"`
-	DisplayName            string  `json:"displayName"`
-	UpstreamModel          *string `json:"upstreamModel"`
-	UpstreamProviderID     *string `json:"upstreamProviderId"`
-	InputPricePerMtok      string  `json:"inputPricePerMtok"`
-	OutputPricePerMtok     string  `json:"outputPricePerMtok"`
-	CacheReadPricePerMtok  string  `json:"cacheReadPricePerMtok"`
-	CacheWritePricePerMtok string  `json:"cacheWritePricePerMtok"`
-	OffPeakMultiplier      string  `json:"offPeakMultiplier"`
-	Enabled                bool    `json:"enabled"`
-	SortOrder              int64   `json:"sortOrder"`
-	CreatedAt              string  `json:"createdAt"`
-	UpdatedAt              string  `json:"updatedAt"`
+	ModelID                string                 `json:"modelId"`
+	DisplayName            string                 `json:"displayName"`
+	UpstreamModel          *string                `json:"upstreamModel"`
+	UpstreamProviderID     *string                `json:"upstreamProviderId"`
+	InputPricePerMtok      string                 `json:"inputPricePerMtok"`
+	OutputPricePerMtok     string                 `json:"outputPricePerMtok"`
+	CacheReadPricePerMtok  string                 `json:"cacheReadPricePerMtok"`
+	CacheWritePricePerMtok string                 `json:"cacheWritePricePerMtok"`
+	OffPeakMultiplier      string                 `json:"offPeakMultiplier"`
+	ConfigMode             string                 `json:"configMode"`
+	Config                 *modelCapabilityConfig `json:"config"`
+	Enabled                bool                   `json:"enabled"`
+	SortOrder              int64                  `json:"sortOrder"`
+	CreatedAt              string                 `json:"createdAt"`
+	UpdatedAt              string                 `json:"updatedAt"`
 }
 
 func toPublicModel(model *store.PlatformModelRecord) modelPublic {
+	configMode := model.ConfigMode
+	if configMode == "" {
+		configMode = modelConfigRecommended
+	}
 	return modelPublic{
 		ModelID: model.ModelID, DisplayName: model.DisplayName,
 		UpstreamModel:      stringPtrOrNil(model.UpstreamModel),
@@ -122,7 +128,8 @@ func toPublicModel(model *store.PlatformModelRecord) modelPublic {
 		InputPricePerMtok:  model.InputPricePerMtok, OutputPricePerMtok: model.OutputPricePerMtok,
 		CacheReadPricePerMtok: model.CacheReadPricePerMtok, CacheWritePricePerMtok: model.CacheWritePricePerMtok,
 		OffPeakMultiplier: model.OffPeakMultiplier,
-		Enabled:           model.Enabled, SortOrder: model.SortOrder,
+		ConfigMode:        configMode, Config: decodeModelCapabilityConfig(model.ModelConfig),
+		Enabled: model.Enabled, SortOrder: model.SortOrder,
 		CreatedAt: isoString(model.CreatedAt), UpdatedAt: isoString(model.UpdatedAt),
 	}
 }
@@ -183,6 +190,57 @@ func toPublicAggregate(row store.UsageAggregateRow) aggregatePublic {
 		CacheCreationTokens: row.CacheCreationTokens, CreditsMicro: row.CreditsMicro,
 		LatencyMsSum: row.LatencyMsSum,
 	}
+}
+
+type usageCostGroupPublic struct {
+	Model                  string `json:"model"`
+	Currency               string `json:"currency"`
+	Requests               int64  `json:"requests"`
+	CostMicro              int64  `json:"costMicro"`
+	ChargedMicro           int64  `json:"chargedMicro"`
+	EstimatedUsageRequests int64  `json:"estimatedUsageRequests"`
+}
+
+type usageCostTotalPublic struct {
+	Currency               string `json:"currency"`
+	Requests               int64  `json:"requests"`
+	CostMicro              int64  `json:"costMicro"`
+	ChargedMicro           int64  `json:"chargedMicro"`
+	EstimatedUsageRequests int64  `json:"estimatedUsageRequests"`
+}
+
+type usageCostSummaryPublic struct {
+	Groups                 []usageCostGroupPublic `json:"groups"`
+	Totals                 []usageCostTotalPublic `json:"totals"`
+	EstimatedRequests      int64                  `json:"estimatedRequests"`
+	MissingCostRequests    int64                  `json:"missingCostRequests"`
+	EstimatedUsageRequests int64                  `json:"estimatedUsageRequests"`
+}
+
+func toPublicUsageCostSummary(summary *store.UsageCostSummary) *usageCostSummaryPublic {
+	if summary == nil {
+		return nil
+	}
+	out := &usageCostSummaryPublic{
+		Groups:            make([]usageCostGroupPublic, 0, len(summary.Groups)),
+		Totals:            make([]usageCostTotalPublic, 0, len(summary.Totals)),
+		EstimatedRequests: summary.EstimatedRequests, MissingCostRequests: summary.MissingCostRequests,
+		EstimatedUsageRequests: summary.EstimatedUsageRequests,
+	}
+	for _, group := range summary.Groups {
+		out.Groups = append(out.Groups, usageCostGroupPublic{
+			Model: group.Model, Currency: group.Currency, Requests: group.Requests,
+			CostMicro: group.CostMicro, ChargedMicro: group.ChargedMicro,
+			EstimatedUsageRequests: group.EstimatedUsageRequests,
+		})
+	}
+	for _, total := range summary.Totals {
+		out.Totals = append(out.Totals, usageCostTotalPublic{
+			Currency: total.Currency, Requests: total.Requests, CostMicro: total.CostMicro,
+			ChargedMicro: total.ChargedMicro, EstimatedUsageRequests: total.EstimatedUsageRequests,
+		})
+	}
+	return out
 }
 
 type seriesPublic struct {

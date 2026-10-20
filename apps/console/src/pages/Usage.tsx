@@ -11,10 +11,7 @@ import {
 } from "react";
 import { api, apiUrl } from "../api.js";
 import { useAuth } from "../auth.js";
-import {
-  summarizeHistoricalCosts,
-  type PriceSnapshot,
-} from "../usage-costs.js";
+import { type PriceSnapshot } from "../usage-costs.js";
 import {
   ComposedTrendChart,
   ModelDonutChart,
@@ -135,11 +132,38 @@ interface DayPoint {
   promptTokens: number;
 }
 
+interface UsageCostGroup {
+  model: string;
+  currency: string;
+  requests: number;
+  costMicro: number;
+  chargedMicro: number;
+  estimatedUsageRequests: number;
+}
+
+interface UsageCostTotal {
+  currency: string;
+  requests: number;
+  costMicro: number;
+  chargedMicro: number;
+  estimatedUsageRequests: number;
+}
+
+/** 服务端按筛选范围汇总的冻结成本快照，不只是当前页。 */
+interface UsageCostSummary {
+  groups: UsageCostGroup[];
+  totals: UsageCostTotal[];
+  estimatedRequests: number;
+  missingCostRequests: number;
+  estimatedUsageRequests: number;
+}
+
 /** 与 /console/api/usage 响应对齐：records 为当前页，nextCursor 为下一页游标。 */
 interface UsagePageData {
   aggregates: AggregateRow[];
   records: UsageRecordRow[];
   nextCursor: string | null;
+  costSummary: UsageCostSummary | null;
 }
 
 const DAY = 86_400_000;
@@ -289,6 +313,7 @@ export function UsagePage() {
   const [detail, setDetail] = useState<UsageRecordRow | null>(null);
   const [aggregates, setAggregates] = useState<AggregateRow[]>([]);
   const [records, setRecords] = useState<UsageRecordRow[]>([]);
+  const [costSummary, setCostSummary] = useState<UsageCostSummary | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [moreLoading, setMoreLoading] = useState(false);
   const [days, setDays] = useState<DayPoint[]>([]);
@@ -453,6 +478,7 @@ export function UsagePage() {
       const data = await fetchUsage(null);
       setAggregates(data.aggregates);
       setRecords(data.records);
+      setCostSummary(data.costSummary);
       setNextCursor(data.nextCursor);
       setError(null);
     } catch (loadError) {
@@ -546,10 +572,13 @@ export function UsagePage() {
     };
   }, [aggregates, modelOptions]);
 
-  const costEstimate = useMemo(
-    () => summarizeHistoricalCosts(records),
-    [records],
-  );
+  const primaryCostTotal =
+    costSummary?.totals.find((total) => total.currency === "CNY") ??
+    costSummary?.totals[0] ??
+    null;
+  const costDifferenceMicro = primaryCostTotal
+    ? primaryCostTotal.chargedMicro - primaryCostTotal.costMicro
+    : 0;
 
   // 趋势图当前范围（上海墙钟），预设/粒度切换后随 days 一起刷新。
   const chartRange = useMemo(() => presetRange(chartPreset), [chartPreset]);
@@ -766,6 +795,26 @@ export function UsagePage() {
             {dataUnavailable ? "加载失败，请重试" : "网关计量 · 团队账单口径"}
           </p>
         </div>
+        {isRoot ? (
+          <div className="stat-card">
+            <p className="stat-label">区间总成本</p>
+            <p className="stat-value">
+              {dataUnavailable || !primaryCostTotal
+                ? "—"
+                : money(
+                    primaryCostTotal.costMicro / 1_000_000,
+                    primaryCostTotal.currency,
+                  )}
+            </p>
+            <p className="stat-sub">
+              {dataUnavailable
+                ? "加载失败，请重试"
+                : costSummary
+                  ? `估算 · ${costSummary.estimatedRequests} 条成本快照 · ${costSummary.missingCostRequests} 条缺失`
+                  : "成本汇总加载中…"}
+            </p>
+          </div>
+        ) : null}
         <div className="stat-card">
           <p className="stat-label">平均耗时</p>
           <p className="stat-value">
@@ -1157,83 +1206,134 @@ export function UsagePage() {
       {isRoot ? (
         <section className="pane d1">
           <div className="pane-h">
-            <h2>当前页历史成本估算</h2>
+            <h2>区间历史成本估算</h2>
             <span className="readout">
-              冻结价格快照 · 已加载 {records.length} 条请求
+              冻结价格快照 · 服务端汇总
+              {costSummary ? ` · ${costSummary.estimatedRequests} 条已计入` : ""}
             </span>
           </div>
           <div className="pane-b">
-            <p className="readout m0">
-              仅汇总已加载记录，覆盖 {costEstimate.estimatedCount} 条；
-              {costEstimate.missingCount} 条旧记录或未知成本未计入。其中{" "}
-              {costEstimate.estimatedUsageCount} 条采用估算 Token
-              用量。各币种独立统计，估算差额仅比较具有 CNY
-              成本快照的同一批请求；这些数字不是已结算毛利或全期账单。
-            </p>
-          </div>
-          <div className="table-scroll">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>模型</th>
-                  <th>币种</th>
-                  <th>已知成本请求</th>
-                  <th>历史成本估算</th>
-                  <th>对应实扣（credit）</th>
-                  <th>CNY 估算差额</th>
-                </tr>
-              </thead>
-              <tbody>
-                {costEstimate.groups.map((row) => (
-                  <tr key={`${row.model}:${row.currency}`}>
-                    <td>{row.model}</td>
-                    <td>{row.currency}</td>
-                    <td className="num">{row.count}</td>
-                    <td className="num">
-                      {money(row.costMicro / 1_000_000, row.currency)}
-                    </td>
-                    <td className="num">{credits(row.chargedMicro)}</td>
-                    <td className="num">
-                      {row.currency === "CNY"
+            {!costSummary ? (
+              <p className="readout m0">成本汇总加载中…</p>
+            ) : (
+              <>
+                <div className="stat-grid" style={{ marginBottom: 14 }}>
+                  <div className="stat-card">
+                    <p className="stat-label">区间总成本</p>
+                    <p className="stat-value">
+                      {primaryCostTotal
                         ? money(
-                            (row.chargedMicro - row.costMicro) / 1_000_000,
-                            "CNY",
+                            primaryCostTotal.costMicro / 1_000_000,
+                            primaryCostTotal.currency,
                           )
                         : "—"}
-                    </td>
-                  </tr>
-                ))}
-                {costEstimate.groups.length === 0 ? (
+                    </p>
+                    <p className="stat-sub">
+                      {primaryCostTotal
+                        ? `${primaryCostTotal.requests} 条已知成本请求`
+                        : "筛选范围内暂无成本快照"}
+                      {costSummary.totals.length > 1
+                        ? ` · 另有 ${costSummary.totals.length - 1} 种币种见下表`
+                        : ""}
+                    </p>
+                  </div>
+                  <div className="stat-card">
+                    <p className="stat-label">对应实扣</p>
+                    <p className="stat-value">
+                      {primaryCostTotal
+                        ? `${credits(primaryCostTotal.chargedMicro)} credit`
+                        : "—"}
+                    </p>
+                    <p className="stat-sub">仅统计已匹配成本快照的请求</p>
+                  </div>
+                  <div className="stat-card">
+                    <p className="stat-label">估算差额</p>
+                    <p className="stat-value">
+                      {primaryCostTotal?.currency === "CNY"
+                        ? money(costDifferenceMicro / 1_000_000, "CNY")
+                        : "—"}
+                    </p>
+                    <p className="stat-sub">实扣 − 成本 · 仅 CNY</p>
+                  </div>
+                </div>
+                <p className="readout m0">
+                  覆盖当前筛选范围内的全部请求，不只是已加载页。
+                  {costSummary.estimatedRequests} 条有成本快照，
+                  {costSummary.missingCostRequests} 条旧记录或未知成本未计入；其中{" "}
+                  {costSummary.estimatedUsageRequests} 条采用估算 Token 用量。各币种独立统计；
+                  这是参考估算，不是已结算毛利或供应商账单。
+                </p>
+              </>
+            )}
+          </div>
+          {costSummary ? (
+            <div className="table-scroll">
+              <table className="table">
+                <thead>
                   <tr>
-                    <td colSpan={6} className="readout">
-                      暂无可估算的历史成本快照。
-                    </td>
+                    <th>模型</th>
+                    <th>币种</th>
+                    <th>已知成本请求</th>
+                    <th>其中估算用量</th>
+                    <th>历史成本估算</th>
+                    <th>对应实扣（credit）</th>
+                    <th>CNY 估算差额</th>
                   </tr>
-                ) : null}
-              </tbody>
-              <tfoot>
-                {costEstimate.totals.map(([currency, total]) => (
-                  <tr key={currency}>
-                    <td>合计</td>
-                    <td>{currency}</td>
-                    <td className="num">{total.count}</td>
-                    <td className="num">
-                      {money(total.costMicro / 1_000_000, currency)}
-                    </td>
-                    <td className="num">{credits(total.chargedMicro)}</td>
-                    <td className="num">
-                      {currency === "CNY"
-                        ? money(
-                            (total.chargedMicro - total.costMicro) / 1_000_000,
-                            "CNY",
-                          )
-                        : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tfoot>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {costSummary.groups.map((row) => (
+                    <tr key={`${row.model}:${row.currency}`}>
+                      <td>{row.model}</td>
+                      <td>{row.currency}</td>
+                      <td className="num">{row.requests}</td>
+                      <td className="num">{row.estimatedUsageRequests}</td>
+                      <td className="num">
+                        {money(row.costMicro / 1_000_000, row.currency)}
+                      </td>
+                      <td className="num">{credits(row.chargedMicro)}</td>
+                      <td className="num">
+                        {row.currency === "CNY"
+                          ? money(
+                              (row.chargedMicro - row.costMicro) / 1_000_000,
+                              "CNY",
+                            )
+                          : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                  {costSummary.groups.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="readout">
+                        筛选范围内暂无可估算的历史成本快照。
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+                <tfoot>
+                  {costSummary.totals.map((total) => (
+                    <tr key={total.currency}>
+                      <td>合计</td>
+                      <td>{total.currency}</td>
+                      <td className="num">{total.requests}</td>
+                      <td className="num">{total.estimatedUsageRequests}</td>
+                      <td className="num">
+                        {money(total.costMicro / 1_000_000, total.currency)}
+                      </td>
+                      <td className="num">{credits(total.chargedMicro)}</td>
+                      <td className="num">
+                        {total.currency === "CNY"
+                          ? money(
+                              (total.chargedMicro - total.costMicro) / 1_000_000,
+                              "CNY",
+                            )
+                          : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tfoot>
+              </table>
+            </div>
+          ) : null}
         </section>
       ) : null}
 

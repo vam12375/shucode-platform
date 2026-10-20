@@ -214,7 +214,7 @@ func (s *Service) Tick(ctx context.Context) {
 		}
 		claimed, e := s.Mutate(ctx, p.TeamID, p.ID, p.Version, func(v *Project) error {
 			v.LeaseOwner = s.WorkerID
-			v.LeaseUntil = time.Now().Add(10 * time.Minute)
+			v.LeaseUntil = time.Now().Add(workerLeaseDuration(v.Brief.Resolution))
 			return nil
 		})
 		if e != nil {

@@ -18,6 +18,15 @@ func lockTeam(ctx context.Context, tx pgx.Tx, teamID string) (bool, error) {
 	}
 	return err == nil, err
 }
+
+func lockActiveTeam(ctx context.Context, tx pgx.Tx, teamID string) (bool, error) {
+	var active bool
+	err := tx.QueryRow(ctx, `SELECT disabled_at IS NULL FROM teams WHERE id=$1::uuid FOR UPDATE`, teamID).Scan(&active)
+	if queryErrNoRows(err) {
+		return false, nil
+	}
+	return active, err
+}
 func lockMemberUser(ctx context.Context, tx pgx.Tx, userID string) error {
 	var id string
 	return tx.QueryRow(ctx, `SELECT id::text FROM users WHERE id=$1::uuid FOR UPDATE`, userID).Scan(&id)
@@ -322,27 +331,30 @@ func (s *PostgresStore) AcceptTeamInvitation(ctx context.Context, tokenHash, use
 	return record, nil
 }
 
-func reservationBudgetAllowed(ctx context.Context, tx pgx.Tx, input ReserveQuotaInput, at time.Time) (bool, error) {
+func reservationBudgetAllowed(ctx context.Context, tx pgx.Tx, input ReserveQuotaInput, at time.Time) (ReserveResult, error) {
 	var memberBudget string
 	if input.UserID != "" {
 		member, err := getTeamMember(ctx, tx, input.TeamID, input.UserID)
 		if err != nil {
-			return false, err
+			return "", err
 		}
 		if member == nil || member.MemberDisabledAt != nil || member.User.DisabledAt != nil {
-			return false, nil
+			return ReserveDeniedInactive, nil
 		}
 		memberBudget = member.MonthlyBudgetCredits
 	}
 	policy, err := getTeamPolicy(ctx, tx, input.TeamID)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	if policy == nil {
-		return false, nil
+		return ReserveDeniedBudget, nil
 	}
 	if memberBudget == "" && policy.DailyBudgetCredits == "" && policy.MonthlyBudgetCredits == "" {
-		return input.Micro >= 0, nil
+		if input.Micro >= 0 {
+			return ReserveReserved, nil
+		}
+		return ReserveDeniedBudget, nil
 	}
 	day, endDay, month, endMonth := budgetWindow(at)
 	var daily, monthly, personal int64
@@ -352,18 +364,21 @@ func reservationBudgetAllowed(ctx context.Context, tx pgx.Tx, input ReserveQuota
  UNION ALL SELECT created_at,user_id,reserved_credits*1000000,true FROM quota_reservations WHERE team_id=$1::uuid AND status='reserved'
  ) SELECT COALESCE(sum(micro) FILTER(WHERE active OR (created_at >= $2 AND created_at < $3)),0)::bigint,COALESCE(sum(micro),0)::bigint,COALESCE(sum(micro) FILTER(WHERE user_id=$6::uuid),0)::bigint FROM costs`, input.TeamID, day, endDay, month, endMonth, nullIfEmpty(input.UserID)).Scan(&daily, &monthly, &personal)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	for _, check := range []struct {
 		limit string
 		spent int64
 	}{{policy.DailyBudgetCredits, daily}, {policy.MonthlyBudgetCredits, monthly}, {memberBudget, personal}} {
 		allowed, err := budgetAllows(check.limit, check.spent, input.Micro)
-		if err != nil || !allowed {
-			return allowed, err
+		if err != nil {
+			return "", err
+		}
+		if !allowed {
+			return ReserveDeniedBudget, nil
 		}
 	}
-	return true, nil
+	return ReserveReserved, nil
 }
 
 func (s *PostgresStore) FindTeamInvitationByHash(ctx context.Context, tokenHash string) (*TeamInvitationRecord, error) {

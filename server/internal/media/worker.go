@@ -195,11 +195,20 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	if e != nil {
 		return e
 	}
-	if r == store.ReserveDenied {
-		if update(func(v *Shot) { v.Status = "failed"; v.Error = "insufficient_credits"; v.ReservationID = "" }) == nil {
+	if r == store.ReserveDenied || r == store.ReserveDeniedBudget || r == store.ReserveDeniedInactive {
+		reason := "insufficient_credits"
+		if r == store.ReserveDeniedBudget {
+			reason = "budget_exhausted"
+		} else if r == store.ReserveDeniedInactive {
+			reason = "team_inactive"
+		}
+		if update(func(v *Shot) { v.Status = "failed"; v.Error = reason; v.ReservationID = "" }) == nil {
 			return ErrConflict
 		}
 		return nil
+	}
+	if r != store.ReserveReserved && r != store.ReserveDuplicate {
+		return fmt.Errorf("unknown media quota reservation result: %s", r)
 	}
 	if update(func(v *Shot) { v.Status = kind + "_submitting" }) == nil {
 		return ErrConflict

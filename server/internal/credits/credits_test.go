@@ -2,6 +2,7 @@ package credits
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"testing"
 )
@@ -85,6 +86,43 @@ func TestEstimateFixtures(t *testing.T) {
 	for _, tc := range loadFixtures(t).Credits.Estimate {
 		if got := EstimateMaxMicroCredits(tc.MaxTokens, tc.Rate); got != tc.Micro {
 			t.Fatalf("预留不符 max=%d rate=%v: got %d want %d", tc.MaxTokens, tc.Rate, got, tc.Micro)
+		}
+	}
+}
+
+func TestEstimateReservationUsesHighestInputRate(t *testing.T) {
+	got := EstimateReservationMicroCredits(100, 20, ModelPriceRates{
+		InputPerMtok: 3, OutputPerMtok: 15, CacheReadPerMtok: 0.3, CacheWritePerMtok: 3.75,
+	})
+	if got != 675 {
+		t.Fatalf("预留必须按最高输入单价覆盖缓存写入: got=%d want=675", got)
+	}
+}
+
+func TestInvalidPricingEstimateFailsClosed(t *testing.T) {
+	got := EstimateReservationMicroCredits(100, 20, ModelPriceRates{InputPerMtok: 1, OutputPerMtok: math.NaN()})
+	if got != maxInt64Value {
+		t.Fatalf("非法单价不得产生零预留: %d", got)
+	}
+	if _, err := ComputeUsageMicroCredits(UsageTokenCounts{InputTokens: 1}, ModelPriceRates{InputPerMtok: math.Inf(1)}); err == nil {
+		t.Fatal("非法单价的实扣计价应报错")
+	}
+}
+
+func TestCreditParsingPreservesMicroPrecision(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  int64
+	}{
+		{"999999999999.999999", 999999999999999999}, {"0.000001", 1}, {"-0.010000", -10000}, {"1e-6", 1},
+	} {
+		if got, err := ParseCreditsToMicro(tc.value); err != nil || got != tc.want {
+			t.Fatalf("精确金额解析 %s: %d %v", tc.value, got, err)
+		}
+	}
+	for _, bad := range []string{"9223372036854775808", "1e40", "NaN", "1/2"} {
+		if _, err := ParseCreditsToMicro(bad); err == nil {
+			t.Fatalf("应拒绝溢出/非法金额: %s", bad)
 		}
 	}
 }

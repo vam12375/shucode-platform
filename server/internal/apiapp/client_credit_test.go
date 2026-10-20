@@ -103,6 +103,51 @@ func TestClientCreditSnapshot(t *testing.T) {
 	}
 }
 
+func TestClientCreditShowsConfiguredDebtFloor(t *testing.T) {
+	f := newAPIFixture(t)
+	ctx := context.Background()
+	user, err := f.store.CreateUser(ctx, store.UserInput{
+		Email: "credit-floor@example.com", PasswordHash: "x", DisplayName: "Credit Floor", Role: store.RoleUser,
+	})
+	if err != nil {
+		t.Fatalf("创建用户: %v", err)
+	}
+	team, err := f.store.CreateTeam(ctx, store.CreateTeamInput{Name: "额度下限团队", QuotaCredits: "10", Unlimited: false})
+	if err != nil {
+		t.Fatalf("创建团队: %v", err)
+	}
+	if err := f.store.AddMember(ctx, team.ID, user.ID, store.MemberRoleMember); err != nil {
+		t.Fatalf("加入团队: %v", err)
+	}
+	reserved, err := f.store.TryReserveQuota(ctx, team.ID, 10_000_000)
+	if err != nil || !reserved {
+		t.Fatalf("应允许预留到 0 credit: reserved=%v err=%v", reserved, err)
+	}
+	if err := f.store.SettleUsage(ctx, store.UsageRecord{
+		UserID: user.ID, TeamID: team.ID, Model: "m", UpstreamModel: "m",
+		RequestID: "floor-settle", CreditsMicro: 10_000_000 + store.TeamCreditDebtLimitMicro,
+		Status: store.UsageStatusOk, CreatedAt: time.Now(),
+	}, 10_000_000); err != nil {
+		t.Fatalf("已准入请求可结算至尾差下限: %v", err)
+	}
+	token := createDeviceTokenForTest(t, f, user.ID)
+	rec := requestClientCredit(t, f, token)
+	if rec.Code != 200 {
+		t.Fatalf("额度接口: %d %s", rec.Code, rec.Body.String())
+	}
+	data := dataOf(t, rec)
+	if data["remainingCredits"] != "-0.010000" {
+		t.Fatalf("负余额必须准确展示至硬下限: %v", data["remainingCredits"])
+	}
+	if data["usedRatio"] != float64(1) {
+		t.Fatalf("已用比例在下限处应饱和到 100%%: %v", data["usedRatio"])
+	}
+	allowed, err := f.store.TryReserveQuota(ctx, team.ID, 1)
+	if err != nil || allowed {
+		t.Fatalf("达到 -0.01 后必须阻止新请求: allowed=%v err=%v", allowed, err)
+	}
+}
+
 func TestClientCreditRequiresTeam(t *testing.T) {
 	f := newAPIFixture(t)
 	ctx := context.Background()
@@ -149,9 +194,6 @@ func TestClientCreditFormatsExistingTeamValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	remainingMicro := quotaMicro - usedMicro - reservedMicro
-	if remainingMicro < 0 {
-		remainingMicro = 0
-	}
 	if data["remainingCredits"] != credits.FormatMicroCredits(remainingMicro) {
 		t.Fatalf("剩余额度不符: got %v want %s", data["remainingCredits"], credits.FormatMicroCredits(remainingMicro))
 	}

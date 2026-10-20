@@ -1038,13 +1038,15 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			if !store.TeamModelAllowed(policy, model.ModelID) {
 				continue
 			}
-			rows = append(rows, gin.H{"modelId": model.ModelID, "displayName": model.DisplayName, "enabled": model.Enabled,
-				"inputPricePerMtok": model.InputPricePerMtok, "outputPricePerMtok": model.OutputPricePerMtok,
-				"cacheReadPricePerMtok": model.CacheReadPricePerMtok, "cacheWritePricePerMtok": model.CacheWritePricePerMtok,
-				"offPeakMultiplier": model.OffPeakMultiplier, "sortOrder": model.SortOrder})
+			// 售价属于平台经营信息，普通用户目录只下发展示与排序所需字段。
+			rows = append(rows, gin.H{"modelId": model.ModelID, "displayName": model.DisplayName,
+				"enabled": model.Enabled, "sortOrder": model.SortOrder})
 		}
 		c.JSON(200, okData(gin.H{"models": rows}))
 	})
+
+	registerModelProbeRoute(group, deps)
+	registerModelCapabilityRoutes(group, deps)
 
 	group.PUT("/models/:modelId", func(c *gin.Context) {
 		admin, ok := requireRoot(c.Request.Context(), deps, c)

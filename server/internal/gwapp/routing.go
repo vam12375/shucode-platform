@@ -320,11 +320,13 @@ func probeProvider(ctx context.Context, deps Deps, provider store.UpstreamProvid
 }
 
 func estimatePromptTokens(body map[string]any) int64 {
-	return int64(countJSONText(body) / 4)
+	// /4 会低估中文与多模态输入；完整 JSON 字节数加网关改写余量作为保守上界。
+	return int64(len(mustJSON(body))) + 128
 }
 
 func estimateRequestTokens(body map[string]any, maxTokens int64) int64 {
-	total := estimatePromptTokens(body) + maxTokens
+	// TPM 保持近似 token 速率口径；费用准入单独使用保守上界。
+	total := int64(countJSONText(body)/4) + maxTokens
 	if total < 1 {
 		return 1
 	}

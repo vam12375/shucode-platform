@@ -369,6 +369,10 @@ func (s *memoryStore) UpsertModel(_ context.Context, input UpsertModelInput) (*P
 	if input.OffPeakMultiplier != nil {
 		offPeak = numeric6(*input.OffPeakMultiplier)
 	}
+	configMode := existing.ConfigMode
+	if configMode == "" {
+		configMode = "recommended"
+	}
 	record := PlatformModelRecord{
 		ModelID:                input.ModelID,
 		DisplayName:            input.DisplayName,
@@ -379,6 +383,8 @@ func (s *memoryStore) UpsertModel(_ context.Context, input UpsertModelInput) (*P
 		CacheReadPricePerMtok:  numeric6(cacheRead),
 		CacheWritePricePerMtok: numeric6(cacheWrite),
 		OffPeakMultiplier:      offPeak,
+		ConfigMode:             configMode,
+		ModelConfig:            append([]byte(nil), existing.ModelConfig...),
 		Enabled:                enabled,
 		SortOrder:              sortOrder,
 		CreatedAt:              existing.CreatedAt,
@@ -389,6 +395,20 @@ func (s *memoryStore) UpsertModel(_ context.Context, input UpsertModelInput) (*P
 	}
 	s.models[record.ModelID] = record
 	return cloneModel(&record), nil
+}
+
+func (s *memoryStore) SetModelConfig(_ context.Context, modelID, mode string, config []byte) (*PlatformModelRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	model, ok := s.models[modelID]
+	if !ok {
+		return nil, nil
+	}
+	model.ConfigMode = mode
+	model.ModelConfig = append([]byte(nil), config...)
+	model.UpdatedAt = time.Now()
+	s.models[modelID] = model
+	return cloneModel(&model), nil
 }
 
 func (s *memoryStore) DeleteModel(_ context.Context, modelID string) (bool, error) {
@@ -560,7 +580,11 @@ func (s *memoryStore) ReportUpstreamSuccess(_ context.Context, id string) error 
 func cloneDeviceToken(t *DeviceTokenRecord) *DeviceTokenRecord { c := *t; return &c }
 func cloneLoginFlow(f *LoginFlowRecord) *LoginFlowRecord       { c := *f; return &c }
 func cloneRelease(r *ReleaseRecord) *ReleaseRecord             { c := *r; return &c }
-func cloneModel(m *PlatformModelRecord) *PlatformModelRecord   { c := *m; return &c }
+func cloneModel(m *PlatformModelRecord) *PlatformModelRecord {
+	c := *m
+	c.ModelConfig = append([]byte(nil), m.ModelConfig...)
+	return &c
+}
 func cloneProvider(p *UpstreamProviderRecord) *UpstreamProviderRecord {
 	c := *p
 	return &c

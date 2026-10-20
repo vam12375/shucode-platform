@@ -163,9 +163,10 @@
     {
       "modelId": "glm-5.3-flash",
       "displayName": "GLM-5.3-Flash",
-      "inputCostPerMillion": "0.15",
-      "outputCostPerMillion": "0.5",
-      "cacheReadCostPerMillion": "0.03",
+      "currency": "CNY",
+      "inputCostPerMillion": "0.8",
+      "outputCostPerMillion": "2.8",
+      "cacheReadCostPerMillion": "0.23",
       "cacheCreationCostPerMillion": "0"
     },
     {

@@ -305,6 +305,40 @@ func TestPublicConfigsAndReleases(t *testing.T) {
 	}
 }
 
+func TestProviderModelsMediaPrefixFallback(t *testing.T) {
+	f := newAPIFixture(t)
+	adminCookie := f.loginAdmin()
+	// 完整 API 前缀下没有 /models 时回退到 /v1/models，兼容代理型媒体供应商。
+	f.upstreamFn = func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v3/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"media-model-b"},{"id":"media-model-a"}]}`))
+	}
+	createRec := f.do("POST", "/console/api/providers", adminCookie,
+		`{"name":"Media Ark","baseUrl":"`+f.upstream.URL+`/api/v3","apiKey":"sk-test-5678","protocol":"openai-chat-completions"}`)
+	if createRec.Code != 200 {
+		t.Fatalf("创建媒体供应商: %d %s", createRec.Code, createRec.Body.String())
+	}
+	providerID := dataOf(t, createRec)["provider"].(map[string]any)["id"].(string)
+	listRec := f.do("GET", "/console/api/providers/"+providerID+"/models?base=prefix", adminCookie, "")
+	if listRec.Code != 200 {
+		t.Fatalf("前缀模式模型列表: %d %s", listRec.Code, listRec.Body.String())
+	}
+	models := dataOf(t, listRec)["models"].([]any)
+	if len(models) != 2 || models[0] != "media-model-a" || models[1] != "media-model-b" {
+		t.Fatalf("模型列表应升序: %v", models)
+	}
+	f.upstreamMu.Lock()
+	hits := append([]upstreamHit(nil), f.upstreamHits...)
+	f.upstreamMu.Unlock()
+	if len(hits) != 2 || hits[0].url != "/api/v3/models" || hits[1].url != "/api/v3/v1/models" {
+		t.Fatalf("前缀回退路径不符: %+v", hits)
+	}
+}
+
 func storeProviderInput(name string) store.CreateUpstreamProviderInput {
 	return store.CreateUpstreamProviderInput{
 		Name: name, BaseURL: "https://import.test", Protocol: store.ProtocolOpenAIChatCompletions,

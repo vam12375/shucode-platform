@@ -291,9 +291,16 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			mediaError(c, deps, e)
 			return
 		}
+		// 目录配置允许绑定尚未启用/尚未填密钥的供应商，便于先建模型再补密钥；
+		// 真正提交生成时 s.Provider 仍会拒绝不可用供应商。
 		for _, m := range models {
-			if _, e := s.Provider(c.Request.Context(), m); e != nil {
-				mediaError(c, deps, e)
+			p, e := deps.Store.GetUpstreamProvider(c.Request.Context(), m.ProviderID)
+			if e != nil {
+				internalError(c, deps, e)
+				return
+			}
+			if p == nil {
+				c.JSON(400, fail(400, "媒体模型绑定的上游供应商不存在"))
 				return
 			}
 		}
@@ -360,7 +367,7 @@ func publicMediaModels(models []media.Model) []gin.H {
 	for _, m := range models {
 		resolutions := append([]string{}, m.Resolutions...)
 		durations := append([]int{}, m.Durations...)
-		out = append(out, gin.H{"id": m.ID, "name": m.Name, "kind": m.Kind, "resolutions": resolutions, "durations": durations, "priceMicro": m.PriceMicro, "priceVersion": m.PriceVersion})
+		out = append(out, gin.H{"id": m.ID, "name": m.Name, "kind": m.Kind, "resolutions": resolutions, "durations": durations, "costMicro": m.CostMicro, "generateAudio": m.GenerateAudio, "priceMicro": m.PriceMicro, "priceVersion": m.PriceVersion})
 	}
 	return out
 }

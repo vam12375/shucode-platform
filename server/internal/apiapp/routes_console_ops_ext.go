@@ -264,6 +264,11 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
+		costSummary, err := deps.Store.AggregateUsageCosts(c.Request.Context(), store.UsageFilter{From: &since})
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
 		auditPending := int64(0)
 		if deps.AuditSink != nil {
 			count, countErr := deps.AuditSink.PendingCount()
@@ -293,6 +298,7 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 			"pendingSettlements": overview.PendingSettlements,
 			"auditOutboxPending": auditPending,
 			"providerStats":      providerStats,
+			"costSummary":        toPublicUsageCostSummary(costSummary),
 		}))
 	})
 
@@ -347,6 +353,7 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 			rows = append(rows, gin.H{
 				"id": reservation.ID, "teamId": reservation.TeamID, "requestId": reservation.RequestID,
 				"reservedCreditsMicro": reservation.ReservedMicro,
+				"retainUntilSettled":   reservation.RetainUntilSettled,
 				"createdAt":            isoString(reservation.CreatedAt), "expiresAt": isoString(reservation.ExpiresAt),
 			})
 		}

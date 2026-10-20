@@ -63,12 +63,20 @@ func (p Provider) Image(ctx context.Context, m Model, prompt, image string) (str
 	}
 	return out.Data[0].URL, nil
 }
+func videoSubmitBody(m Model, b Brief, s ShotPlan, image string) map[string]any {
+	body := map[string]any{"model": m.UpstreamModel, "content": []any{map[string]any{"type": "text", "text": s.Prompt}, map[string]any{"type": "image_url", "image_url": map[string]string{"url": image}, "role": "first_frame"}}, "resolution": b.Resolution, "ratio": b.AspectRatio, "duration": s.Duration, "watermark": true}
+	// 只在模型显式开启时下发；Seedance 1.0 等不支持该参数的模型保持原请求不变。
+	if m.GenerateAudio {
+		body["generate_audio"] = true
+	}
+	return body
+}
+
 func (p Provider) Submit(ctx context.Context, m Model, b Brief, s ShotPlan, image string) (string, error) {
 	var out struct {
 		ID string `json:"id"`
 	}
-	body := map[string]any{"model": m.UpstreamModel, "content": []any{map[string]any{"type": "text", "text": s.Prompt}, map[string]any{"type": "image_url", "image_url": map[string]string{"url": image}, "role": "first_frame"}}, "resolution": b.Resolution, "ratio": b.AspectRatio, "duration": s.Duration, "watermark": true}
-	e := p.request(ctx, "POST", "/contents/generations/tasks", body, &out)
+	e := p.request(ctx, "POST", "/contents/generations/tasks", videoSubmitBody(m, b, s, image), &out)
 	if e != nil {
 		return "", e
 	}

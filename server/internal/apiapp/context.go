@@ -31,6 +31,8 @@ type Deps struct {
 	// LoginIPLimiter:Pure-IP 全局登录桶；RootLoginLimiter:root 专属更紧的桶。
 	LoginIPLimiter   ratelimit.Limiter
 	RootLoginLimiter ratelimit.Limiter
+	// ModelProbeLimiter:用户端模型实测的按用户桶；nil 表示不限流（测试夹具）。
+	ModelProbeLimiter ratelimit.Limiter
 	// Turnstile:登录页人机验证；nil 表示未配置，登录行为保持原样。
 	Turnstile  TurnstileVerifier
 	Logger     *slog.Logger

@@ -176,10 +176,14 @@ type PlatformModelRecord struct {
 	CacheWritePricePerMtok string
 	// OffPeakMultiplier:空闲时段价格倍率（1 = 无折扣；DeepSeek 0.5）。
 	OffPeakMultiplier string
-	Enabled           bool
-	SortOrder         int64
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	// ConfigMode:recommended = 跟随官方内置规则；manual = 使用 ModelConfig 覆盖。
+	ConfigMode string
+	// ModelConfig:manual 模式下的客户端模型能力配置 JSON（properties/optionSpecs）。
+	ModelConfig []byte
+	Enabled     bool
+	SortOrder   int64
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // UpstreamRouteRecord:模型的可调度上游路由（渠道池）。
@@ -222,39 +226,46 @@ const (
 	ReservationExpired  QuotaReservationStatus = "expired"
 )
 
-// ReserveResult:原子预留的三种结果，调用方据此区分 429 / 409。
+// TeamCreditDebtLimitMicro is the finite team's maximum allowed credit overdraft.
+const TeamCreditDebtLimitMicro int64 = 10_000
+
+// ReserveResult:原子预留结果，调用方据此区分余额、预算、状态拒绝与重复请求。
 type ReserveResult string
 
 const (
-	ReserveReserved  ReserveResult = "reserved"
-	ReserveDenied    ReserveResult = "denied"
-	ReserveDuplicate ReserveResult = "duplicate"
+	ReserveReserved       ReserveResult = "reserved"
+	ReserveDenied         ReserveResult = "denied"
+	ReserveDeniedBudget   ReserveResult = "denied_budget"
+	ReserveDeniedInactive ReserveResult = "denied_inactive"
+	ReserveDuplicate      ReserveResult = "duplicate"
 )
 
 type ReserveQuotaInput struct {
-	HeldByTask bool
-	UserID     string
-	ID         string
-	TeamID     string
-	RequestID  string
-	Micro      int64
-	TTL        time.Duration
-	CreatedAt  time.Time
+	RetainUntilSettled bool
+	HeldByTask         bool
+	UserID             string
+	ID                 string
+	TeamID             string
+	RequestID          string
+	Micro              int64
+	TTL                time.Duration
+	CreatedAt          time.Time
 }
 
 type QuotaReservationRecord struct {
-	HeldByTask    bool
-	UserID        string
-	ID            string
-	TeamID        string
-	RequestID     string
-	ReservedMicro int64
-	Status        QuotaReservationStatus
-	CreatedAt     time.Time
-	ExpiresAt     time.Time
-	SettledAt     *time.Time
-	ReleasedAt    *time.Time
-	UsageID       string
+	RetainUntilSettled bool
+	HeldByTask         bool
+	UserID             string
+	ID                 string
+	TeamID             string
+	RequestID          string
+	ReservedMicro      int64
+	Status             QuotaReservationStatus
+	CreatedAt          time.Time
+	ExpiresAt          time.Time
+	SettledAt          *time.Time
+	ReleasedAt         *time.Time
+	UsageID            string
 }
 
 // OpsProviderStat:运维大盘的供应商维度。
@@ -571,6 +582,33 @@ type UsageAggregateRow struct {
 	CacheCreationTokens int64
 	CreditsMicro        int64
 	LatencyMsSum        int64
+}
+
+// UsageCostGroup:按模型/币种汇总的冻结成本快照。
+type UsageCostGroup struct {
+	Model                  string
+	Currency               string
+	Requests               int64
+	CostMicro              int64
+	ChargedMicro           int64
+	EstimatedUsageRequests int64
+}
+
+type UsageCostTotal struct {
+	Currency               string
+	Requests               int64
+	CostMicro              int64
+	ChargedMicro           int64
+	EstimatedUsageRequests int64
+}
+
+// UsageCostSummary:筛选范围内的完整成本汇总；MissingCostRequests 包含旧记录与未知成本。
+type UsageCostSummary struct {
+	Groups                 []UsageCostGroup
+	Totals                 []UsageCostTotal
+	EstimatedRequests      int64
+	MissingCostRequests    int64
+	EstimatedUsageRequests int64
 }
 
 type UsageSeriesGranularity string

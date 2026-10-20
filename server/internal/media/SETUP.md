@@ -6,12 +6,22 @@
 
 1. 启动平台 API、gateway、Postgres 与 console，执行当前迁移（新增 `0020_media_reservation_owner.sql`）。使用 `PLATFORM_SECRET_KEY` 稳定加密密钥与签名媒体 URL。
 2. 在「上游供应商」添加已开通 Ark 生图／生视频权限的供应商，Base URL 为完整 API 前缀，例如供应商官方的 `/api/v3`，密钥只填写在后台。
-3. 在「媒体模型」填写真实 model / endpoint ID、供应商 ID、支持的 720p / 1080p 与片段秒数，以及零售价格和 priceVersion。示例值只用于说明格式。图片 priceMicro 按张，视频按请求镜头秒数；1 credit = ¥1 = 1,000,000 micro-credit。
+3. 在「媒体模型」填写真实 model / endpoint ID、供应商 ID、支持的 480p / 720p / 1080p 与片段秒数，以及零售价格和 priceVersion。示例值只用于说明格式。图片 priceMicro 按张，视频按请求镜头秒数；1 credit = ¥1 = 1,000,000 micro-credit。
 4. 在现有文字模型目录和路由中为团队配置支持图片理解、工具调用和浏览器分析的模型。桌面每次分析读取 `/api/v1/client/user-config` 并明确选择平台模型；未配置时不会静默改用本地模型。
 5. 给用户建立唯一有效团队、充值额度，并检查团队／成员预算和模型白名单。白名单使用媒体目录 ID；分析文字模型 ID 也须允许。
 6. API 运行环境必须具备 FFmpeg、FFprobe、libx264、AAC、libass subtitles 和中文字体。生产 Dockerfile 已包含这些包。`MEDIA_STORAGE_DIR` 挂载持久磁盘（compose 已挂载 `shucode-media`）；多 API 实例须共享同一媒体卷。推荐至少 2GB API 内存并监测磁盘。合成临时文件写媒体盘，不写 tmpfs。
 
 `PUBLIC_API_ORIGIN` 对外可访问且可直出媒体（供应商需要下载签名商品图）；`PUBLIC_APP_ORIGIN` 指向授权登录页；console 默认同 API 的 `/console`。可拆分 API / console / app 域名，但域名不是功能必需。签名 URL 有效期 24 小时，相当于限时素材访问凭据。API 反向代理需允许 20MB 图片上传，媒体读取支持 Range；禁止把 `/api/v1/media/blobs/` 重定向到其他 origin。
+
+## Seedance 2.0 mini（Ark）
+
+- 上游 Model ID：mini 为 `doubao-seedance-2-0-mini-260615`，fast 为 `doubao-seedance-2-0-fast-260128`，基础版为 `doubao-seedance-2-0-260128`（火山方舟模型目录，2026-10-20 核对）。
+- 能力：文生视频、首帧/首尾帧生视频、参考生视频；mini/fast 支持 480p / 720p，基础版支持 480p / 720p / 1080p / 4k；24 fps；时长 4~15 秒；输出 mp4。
+- 计费：官方按视频 token 计费，tokens = 宽 × 高 × 帧率 × 秒数 / 1024（480p 16:9 = 864×496，720p = 1280×720，1080p = 1920×1080，4k = 3840×2160）。平台只传首帧图片，对应「输入不含视频」档；2026-10-20 官方价约 mini 480p ¥0.231/秒、720p ¥0.497/秒，fast 480p ¥0.373/秒、720p ¥0.80/秒，基础版 480p ¥0.4625/秒、720p ¥0.994/秒、1080p ¥2.479/秒、4k ¥5.055/秒，最终以供应商账单为准。
+- 平台每个媒体模型有独立的成本价和售价（均为按秒的 credit），而不同分辨率成本不同：控制台的「Seedance 2.0 系列」按钮会补齐 mini/fast/基础版的对应条目，每个只开放一个分辨率，避免用低分辨率价格卖高分辨率。预设成本按官方价、售价按约 30% 毛利率预填（售价 = 成本 ÷ 0.7），并开启原生音频；保存前可按经营策略调整售价。
+- 4k 合成使用 30 分钟 ffmpeg 超时和 35 分钟 worker lease（1080p 及以下仍为 8/10 分钟）；多镜头或长 4k 项目仍可能超时，先控制镜头数量和总时长。
+- 视频模型的「原生音频」开关会在提交生成任务时向 Ark 发送 `generate_audio: true`；未开启时不发送该字段，Seedance 1.0 等不支持该参数的模型保持原请求。只有确认供应商支持时才开启。
+- 供应商 Base URL 必须是 Ark API 前缀（如 `https://ark.cn-beijing.volces.com/api/v3`），且该密钥已开通模型；首帧通过 `content[].role = "first_frame"` 传入签名图片 URL。
 
 ## 桌面使用
 

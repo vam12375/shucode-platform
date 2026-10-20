@@ -9,7 +9,7 @@
 - 网关设备 token 必须写入 provider 规则的 `config.access.apiKey`（Go: `withPlatformAccessToken`），credentials 保持空数组——客户端 Registry 完整校验要求 access 完整，缺 apiKey 时整个 Provider 被丢弃（provider-not-found → 信封回滚）。
 - 信封的 `defaultModelSelection` 只是"偏好"：客户端会剥离后自己补 reasoningLevel 档位再写入，云端不需要也无法知道各模型的合法档位。
 - 平台用户级配置只拥有 `platform:gateway` 一个 provider，应用语义是合并（同名覆盖、其余保留），不是整份替换。
-- 额度执行只在网关：准入按 `max_tokens × 输出单价` 预留（原子 CAS），响应后按 upstream usage 结算，上游失败/客户端中断释放预留；**扣减与结算在同一事务**。客户端配置可被用户修改，不能作为额度执行点。
+- 额度执行只在网关：准入按完整输入与输出上限原子预留，余额到 0 拒绝新请求；响应后按完整 upstream usage 结算，未知成本/客户端中断按预留保守结算，结算尾差最多 -0.01 credit；**扣减与结算在同一事务**。客户端配置可被用户修改，不能作为额度执行点。
 - 设备凭据只签发一次（`consumeLoginFlow` 条件更新）；token 只存 sha256 哈希 + AES-256-GCM 密文，吊销即时生效。
 - Release 下载边界是 `redirect: "error"`：CDN/对象存储必须直出 200，不能 301/302。模型目录中的模型名必须与上游真实模型名一致，或用控制台的 `upstreamModel` 字段映射。
 

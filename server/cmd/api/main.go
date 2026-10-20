@@ -121,11 +121,13 @@ func main() {
 
 	// 事件总线与限流:REDIS_URL 配置时用 Redis(跨实例),否则进程内(单实例语义)。
 	var bus events.Bus
-	var consoleLimiter, platformLimiter, loginIPLimiter, rootLoginLimiter ratelimit.Limiter
+	var consoleLimiter, platformLimiter, loginIPLimiter, rootLoginLimiter, modelProbeLimiter ratelimit.Limiter
 	var redisClient *redis.Client
 	window := ratelimit.Window{Window: 5 * time.Minute, Max: 10}
 	ipWindow := ratelimit.Window{Window: 24 * time.Hour, Max: 100}
 	rootWindow := ratelimit.Window{Window: time.Hour, Max: 5}
+	// 用户端"测试"会真实调用上游；按用户限速，既允许复查延迟又避免持续成本。
+	probeWindow := ratelimit.Window{Window: 10 * time.Minute, Max: 30}
 	if env.RedisURL != "" {
 		options, err := redis.ParseURL(env.RedisURL)
 		if err != nil {
@@ -143,6 +145,7 @@ func main() {
 		platformLimiter = ratelimit.NewRedis(redisClient, window)
 		loginIPLimiter = ratelimit.NewRedis(redisClient, ipWindow)
 		rootLoginLimiter = ratelimit.NewRedis(redisClient, rootWindow)
+		modelProbeLimiter = ratelimit.NewRedis(redisClient, probeWindow)
 		logger.Info("已启用 Redis 共享限流与事件总线")
 	} else {
 		bus = events.NewInProc()
@@ -150,6 +153,7 @@ func main() {
 		platformLimiter = ratelimit.NewInProc(window)
 		loginIPLimiter = ratelimit.NewInProc(ipWindow)
 		rootLoginLimiter = ratelimit.NewInProc(rootWindow)
+		modelProbeLimiter = ratelimit.NewInProc(probeWindow)
 	}
 
 	var turnstileVerifier apiapp.TurnstileVerifier
@@ -183,6 +187,7 @@ func main() {
 		PlatformLoginLimiter: platformLimiter,
 		LoginIPLimiter:       loginIPLimiter,
 		RootLoginLimiter:     rootLoginLimiter,
+		ModelProbeLimiter:    modelProbeLimiter,
 		Turnstile:            turnstileVerifier,
 		Logger:               logger,
 		Trusted:              netutil.NewTrustedProxies(env.TrustedProxyIPs),

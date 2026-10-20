@@ -101,3 +101,22 @@ func TestSSEBufferOverflow(t *testing.T) {
 		t.Fatalf("溢出后应继续工作: %+v", got)
 	}
 }
+
+func TestUsageRequiresValidCompleteCounts(t *testing.T) {
+	for _, usage := range []string{`{}`, `{"prompt_tokens":10}`, `{"prompt_tokens":-1,"completion_tokens":1}`, `{"prompt_tokens":1e30,"completion_tokens":1}`, `{"prompt_tokens":1.5,"completion_tokens":1}`, `{"prompt_tokens":1,"completion_tokens":1,"prompt_tokens_details":{"cached_tokens":2}}`} {
+		var body any
+		_ = json.Unmarshal([]byte(`{"usage":`+usage+`}`), &body)
+		if got := ParseUsageFromOpenAIJSON(body); got != nil {
+			t.Fatalf("不完整/非法 usage 不能当作真实零用量: %s %+v", usage, got)
+		}
+	}
+	s := NewAnthropicScanner()
+	s.Push("event: message_start\ndata: {\"message\":{\"usage\":{\"input_tokens\":10,\"output_tokens\":0}}}\n\n")
+	if s.UsageComplete() {
+		t.Fatal("仅有输入用量不能证明已终止")
+	}
+	s.Push("event: message_delta\ndata: {\"usage\":{\"output_tokens\":4}}\n\nevent: message_stop\ndata: {}\n\n")
+	if !s.UsageComplete() {
+		t.Fatal("最终累计用量与终止事件应完成计量")
+	}
+}

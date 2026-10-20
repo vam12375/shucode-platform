@@ -234,6 +234,75 @@ func (s *memoryStore) AggregateUsage(_ context.Context, filter UsageFilter) ([]U
 	return grouped, nil
 }
 
+func (s *memoryStore) AggregateUsageCosts(_ context.Context, filter UsageFilter) (*UsageCostSummary, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	summary := &UsageCostSummary{Groups: []UsageCostGroup{}, Totals: []UsageCostTotal{}}
+	groups := map[string]*UsageCostGroup{}
+	totals := map[string]*UsageCostTotal{}
+	totalRequests := int64(0)
+	for _, record := range s.usage {
+		if !usageMatches(record, filter) {
+			continue
+		}
+		totalRequests++
+		snapshot := record.PriceSnapshot
+		if snapshot == nil || snapshot.Cost.Status != "estimated" ||
+			snapshot.Cost.Rates == nil || snapshot.Cost.Rates.Currency == "" ||
+			snapshot.Cost.EstimatedMicro == nil || *snapshot.Cost.EstimatedMicro < 0 {
+			continue
+		}
+		currency := snapshot.Cost.Rates.Currency
+		key := record.Model + "\x00" + currency
+		group := groups[key]
+		if group == nil {
+			group = &UsageCostGroup{Model: record.Model, Currency: currency}
+			groups[key] = group
+		}
+		group.Requests++
+		group.CostMicro += *snapshot.Cost.EstimatedMicro
+		group.ChargedMicro += record.CreditsMicro
+		if snapshot.Cost.UsageEstimated {
+			group.EstimatedUsageRequests++
+		}
+		total := totals[currency]
+		if total == nil {
+			total = &UsageCostTotal{Currency: currency}
+			totals[currency] = total
+		}
+		total.Requests++
+		total.CostMicro += *snapshot.Cost.EstimatedMicro
+		total.ChargedMicro += record.CreditsMicro
+		if snapshot.Cost.UsageEstimated {
+			total.EstimatedUsageRequests++
+		}
+		summary.EstimatedRequests++
+		if snapshot.Cost.UsageEstimated {
+			summary.EstimatedUsageRequests++
+		}
+	}
+	for _, group := range groups {
+		summary.Groups = append(summary.Groups, *group)
+	}
+	sort.SliceStable(summary.Groups, func(i, j int) bool {
+		if summary.Groups[i].Model != summary.Groups[j].Model {
+			return summary.Groups[i].Model < summary.Groups[j].Model
+		}
+		return summary.Groups[i].Currency < summary.Groups[j].Currency
+	})
+	for _, total := range totals {
+		summary.Totals = append(summary.Totals, *total)
+	}
+	sort.SliceStable(summary.Totals, func(i, j int) bool {
+		return summary.Totals[i].Currency < summary.Totals[j].Currency
+	})
+	summary.MissingCostRequests = totalRequests - summary.EstimatedRequests
+	if summary.MissingCostRequests < 0 {
+		summary.MissingCostRequests = 0
+	}
+	return summary, nil
+}
+
 func aggregateLocked(usage []UsageRecord, filter UsageFilter) []UsageAggregateRow {
 	grouped := map[string]*UsageAggregateRow{}
 	for _, record := range usage {
@@ -387,22 +456,12 @@ func (s *memoryStore) TryReserveQuota(_ context.Context, teamID string, micro in
 	if !ok || team.DisabledAt != nil {
 		return false, nil
 	}
-	if !team.Unlimited {
-		used, err := credits.ParseCreditsToMicro(team.UsedCredits)
-		if err != nil {
-			return false, err
-		}
-		reserved, err := credits.ParseCreditsToMicro(team.ReservedCredits)
-		if err != nil {
-			return false, err
-		}
-		quota, err := credits.ParseCreditsToMicro(team.QuotaCredits)
-		if err != nil {
-			return false, err
-		}
-		if used+reserved+micro > quota {
-			return false, nil
-		}
+	withinLimit, err := teamCreditWithinLimit(team.UsedCredits, team.ReservedCredits, team.QuotaCredits, team.Unlimited, micro)
+	if err != nil {
+		return false, err
+	}
+	if !withinLimit {
+		return false, nil
 	}
 	reserved, _ := credits.ParseCreditsToMicro(team.ReservedCredits)
 	team.ReservedCredits = credits.FormatMicroCredits(reserved + micro)
@@ -413,11 +472,16 @@ func (s *memoryStore) TryReserveQuota(_ context.Context, teamID string, micro in
 func (s *memoryStore) SettleUsage(_ context.Context, record UsageRecord, reservedMicro int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if record.CreditsMicro < 0 || reservedMicro < 0 || reservedMicro > maxCreditFieldMicro {
+		return ErrInvalidCreditCharge
+	}
 	if record.ID == "" {
 		record.ID = uuid.NewString()
 	}
+	capped := false
 	if team, ok := s.teams[record.TeamID]; ok {
-		reserved, err := credits.ParseCreditsToMicro(team.ReservedCredits)
+		reservedBefore := team.ReservedCredits
+		reserved, err := credits.ParseCreditsToMicro(reservedBefore)
 		if err != nil {
 			return err
 		}
@@ -426,14 +490,29 @@ func (s *memoryStore) SettleUsage(_ context.Context, record UsageRecord, reserve
 		if err != nil {
 			return err
 		}
-		team.UsedCredits = credits.FormatMicroCredits(used + record.CreditsMicro)
+		charge, wasCapped, err := capTeamCreditCharge(team.UsedCredits, reservedBefore, team.QuotaCredits, team.Unlimited, reservedMicro, record.CreditsMicro)
+		if err != nil {
+			return err
+		}
+		capped = wasCapped
+		record.CreditsMicro = charge
+		if capped {
+			markCreditChargeCapped(&record)
+		}
+		team.UsedCredits = credits.FormatMicroCredits(used + charge)
 		s.teams[record.TeamID] = team
 	}
 	s.usage = append(s.usage, cloneUsage(record))
+	if capped {
+		return ErrCreditChargeCapped
+	}
 	return nil
 }
 
 func (s *memoryStore) ReleaseReservation(_ context.Context, teamID string, micro int64) error {
+	if micro < 0 || micro > maxCreditFieldMicro {
+		return ErrInvalidCreditCharge
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	team, ok := s.teams[teamID]

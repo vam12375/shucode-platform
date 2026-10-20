@@ -154,3 +154,30 @@ func TestTokenFormats(t *testing.T) {
 		t.Fatal("hint 应取末 4 位")
 	}
 }
+
+func TestSecretBoxRejectsTamperingWithoutPanic(t *testing.T) {
+	box, err := NewSecretBox(loadVectors(t).Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := box.Encrypt("test-credential")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, index := range []int{1, 2, 3} {
+		parts := strings.Split(payload, ".")
+		raw, _ := b64url.DecodeString(parts[index])
+		raw[0] ^= 1
+		parts[index] = b64url.EncodeToString(raw)
+		if _, err := box.Decrypt(strings.Join(parts, ".")); err == nil {
+			t.Fatalf("篡改段%d不能通过认证", index)
+		}
+	}
+	for _, index := range []int{1, 3} {
+		parts := strings.Split(payload, ".")
+		parts[index] = "YQ"
+		if _, err := box.Decrypt(strings.Join(parts, ".")); err == nil {
+			t.Fatalf("非法nonce/tag长度不能通过认证")
+		}
+	}
+}

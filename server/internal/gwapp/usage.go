@@ -21,6 +21,44 @@ type UsageCounts struct {
 	CacheCreationTokens int64
 }
 
+// 供应商计数必须是安全非负整数；非法/缺失 usage 交给预留估算，不能折成零。
+func validCount(record map[string]any, key string, required bool) bool {
+	value, ok := record[key]
+	if !ok {
+		return !required
+	}
+	var n float64
+	switch v := value.(type) {
+	case float64:
+		n = v
+	case string:
+		var err error
+		n, err = strconv.ParseFloat(strings.TrimSpace(v), 64)
+		if err != nil {
+			return false
+		}
+	default:
+		return false
+	}
+	return !math.IsNaN(n) && !math.IsInf(n, 0) && n >= 0 && n <= 9_007_199_254_740_991 && n == math.Trunc(n)
+}
+
+func validOpenAIUsage(usage map[string]any) bool {
+	if !validCount(usage, "prompt_tokens", true) || !validCount(usage, "completion_tokens", true) || !validCount(usage, "prompt_cache_hit_tokens", false) {
+		return false
+	}
+	if raw, exists := usage["prompt_tokens_details"]; exists && raw != nil {
+		details, ok := raw.(map[string]any)
+		if !ok || !validCount(details, "cached_tokens", false) {
+			return false
+		}
+		if readCount(details, "cached_tokens") > readCount(usage, "prompt_tokens") {
+			return false
+		}
+	}
+	return readCount(usage, "prompt_cache_hit_tokens") <= readCount(usage, "prompt_tokens")
+}
+
 // readCount:复刻 Number(value) → floor → >0 的口径。
 func readCount(record map[string]any, key string) int64 {
 	value, ok := record[key]
@@ -40,13 +78,18 @@ func readCount(record map[string]any, key string) int64 {
 	default:
 		return 0
 	}
-	if math.IsNaN(numeric) || math.IsInf(numeric, 0) || numeric <= 0 {
+	if math.IsNaN(numeric) || math.IsInf(numeric, 0) || numeric <= 0 || numeric > 9_007_199_254_740_991 {
 		return 0
 	}
 	return int64(math.Floor(numeric))
 }
 
 func countsFromUsageRecord(record map[string]any) *UsageCounts {
+	for _, key := range []string{"input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"} {
+		if !validCount(record, key, false) {
+			return nil
+		}
+	}
 	_, hasInput := record["input_tokens"]
 	_, hasOutput := record["output_tokens"]
 	_, hasCacheRead := record["cache_read_input_tokens"]
@@ -69,6 +112,9 @@ func ParseUsageFromAnthropicJSON(body any) *UsageCounts {
 	}
 	usage, ok := record["usage"].(map[string]any)
 	if !ok {
+		return nil
+	}
+	if !validCount(usage, "input_tokens", true) || !validCount(usage, "output_tokens", true) {
 		return nil
 	}
 	return countsFromUsageRecord(usage)
@@ -100,11 +146,23 @@ func ParseUsageFromOpenAIJSON(body any) *UsageCounts {
 	if !ok {
 		return nil
 	}
+	if !validOpenAIUsage(usage) {
+		return nil
+	}
 	counts := countsFromOpenAIUsage(usage)
 	return &counts
 }
 
 func countsFromResponsesUsage(usage map[string]any) *UsageCounts {
+	if !validCount(usage, "input_tokens", true) || !validCount(usage, "output_tokens", true) {
+		return nil
+	}
+	if raw, exists := usage["input_tokens_details"]; exists && raw != nil {
+		details, ok := raw.(map[string]any)
+		if !ok || !validCount(details, "cached_tokens", false) || readCount(details, "cached_tokens") > readCount(usage, "input_tokens") {
+			return nil
+		}
+	}
 	_, hasInput := usage["input_tokens"]
 	_, hasOutput := usage["output_tokens"]
 	if !hasInput && !hasOutput {
@@ -188,6 +246,7 @@ func splitLines(raw string) []string {
 type OpenAIScanner struct {
 	usage     UsageCounts
 	observed  bool
+	terminal  bool
 	malformed int64
 	splitter  *sseSplitter
 }
@@ -200,7 +259,11 @@ func NewOpenAIScanner() *OpenAIScanner {
 				continue
 			}
 			data := strings.TrimSpace(line[5:])
-			if data == "" || data == "[DONE]" {
+			if data == "[DONE]" {
+				scanner.terminal = true
+				continue
+			}
+			if data == "" {
 				continue
 			}
 			var parsed any
@@ -220,6 +283,10 @@ func NewOpenAIScanner() *OpenAIScanner {
 			if !ok {
 				continue
 			}
+			if !validOpenAIUsage(usage) {
+				scanner.malformed++
+				continue
+			}
 			counts := countsFromOpenAIUsage(usage)
 			scanner.usage = counts
 			scanner.observed = true
@@ -231,15 +298,19 @@ func NewOpenAIScanner() *OpenAIScanner {
 func (s *OpenAIScanner) Push(chunk string)   { s.splitter.push(chunk) }
 func (s *OpenAIScanner) Usage() UsageCounts  { return s.usage }
 func (s *OpenAIScanner) UsageObserved() bool { return s.observed }
+func (s *OpenAIScanner) UsageComplete() bool { return s.observed && s.terminal }
 func (s *OpenAIScanner) Dropped() int64      { return s.malformed + s.splitter.dropped() }
 
 // ---- Anthropic 扫描器(message_start 输入侧 + message_delta 累计输出) ----
 
 type AnthropicScanner struct {
-	usage     UsageCounts
-	observed  bool
-	malformed int64
-	splitter  *sseSplitter
+	inputObserved  bool
+	outputObserved bool
+	usage          UsageCounts
+	observed       bool
+	terminal       bool
+	malformed      int64
+	splitter       *sseSplitter
 }
 
 func NewAnthropicScanner() *AnthropicScanner {
@@ -284,6 +355,8 @@ func (s *AnthropicScanner) observe(message any) {
 		return
 	}
 	switch record["type"] {
+	case "message_stop":
+		s.terminal = true
 	case "message_start":
 		startMessage, ok := record["message"].(map[string]any)
 		if !ok {
@@ -297,6 +370,7 @@ func (s *AnthropicScanner) observe(message any) {
 		if counts != nil {
 			s.usage = *counts
 			s.observed = true
+			s.inputObserved = validCount(usage, "input_tokens", true)
 		}
 	case "message_delta":
 		usage, ok := record["usage"].(map[string]any)
@@ -308,6 +382,7 @@ func (s *AnthropicScanner) observe(message any) {
 			return
 		}
 		s.observed = true
+		s.outputObserved = validCount(usage, "output_tokens", true)
 		// message_delta 的 output_tokens 是累计值,直接覆盖;输入侧仅非零时更新。
 		s.usage.OutputTokens = counts.OutputTokens
 		if counts.InputTokens > 0 {
@@ -325,13 +400,17 @@ func (s *AnthropicScanner) observe(message any) {
 func (s *AnthropicScanner) Push(chunk string)   { s.splitter.push(chunk) }
 func (s *AnthropicScanner) Usage() UsageCounts  { return s.usage }
 func (s *AnthropicScanner) UsageObserved() bool { return s.observed }
-func (s *AnthropicScanner) Dropped() int64      { return s.malformed + s.splitter.dropped() }
+func (s *AnthropicScanner) UsageComplete() bool {
+	return s.inputObserved && s.outputObserved && s.terminal
+}
+func (s *AnthropicScanner) Dropped() int64 { return s.malformed + s.splitter.dropped() }
 
 // ---- Responses 扫描器(terminal 事件携带累计 usage) ----
 
 type ResponsesScanner struct {
 	usage     UsageCounts
 	observed  bool
+	terminal  bool
 	malformed int64
 	splitter  *sseSplitter
 }
@@ -352,6 +431,12 @@ func NewResponsesScanner() *ResponsesScanner {
 				scanner.malformed++
 				continue
 			}
+			if record, ok := parsed.(map[string]any); ok {
+				switch record["type"] {
+				case "response.completed", "response.incomplete", "response.failed":
+					scanner.terminal = true
+				}
+			}
 			counts := ParseUsageFromResponsesJSON(parsed)
 			if counts != nil {
 				scanner.usage = *counts
@@ -365,4 +450,5 @@ func NewResponsesScanner() *ResponsesScanner {
 func (s *ResponsesScanner) Push(chunk string)   { s.splitter.push(chunk) }
 func (s *ResponsesScanner) Usage() UsageCounts  { return s.usage }
 func (s *ResponsesScanner) UsageObserved() bool { return s.observed }
+func (s *ResponsesScanner) UsageComplete() bool { return s.observed && s.terminal }
 func (s *ResponsesScanner) Dropped() int64      { return s.malformed + s.splitter.dropped() }

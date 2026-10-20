@@ -23,11 +23,14 @@ func FindModel(models []Model, id, kind string) (Model, error) {
 func ValidateModels(models []Model) error {
 	seen := map[string]bool{}
 	for _, m := range models {
-		if strings.TrimSpace(m.ID) == "" || m.Name == "" || seen[m.ID] || m.ProviderID == "" || m.UpstreamModel == "" || m.Adapter != "ark" || m.PriceVersion == "" || m.PriceMicro <= 0 || m.PriceMicro > 100_000_000 {
+		if strings.TrimSpace(m.ID) == "" || m.Name == "" || seen[m.ID] || m.ProviderID == "" || m.UpstreamModel == "" || m.Adapter != "ark" || m.PriceVersion == "" || m.PriceMicro <= 0 || m.PriceMicro > 100_000_000 || m.CostMicro < 0 || m.CostMicro > 100_000_000 {
 			return ErrInvalid
 		}
 		seen[m.ID] = true
 		if m.Kind != "image" && m.Kind != "video" {
+			return ErrInvalid
+		}
+		if m.Kind == "image" && m.GenerateAudio {
 			return ErrInvalid
 		}
 		if m.Kind == "video" && (len(m.Durations) == 0 || len(m.Resolutions) == 0) {
@@ -39,7 +42,7 @@ func ValidateModels(models []Model) error {
 			}
 		}
 		for _, r := range m.Resolutions {
-			if r != "720p" && r != "1080p" {
+			if r != "480p" && r != "720p" && r != "1080p" && r != "4k" {
 				return ErrInvalid
 			}
 		}

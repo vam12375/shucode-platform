@@ -21,6 +21,21 @@ interface ProviderStat {
   p95LatencyMs: number | null;
 }
 
+interface OpsCostTotal {
+  currency: string;
+  requests: number;
+  costMicro: number;
+  chargedMicro: number;
+  estimatedUsageRequests: number;
+}
+
+interface OpsCostSummary {
+  totals: OpsCostTotal[];
+  estimatedRequests: number;
+  missingCostRequests: number;
+  estimatedUsageRequests: number;
+}
+
 interface OpsOverview {
   requests: number;
   successRequests: number;
@@ -39,6 +54,7 @@ interface OpsOverview {
   pendingSettlements: number;
   auditOutboxPending: number;
   providerStats: ProviderStat[];
+  costSummary: OpsCostSummary | null;
 }
 
 interface OpsSeriesRow {
@@ -142,6 +158,20 @@ function formatCreditLabel(micro: number): string {
   return `${formatCredits(micro)} credit`;
 }
 
+function formatMoney(micro: number, currency: string): string {
+  const value = micro / 1_000_000;
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currency || "CNY",
+      currencyDisplay: "narrowSymbol",
+      maximumFractionDigits: 4,
+    }).format(value);
+  } catch {
+    return `${value.toFixed(4)} ${currency || "CNY"}`;
+  }
+}
+
 function formatLatency(value: number | null): string {
   return value === null ? "—" : `${Math.round(value)} ms`;
 }
@@ -188,6 +218,10 @@ export function OpsPage() {
 
   const successRate =
     overview && overview.requests > 0 ? overview.successRequests / overview.requests : null;
+  const primaryCostTotal =
+    overview?.costSummary?.totals.find((total) => total.currency === "CNY") ??
+    overview?.costSummary?.totals[0] ??
+    null;
 
   const trafficData: ChartDatum[] = useMemo(
     () =>
@@ -363,6 +397,27 @@ export function OpsPage() {
           <p className="stat-label">窗口积分</p>
           <p className="stat-value">{formatCreditLabel(overview?.creditsMicro ?? 0)}</p>
           <p className="stat-sub">credit · 网关计量</p>
+        </div>
+        <div
+          className="ops-metric"
+          title={
+            overview?.costSummary?.totals
+              .map((total) => formatMoney(total.costMicro, total.currency))
+              .join(" · ") || undefined
+          }
+        >
+          <p className="stat-label">窗口成本</p>
+          <p className="stat-value">
+            {primaryCostTotal
+              ? formatMoney(primaryCostTotal.costMicro, primaryCostTotal.currency)
+              : "—"}
+          </p>
+          <p className="stat-sub">
+            估算 · 实扣 {formatCreditLabel(overview?.creditsMicro ?? 0)}
+            {overview?.costSummary
+              ? ` · ${overview.costSummary.missingCostRequests} 条无成本快照`
+              : ""}
+          </p>
         </div>
         <div className="ops-metric">
           <p className="stat-label">活跃设备</p>

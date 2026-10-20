@@ -2,6 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { EditableCell } from "../components/EditableCell.js";
+import {
+  ModelConfigDrawer,
+  type ModelCapabilityConfig,
+  type ModelConfigMode,
+  type ModelConfigTarget,
+} from "../components/ModelConfigDrawer.js";
 import { Select } from "../components/Select.js";
 import { Chip, Notice } from "../components/StatusChip.js";
 
@@ -15,6 +21,8 @@ interface ModelRow {
   cacheReadPricePerMtok: string;
   cacheWritePricePerMtok: string;
   offPeakMultiplier: string;
+  configMode?: ModelConfigMode;
+  config?: ModelCapabilityConfig | null;
   enabled: boolean;
   sortOrder: number;
 }
@@ -85,6 +93,14 @@ function formatCost(value: string, multiplier: string | undefined): string {
     : `${price.toLocaleString("en-US", { maximumFractionDigits: 6 })} / ${(price * factor).toLocaleString("en-US", { maximumFractionDigits: 6 })}`;
 }
 
+function formatToken(value: number): string {
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(value % 1_000_000 === 0 ? 0 : 1)}M`;
+  }
+  if (value >= 1000) return `${Math.round(value / 1000)}k`;
+  return String(value);
+}
+
 export function ModelsPage() {
   const [models, setModels] = useState<ModelRow[]>([]);
   const [providers, setProviders] = useState<ProviderOption[]>([]);
@@ -109,6 +125,7 @@ export function ModelsPage() {
   // 点编辑单元格：同一时刻只编辑一格（Enter/失焦收起，Esc 还原草稿）。
   type ModelsEditableField = "displayName" | "upstreamModel" | "inputPricePerMtok" | "outputPricePerMtok" | "cacheReadPricePerMtok" | "cacheWritePricePerMtok" | "offPeakMultiplier" | "sortOrder";
   const [editingCell, setEditingCell] = useState<{ modelId: string; field: ModelsEditableField } | null>(null);
+  const [configTarget, setConfigTarget] = useState<ModelRow | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -583,6 +600,25 @@ export function ModelsPage() {
                         : "未在定价库中配置成本价"}
                     </span>
                   </div>
+                  <div className="model-card-row" style={{ alignItems: "center" }}>
+                    <span className="field-label" style={{ flex: "0 0 auto" }}>
+                      客户端能力
+                    </span>
+                    <span className="readout" style={{ margin: 0 }}>
+                      {model.configMode === "manual" && model.config
+                        ? `手动 · 上下文 ${formatToken(model.config.properties.contextWindow)} · 最大输出 ${formatToken(model.config.optionSpecs.maxOutputTokens.max)}`
+                        : "智能配置 · 跟随官方规则"}
+                    </span>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      type="button"
+                      style={{ marginLeft: "auto" }}
+                      disabled={busy}
+                      onClick={() => setConfigTarget(model)}
+                    >
+                      编辑模型配置
+                    </button>
+                  </div>
                 </article>
               );
             })}
@@ -716,6 +752,27 @@ export function ModelsPage() {
           )}
         </div>
       </section>
+
+      {configTarget ? (
+        <ModelConfigDrawer
+          model={configTarget}
+          onClose={() => setConfigTarget(null)}
+          onSaved={(saved: ModelConfigTarget) => {
+            setModels((previous) =>
+              previous.map((model) =>
+                model.modelId === saved.modelId
+                  ? {
+                      ...model,
+                      configMode: saved.configMode,
+                      config: saved.config ?? null,
+                    }
+                  : model,
+              ),
+            );
+            setConfigTarget(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

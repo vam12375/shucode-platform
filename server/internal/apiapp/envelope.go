@@ -3,6 +3,7 @@ package apiapp
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"sort"
 	"strings"
 )
@@ -26,6 +27,9 @@ type userConfigModel struct {
 	OutputPricePerMtok     string
 	CacheReadPricePerMtok  string
 	CacheWritePricePerMtok string
+	// ConfigMode = recommended 时不带 override，让客户端使用当前内置官方规则。
+	ConfigMode string
+	Config     []byte
 }
 
 type BuildUserConfigInput struct {
@@ -70,10 +74,22 @@ func buildUserConfigEnvelope(input BuildUserConfigInput) map[string]any {
 	}
 	providerModelRules := make([]any, 0, len(input.Models))
 	for _, model := range input.Models {
+		ruleConfig := map[string]any{"enabled": true}
+		if model.ConfigMode == modelConfigManual && len(model.Config) > 0 {
+			var override map[string]any
+			if json.Unmarshal(model.Config, &override) == nil {
+				// 只允许能力叶子；provider/model 身份与 enabled 仍由平台规则决定。
+				for _, key := range []string{"properties", "optionSpecs"} {
+					if value, exists := override[key]; exists {
+						ruleConfig[key] = value
+					}
+				}
+			}
+		}
 		providerModelRules = append(providerModelRules, map[string]any{
 			"providerId": platformProviderID,
 			"modelId":    model.ModelID,
-			"config":     map[string]any{"enabled": true},
+			"config":     ruleConfig,
 		})
 	}
 	personalConfig := map[string]any{
@@ -150,17 +166,28 @@ func withPlatformAccessToken(envelope map[string]any, deviceToken string) map[st
 // 稳定序列化口径与 TS 一致:字段固定顺序、models 按 id 排序(大小写无关近似 localeCompare)。
 func computeUserConfigSyncID(input BuildUserConfigInput) string {
 	type modelStable struct {
-		ID  string `json:"id"`
-		In  string `json:"in"`
-		Out string `json:"out"`
-		CR  string `json:"cr"`
-		CW  string `json:"cw"`
+		ID         string `json:"id"`
+		In         string `json:"in"`
+		Out        string `json:"out"`
+		CR         string `json:"cr"`
+		CW         string `json:"cw"`
+		ConfigMode string `json:"configMode"`
+		Config     string `json:"config,omitempty"`
 	}
 	models := make([]modelStable, 0, len(input.Models))
 	for _, model := range input.Models {
+		mode := model.ConfigMode
+		if mode == "" {
+			mode = modelConfigRecommended
+		}
+		config := ""
+		if mode == modelConfigManual && len(model.Config) > 0 {
+			config = string(model.Config)
+		}
 		models = append(models, modelStable{
 			ID: model.ModelID, In: model.InputPricePerMtok, Out: model.OutputPricePerMtok,
 			CR: model.CacheReadPricePerMtok, CW: model.CacheWritePricePerMtok,
+			ConfigMode: mode, Config: config,
 		})
 	}
 	sort.SliceStable(models, func(i, j int) bool {

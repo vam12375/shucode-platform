@@ -387,36 +387,67 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		} else if apiKey != "" {
 			headers["authorization"] = "Bearer " + apiKey
 		}
-		requestCtx, cancel := context.WithTimeout(ctx, upstreamModelListTimeout*time.Millisecond)
-		defer cancel()
-		req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, provider.BaseURL+"/v1/models", nil)
-		if err != nil {
-			internalError(c, deps, err)
-			return
+		// 媒体模型的 baseUrl 是完整 API 前缀（如 Ark 的 /api/v3），模型列表应在
+		// 前缀下直接拼 /models；标准 LLM 供应商仍走 /v1/models。两者都尝试一次，
+		// 避免同一供应商在两类目录页里需要两份配置。
+		paths := []string{"/v1/models"}
+		if c.Query("base") == "prefix" {
+			paths = []string{"/models", "/v1/models"}
 		}
-		for key, value := range headers {
-			req.Header.Set(key, value)
+		var (
+			bodyBytes  []byte
+			lastStatus int
+			lastDetail string
+			networkErr error
+		)
+		for _, suffix := range paths {
+			requestCtx, cancel := context.WithTimeout(ctx, upstreamModelListTimeout*time.Millisecond)
+			req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, provider.BaseURL+suffix, nil)
+			if err != nil {
+				cancel()
+				internalError(c, deps, err)
+				return
+			}
+			for key, value := range headers {
+				req.Header.Set(key, value)
+			}
+			resp, err := deps.HTTPClient.Do(req)
+			if err != nil {
+				cancel()
+				networkErr = err
+				break
+			}
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				bodyBytes, err = io.ReadAll(io.LimitReader(resp.Body, maxProviderModelsBodySize+1))
+				resp.Body.Close()
+				cancel()
+				if err != nil || len(bodyBytes) > maxProviderModelsBodySize {
+					c.JSON(502, fail(502, "上游模型列表响应过大或读取失败"))
+					return
+				}
+				break
+			}
+			detailBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
+			resp.Body.Close()
+			cancel()
+			lastStatus = resp.StatusCode
+			lastDetail = redactSecretString(string(detailBytes), apiKey)
+			// 只有路径不存在时才换下一个候选；鉴权失败/限流等重试无意义。
+			if resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusMethodNotAllowed {
+				break
+			}
 		}
-		resp, err := deps.HTTPClient.Do(req)
-		if err != nil {
-			deps.Logger.Warn("获取上游模型列表失败", "providerId", provider.ID, "error", err)
+		if networkErr != nil {
+			deps.Logger.Warn("获取上游模型列表失败", "providerId", provider.ID, "error", networkErr)
 			c.JSON(504, fail(504, "上游不可达或响应超时"))
 			return
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			detailBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
-			detail := redactSecretString(string(detailBytes), apiKey)
-			message := "上游返回 HTTP " + strconv.Itoa(resp.StatusCode)
-			if detail != "" {
-				message += ": " + detail
+		if bodyBytes == nil {
+			message := "上游返回 HTTP " + strconv.Itoa(lastStatus)
+			if lastDetail != "" {
+				message += ": " + lastDetail
 			}
 			c.JSON(502, fail(502, message))
-			return
-		}
-		bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, maxProviderModelsBodySize+1))
-		if readErr != nil || len(bodyBytes) > maxProviderModelsBodySize {
-			c.JSON(502, fail(502, "上游模型列表响应过大或读取失败"))
 			return
 		}
 		var payload any
@@ -800,7 +831,8 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 	}
 
 	group.GET("/usage", func(c *gin.Context) {
-		if _, ok := requireConsoleUser(c.Request.Context(), deps, c); !ok {
+		user, ok := requireConsoleUser(c.Request.Context(), deps, c)
+		if !ok {
 			return
 		}
 		ctx := c.Request.Context()
@@ -838,6 +870,15 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
+		// 采购成本仅 root 可见；按筛选范围全量汇总，而不是只算当前页。
+		var costSummary *store.UsageCostSummary
+		if user.Role == store.RoleRoot {
+			costSummary, err = deps.Store.AggregateUsageCosts(ctx, baseFilter)
+			if err != nil {
+				internalError(c, deps, err)
+				return
+			}
+		}
 		allRecords, err := deps.Store.ListUsage(ctx, pageFilter)
 		if err != nil {
 			internalError(c, deps, err)
@@ -864,6 +905,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		}
 		c.JSON(200, okData(gin.H{
 			"aggregates": aggregateRows, "records": recordRows, "nextCursor": nextCursor,
+			"costSummary": toPublicUsageCostSummary(costSummary),
 		}))
 	})
 

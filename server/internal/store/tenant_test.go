@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/vam12375/shucode-platform/server/internal/credits"
 )
 
 func runTenantSuite(t *testing.T, ctx context.Context, s PlatformStore) {
@@ -21,6 +23,7 @@ func runTenantSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 		t.Run("budget-concurrency-"+kind, func(t *testing.T) { testTenantBudget(t, ctx, s, kind) })
 	}
 	t.Run("budget-shanghai-boundaries", func(t *testing.T) { testTenantBudgetBoundary(t, ctx, s) })
+	t.Run("credit-debt-floor", func(t *testing.T) { testTenantCreditDebtFloor(t, ctx, s) })
 	t.Run("audit-team-filter", func(t *testing.T) { testTenantAudit(t, ctx, s) })
 }
 func tenantTeam(t *testing.T, ctx context.Context, s PlatformStore, name string) *TeamRecord {
@@ -264,7 +267,7 @@ func testTenantBudget(t *testing.T, ctx context.Context, s PlatformStore, kind s
 			if result == ReserveReserved {
 				allowed.Add(1)
 				ids <- id
-			} else if result != ReserveDenied {
+			} else if result != ReserveDeniedBudget {
 				errs <- fmt.Errorf("unexpected reserve %s", result)
 			}
 		}(i)
@@ -298,7 +301,7 @@ func testTenantBudget(t *testing.T, ctx context.Context, s PlatformStore, kind s
 		t.Fatalf("结算必须以实扣替代预留: %s %v", result, err)
 	}
 	result, err = s.ReserveQuota(ctx, ReserveQuotaInput{ID: uuid.NewString(), TeamID: team.ID, UserID: user.ID, RequestID: "over-budget-" + kind, Micro: 1, CreatedAt: now})
-	if err != nil || result != ReserveDenied {
+	if err != nil || result != ReserveDeniedBudget {
 		t.Fatalf("达到预算后拒绝新增消费: %s %v", result, err)
 	}
 	// 成员停用必须由准入事务重新验证，不能只信网关早先读取的快照。
@@ -307,7 +310,7 @@ func testTenantBudget(t *testing.T, ctx context.Context, s PlatformStore, kind s
 		t.Fatal(err)
 	}
 	result, err = s.ReserveQuota(ctx, ReserveQuotaInput{ID: uuid.NewString(), TeamID: team.ID, UserID: user.ID, RequestID: "disabled-" + kind, Micro: 0, CreatedAt: now})
-	if err != nil || result != ReserveDenied {
+	if err != nil || result != ReserveDeniedInactive {
 		t.Fatalf("停用成员不得预留: %s %v", result, err)
 	}
 }
@@ -334,7 +337,7 @@ func testTenantBudgetBoundary(t *testing.T, ctx context.Context, s PlatformStore
 		}
 		return result
 	}
-	if got := reserve("before-boundary", before, 1); got != ReserveDenied {
+	if got := reserve("before-boundary", before, 1); got != ReserveDeniedBudget {
 		t.Fatalf("日/月边界前已用满应拒绝: %s", got)
 	}
 	if got := reserve("after-boundary", after, 1000000); got != ReserveReserved {
@@ -343,9 +346,148 @@ func testTenantBudgetBoundary(t *testing.T, ctx context.Context, s PlatformStore
 	if _, err := s.SaveTeamPolicy(ctx, TeamPolicyRecord{TeamID: team.ID, DailyBudgetCredits: "0"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := reserve("zero-hard-limit", after, 0); got != ReserveDenied {
+	if got := reserve("zero-hard-limit", after, 0); got != ReserveDeniedBudget {
 		t.Fatalf("零预算应硬禁用: %s", got)
 	}
+}
+
+func testTenantCreditDebtFloor(t *testing.T, ctx context.Context, s PlatformStore) {
+	team, err := s.CreateTeam(ctx, CreateTeamInput{Name: "tenant-credit-floor", QuotaCredits: "1", Unlimited: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := mustUser(t, ctx, s, "tenant-credit-floor@test.local")
+	if err := s.AddMember(ctx, team.ID, user.ID, MemberRoleMember); err != nil {
+		t.Fatal(err)
+	}
+
+	const reservationMicro = int64(10_000)
+	const attempts = 120
+	var allowed atomic.Int64
+	var denied atomic.Int64
+	var wg sync.WaitGroup
+	ids := make(chan string, attempts)
+	errs := make(chan error, attempts)
+	for i := range attempts {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			id := uuid.NewString()
+			result, err := s.ReserveQuota(ctx, ReserveQuotaInput{
+				ID: id, TeamID: team.ID, UserID: user.ID,
+				RequestID: fmt.Sprintf("credit-floor-%d", i), Micro: reservationMicro,
+			})
+			if err != nil {
+				errs <- err
+				return
+			}
+			switch result {
+			case ReserveReserved:
+				allowed.Add(1)
+				ids <- id
+			case ReserveDenied:
+				denied.Add(1)
+			default:
+				errs <- fmt.Errorf("unexpected credit reserve result: %s", result)
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	close(ids)
+	for err := range errs {
+		t.Fatal(err)
+	}
+	if allowed.Load() != 100 || denied.Load() != attempts-100 {
+		t.Fatalf("并发预留不得透支: allowed=%d denied=%d", allowed.Load(), denied.Load())
+	}
+
+	for _, micro := range []int64{0, -1, 1} {
+		if result, err := s.ReserveQuota(ctx, ReserveQuotaInput{TeamID: team.ID, UserID: user.ID, RequestID: uuid.NewString(), Micro: micro}); err != nil || result != ReserveDenied {
+			t.Fatalf("余额为0时拒绝所有新预留: micro=%d result=%s err=%v", micro, result, err)
+		}
+	}
+
+	var firstReservation string
+	var remainingReservations []string
+	for id := range ids {
+		if firstReservation == "" {
+			firstReservation = id
+		} else {
+			remainingReservations = append(remainingReservations, id)
+		}
+	}
+	usage := UsageRecord{
+		ID: uuid.NewString(), TeamID: team.ID, UserID: user.ID,
+		RequestID: "credit-floor-settlement", Model: "model-a", UpstreamModel: "model-a",
+		CreditsMicro: 1_500_000, Status: UsageStatusOk, CreatedAt: time.Now(),
+	}
+	invalidOwner := usage
+	invalidOwner.TeamID = uuid.NewString()
+	if err := s.SettleReservation(ctx, firstReservation, invalidOwner); !errors.Is(err, ErrReservationMismatch) {
+		t.Fatalf("预留不能跨团队结算: %v", err)
+	}
+
+	if err := s.SettleReservation(ctx, firstReservation, usage); !errors.Is(err, ErrCreditChargeCapped) {
+		t.Fatalf("超出剩余敞口的实扣应在事务中封顶并返回可识别告警: %v", err)
+	}
+	if err := s.SettleReservation(ctx, firstReservation, usage); err != nil {
+		t.Fatalf("封顶结算重放必须幂等: %v", err)
+	}
+
+	teamAfter, err := s.GetTeam(ctx, team.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	used, err := credits.ParseCreditsToMicro(teamAfter.UsedCredits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reserved, err := credits.ParseCreditsToMicro(teamAfter.ReservedCredits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quota, err := credits.ParseCreditsToMicro(teamAfter.QuotaCredits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if used+reserved > quota+TeamCreditDebtLimitMicro {
+		t.Fatalf("实扣后超过 -0.01 硬下限: used=%d reserved=%d quota=%d", used, reserved, quota)
+	}
+	stored, err := s.ListUsage(ctx, UsageFilter{TeamID: team.ID, RequestID: usage.RequestID})
+	if err != nil || len(stored) != 1 || stored[0].CreditsMicro != reservationMicro+TeamCreditDebtLimitMicro || stored[0].ErrorType != "credit_charge_capped" {
+		t.Fatalf("超额实扣应按本请求剩余敞口封顶: records=%+v err=%v", stored, err)
+	}
+	result, err := s.ReserveQuota(ctx, ReserveQuotaInput{
+		ID: uuid.NewString(), TeamID: team.ID, UserID: user.ID,
+		RequestID: "credit-floor-after-settlement", Micro: 1,
+	})
+	if err != nil || result != ReserveDenied {
+		t.Fatalf("达到 -0.01 后必须拒绝新预留: result=%s err=%v", result, err)
+	}
+	// 多个结算同时报告超额用量，也只能分配各自预留及团队唯一的尾差空间。
+	settlementErrors := make(chan error, len(remainingReservations))
+	for _, id := range remainingReservations {
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			record := usage
+			record.ID, record.RequestID = uuid.NewString(), uuid.NewString()
+			if err := s.SettleReservation(ctx, id, record); !errors.Is(err, ErrCreditChargeCapped) {
+				settlementErrors <- fmt.Errorf("concurrent cap: %v", err)
+			}
+		}(id)
+	}
+	wg.Wait()
+	close(settlementErrors)
+	for err := range settlementErrors {
+		t.Fatal(err)
+	}
+	final, err := s.GetTeam(ctx, team.ID)
+	if err != nil || final.UsedCredits != "1.010000" || final.ReservedCredits != "0.000000" {
+		t.Fatalf("并发结算不能越过 -0.01: %+v %v", final, err)
+	}
+
 }
 
 func testTenantAudit(t *testing.T, ctx context.Context, s PlatformStore) {

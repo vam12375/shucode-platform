@@ -384,7 +384,7 @@ func (s *PostgresStore) GetMaxReleaseRevision(ctx context.Context) (*int64, erro
 const modelCols = `model_id, display_name, upstream_model, upstream_provider_id::text,
 	input_price_per_mtok::text, output_price_per_mtok::text,
 	cache_read_price_per_mtok::text, cache_write_price_per_mtok::text,
-	off_peak_multiplier::text, enabled, sort_order, created_at, updated_at`
+	off_peak_multiplier::text, config_mode, model_config, enabled, sort_order, created_at, updated_at`
 
 func scanModel(rows pgx.Rows) (*PlatformModelRecord, error) {
 	var (
@@ -395,7 +395,7 @@ func scanModel(rows pgx.Rows) (*PlatformModelRecord, error) {
 		crP, cwP   *string
 		offPeak    *string
 	)
-	if err := rows.Scan(&m.ModelID, &m.DisplayName, &upstream, &providerID, &inP, &outP, &crP, &cwP, &offPeak, &m.Enabled, &m.SortOrder, &m.CreatedAt, &m.UpdatedAt); err != nil {
+	if err := rows.Scan(&m.ModelID, &m.DisplayName, &upstream, &providerID, &inP, &outP, &crP, &cwP, &offPeak, &m.ConfigMode, &m.ModelConfig, &m.Enabled, &m.SortOrder, &m.CreatedAt, &m.UpdatedAt); err != nil {
 		return nil, err
 	}
 	m.UpstreamModel = derefString2(upstream)
@@ -405,6 +405,9 @@ func scanModel(rows pgx.Rows) (*PlatformModelRecord, error) {
 	m.OffPeakMultiplier = derefString2(offPeak)
 	if m.OffPeakMultiplier == "" {
 		m.OffPeakMultiplier = "1.000000"
+	}
+	if m.ConfigMode == "" {
+		m.ConfigMode = "recommended"
 	}
 	return &m, nil
 }
@@ -492,6 +495,26 @@ func (s *PostgresStore) UpsertModel(ctx context.Context, input UpsertModelInput)
 		input.InputPricePerMtok, input.OutputPricePerMtok, cacheRead, cacheWrite,
 		offPeak, enabled, sortOrder,
 		input.ProvideUpstreamModel, input.ProvideUpstreamProviderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	return scanModel(rows)
+}
+
+func (s *PostgresStore) SetModelConfig(ctx context.Context, modelID, mode string, config []byte) (*PlatformModelRecord, error) {
+	var configValue any
+	if len(config) > 0 {
+		configValue = string(config)
+	}
+	rows, err := s.pool.Query(ctx, `
+		UPDATE platform_models
+		SET config_mode = $2, model_config = $3::jsonb, updated_at = now()
+		WHERE model_id = $1
+		RETURNING `+modelCols, modelID, mode, configValue)
 	if err != nil {
 		return nil, err
 	}

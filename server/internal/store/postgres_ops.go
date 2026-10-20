@@ -129,6 +129,9 @@ func (s *PostgresStore) RecoverUpstreamProvider(ctx context.Context, id string, 
 // ---- quota reservations ----
 
 func (s *PostgresStore) ReserveQuota(ctx context.Context, input ReserveQuotaInput) (ReserveResult, error) {
+	if input.Micro < 0 || input.Micro > maxCreditFieldMicro {
+		return ReserveDenied, nil
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return "", err
@@ -148,12 +151,12 @@ func (s *PostgresStore) ReserveQuota(ctx context.Context, input ReserveQuotaInpu
 	}
 	expiresAt := createdAt.Add(ttl)
 	// 先持有团队行锁，避免并发请求同时读到相同预算余额。
-	exists, err := lockTeam(ctx, tx, input.TeamID)
+	active, err := lockActiveTeam(ctx, tx, input.TeamID)
 	if err != nil {
 		return "", err
 	}
-	if !exists {
-		return ReserveDenied, nil
+	if !active {
+		return ReserveDeniedInactive, nil
 	}
 	var duplicate bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM quota_reservations WHERE team_id=$1::uuid AND request_id=$2)`, input.TeamID, input.RequestID).Scan(&duplicate); err != nil {
@@ -162,21 +165,24 @@ func (s *PostgresStore) ReserveQuota(ctx context.Context, input ReserveQuotaInpu
 	if duplicate {
 		return ReserveDuplicate, nil
 	}
-	allowed, err := reservationBudgetAllowed(ctx, tx, input, createdAt)
+	decision, err := reservationBudgetAllowed(ctx, tx, input, createdAt)
 	if err != nil {
 		return "", err
 	}
-	if !allowed {
+	if decision != ReserveReserved {
+		return decision, nil
+	}
+	if input.Micro < 0 || input.Micro > maxCreditFieldMicro {
 		return ReserveDenied, nil
 	}
 	var inserted string
 	err = tx.QueryRow(ctx, `
-		INSERT INTO quota_reservations (id, team_id, request_id, reserved_credits, status, created_at, expires_at, user_id, held_by_task)
-		VALUES ($1::uuid, $2::uuid, $3, $4::numeric, 'reserved', $5::timestamptz, $6::timestamptz, $7::uuid, $8)
+		INSERT INTO quota_reservations (id, team_id, request_id, reserved_credits, status, created_at, expires_at, user_id, held_by_task, retain_until_settled)
+		VALUES ($1::uuid, $2::uuid, $3, $4::numeric, 'reserved', $5::timestamptz, $6::timestamptz, $7::uuid, $8, $9)
 		ON CONFLICT (team_id, request_id) DO NOTHING
 		RETURNING id::text`,
 		id, input.TeamID, input.RequestID, creditMicroString(input.Micro),
-		createdAt, expiresAt, nullIfEmpty(input.UserID), input.HeldByTask).Scan(&inserted)
+		createdAt, expiresAt, nullIfEmpty(input.UserID), input.HeldByTask, input.RetainUntilSettled).Scan(&inserted)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return ReserveDuplicate, nil
@@ -188,7 +194,9 @@ func (s *PostgresStore) ReserveQuota(ctx context.Context, input ReserveQuotaInpu
 		SET reserved_credits = reserved_credits + $2::numeric
 		WHERE id = $1::uuid
 			AND disabled_at IS NULL
-			AND (unlimited OR used_credits + reserved_credits + $2::numeric <= quota_credits)`,
+			AND $2::numeric >= 0
+			AND (unlimited OR (used_credits + reserved_credits < quota_credits
+				AND used_credits + reserved_credits + $2::numeric <= quota_credits))`,
 		input.TeamID, creditMicroString(input.Micro))
 	if err != nil {
 		return "", err
@@ -203,6 +211,9 @@ func (s *PostgresStore) ReserveQuota(ctx context.Context, input ReserveQuotaInpu
 }
 
 func (s *PostgresStore) SettleReservation(ctx context.Context, reservationID string, record UsageRecord) error {
+	if record.CreditsMicro < 0 {
+		return ErrInvalidCreditCharge
+	}
 	if record.ID == "" {
 		record.ID = newUUID()
 	}
@@ -213,13 +224,14 @@ func (s *PostgresStore) SettleReservation(ctx context.Context, reservationID str
 	defer tx.Rollback(ctx)
 	var (
 		teamID   string
+		userID   string
 		reserved string
 		status   string
 	)
 	err = tx.QueryRow(ctx, `
-		SELECT team_id::text, reserved_credits::text, status
+		SELECT team_id::text, COALESCE(user_id::text,''), reserved_credits::text, status
 		FROM quota_reservations WHERE id = $1::uuid FOR UPDATE`, reservationID).
-		Scan(&teamID, &reserved, &status)
+		Scan(&teamID, &userID, &reserved, &status)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrReservationNotFound
@@ -229,19 +241,45 @@ func (s *PostgresStore) SettleReservation(ctx context.Context, reservationID str
 	if status == string(ReservationSettled) || status == string(ReservationReleased) {
 		return tx.Commit(ctx)
 	}
-	// reserved 才需要扣回预留；expired 的额度已被 sweeper 释放，只记实扣。
+	if record.TeamID != teamID || (userID != "" && record.UserID != userID) {
+		return ErrReservationMismatch
+	}
+	var quota, used, teamReserved string
+	var unlimited bool
+	if err := tx.QueryRow(ctx, `
+		SELECT quota_credits::text, used_credits::text, reserved_credits::text, unlimited
+		FROM teams WHERE id = $1::uuid FOR UPDATE`, teamID).
+		Scan(&quota, &used, &teamReserved, &unlimited); err != nil {
+		return err
+	}
+	releasedMicro := int64(0)
+	if status == string(ReservationReserved) {
+		releasedMicro, err = parseMicroString(reserved)
+		if err != nil {
+			return err
+		}
+	}
+	charge, capped, err := capTeamCreditCharge(used, teamReserved, quota, unlimited, releasedMicro, record.CreditsMicro)
+	if err != nil {
+		return err
+	}
+	record.CreditsMicro = charge
+	if capped {
+		markCreditChargeCapped(&record)
+	}
+	// reserved 才扣回当前预留；expired 的额度已由 sweeper 释放，只记实扣。
 	if status == string(ReservationReserved) {
 		if _, err := tx.Exec(ctx, `
 			UPDATE teams SET
 				reserved_credits = GREATEST(reserved_credits - $2::numeric, 0),
 				used_credits = used_credits + $3::numeric
-			WHERE id = $1::uuid`, teamID, reserved, creditMicroString(record.CreditsMicro)); err != nil {
+			WHERE id = $1::uuid`, teamID, reserved, creditMicroString(charge)); err != nil {
 			return err
 		}
 	} else {
 		if _, err := tx.Exec(ctx, `
 			UPDATE teams SET used_credits = used_credits + $2::numeric WHERE id = $1::uuid`,
-			teamID, creditMicroString(record.CreditsMicro)); err != nil {
+			teamID, creditMicroString(charge)); err != nil {
 			return err
 		}
 	}
@@ -258,7 +296,13 @@ func (s *PostgresStore) SettleReservation(ctx context.Context, reservationID str
 	if err := upsertRollupExec(ctx, tx, record); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	if capped {
+		return ErrCreditChargeCapped
+	}
+	return nil
 }
 
 func (s *PostgresStore) ReleaseReservationByID(ctx context.Context, reservationID string, at time.Time) error {
@@ -307,7 +351,7 @@ func (s *PostgresStore) ExpireStaleReservations(ctx context.Context, before time
 	rows, err := tx.Query(ctx, `
 		UPDATE quota_reservations
 		SET status = 'expired', released_at = $1::timestamptz
-		WHERE status = 'reserved' AND expires_at < $1::timestamptz AND held_by_task = false
+		WHERE status = 'reserved' AND expires_at < $1::timestamptz AND held_by_task = false AND retain_until_settled = false
 		RETURNING team_id::text, reserved_credits::text`, before)
 	if err != nil {
 		return 0, err
@@ -354,7 +398,7 @@ func (s *PostgresStore) ListOpenReservations(ctx context.Context, limit int64) (
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT id::text, team_id::text, COALESCE(user_id::text,''), request_id, reserved_credits::text, status,
-			created_at, expires_at, settled_at, released_at, COALESCE(usage_id::text, ''), held_by_task
+			created_at, expires_at, settled_at, released_at, COALESCE(usage_id::text, ''), held_by_task, retain_until_settled
 		FROM quota_reservations
 		WHERE status = 'reserved'
 		ORDER BY created_at ASC
@@ -371,7 +415,7 @@ func (s *PostgresStore) ListOpenReservations(ctx context.Context, limit int64) (
 			status   string
 		)
 		if err := rows.Scan(&r.ID, &r.TeamID, &r.UserID, &r.RequestID, &reserved, &status,
-			&r.CreatedAt, &r.ExpiresAt, &r.SettledAt, &r.ReleasedAt, &r.UsageID, &r.HeldByTask); err != nil {
+			&r.CreatedAt, &r.ExpiresAt, &r.SettledAt, &r.ReleasedAt, &r.UsageID, &r.HeldByTask, &r.RetainUntilSettled); err != nil {
 			return nil, err
 		}
 		r.ReservedMicro, _ = parseMicroString(reserved)

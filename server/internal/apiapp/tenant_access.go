@@ -66,6 +66,7 @@ func consoleAccessGuard(deps *Deps) gin.HandlerFunc {
 		read := c.Request.Method == "GET"
 		allowed := path == "/auth/me" || path == "/profile" ||
 			(read && (path == "/teams" || path == "/users" || path == "/models" || path == "/devices" || path == "/quota-requests" || strings.HasPrefix(path, "/usage"))) ||
+			path == "/models/:modelId/test" ||
 			path == "/devices/:id/revoke" || path == "/audit" || strings.HasPrefix(path, "/teams/:id")
 		if !allowed {
 			c.AbortWithStatusJSON(403, fail(403, "此功能仅限超级管理员"))

@@ -94,6 +94,8 @@ type PlatformStore interface {
 	ListModels(ctx context.Context, includeDisabled bool) ([]PlatformModelRecord, error)
 	GetModel(ctx context.Context, modelID string) (*PlatformModelRecord, error)
 	UpsertModel(ctx context.Context, input UpsertModelInput) (*PlatformModelRecord, error)
+	// SetModelConfig:只更新客户端能力配置；recommended 时清空 override。
+	SetModelConfig(ctx context.Context, modelID, mode string, config []byte) (*PlatformModelRecord, error)
 	DeleteModel(ctx context.Context, modelID string) (bool, error)
 
 	// ---- upstream providers ----
@@ -138,6 +140,8 @@ type PlatformStore interface {
 	// ListUsageForExport:导出专用，允许超过列表默认 500 条上限。
 	ListUsageForExport(ctx context.Context, filter UsageFilter, max int64) ([]UsageRecord, error)
 	AggregateUsage(ctx context.Context, filter UsageFilter) ([]UsageAggregateRow, error)
+	// AggregateUsageCosts:按筛选范围汇总冻结成本快照，不读取当前价格回填历史。
+	AggregateUsageCosts(ctx context.Context, filter UsageFilter) (*UsageCostSummary, error)
 	// 时间桶按上海墙钟(UTC+8)切分;空桶不返回,按桶起点升序。
 	// 无维度过滤时优先读小时 rollup，带维度过滤时回退明细。
 	AggregateUsageSeries(ctx context.Context, filter UsageFilter, granularity UsageSeriesGranularity) ([]UsageSeriesRow, error)
@@ -221,6 +225,9 @@ var (
 	ErrRootUserExists          = errors.New("超级管理员已存在")
 	ErrRootUserProtected       = errors.New("超级管理员不能被禁用或降级")
 	ErrReservationNotFound     = errors.New("额度预留不存在")
+	ErrCreditChargeCapped      = errors.New("实扣金额已按团队额度下限封顶")
+	ErrInvalidCreditCharge     = errors.New("credit 金额非法或超出存储范围")
+	ErrReservationMismatch     = errors.New("reservation owner mismatch")
 )
 
 // ResolveUserTeam 显式拒绝既存多团队歧义，避免按列表顺序错误扣费。

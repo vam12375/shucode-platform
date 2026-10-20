@@ -103,11 +103,15 @@ func (c *SettlementCompensator) Reconcile(ctx context.Context) error {
 		settleCtx, cancel := context.WithTimeout(ctx, settleTimeout)
 		settleErr := c.Store.SettleReservation(settleCtx, item.ReservationID, item.Record)
 		cancel()
-		if settleErr == nil {
+		if settleErr == nil || errors.Is(settleErr, store.ErrCreditChargeCapped) {
 			if err := c.Store.MarkPendingSettlementApplied(ctx, item.ReservationID, c.Now()); err != nil {
 				errs = append(errs, fmt.Errorf("标记补偿完成失败 %s: %w", item.ReservationID, err))
 			}
-			c.Logger.Info("待结算补偿完成", "reservationId", item.ReservationID, "requestId", item.Record.RequestID)
+			if errors.Is(settleErr, store.ErrCreditChargeCapped) {
+				c.Logger.Warn("待结算补偿已按团队额度下限封顶", "reservationId", item.ReservationID, "requestId", item.Record.RequestID)
+			} else {
+				c.Logger.Info("待结算补偿完成", "reservationId", item.ReservationID, "requestId", item.Record.RequestID)
+			}
 			continue
 		}
 		attempts := item.Attempts + 1

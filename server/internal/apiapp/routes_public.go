@@ -196,6 +196,8 @@ func registerUserConfigRoutes(router *gin.Engine, deps *Deps) {
 				OutputPricePerMtok:     model.OutputPricePerMtok,
 				CacheReadPricePerMtok:  model.CacheReadPricePerMtok,
 				CacheWritePricePerMtok: model.CacheWritePricePerMtok,
+				ConfigMode:             model.ConfigMode,
+				Config:                 canonicalModelConfig(model.ModelConfig),
 			})
 		}
 		if len(input.Models) > 0 {
@@ -275,9 +277,6 @@ func registerClientCreditRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		remainingMicro := quotaMicro - usedMicro - reservedMicro
-		if remainingMicro < 0 {
-			remainingMicro = 0
-		}
 		usedRatio := 0.0
 		if !team.Unlimited && quotaMicro > 0 {
 			usedRatio = float64(usedMicro+reservedMicro) / float64(quotaMicro)

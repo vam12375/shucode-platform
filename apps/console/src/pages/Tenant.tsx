@@ -5,7 +5,7 @@ import { useAuth } from "../auth.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { MfaSettings } from "../components/MfaSettings.js";
 import { Gauge } from "../components/Gauge.js";
-import { Chip, Notice } from "../components/StatusChip.js";
+import { Chip, Notice, type ChipTone } from "../components/StatusChip.js";
 import type { ConsoleTeam, ConsoleUser } from "../permissions.js";
 import { formatShanghaiTime } from "../time.js";
 
@@ -27,11 +27,6 @@ interface Invitation {
 interface Model {
   modelId: string;
   displayName: string;
-  inputPricePerMtok: string;
-  outputPricePerMtok: string;
-  cacheReadPricePerMtok: string;
-  cacheWritePricePerMtok: string;
-  offPeakMultiplier?: string;
 }
 interface Policy {
   availableModels?: Array<{ modelId: string; displayName: string }>;
@@ -105,17 +100,7 @@ export function TenantPage({ section }: { section: string }) {
       );
       setInvitations(invitationData.invitations);
       setPolicy({ ...EMPTY_POLICY, ...policyData });
-      setModels(
-        policyData.availableModels
-          ? policyData.availableModels.map((model) => ({
-              ...model,
-              inputPricePerMtok: "0",
-              outputPricePerMtok: "0",
-              cacheReadPricePerMtok: "0",
-              cacheWritePricePerMtok: "0",
-            }))
-          : modelData.models,
-      );
+      setModels(policyData.availableModels ?? modelData.models);
       setNotifications(noticeData.notifications);
       setError("");
     } catch (e) {
@@ -194,7 +179,7 @@ export function TenantPage({ section }: { section: string }) {
                 {money(team.reservedCredits)} credit ·{" "}
                 {team.unlimited
                   ? "额度不限"
-                  : `剩余 ${money(String(Math.max(0, Number(team.quotaCredits) - Number(team.usedCredits) - Number(team.reservedCredits ?? 0))))} credit`}
+                  : `剩余 ${money(String(Number(team.quotaCredits) - Number(team.usedCredits) - Number(team.reservedCredits ?? 0)))} credit`}
               </p>
               <p className="readout">
                 增加团队总额度可提交人工额度申请。团队预算用于限制消费，不能增加可用余额。
@@ -719,57 +704,303 @@ export function TenantPage({ section }: { section: string }) {
   );
 }
 
+type ProbeKind =
+  | "ok"
+  | "timeout"
+  | "network"
+  | "auth"
+  | "rate_limited"
+  | "not_found"
+  | "config"
+  | "stream"
+  | "upstream_error"
+  | "not_configured";
+
+interface ProbeResult {
+  modelId: string;
+  ok: boolean;
+  kind: ProbeKind;
+  status: number | null;
+  firstTokenMs: number | null;
+  totalMs: number;
+  testedAt: string;
+}
+
+interface ProbeEntry {
+  ok: boolean;
+  kind: ProbeKind;
+  status: number | null;
+  firstTokenMs: number | null;
+  totalMs: number;
+  testedAt: string;
+}
+
+const PROBE_HISTORY_LIMIT = 12;
+
+function isProbeEntry(value: unknown): value is ProbeEntry {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    typeof entry.ok === "boolean" &&
+    typeof entry.kind === "string" &&
+    typeof entry.totalMs === "number" &&
+    typeof entry.testedAt === "string"
+  );
+}
+
+function readProbeHistory(key: string): Record<string, ProbeEntry[]> {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const history: Record<string, ProbeEntry[]> = {};
+    for (const [modelId, value] of Object.entries(
+      parsed as Record<string, unknown>,
+    )) {
+      if (!Array.isArray(value)) continue;
+      const entries = value
+        .filter(isProbeEntry)
+        .slice(-PROBE_HISTORY_LIMIT);
+      if (entries.length > 0) history[modelId] = entries;
+    }
+    return history;
+  } catch {
+    return {};
+  }
+}
+
+function probeLabel(entry: ProbeEntry): string {
+  if (entry.ok) return "可用";
+  switch (entry.kind) {
+    case "timeout":
+      return "超时";
+    case "network":
+      return "不可达";
+    case "auth":
+      return "凭据异常";
+    case "rate_limited":
+      return "上游限流";
+    case "not_found":
+      return "模型不存在";
+    case "not_configured":
+      return "未配置上游";
+    case "config":
+      return "平台配置异常";
+    case "stream":
+      return "响应中断";
+    case "upstream_error":
+      return entry.status ? `上游 ${entry.status}` : "上游异常";
+    default:
+      return "不可用";
+  }
+}
+
+function probeTone(entry: ProbeEntry): ChipTone {
+  if (entry.ok) return "ok";
+  if (entry.kind === "not_configured") return "mute";
+  if (entry.kind === "rate_limited") return "hot";
+  return "stop";
+}
+
+function formatLatency(ms: number | null): string {
+  if (ms === null) return "—";
+  if (ms < 1000) return `${Math.max(0, Math.round(ms))} ms`;
+  return `${(ms / 1000).toFixed(ms < 10_000 ? 2 : 1)} s`;
+}
+
+function availabilityOf(entries: ProbeEntry[]): number | null {
+  if (entries.length === 0) return null;
+  const ok = entries.filter((entry) => entry.ok).length;
+  return Math.round((ok / entries.length) * 100);
+}
+
 export function CatalogPage() {
+  const { user, teamId, isRoot } = useAuth();
   const [models, setModels] = useState<Model[]>([]);
+  const [history, setHistory] = useState<Record<string, ProbeEntry[]>>({});
+  const [testing, setTesting] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState("");
+  // 测试记录跟账号/团队绑定，避免切换身份后看到别人的探测历史。
+  const storageKey = `shucode.catalog.probes.v1:${user.id}:${teamId || "root"}`;
   useEffect(() => {
     api<{ models: Model[] }>("/models")
-      .then((data) => setModels(data.models))
+      .then((data) => {
+        setModels(data.models);
+        setError("");
+      })
       .catch((e) => setError(errorMessage(e)));
-  }, []);
+  }, [teamId]);
+  useEffect(() => {
+    setHistory(readProbeHistory(storageKey));
+  }, [storageKey]);
+
+  const recordProbe = (result: ProbeResult) => {
+    const entry: ProbeEntry = {
+      ok: result.ok,
+      kind: result.kind,
+      status: result.status,
+      firstTokenMs: result.firstTokenMs,
+      totalMs: result.totalMs,
+      testedAt: result.testedAt,
+    };
+    setHistory((previous) => {
+      const next = {
+        ...previous,
+        [result.modelId]: [
+          ...(previous[result.modelId] ?? []),
+          entry,
+        ].slice(-PROBE_HISTORY_LIMIT),
+      };
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify(next));
+      } catch {
+        // 浏览器禁用本地存储时仅保留本次会话的内存记录。
+      }
+      return next;
+    });
+  };
+
+  const runProbe = async (model: Model) => {
+    const modelId = model.modelId;
+    setTesting((previous) => new Set(previous).add(modelId));
+    try {
+      const result = await api<ProbeResult>(
+        `/models/${encodeURIComponent(modelId)}/test`,
+        { method: "POST" },
+      );
+      recordProbe(result);
+    } catch (probeError) {
+      toastErr(errorMessage(probeError), "测试未完成");
+    } finally {
+      setTesting((previous) => {
+        const next = new Set(previous);
+        next.delete(modelId);
+        return next;
+      });
+    }
+  };
+
   return (
     <div>
       <header className="page-head">
         <div>
-          <p className="eyebrow">计量 / 模型与售价</p>
+          <p className="eyebrow">接入 / 模型目录</p>
           <h1>可用模型</h1>
         </div>
-        <span className="readout">售价只读 · credit / 百万 Token</span>
+        <span className="readout">{models.length} 个模型 · 实测可用性</span>
       </header>
       {error ? <Notice tone="stop">{error}</Notice> : null}
-      <Notice k="计费说明">
-        消费按请求发生时的适用售价扣减。缓存读写单独计费；空闲时段倍率作用于相应售价。
+      <Notice k="测试说明">
+        {isRoot
+          ? "「测试」会发送最小推理请求，属于平台管理员诊断，不扣减团队额度。测试记录保存在本机浏览器。"
+          : "模型诊断由平台管理员执行。请在客户端发起模型请求，实际用量计入团队共享额度。"}
       </Notice>
       <section className="pane">
+        <div className="pane-h">
+          <h2>模型目录</h2>
+          <span className="readout">结果为点击测试时的快照，不持续轮询</span>
+        </div>
         <div className="table-scroll">
-          <table className="table">
+          <table className="table probe-table">
             <thead>
               <tr>
                 <th>模型</th>
-                <th>输入售价</th>
-                <th>输出售价</th>
-                <th>缓存读</th>
-                <th>缓存写</th>
-                <th>空闲倍率</th>
+                <th>状态</th>
+                <th>首包</th>
+                <th>总耗时</th>
+                <th>可用性</th>
+                <th>最近测试</th>
+                <th aria-label="操作" />
               </tr>
             </thead>
             <tbody>
-              {models.map((model) => (
-                <tr key={model.modelId}>
-                  <td>
-                    <b>{model.displayName}</b>
-                    <div className="readout">{model.modelId}</div>
-                  </td>
-                  <td className="num">{money(model.inputPricePerMtok)}</td>
-                  <td className="num">{money(model.outputPricePerMtok)}</td>
-                  <td className="num">{money(model.cacheReadPricePerMtok)}</td>
-                  <td className="num">{money(model.cacheWritePricePerMtok)}</td>
-                  <td className="num">{model.offPeakMultiplier || "1"}×</td>
-                </tr>
-              ))}
+              {models.map((model) => {
+                const entries = history[model.modelId] ?? [];
+                const latest = entries[entries.length - 1];
+                const availability = availabilityOf(entries);
+                const attempted =
+                  latest !== undefined &&
+                  latest.kind !== "not_configured" &&
+                  latest.kind !== "config";
+                const busy = testing.has(model.modelId);
+                return (
+                  <tr key={model.modelId}>
+                    <td className="probe-name">
+                      <b>{model.displayName}</b>
+                      <div className="readout">{model.modelId}</div>
+                    </td>
+                    <td>
+                      {busy ? (
+                        <Chip tone="info">测试中</Chip>
+                      ) : latest ? (
+                        <Chip
+                          tone={probeTone(latest)}
+                          title={`${probeLabel(latest)} · ${formatShanghaiTime(latest.testedAt)}`}
+                        >
+                          {probeLabel(latest)}
+                        </Chip>
+                      ) : (
+                        <Chip tone="mute">未测试</Chip>
+                      )}
+                    </td>
+                    <td className="num">
+                      {latest?.ok ? formatLatency(latest.firstTokenMs) : "—"}
+                    </td>
+                    <td className="num">
+                      {attempted ? formatLatency(latest.totalMs) : "—"}
+                    </td>
+                    <td>
+                      <div className="probe-availability">
+                        <span className="readout">
+                          {availability === null ? "—" : `${availability}%`}
+                        </span>
+                        <div
+                          className="probe-bars"
+                          aria-label={
+                            entries.length === 0
+                              ? "暂无测试记录"
+                              : `最近 ${entries.length} 次测试可用率 ${availability}%`
+                          }
+                        >
+                          {entries.length === 0 ? (
+                            <span className="probe-empty">暂无记录</span>
+                          ) : (
+                            entries.map((entry) => (
+                              <span
+                                key={entry.testedAt}
+                                className={
+                                  entry.ok ? "probe-bar ok" : "probe-bar stop"
+                                }
+                                title={`${formatShanghaiTime(entry.testedAt)} · ${probeLabel(entry)} · ${formatLatency(entry.totalMs)}`}
+                              />
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="readout">
+                      {latest
+                        ? formatShanghaiTime(latest.testedAt).slice(5, 16)
+                        : "—"}
+                    </td>
+                    <td className="probe-action">
+                      {isRoot ? (
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          disabled={busy}
+                          onClick={() => void runProbe(model)}
+                        >
+                          {busy ? "测试中…" : "测试"}
+                        </button>
+                      ) : null}
+                    </td>
+                  </tr>
+                );
+              })}
               {models.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="readout">
+                  <td colSpan={7} className="readout">
                     当前暂无可用模型。
                   </td>
                 </tr>

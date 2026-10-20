@@ -39,6 +39,51 @@ func assText(text string) string {
 	r := strings.NewReplacer("\\", "\\\\", "{", "\\{", "}", "\\}", "\r", "", "\n", "\\N")
 	return r.Replace(text)
 }
+
+const defaultComposeTimeout = 8 * time.Minute
+const fourKComposeTimeout = 30 * time.Minute
+
+// 4k 片段需要两次全量 4k 编解码，给更长的合成预算；worker lease 必须覆盖它。
+func composeTimeout(resolution string) time.Duration {
+	if resolution == "4k" {
+		return fourKComposeTimeout
+	}
+	return defaultComposeTimeout
+}
+
+func workerLeaseDuration(resolution string) time.Duration {
+	if resolution == "4k" {
+		return fourKComposeTimeout + 5*time.Minute
+	}
+	return 10 * time.Minute
+}
+
+// subtitleMetrics 按短边等比缩放 ASS 字幕；固定 48 号字在 4k 下会过小。
+func subtitleMetrics(w, h int) (fontSize, marginLR, marginV int) {
+	short := min(w, h)
+	return max(24, short*48/720), max(20, short*40/720), max(40, short*80/720)
+}
+
+// outputSize 按竖屏基准换算合成画布；16:9 交换长短边，1:1 取正方形。
+func outputSize(resolution, ratio string) (int, int) {
+	w, h := 720, 1280
+	switch resolution {
+	case "480p":
+		w, h = 480, 854
+	case "1080p":
+		w, h = 1080, 1920
+	case "4k":
+		w, h = 2160, 3840
+	}
+	if ratio == "16:9" {
+		w, h = h, w
+	}
+	if ratio == "1:1" {
+		h = w
+	}
+	return w, h
+}
+
 func (s *Service) compose(ctx context.Context, p *Project) error {
 	if !CompositionAvailable() {
 		return fmt.Errorf("composition_dependencies_missing")
@@ -56,20 +101,12 @@ func (s *Service) compose(ctx context.Context, p *Project) error {
 		return e
 	}
 	defer os.RemoveAll(dir)
-	runCtx, cancel := context.WithTimeout(ctx, 8*time.Minute)
+	runCtx, cancel := context.WithTimeout(ctx, composeTimeout(p.Brief.Resolution))
 	defer cancel()
-	w, h := 720, 1280
-	if p.Brief.Resolution == "1080p" {
-		w, h = 1080, 1920
-	}
-	if p.Brief.AspectRatio == "16:9" {
-		w, h = h, w
-	}
-	if p.Brief.AspectRatio == "1:1" {
-		h = w
-	}
+	w, h := outputSize(p.Brief.Resolution, p.Brief.AspectRatio)
 	list := []string{}
-	ass := "[Script Info]\nScriptType: v4.00+\nPlayResX: " + fmt.Sprint(w) + "\nPlayResY: " + fmt.Sprint(h) + "\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Noto Sans CJK SC,48,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,1,2,40,40,80,1\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+	fontSize, marginLR, marginV := subtitleMetrics(w, h)
+	ass := fmt.Sprintf("[Script Info]\nScriptType: v4.00+\nPlayResX: %d\nPlayResY: %d\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Noto Sans CJK SC,%d,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,1,2,%d,%d,%d,1\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n", w, h, fontSize, marginLR, marginLR, marginV)
 	offset := 0
 	for i, shot := range p.Shots {
 		name := fmt.Sprintf("clip-%03d.mp4", i)

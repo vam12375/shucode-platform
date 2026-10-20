@@ -14,6 +14,8 @@ type Model struct {
 	Adapter       string   `json:"adapter"`
 	Resolutions   []string `json:"resolutions"`
 	Durations     []int    `json:"durations"`
+	CostMicro     int64    `json:"costMicro"`
+	GenerateAudio bool     `json:"generateAudio"`
 	PriceMicro    int64    `json:"priceMicro"`
 	PriceVersion  string   `json:"priceVersion"`
 }
