@@ -15,7 +15,7 @@ import (
 
 const (
 	PlatformDeviceTokenPrefix      = "mdp_"
-	PlatformDeepLinkCallbackPrefix = "zcode://platform/callback"
+	PlatformDeepLinkCallbackPrefix = "mendao://platform/callback"
 	UserConfigAPIPath              = "/api/v1/client/user-config"
 	BuiltinReleaseJSONPathPrefix   = "/api/v1/releases/builtin"
 	// PLATFORM_CONFIG_KEYS(client-configs.ts):/console/api/config 的 KV 键,

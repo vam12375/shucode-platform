@@ -20,7 +20,7 @@ Shucode 客户端的多租户 SaaS 平台：平台账号登录、管理员控制
 ```text
 终端用户客户端                          平台
 欢迎页「平台账号登录」 ──浏览器──→  api /app/platform/login（登录+授权页）
-   ↑ zcode://platform/callback        │
+   ↑ mendao://platform/callback       │
    轮询领取设备凭据（mdp_*）  ←─────────┘（consumeLoginFlow 条件消费，只签发一次）
 周期拉取 user-config（≈1h）←────────  /api/v1/client/user-config（Bearer 设备凭据）
 模型请求（gateway provider）──→ gw /v1/chat/completions ──→ 上游供应商

@@ -200,11 +200,11 @@
   "deepLinks": [
     {
       "flowId": "abc-flow-uuid-0001",
-      "url": "zcode://platform/callback?flow_id=abc-flow-uuid-0001"
+      "url": "mendao://platform/callback?flow_id=abc-flow-uuid-0001"
     },
     {
       "flowId": "流量参数 ✓ &=?",
-      "url": "zcode://platform/callback?flow_id=%E6%B5%81%E9%87%8F%E5%8F%82%E6%95%B0%20%E2%9C%93%20%26%3D%3F"
+      "url": "mendao://platform/callback?flow_id=%E6%B5%81%E9%87%8F%E5%8F%82%E6%95%B0%20%E2%9C%93%20%26%3D%3F"
     }
   ],
   "downloadUrls": [

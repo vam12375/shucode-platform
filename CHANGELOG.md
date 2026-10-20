@@ -9,6 +9,17 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.30.0] - 2026-10-20
+
+### 变更(契约)
+
+- 平台设备登录成功后的 deep link 从 `zcode://platform/callback` 迁移为 `mendao://platform/callback`；契约常量、冻结 fixtures、README 与 specs 同步更新，客户端解析层继续兼容旧 `zcode://`。
+
+### 测试
+
+- `make -C server lint`
+- `make -C server test`
+
 ## [0.29.0] - 2026-10-20
 
 ### 新增(控制台)
