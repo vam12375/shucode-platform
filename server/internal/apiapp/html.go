@@ -166,8 +166,8 @@ func renderAuthorizedPage(flowID, deepLink string) string {
 	body := `
 <p class="brand">Mendao</p>
 <h1>授权成功</h1>
-<p>正在返回应用。如果没有自动跳转，请点击下方按钮。</p>
-<button type="button" onclick="window.location.href=` + quoted + `">打开 Shucode</button>
+<p>正在返回门道。如果没有自动跳转，请点击下方按钮。</p>
+<button type="button" onclick="window.location.href=` + quoted + `">返回门道</button>
 <p class="hint">本页面可以关闭。</p>`
 	script := `setTimeout(function () { window.location.href = ` + quoted + `; }, 300);`
 	return htmlLayout("授权成功 - Mendao", body, script)

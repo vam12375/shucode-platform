@@ -295,8 +295,8 @@ func registerRootMFARoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(409, fail(409, "安全设置已变化，请重新设置"))
 			return
 		}
-		otpURL := url.URL{Scheme: "otpauth", Host: "totp", Path: "/Shucode Platform:" + user.Email}
-		query := url.Values{"secret": {secret}, "issuer": {"Shucode Platform"}, "algorithm": {"SHA1"}, "digits": {"6"}, "period": {"30"}}
+		otpURL := url.URL{Scheme: "otpauth", Host: "totp", Path: "/Mendao Platform:" + user.Email}
+		query := url.Values{"secret": {secret}, "issuer": {"Mendao Platform"}, "algorithm": {"SHA1"}, "digits": {"6"}, "period": {"30"}}
 		otpURL.RawQuery = query.Encode()
 		c.JSON(200, okData(gin.H{"secret": secret, "otpauthUrl": otpURL.String()}))
 	})
@@ -444,7 +444,7 @@ func allowRootMFAPlatformPasswordLogin(ctx context.Context, deps *Deps, c *gin.C
 	}
 	origin := strings.TrimRight(deps.Env.PublicConsoleOrigin, "/")
 	target := origin + "/console/#/login"
-	body := `<p class="brand">Shucode</p><h1>需要双因素验证</h1><p>请先在控制台完成登录，再返回本页面继续设备授权。</p><p><a href="` + escapeHTML(target) + `" target="_blank" rel="noopener">打开控制台登录</a></p>`
-	c.Data(403, "text/html; charset=utf-8", []byte(htmlLayout("需要双因素验证 - Shucode", body, "")))
+	body := `<p class="brand">Mendao</p><h1>需要双因素验证</h1><p>请先在控制台完成登录，再返回本页面继续设备授权。</p><p><a href="` + escapeHTML(target) + `" target="_blank" rel="noopener">打开控制台登录</a></p>`
+	c.Data(403, "text/html; charset=utf-8", []byte(htmlLayout("需要双因素验证 - Mendao", body, "")))
 	return false
 }
