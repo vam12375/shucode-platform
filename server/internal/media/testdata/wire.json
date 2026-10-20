@@ -1,0 +1,71 @@
+{
+  "brief": {
+    "mode": "replicate",
+    "product": "商品",
+    "sellingPoints": "展示",
+    "assetIds": ["asset-fixture"],
+    "referenceUrls": ["https://example.com/video"],
+    "platforms": ["douyin"],
+    "videoModel": "v",
+    "resolution": "720p",
+    "aspectRatio": "9:16",
+    "duration": 10,
+    "maxCreditsMicro": 10000000,
+    "reviewPlan": true
+  },
+  "plan": {
+    "references": [
+      {
+        "url": "https://example.com/video",
+        "title": "参考",
+        "capturedAt": "2026-10-20T00:00:00Z",
+        "likes": null,
+        "evidence": "观察画面",
+        "selectionReason": "商品一致"
+      }
+    ],
+    "shots": [
+      {
+        "sourceUrl": "https://example.com/video",
+        "sourceStart": 0,
+        "sourceEnd": 5,
+        "duration": 5,
+        "framing": "近景",
+        "camera": "推进",
+        "action": "展示商品",
+        "purpose": "卖点",
+        "prompt": "商品展示",
+        "assetId": "asset-fixture",
+        "subtitle": "商品"
+      },
+      {
+        "sourceUrl": "https://example.com/video",
+        "sourceStart": 0,
+        "sourceEnd": 5,
+        "duration": 5,
+        "framing": "近景",
+        "camera": "推进",
+        "action": "展示商品",
+        "purpose": "卖点",
+        "prompt": "商品展示",
+        "assetId": "asset-fixture",
+        "subtitle": "商品"
+      }
+    ]
+  },
+  "models": [
+    {
+      "id": "v",
+      "name": "fixture",
+      "kind": "video",
+      "adapter": "ark",
+      "providerId": "fixture",
+      "upstreamModel": "fixture",
+      "resolutions": ["720p"],
+      "durations": [5],
+      "priceMicro": 100000,
+      "priceVersion": "v1"
+    }
+  ],
+  "quoteMicro": 1000000
+}

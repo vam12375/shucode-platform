@@ -84,6 +84,7 @@ services:
       <<: *app-env
       PORT: "8787"
       CONSOLE_DIST_DIR: /app/apps/console/dist
+      MEDIA_STORAGE_DIR: /app/data/media
     ports:
       # 基础编排允许设置监听地址；生产覆写强制绑定 127.0.0.1，由宿主 Nginx 回源。
       - "${API_HOST_IP:-0.0.0.0}:${API_HOST_PORT:-8787}:8787"
@@ -105,6 +106,7 @@ services:
       # 结算补偿与审计 outbox：数据库不可用时仍能持久化到本地卷。
       - shucode-pending-settlements:/app/data/pending-settlements
       - shucode-audit-outbox:/app/data/audit-outbox
+      - shucode-media:/app/data/media
     security_opt: ["no-new-privileges:true"]
     cap_drop: ["ALL"]
     pids_limit: 256
@@ -154,6 +156,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  shucode-media:
   mendao-pg:
   shucode-pending-settlements:
   shucode-audit-outbox:

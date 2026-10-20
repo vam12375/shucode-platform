@@ -1,10 +1,4 @@
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useState,
-  type ReactNode,
-} from "react";
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, navigate, setApiTeamScope } from "./api.js";
 import { AuthProvider } from "./auth.js";
 import {
@@ -16,19 +10,16 @@ import {
   type Membership,
   type SessionData,
 } from "./permissions.js";
-import {
-  CatalogPage,
-  InvitePage,
-  ProfilePage,
-  TenantPage,
-} from "./pages/Tenant.js";
-import { Notice } from "./components/StatusChip.js";import { DialogHost, ToastHost } from "./components/Feedback.js";
+import { CatalogPage, InvitePage, ProfilePage, TenantPage } from "./pages/Tenant.js";
+import { Notice } from "./components/StatusChip.js";
+import { DialogHost, ToastHost } from "./components/Feedback.js";
 import { ReadoutRail } from "./components/ReadoutRail.js";
 import { AuditPage } from "./pages/Audit.js";
 import { ConfigPage } from "./pages/ConfigPage.js";
 import { DevicesPage } from "./pages/Devices.js";
 import { LoginPage } from "./pages/Login.js";
 import { ModelsPage } from "./pages/Models.js";
+import { MediaModelsPage } from "./pages/MediaModels.js";
 import { OpsPage } from "./pages/Ops.js";
 import { OrgPage } from "./pages/Org.js";
 import { QuotaRequestsPage } from "./pages/QuotaRequests.js";
@@ -71,6 +62,7 @@ const NAV_GROUPS = [
     label: "接入",
     items: [
       { path: "/providers", label: "上游供应商" },
+      { path: "/media-models", label: "媒体模型" },
       { path: "/devices", label: "设备凭据" },
     ],
   },
@@ -225,11 +217,7 @@ export function App() {
     setTeamId(id);
   };
   const [requestedSection, param] = splitRoute(route);
-  const section = resolveConsoleSection(
-    requestedSection,
-    isRoot,
-    canManageTeam,
-  );
+  const section = resolveConsoleSection(requestedSection, isRoot, canManageTeam);
   const allowed = routeAllowed(section, isRoot, canManageTeam);
   const navGroups = isRoot
     ? [...NAV_GROUPS]
@@ -283,6 +271,9 @@ export function App() {
     case "models":
       page = <ModelsPage />;
       break;
+    case "media-models":
+      page = <MediaModelsPage />;
+      break;
     case "pricing":
       page = <PricingPage />;
       break;
@@ -313,11 +304,7 @@ export function App() {
       page = <AuditPage />;
       break;
     case "teams":
-      page = param ? (
-        <TeamDetailPage teamId={param} />
-      ) : (
-        <OrgPage currentUserId={user.id} />
-      );
+      page = param ? <TeamDetailPage teamId={param} /> : <OrgPage currentUserId={user.id} />;
       break;
     default:
       page = isRoot ? <OrgPage currentUserId={user.id} /> : <UsagePage />;
@@ -326,9 +313,7 @@ export function App() {
   if (
     !isRoot &&
     !teamId &&
-    ["team", "usage", "members", "policy", "team-settings", "audit"].includes(
-      section,
-    )
+    ["team", "usage", "members", "policy", "team-settings", "audit"].includes(section)
   )
     page = (
       <Notice k="尚未加入团队">
@@ -373,11 +358,7 @@ export function App() {
                   <a
                     key={item.path}
                     href={`#${item.path}`}
-                    className={
-                      section === item.path.slice(1)
-                        ? "nav-item active"
-                        : "nav-item"
-                    }
+                    className={section === item.path.slice(1) ? "nav-item active" : "nav-item"}
                   >
                     {item.label}
                   </a>
@@ -388,10 +369,7 @@ export function App() {
           {isRoot ? (
             <div className="side-ref">
               <p className="nav-group">参考</p>
-              <a
-                href="#/ui"
-                className={section === "ui" ? "nav-item active" : "nav-item"}
-              >
+              <a href="#/ui" className={section === "ui" ? "nav-item active" : "nav-item"}>
                 UI 组件库
               </a>
             </div>
@@ -408,27 +386,16 @@ export function App() {
                   {user.email.slice(0, 1).toUpperCase()}
                 </div>
                 <div className="user-meta">
-                  <span
-                    className="user-name"
-                    title={user.displayName || user.email}
-                  >
+                  <span className="user-name" title={user.displayName || user.email}>
                     {user.displayName || user.email}
                   </span>
                   <span className="user-mail" title={user.email}>
-                    {isRoot
-                      ? "超级管理员 · "
-                      : canManageTeam
-                        ? "团队管理员 · "
-                        : "成员 · "}
+                    {isRoot ? "超级管理员 · " : canManageTeam ? "团队管理员 · " : "成员 · "}
                     {user.email}
                   </span>
                 </div>
               </div>
-              <button
-                className="logout"
-                type="button"
-                onClick={() => void logout()}
-              >
+              <button className="logout" type="button" onClick={() => void logout()}>
                 <svg
                   width="13"
                   height="13"

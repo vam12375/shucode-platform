@@ -1,0 +1,366 @@
+package apiapp
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/vam12375/shucode-platform/server/internal/credits"
+	"github.com/vam12375/shucode-platform/server/internal/media"
+	"github.com/vam12375/shucode-platform/server/internal/netguard"
+	"github.com/vam12375/shucode-platform/server/internal/store"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+func NewMediaService(deps *Deps) *media.Service {
+	root := os.Getenv("MEDIA_STORAGE_DIR")
+	if root == "" {
+		root = "data/media"
+	}
+	key := deps.Env.PlatformSecretKey
+	if key == "" {
+		key = uuid.NewString()
+	}
+	client := deps.HTTPClient
+	if client == nil {
+		client = &http.Client{Transport: netguard.NewTransport(false), Timeout: 60_000_000_000, CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("redirect_forbidden") }}
+	}
+	s := &media.Service{Repo: media.Repository{Store: deps.Store}, Blobs: media.Blobs{Root: root, Origin: strings.TrimRight(deps.Env.PublicAPIOrigin, "/"), SigningKey: key, Client: client}, WorkerID: uuid.NewString()}
+	s.Provider = func(ctx context.Context, m media.Model) (media.Provider, error) {
+		p, e := deps.Store.GetUpstreamProvider(ctx, m.ProviderID)
+		if e != nil {
+			return media.Provider{}, e
+		}
+		if p == nil || !p.Enabled || deps.SecretBox == nil {
+			return media.Provider{}, fmt.Errorf("media_provider_unavailable")
+		}
+		key, e := deps.SecretBox.Decrypt(p.APIKeyCiphertext)
+		if e != nil {
+			return media.Provider{}, e
+		}
+		return media.Provider{BaseURL: p.BaseURL, Key: key, Client: client}, nil
+	}
+	return s
+}
+func mediaIdentity(c *gin.Context, deps *Deps) (*AuthenticatedDevice, *store.TeamMembership, bool) {
+	a, e := authenticateDevice(c.Request.Context(), deps, c)
+	if e != nil {
+		internalError(c, deps, e)
+		return nil, nil, false
+	}
+	if a == nil {
+		c.JSON(401, fail(401, "请登录平台"))
+		return nil, nil, false
+	}
+	m, e := store.ResolveUserTeam(c.Request.Context(), deps.Store, a.User.ID)
+	if e != nil || m == nil {
+		c.JSON(403, fail(403, "账号没有唯一有效团队"))
+		return nil, nil, false
+	}
+	return a, m, true
+}
+func mediaError(c *gin.Context, deps *Deps, e error) {
+	if errors.Is(e, media.ErrConflict) {
+		c.JSON(409, fail(409, "制作单已更新，请刷新"))
+		return
+	}
+	if errors.Is(e, media.ErrInvalid) {
+		c.JSON(400, fail(400, "视频参数不合法"))
+		return
+	}
+	deps.Logger.Warn("媒体操作失败", "error", e)
+	c.JSON(422, fail(422, e.Error()))
+}
+func registerMediaRoutes(router *gin.Engine, deps *Deps) {
+	if deps.Media == nil {
+		deps.Media = NewMediaService(deps)
+	}
+	s := deps.Media
+	router.GET("/api/v1/media/blobs/:team/:id", func(c *gin.Context) {
+		team, id := c.Param("team"), c.Param("id")
+		if !s.Blobs.Verify(team, id, c.Query("expires"), c.Query("signature")) {
+			c.Status(403)
+			return
+		}
+		assets, e := s.Repo.Assets(c.Request.Context(), team)
+		if e != nil {
+			internalError(c, deps, e)
+			return
+		}
+		for _, a := range assets {
+			if a.ID == id {
+				c.Header("Content-Type", a.Mime)
+				c.Header("Content-Disposition", "inline")
+				c.Header("Cache-Control", "private, max-age=300")
+				c.File(s.Blobs.Path(team, id))
+				return
+			}
+		}
+		c.Status(404)
+	})
+	router.GET("/api/v1/media/overview", func(c *gin.Context) {
+		a, m, ok := mediaIdentity(c, deps)
+		if !ok {
+			return
+		}
+		ctx := c.Request.Context()
+		models, e := s.Repo.Models(ctx)
+		if e != nil {
+			internalError(c, deps, e)
+			return
+		}
+		policy, e := deps.Store.GetTeamPolicy(ctx, m.Team.ID)
+		if e != nil {
+			internalError(c, deps, e)
+			return
+		}
+		allowed := []media.Model{}
+		for _, model := range models {
+			if store.TeamModelAllowed(policy, model.ID) {
+				allowed = append(allowed, model)
+			}
+		}
+		models = allowed
+		assets, e := s.Repo.Assets(ctx, m.Team.ID)
+		if e != nil {
+			internalError(c, deps, e)
+			return
+		}
+		for i := range assets {
+			assets[i].URL = s.Blobs.URL(m.Team.ID, assets[i].ID)
+		}
+		all, e := s.Repo.All(ctx)
+		if e != nil {
+			internalError(c, deps, e)
+			return
+		}
+		projects := []media.ProjectView{}
+		for _, p := range all {
+			if p.TeamID == m.Team.ID {
+				projects = append(projects, p.View())
+			}
+		}
+		quota, _ := credits.ParseCreditsToMicro(m.Team.QuotaCredits)
+		used, _ := credits.ParseCreditsToMicro(m.Team.UsedCredits)
+		reserved, _ := credits.ParseCreditsToMicro(m.Team.ReservedCredits)
+		c.JSON(200, okData(gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": max(int64(0), quota-used-reserved), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "assets": assets, "projects": projects, "compositionAvailable": media.CompositionAvailable()}))
+	})
+	router.POST("/api/v1/media/assets", func(c *gin.Context) {
+		_, m, ok := mediaIdentity(c, deps)
+		if !ok {
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, media.MaxUpload+4096)
+		if e := c.Request.ParseMultipartForm(1 << 20); e != nil {
+			c.JSON(413, fail(413, "图片最大20MB"))
+			return
+		}
+		if c.Request.MultipartForm != nil {
+			defer c.Request.MultipartForm.RemoveAll()
+		}
+		f, h, e := c.Request.FormFile("file")
+		if e != nil {
+			c.JSON(400, fail(400, "缺少图片"))
+			return
+		}
+		defer f.Close()
+		head := make([]byte, 512)
+		n, _ := io.ReadFull(f, head)
+		mime := http.DetectContentType(head[:n])
+		if mime != "image/png" && mime != "image/jpeg" && mime != "image/webp" {
+			c.JSON(400, fail(400, "仅支持 PNG、JPEG、WebP"))
+			return
+		}
+		if _, e = f.Seek(0, 0); e != nil {
+			internalError(c, deps, e)
+			return
+		}
+		id, size, e := s.Blobs.Put(m.Team.ID, f, media.MaxUpload)
+		if e != nil {
+			mediaError(c, deps, e)
+			return
+		}
+		asset := media.Asset{ID: id, Name: filepath.Base(h.Filename), Product: c.Request.FormValue("product"), Kind: "image", Mime: mime, Size: size, CreatedAt: deps.Now()}
+		if e = s.Repo.AddAsset(c.Request.Context(), m.Team.ID, asset); e != nil {
+			internalError(c, deps, e)
+			return
+		}
+		asset.URL = s.Blobs.URL(m.Team.ID, id)
+		c.JSON(200, okData(asset))
+	})
+	router.POST("/api/v1/media/projects", func(c *gin.Context) {
+		a, m, ok := mediaIdentity(c, deps)
+		if !ok {
+			return
+		}
+		var body struct {
+			ID    string      `json:"id"`
+			Brief media.Brief `json:"brief"`
+		}
+		if !mediaBody(c, &body) {
+			return
+		}
+		if !media.CompositionAvailable() {
+			c.JSON(503, fail(503, "composition_dependencies_missing"))
+			return
+		}
+		p, e := s.Create(c.Request.Context(), m.Team.ID, a.User.ID, a.Device.ID, body.ID, body.Brief)
+		if e != nil {
+			mediaError(c, deps, e)
+			return
+		}
+		c.JSON(200, okData(p.View()))
+	})
+	router.GET("/api/v1/media/projects/:id", func(c *gin.Context) {
+		_, m, ok := mediaIdentity(c, deps)
+		if !ok {
+			return
+		}
+		p, e := s.Repo.Get(c.Request.Context(), m.Team.ID, c.Param("id"))
+		if e != nil {
+			internalError(c, deps, e)
+			return
+		}
+		if p == nil {
+			c.Status(404)
+			return
+		}
+		c.JSON(200, okData(p.View()))
+	})
+	router.POST("/api/v1/media/projects/:id/:action", func(c *gin.Context) {
+		_, m, ok := mediaIdentity(c, deps)
+		if !ok {
+			return
+		}
+		var body struct {
+			Version  int64          `json:"version"`
+			Analysis media.Analysis `json:"analysis"`
+			InputID  string         `json:"inputId"`
+			Plan     media.Plan     `json:"plan"`
+		}
+		if !mediaBody(c, &body) {
+			return
+		}
+		if body.Version <= 0 {
+			c.JSON(400, fail(400, "缺少制作单版本"))
+			return
+		}
+		var p *media.Project
+		var e error
+		switch c.Param("action") {
+		case "analysis":
+			p, e = s.Bind(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.Analysis)
+		case "plan":
+			p, e = s.SetPlan(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.InputID, body.Plan)
+		default:
+			p, e = s.Action(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, c.Param("action"))
+		}
+		if e != nil {
+			mediaError(c, deps, e)
+			return
+		}
+		c.JSON(200, okData(p.View()))
+	})
+	router.GET("/console/api/media/models", func(c *gin.Context) {
+		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
+			return
+		}
+		models, e := s.Repo.Models(c.Request.Context())
+		if e != nil {
+			internalError(c, deps, e)
+			return
+		}
+		c.JSON(200, okData(models))
+	})
+	router.PUT("/console/api/media/models", func(c *gin.Context) {
+		actor, ok := requireRoot(c.Request.Context(), deps, c)
+		if !ok {
+			return
+		}
+		var models []media.Model
+		if !mediaBody(c, &models) {
+			return
+		}
+		if e := media.ValidateModels(models); e != nil {
+			mediaError(c, deps, e)
+			return
+		}
+		for _, m := range models {
+			if _, e := s.Provider(c.Request.Context(), m); e != nil {
+				mediaError(c, deps, e)
+				return
+			}
+		}
+		data, _ := json.Marshal(models)
+		if e := deps.Store.SetConfigValue(c.Request.Context(), media.ConfigKey, data); e != nil {
+			internalError(c, deps, e)
+			return
+		}
+		writeAudit(c.Request.Context(), deps, actor, "media.models.update", "media_catalog", media.ConfigKey, gin.H{"modelCount": len(models)})
+		c.JSON(200, okData(models))
+	})
+	router.GET("/console/api/media/projects", func(c *gin.Context) {
+		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
+			return
+		}
+		all, e := s.Repo.All(c.Request.Context())
+		if e != nil {
+			internalError(c, deps, e)
+			return
+		}
+		pending := []media.Project{}
+		for _, p := range all {
+			if p.Status == "reconciliation_required" {
+				pending = append(pending, p)
+			}
+		}
+		c.JSON(200, okData(pending))
+	})
+	router.POST("/console/api/media/projects/:team/:id/reconcile", func(c *gin.Context) {
+		actor, ok := requireRoot(c.Request.Context(), deps, c)
+		if !ok {
+			return
+		}
+		var body media.Reconciliation
+		if !mediaBody(c, &body) {
+			return
+		}
+		p, e := s.Reconcile(c.Request.Context(), c.Param("team"), c.Param("id"), body)
+		if e != nil {
+			mediaError(c, deps, e)
+			return
+		}
+		writeAudit(c.Request.Context(), deps, actor, "media.project.reconcile", "media_project", p.ID, gin.H{"teamId": p.TeamID, "shot": body.Shot, "outcome": body.Outcome, "reason": body.Reason})
+		c.JSON(200, okData(p))
+	})
+}
+func mediaBody(c *gin.Context, out any) bool {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 256<<10)
+	d := json.NewDecoder(c.Request.Body)
+	d.DisallowUnknownFields()
+	if e := d.Decode(out); e != nil {
+		c.JSON(400, fail(400, "视频参数不合法"))
+		return false
+	}
+	if d.Decode(new(any)) != io.EOF {
+		c.JSON(400, fail(400, "视频参数不合法"))
+		return false
+	}
+	return true
+}
+
+func publicMediaModels(models []media.Model) []gin.H {
+	out := make([]gin.H, 0, len(models))
+	for _, m := range models {
+		resolutions := append([]string{}, m.Resolutions...)
+		durations := append([]int{}, m.Durations...)
+		out = append(out, gin.H{"id": m.ID, "name": m.Name, "kind": m.Kind, "resolutions": resolutions, "durations": durations, "priceMicro": m.PriceMicro, "priceVersion": m.PriceVersion})
+	}
+	return out
+}

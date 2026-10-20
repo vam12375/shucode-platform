@@ -11,6 +11,7 @@ specs/
 design/
 docs/
 server/bin/
+server/data/
 .playwright/
 output/
 # 本地 agent 会话与计划产物,不入库。

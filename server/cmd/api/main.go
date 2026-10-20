@@ -205,6 +205,8 @@ func main() {
 
 	runCtx, stopBackground := context.WithCancel(ctx)
 	defer stopBackground()
+	deps.Media = apiapp.NewMediaService(deps)
+	go deps.Media.Run(runCtx)
 	apiapp.StartAlertEvaluator(runCtx, deps, time.Minute)
 	apiapp.StartReservationSweeper(runCtx, deps, time.Minute)
 	apiapp.StartLoginFlowSweeper(runCtx, deps, 10*time.Minute)

@@ -12,6 +12,7 @@ import (
 	"github.com/vam12375/shucode-platform/server/internal/contracts"
 	"github.com/vam12375/shucode-platform/server/internal/crypto"
 	"github.com/vam12375/shucode-platform/server/internal/events"
+	"github.com/vam12375/shucode-platform/server/internal/media"
 	"github.com/vam12375/shucode-platform/server/internal/netutil"
 	"github.com/vam12375/shucode-platform/server/internal/ratelimit"
 	"github.com/vam12375/shucode-platform/server/internal/store"
@@ -19,6 +20,7 @@ import (
 
 // context.ts 的镜像:api 进程的装配依赖。
 type Deps struct {
+	Media                *media.Service
 	Store                store.PlatformStore
 	Env                  *Env
 	Now                  func() time.Time
