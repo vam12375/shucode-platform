@@ -1,0 +1,38 @@
+# 复制到服务器 /etc/cloudflared/config.yml，替换 <TUNNEL_ID>。
+# 前提：`cloudflared tunnel create <名称>` 生成 <TUNNEL_ID>.json，
+#      且三个 *-global 主机名已通过 `cloudflared tunnel route dns` 指向该隧道。
+# 合规边界：仅用于已备案域名的境外加速，或备案完成前的临时验证；
+#          不得用于规避 ICP 备案。未备案域名指向大陆服务器仍会被腾讯云拦截。
+#
+# 为什么用独立子域：国内三域保持灰云直连，国内用户不绕道 Cloudflare；
+# 境外用户走 *-global -> Cloudflare 边缘 -> 本机出向隧道 -> Nginx -> 应用。
+# Host Header 指回国内域名，保证 Nginx SNI 路由、CONSOLE_ALLOWED_HOSTS 和同源 CSRF 校验通过。
+#
+# 隧道传输优先 http2；若网络只允许 UDP，可改为 quic 并实测。
+
+tunnel: <TUNNEL_ID>
+credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
+protocol: http2
+
+ingress:
+  - hostname: console-global.faction168.online
+    service: https://127.0.0.1:443
+    originRequest:
+      originServerName: console.faction168.online
+      httpHostHeader: console.faction168.online
+
+  - hostname: api-global.faction168.online
+    service: https://127.0.0.1:443
+    originRequest:
+      originServerName: api.faction168.online
+      httpHostHeader: api.faction168.online
+
+  # 网关是长流式响应，Cloudflare 代理存在 100 秒 idle/524 风险；
+  # 若首 token 较慢，先不要给 gw-global 建 DNS，改用 EdgeOne/GAAP。
+  - hostname: gw-global.faction168.online
+    service: https://127.0.0.1:443
+    originRequest:
+      originServerName: gw.faction168.online
+      httpHostHeader: gw.faction168.online
+
+  - service: http_status:404

@@ -9,6 +9,15 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.26.4] - 2026-10-19
+
+### 安全（源站 IP 脱敏与边缘加固）
+
+- `deploy/nginx/README.md` 与安全评审文档不再包含真实源站 IP，统一以 `<源站公网IP>` 占位；`www` 灰云直指源站为实测泄漏面，列入清查。
+- `deploy/nginx/faction168.online.conf`、`faction168.online-http.conf`：新增 HTTP/HTTPS `default_server` 拒绝（444 立即断开 / `ssl_reject_handshake`），直连源站 IP 或陌生 SNI 的探测拿不到证书与跳转指纹；ACME 续期按 Host 命中正式站点不受影响。
+- README 新增 §10「隐藏源站 IP 检查单」：源站 IP 隐藏只能由代理层（橙云）承担，含 DNS 面审计命令、gw 灰云的取舍、git 历史泄漏处置与轮换建议。
+- 新增 `deploy/nginx/gzip.conf`、`deploy/cloudflare/tunnel-config.example.yml` 与 `deploy/sysctl/99-shucode-network.conf`：console/api 文本压缩（SSE 保持不压缩）、境外加速隧道示例与 BBR/fq 网络调优基线。
+
 ## [0.26.3] - 2026-10-19
 
 ### 工具
