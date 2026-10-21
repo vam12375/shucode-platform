@@ -87,6 +87,46 @@ const SEEDANCE_MODELS = [
   },
 ] as const;
 
+// Seedream 图片模型：平台固定单输入图、2K 输出、单张生成。
+// pro 走「单图生成 >261 万像素」0.60 元/张；输入首张免费，其余模型按官方固定价。
+const SEEDREAM_MODELS = [
+  {
+    id: "seedream-5.0-pro",
+    name: "Seedream 5.0 Pro",
+    upstreamModel: "doubao-seedream-5-0-pro-260628",
+    costCredits: "0.6",
+    priceCredits: "0.858",
+  },
+  {
+    id: "seedream-5.0-flash",
+    name: "Seedream 5.0 Flash",
+    upstreamModel: "doubao-seedream-5-0-flash-260915",
+    costCredits: "0.12",
+    priceCredits: "0.172",
+  },
+  {
+    id: "seedream-5.0-lite",
+    name: "Seedream 5.0 Lite",
+    upstreamModel: "doubao-seedream-5-0-lite-260128",
+    costCredits: "0.22",
+    priceCredits: "0.315",
+  },
+  {
+    id: "seedream-4.5",
+    name: "Seedream 4.5",
+    upstreamModel: "doubao-seedream-4-5-251128",
+    costCredits: "0.25",
+    priceCredits: "0.358",
+  },
+  {
+    id: "seedream-4.0",
+    name: "Seedream 4.0",
+    upstreamModel: "doubao-seedream-4-0-250828",
+    costCredits: "0.2",
+    priceCredits: "0.286",
+  },
+] as const;
+
 interface MediaModel {
   id: string;
   name: string;
@@ -105,6 +145,7 @@ interface MediaModel {
 interface ProviderOption {
   id: string;
   name: string;
+  baseUrl: string;
   enabled: boolean;
 }
 
@@ -377,12 +418,16 @@ export function MediaModelsPage() {
     setError("");
   };
 
+  const preferredProvider = (): string => {
+    const ark = providers.find((provider) =>
+      provider.baseUrl?.includes("ark.cn-beijing.volces.com"),
+    );
+    return ark?.id ?? providers.find((provider) => provider.enabled)?.id ?? providers[0]?.id ?? "";
+  };
+
   const addSeedanceModels = (): void => {
-    const fallbackProvider =
-      providers.find((provider) => provider.enabled)?.id ??
-      providers[0]?.id ??
-      "";
-    if (!fallbackProvider) {
+    const providerId = preferredProvider();
+    if (!providerId) {
       toastErr("请先在「上游供应商」创建并配置 Ark API 前缀", "缺少供应商");
       return;
     }
@@ -402,7 +447,7 @@ export function MediaModelsPage() {
         id: preset.id,
         name: preset.name,
         kind: "video" as const,
-        providerId: fallbackProvider,
+        providerId,
         upstreamModel: preset.upstreamModel,
         resolutions: [preset.resolution],
         durations: [...SEEDANCE_DURATIONS],
@@ -417,6 +462,52 @@ export function MediaModelsPage() {
     toastOk(
       `已加入 ${additions.length} 个条目，请确认供应商；成本按官方价、售价按约 30% 毛利预填`,
       "已加入 Seedance 2.0 系列",
+    );
+    requestAnimationFrame(() => {
+      gridRef.current?.lastElementChild?.scrollIntoView({
+        block: "nearest",
+        behavior: "smooth",
+      });
+    });
+  };
+
+  const addSeedreamModels = (): void => {
+    const providerId = preferredProvider();
+    if (!providerId) {
+      toastErr("请先在「上游供应商」创建并配置 Ark API 前缀", "缺少供应商");
+      return;
+    }
+    const existing = new Set(
+      drafts.map((draft) => draft.id.trim() || draft.upstreamModel.trim()),
+    );
+    const additions = SEEDREAM_MODELS.filter(
+      (preset) => !existing.has(preset.id),
+    );
+    if (additions.length === 0) {
+      toastErr("Seedream 条目都已在目录中，请直接编辑现有条目", "无需重复添加");
+      return;
+    }
+    setDrafts((previous) => [
+      ...previous,
+      ...additions.map((preset) => ({
+        id: preset.id,
+        name: preset.name,
+        kind: "image" as const,
+        providerId,
+        upstreamModel: preset.upstreamModel,
+        resolutions: [],
+        durations: [],
+        costCredits: preset.costCredits,
+        generateAudio: false,
+        priceCredits: preset.priceCredits,
+        priceVersion: "ark-2026-10-20-margin30",
+      })),
+    ]);
+    setDirty(true);
+    setError("");
+    toastOk(
+      `已加入 ${additions.length} 个图片模型，成本按官方价、售价按约 30% 毛利预填`,
+      "已加入 Seedream",
     );
     requestAnimationFrame(() => {
       gridRef.current?.lastElementChild?.scrollIntoView({
@@ -598,6 +689,19 @@ export function MediaModelsPage() {
               }
             >
               Seedance 2.0 系列
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              type="button"
+              onClick={addSeedreamModels}
+              disabled={loading || busy || providers.length === 0}
+              title={
+                providers.length === 0
+                  ? "请先创建上游供应商"
+                  : "加入 Seedream 5.0 Pro / Flash / Lite / 4.5 / 4.0 图片模型"
+              }
+            >
+              Seedream 图像
             </button>
             <button
               className="btn btn-ghost btn-sm"

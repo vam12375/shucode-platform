@@ -51,6 +51,7 @@ Node 版本以 `mise.toml` 为准（Node 24 / pnpm 10）；Go 版本 1.26，本�
 - 有行为改动必须执行 `pnpm typecheck`、`pnpm test` 与 `make -C server lint test`，报告真实结果；不将已有失败写成通过。
 - 修复 bug 用中文注释说明根因与修复依据；发现设计缺陷先与用户对齐，不不断增加兜底分支掩盖问题。
 - 凭据（平台 token、上游 key、口令）不进日志、不进配置明文。
+- 设计思路、验收记录、价格/成本等敏感说明统一放 `docs/`；`docs/`、`specs/`、`design/` 是本地忽略目录，禁止提交入库或复制到公开 README、代码注释和提交信息。代码包内只保留不含敏感信息的测试夹具 README。
 
 ## Console UI
 
