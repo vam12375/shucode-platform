@@ -191,13 +191,9 @@ func registerUserConfigRoutes(router *gin.Engine, deps *Deps) {
 				continue
 			}
 			input.Models = append(input.Models, userConfigModel{
-				ModelID:                model.ModelID,
-				InputPricePerMtok:      model.InputPricePerMtok,
-				OutputPricePerMtok:     model.OutputPricePerMtok,
-				CacheReadPricePerMtok:  model.CacheReadPricePerMtok,
-				CacheWritePricePerMtok: model.CacheWritePricePerMtok,
-				ConfigMode:             model.ConfigMode,
-				Config:                 canonicalModelConfig(model.ModelConfig),
+				ModelID:    model.ModelID,
+				ConfigMode: model.ConfigMode,
+				Config:     canonicalModelConfig(model.ModelConfig),
 			})
 		}
 		if len(input.Models) > 0 {

@@ -66,6 +66,8 @@ export function ReleasesPage() {
     setContent(await file.text());
   };
 
+  const activeRevision = releases.find((release) => release.isActive)?.revision;
+
   return (
     <div>
       <header className="page-head">
@@ -73,7 +75,9 @@ export function ReleasesPage() {
           <p className="eyebrow">下发 / 版本</p>
           <h1>内置配置发布</h1>
         </div>
-        <span className="readout">生效版本 · {releases.find((r) => r.isActive)?.revision ?? "—"}</span>
+        <span className="readout">
+          内置配置版本 · {activeRevision == null ? "—" : `R${activeRevision}`}
+        </span>
       </header>
       <p className="readout" style={{ margin: 0, marginBottom: 18 }}>
         发布客户端内置 Provider/模型规则（Built-in Release）；客户端约 1 小时内拉取生效。内容必须是客户端可解析的完整配置，推荐以

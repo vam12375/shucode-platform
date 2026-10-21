@@ -14,7 +14,12 @@ COPY --chown=node:node packages/contracts/package.json packages/contracts/packag
 RUN pnpm install --frozen-lockfile
 
 # 单独构建控制台，产物（apps/console/dist）并入 api 镜像。
+# 版本信息由 CI 传入；本地构建未传时控制台回退到生效的 Release revision。
 FROM base AS console-build
+ARG APP_VERSION=""
+ARG APP_SUBJECT=""
+ENV VITE_APP_VERSION=$APP_VERSION
+ENV VITE_APP_SUBJECT=$APP_SUBJECT
 COPY --chown=node:node . .
 RUN pnpm --filter @shucode-platform/console build
 

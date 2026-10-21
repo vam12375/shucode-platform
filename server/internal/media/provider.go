@@ -101,3 +101,49 @@ func (p Provider) Query(ctx context.Context, id string) (ProviderResult, error) 
 	e := p.request(ctx, "GET", "/contents/generations/tasks/"+id, nil, &out)
 	return out, e
 }
+
+func (p Provider) CanvasImage(ctx context.Context, m Model, r CanvasRequest, images []string) (string, error) {
+	var out struct {
+		Data []struct {
+			URL string `json:"url"`
+		} `json:"data"`
+	}
+	size, prompt := canvasImageParameters(m, r)
+	body := map[string]any{"model": m.UpstreamModel, "prompt": prompt, "size": size, "response_format": "url", "watermark": true}
+	if len(images) == 1 {
+		body["image"] = images[0]
+	} else if len(images) > 1 {
+		body["image"] = images
+	}
+	if e := p.request(ctx, "POST", "/images/generations", body, &out); e != nil {
+		return "", e
+	}
+	if len(out.Data) != 1 || !ValidURL(out.Data[0].URL) {
+		return "", fmt.Errorf("provider_image_missing")
+	}
+	return out.Data[0].URL, nil
+}
+func (p Provider) CanvasVideo(ctx context.Context, m Model, r CanvasRequest, images []string) (string, error) {
+	content := []any{map[string]any{"type": "text", "text": r.Prompt}}
+	for i, image := range images {
+		role := "first_frame"
+		if i == 1 {
+			role = "last_frame"
+		}
+		content = append(content, map[string]any{"type": "image_url", "image_url": map[string]string{"url": image}, "role": role})
+	}
+	body := map[string]any{"model": m.UpstreamModel, "content": content, "resolution": r.Resolution, "ratio": r.AspectRatio, "duration": r.Duration, "watermark": true}
+	if m.GenerateAudio {
+		body["generate_audio"] = true
+	}
+	var out struct {
+		ID string `json:"id"`
+	}
+	if e := p.request(ctx, "POST", "/contents/generations/tasks", body, &out); e != nil {
+		return "", e
+	}
+	if out.ID == "" {
+		return "", fmt.Errorf("provider_task_missing")
+	}
+	return out.ID, nil
+}

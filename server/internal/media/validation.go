@@ -42,7 +42,7 @@ func ValidateModels(models []Model) error {
 			}
 		}
 		for _, r := range m.Resolutions {
-			if r != "480p" && r != "720p" && r != "1080p" && r != "4k" {
+			if (m.Kind == "image" && !slices.Contains(imageTiers(m), r)) || (m.Kind == "video" && r != "480p" && r != "720p" && r != "1080p" && r != "4k") {
 				return ErrInvalid
 			}
 		}

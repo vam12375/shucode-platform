@@ -3,6 +3,7 @@ package apiapp
 import (
 	"context"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,6 +77,11 @@ func TestUserConfigModelPolicyAndEmptyCatalog(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("user-config: %d %s", rec.Code, rec.Body.String())
 	}
+	for _, secretField := range []string{"inputPricePerMtok", "outputPricePerMtok", "cacheReadPricePerMtok", "cacheWritePricePerMtok", "costMicro", "priceMicro", "priceVersion"} {
+		if strings.Contains(rec.Body.String(), secretField) {
+			t.Fatalf("客户端 user-config 不得包含价格字段 %q: %s", secretField, rec.Body.String())
+		}
+	}
 	etag := rec.Header().Get("etag")
 	personal := dataOf(t, rec)["envelope"].(map[string]any)["personalConfig"].(map[string]any)
 	rule := personal["providerConfigRules"].(map[string]any)["providerRules"].([]any)[0].(map[string]any)
@@ -100,6 +106,29 @@ func TestUserConfigModelPolicyAndEmptyCatalog(t *testing.T) {
 	}
 	if _, exists := personal["defaultModelSelection"]; exists {
 		t.Fatalf("无授权模型不得下发默认选择: %s", rec.Body.String())
+	}
+}
+
+func TestUserConfigSyncIDDoesNotEncodeModelPrices(t *testing.T) {
+	f, token, _ := newUserConfigPolicyFixture(t)
+	first := requestUserConfig(f, token, "")
+	if first.Code != 200 {
+		t.Fatalf("首次 user-config: %d %s", first.Code, first.Body.String())
+	}
+	firstEnvelope := dataOf(t, first)["envelope"].(map[string]any)
+	firstSyncID := firstEnvelope["syncId"]
+	if _, err := f.store.UpsertModel(context.Background(), store.UpsertModelInput{
+		ModelID: "model-a", DisplayName: "model-a", InputPricePerMtok: "987.654321", OutputPricePerMtok: "456.123456",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	second := requestUserConfig(f, token, "")
+	if second.Code != 200 {
+		t.Fatalf("更新价格后 user-config: %d %s", second.Code, second.Body.String())
+	}
+	secondEnvelope := dataOf(t, second)["envelope"].(map[string]any)
+	if secondEnvelope["syncId"] != firstSyncID {
+		t.Fatalf("客户端同步标识不得编码未下发的价格: %v != %v", secondEnvelope["syncId"], firstSyncID)
 	}
 }
 

@@ -82,6 +82,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		deps.Media = NewMediaService(deps)
 	}
 	s := deps.Media
+	registerCanvasGenerationRoutes(router, deps)
 	router.GET("/api/v1/media/blobs/:team/:id", func(c *gin.Context) {
 		team, id := c.Param("team"), c.Param("id")
 		if !s.Blobs.Verify(team, id, c.Query("expires"), c.Query("signature")) {
@@ -141,15 +142,20 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		projects := []media.ProjectView{}
+		generations := []media.ProjectView{}
 		for _, p := range all {
 			if p.TeamID == m.Team.ID {
-				projects = append(projects, p.View())
+				if p.Canvas != nil {
+					generations = append(generations, p.View())
+				} else {
+					projects = append(projects, p.View())
+				}
 			}
 		}
 		quota, _ := credits.ParseCreditsToMicro(m.Team.QuotaCredits)
 		used, _ := credits.ParseCreditsToMicro(m.Team.UsedCredits)
 		reserved, _ := credits.ParseCreditsToMicro(m.Team.ReservedCredits)
-		c.JSON(200, okData(gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": max(int64(0), quota-used-reserved), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "assets": assets, "projects": projects, "compositionAvailable": media.CompositionAvailable()}))
+		c.JSON(200, okData(gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": max(int64(0), quota-used-reserved), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "assets": assets, "projects": projects, "generations": generations, "compositionAvailable": media.CompositionAvailable()}))
 	})
 	router.POST("/api/v1/media/assets", func(c *gin.Context) {
 		_, m, ok := mediaIdentity(c, deps)
@@ -366,8 +372,12 @@ func publicMediaModels(models []media.Model) []gin.H {
 	out := make([]gin.H, 0, len(models))
 	for _, m := range models {
 		resolutions := append([]string{}, m.Resolutions...)
+		if m.Kind == "image" {
+			resolutions = media.ImageResolutions(m)
+		}
 		durations := append([]int{}, m.Durations...)
-		out = append(out, gin.H{"id": m.ID, "name": m.Name, "kind": m.Kind, "resolutions": resolutions, "durations": durations, "costMicro": m.CostMicro, "generateAudio": m.GenerateAudio, "priceMicro": m.PriceMicro, "priceVersion": m.PriceVersion})
+		// 用户消耗用于客户端展示；供应商成本与内部价格版本只用于服务端计费及 root 控制台。
+		out = append(out, gin.H{"id": m.ID, "name": m.Name, "kind": m.Kind, "resolutions": resolutions, "maxReferenceImages": media.MaxReferenceImages(m), "durations": durations, "generateAudio": m.GenerateAudio, "priceMicro": m.PriceMicro})
 	}
 	return out
 }

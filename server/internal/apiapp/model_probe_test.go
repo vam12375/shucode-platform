@@ -76,7 +76,7 @@ func TestModelProbeStreamsFirstTokenForRoot(t *testing.T) {
 		t.Fatalf("探测体不符: %v", sent)
 	}
 
-	// 普通用户目录不再下发售价。
+	// 普通用户目录不再下发模型消耗。
 	listRec := f.do("GET", "/console/api/models", f.memberCookie, "")
 	rows := dataOf(t, listRec)["models"].([]any)
 	if len(rows) != 1 {
@@ -84,7 +84,7 @@ func TestModelProbeStreamsFirstTokenForRoot(t *testing.T) {
 	}
 	row := rows[0].(map[string]any)
 	if _, exists := row["inputPricePerMtok"]; exists {
-		t.Fatalf("普通用户不应收到售价: %v", row)
+		t.Fatalf("普通用户不应收到模型消耗: %v", row)
 	}
 	if row["displayName"] != "Probe Model" {
 		t.Fatalf("模型展示字段缺失: %v", row)

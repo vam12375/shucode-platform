@@ -21,6 +21,15 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			_, e := s.workerUpdate(ctx, p, func(v *Project) { v.Status = "cancelled" })
 			return e
 		}
+		if p.Canvas != nil {
+			_, e := s.workerUpdate(ctx, p, func(v *Project) {
+				v.Status = "completed"
+				if len(v.Shots) > 0 {
+					v.OutputAssetID = v.Shots[0].OutputAssetID
+				}
+			})
+			return e
+		}
 		return s.compose(ctx, p)
 	}
 	shot := p.Shots[index]
@@ -58,6 +67,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		}
 		_, e := s.workerUpdate(ctx, p, func(v *Project) {
 			v.Status = "cancelled"
+			v.Shots[index].ReleasedMicro += v.Shots[index].ReservedMicro
 			v.Shots[index].ReservationID = ""
 			v.Shots[index].ReservedMicro = 0
 		})
@@ -72,7 +82,13 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		return e
 	}
 	if shot.Status == "failed" {
-		_, e := s.workerUpdate(ctx, p, func(v *Project) { v.Status = "failed"; v.Error = shot.Error })
+		_, e := s.workerUpdate(ctx, p, func(v *Project) {
+			v.Status = "failed"
+			if v.CancelRequested {
+				v.Status = "cancelled"
+			}
+			v.Error = shot.Error
+		})
 		return e
 	}
 	kind := "video"
@@ -84,6 +100,10 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	if shot.Stage == "image" && shot.ReservationID != "" {
 		kind = "image"
 		modelID = p.Brief.ImageModel
+	}
+	if p.Canvas != nil {
+		kind = p.Canvas.Kind
+		modelID = p.Canvas.ModelID
 	}
 	m, e := FindModel(p.Models, modelID, kind)
 	if e != nil {
@@ -102,6 +122,10 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			ss.Stage = ""
 			if shot.Status == "image_saved" {
 				ss.Status = "image_ready"
+				if p.Canvas != nil {
+					ss.OutputAssetID = ss.ImageAssetID
+					ss.Status = "succeeded"
+				}
 			} else {
 				ss.Status = "succeeded"
 			}
@@ -157,6 +181,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			if update(func(v *Shot) {
 				v.Status = "failed"
 				v.Error = "provider_" + result.Status
+				v.ReleasedMicro += v.ReservedMicro
 				v.ReservationID = ""
 				v.ReservedMicro = 0
 				v.Stage = ""
@@ -202,7 +227,13 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		} else if r == store.ReserveDeniedInactive {
 			reason = "team_inactive"
 		}
-		if update(func(v *Shot) { v.Status = "failed"; v.Error = reason; v.ReservationID = "" }) == nil {
+		if update(func(v *Shot) {
+			v.Status = "failed"
+			v.Error = reason
+			v.ReservationID = ""
+			v.ReservedMicro = 0
+			v.Stage = ""
+		}) == nil {
 			return ErrConflict
 		}
 		return nil
@@ -224,6 +255,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		_, e = s.workerUpdate(ctx, p, func(v *Project) {
 			v.Status = "cancelled"
 			v.Shots[index].Status = "pending"
+			v.Shots[index].ReleasedMicro += v.Shots[index].ReservedMicro
 			v.Shots[index].ReservationID = ""
 			v.Shots[index].ReservedMicro = 0
 		})
@@ -233,20 +265,45 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	if shot.ImageAssetID != "" {
 		imageID = shot.ImageAssetID
 	}
-	image := s.Blobs.URL(p.TeamID, imageID)
+	image := ""
+	if imageID != "" {
+		image = s.Blobs.URL(p.TeamID, imageID)
+	}
+	if p.Canvas != nil && len(p.Canvas.AssetIDs) > 0 {
+		image = s.Blobs.URL(p.TeamID, p.Canvas.AssetIDs[0])
+	}
 	if kind == "image" {
-		url, e := provider.Image(ctx, m, shot.Plan.ImagePrompt, image)
+		var url string
+		var e error
+		if p.Canvas != nil {
+			images := []string{}
+			for _, id := range p.Canvas.AssetIDs {
+				images = append(images, s.Blobs.URL(p.TeamID, id))
+			}
+			url, e = provider.CanvasImage(ctx, m, *p.Canvas, images)
+		} else {
+			url, e = provider.Image(ctx, m, shot.Plan.ImagePrompt, image)
+		}
 		if e != nil {
-			return s.unknown(ctx, p, index)
+			return s.submissionFailure(ctx, p, index, shot, e)
 		}
 		if update(func(v *Shot) { v.ResultURL = url; v.Status = "image_generated" }) == nil {
 			return ErrConflict
 		}
 		return nil
 	}
-	id, e := provider.Submit(ctx, m, p.Brief, shot.Plan, image)
+	var id string
+	if p.Canvas != nil {
+		images := []string{}
+		for _, id := range p.Canvas.AssetIDs {
+			images = append(images, s.Blobs.URL(p.TeamID, id))
+		}
+		id, e = provider.CanvasVideo(ctx, m, *p.Canvas, images)
+	} else {
+		id, e = provider.Submit(ctx, m, p.Brief, shot.Plan, image)
+	}
 	if e != nil {
-		return s.unknown(ctx, p, index)
+		return s.submissionFailure(ctx, p, index, shot, e)
 	}
 	if update(func(v *Shot) { v.VideoTaskID = id; v.Status = "video_running" }) == nil {
 		return ErrConflict
@@ -260,4 +317,25 @@ func (s *Service) unknown(ctx context.Context, p *Project, i int) error {
 		v.Shots[i].Status = "reconciliation_required"
 	})
 	return e
+}
+
+// 上游明确拒绝才释放；超时与 5xx 无法证明未受理，必须保留冻结进入核对。
+func (s *Service) submissionFailure(ctx context.Context, p *Project, index int, shot Shot, cause error) error {
+	switch cause.Error() {
+	case "provider_http_400", "provider_http_401", "provider_http_403", "provider_http_404", "provider_http_413", "provider_http_422", "provider_http_429":
+		if e := s.Repo.Store.ReleaseReservationByID(ctx, shot.ReservationID, time.Now()); e != nil {
+			return e
+		}
+		_, e := s.workerUpdate(ctx, p, func(v *Project) {
+			ss := &v.Shots[index]
+			ss.Status = "failed"
+			ss.Error = "provider_rejected"
+			ss.ReleasedMicro += ss.ReservedMicro
+			ss.ReservedMicro = 0
+			ss.ReservationID = ""
+			ss.Stage = ""
+		})
+		return e
+	}
+	return s.unknown(ctx, p, index)
 }

@@ -59,6 +59,7 @@ func (s *Service) Reconcile(ctx context.Context, team, id string, r Reconciliati
 		switch r.Outcome {
 		case "not_accepted":
 			ss.Status = "failed"
+			ss.ReleasedMicro += ss.ReservedMicro
 			ss.ReservationID = ""
 			ss.ReservedMicro = 0
 			ss.Stage = ""

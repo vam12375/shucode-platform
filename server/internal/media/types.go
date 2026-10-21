@@ -90,46 +90,51 @@ type Shot struct {
 	ReservationID string   `json:"reservationId,omitempty"`
 	Stage         string   `json:"stage,omitempty"`
 	ReservedMicro int64    `json:"reservedMicro,omitempty"`
+	ReleasedMicro int64    `json:"releasedMicro,omitempty"`
 }
 type Project struct {
-	ID              string    `json:"id"`
-	Version         int64     `json:"version"`
-	Status          string    `json:"status"`
-	Brief           Brief     `json:"brief"`
-	CreatedAt       time.Time `json:"createdAt"`
-	UpdatedAt       time.Time `json:"updatedAt"`
-	Analysis        *Analysis `json:"analysis,omitempty"`
-	Plan            *Plan     `json:"plan,omitempty"`
-	Shots           []Shot    `json:"shots"`
-	QuoteMicro      int64     `json:"quoteMicro"`
-	ChargedMicro    int64     `json:"chargedMicro"`
-	OutputAssetID   string    `json:"outputAssetId,omitempty"`
-	Error           string    `json:"error,omitempty"`
-	CancelRequested bool      `json:"cancelRequested"`
-	TeamID          string    `json:"teamId"`
-	UserID          string    `json:"userId"`
-	DeviceID        string    `json:"deviceId"`
-	Models          []Model   `json:"models"`
-	LeaseOwner      string    `json:"leaseOwner,omitempty"`
-	LeaseUntil      time.Time `json:"leaseUntil"`
+	Canvas          *CanvasRequest `json:"canvas,omitempty"`
+	ID              string         `json:"id"`
+	Version         int64          `json:"version"`
+	Status          string         `json:"status"`
+	Brief           Brief          `json:"brief"`
+	CreatedAt       time.Time      `json:"createdAt"`
+	UpdatedAt       time.Time      `json:"updatedAt"`
+	Analysis        *Analysis      `json:"analysis,omitempty"`
+	Plan            *Plan          `json:"plan,omitempty"`
+	Shots           []Shot         `json:"shots"`
+	QuoteMicro      int64          `json:"quoteMicro"`
+	ChargedMicro    int64          `json:"chargedMicro"`
+	OutputAssetID   string         `json:"outputAssetId,omitempty"`
+	Error           string         `json:"error,omitempty"`
+	CancelRequested bool           `json:"cancelRequested"`
+	TeamID          string         `json:"teamId"`
+	UserID          string         `json:"userId"`
+	DeviceID        string         `json:"deviceId"`
+	Models          []Model        `json:"models"`
+	LeaseOwner      string         `json:"leaseOwner,omitempty"`
+	LeaseUntil      time.Time      `json:"leaseUntil"`
 }
 
 // 用户投影不携带供应商路由、账本预留或 worker lease；这些字段只由平台状态机写入。
 type ProjectView struct {
-	ID              string     `json:"id"`
-	Version         int64      `json:"version"`
-	Status          string     `json:"status"`
-	Brief           Brief      `json:"brief"`
-	CreatedAt       time.Time  `json:"createdAt"`
-	UpdatedAt       time.Time  `json:"updatedAt"`
-	Analysis        *Analysis  `json:"analysis,omitempty"`
-	Plan            *Plan      `json:"plan,omitempty"`
-	Shots           []ShotView `json:"shots"`
-	QuoteMicro      int64      `json:"quoteMicro"`
-	ChargedMicro    int64      `json:"chargedMicro"`
-	OutputAssetID   string     `json:"outputAssetId,omitempty"`
-	Error           string     `json:"error,omitempty"`
-	CancelRequested bool       `json:"cancelRequested"`
+	Canvas          *CanvasRequest `json:"canvas,omitempty"`
+	ReservedMicro   int64          `json:"reservedMicro"`
+	ReleasedMicro   int64          `json:"releasedMicro"`
+	ID              string         `json:"id"`
+	Version         int64          `json:"version"`
+	Status          string         `json:"status"`
+	Brief           Brief          `json:"brief"`
+	CreatedAt       time.Time      `json:"createdAt"`
+	UpdatedAt       time.Time      `json:"updatedAt"`
+	Analysis        *Analysis      `json:"analysis,omitempty"`
+	Plan            *Plan          `json:"plan,omitempty"`
+	Shots           []ShotView     `json:"shots"`
+	QuoteMicro      int64          `json:"quoteMicro"`
+	ChargedMicro    int64          `json:"chargedMicro"`
+	OutputAssetID   string         `json:"outputAssetId,omitempty"`
+	Error           string         `json:"error,omitempty"`
+	CancelRequested bool           `json:"cancelRequested"`
 }
 type ShotView struct {
 	Plan          ShotPlan `json:"plan"`
@@ -144,8 +149,11 @@ type ShotView struct {
 
 func (p Project) View() ProjectView {
 	shots := make([]ShotView, 0, len(p.Shots))
+	var reserved, released int64
 	for _, s := range p.Shots {
+		reserved += s.ReservedMicro
+		released += s.ReleasedMicro
 		shots = append(shots, ShotView{Plan: s.Plan, Status: s.Status, Attempt: s.Attempt, ImageAssetID: s.ImageAssetID, OutputAssetID: s.OutputAssetID, Error: s.Error, ChargedMicro: s.ChargedMicro, QuoteMicro: s.QuoteMicro})
 	}
-	return ProjectView{ID: p.ID, Version: p.Version, Status: p.Status, Brief: p.Brief, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Analysis: p.Analysis, Plan: p.Plan, Shots: shots, QuoteMicro: p.QuoteMicro, ChargedMicro: p.ChargedMicro, OutputAssetID: p.OutputAssetID, Error: p.Error, CancelRequested: p.CancelRequested}
+	return ProjectView{Canvas: p.Canvas, ReservedMicro: reserved, ReleasedMicro: released, ID: p.ID, Version: p.Version, Status: p.Status, Brief: p.Brief, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Analysis: p.Analysis, Plan: p.Plan, Shots: shots, QuoteMicro: p.QuoteMicro, ChargedMicro: p.ChargedMicro, OutputAssetID: p.OutputAssetID, Error: p.Error, CancelRequested: p.CancelRequested}
 }

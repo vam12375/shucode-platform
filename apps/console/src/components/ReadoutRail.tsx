@@ -9,6 +9,7 @@ import {
 } from "../time.js";
 import { useCountUp } from "./Gauge.js";
 import { Select } from "./Select.js";
+import { appVersion, versionText } from "../version.js";
 
 interface UsageAggregate {
   requests: number;
@@ -261,7 +262,7 @@ export function ReadoutRail() {
         className="read"
         title={
           isRoot
-            ? undefined
+            ? versionText(appVersion) || undefined
             : team
               ? team.unlimited
                 ? "团队额度不限"
@@ -274,9 +275,7 @@ export function ReadoutRail() {
         </div>
         <div className="value">
           {isRoot
-            ? data?.revision == null
-              ? "—"
-              : `R${data.revision}`
+            ? appVersion.tag || (data?.revision == null ? "—" : `R${data.revision}`)
             : team
               ? team.unlimited
                 ? "不限"
@@ -294,9 +293,9 @@ export function ReadoutRail() {
           style={
             {
               "--w": isRoot
-                ? data?.revision == null
-                  ? "0%"
-                  : "100%"
+                ? appVersion.tag || data?.revision != null
+                  ? "100%"
+                  : "0%"
                 : team
                   ? balanceWidth
                   : "0%",
@@ -305,6 +304,11 @@ export function ReadoutRail() {
         >
           <i className={balanceLow ? "hot" : undefined} />
         </div>
+        {isRoot && appVersion.tag && appVersion.subject ? (
+          <div className="note" title={versionText(appVersion)}>
+            {appVersion.subject}
+          </div>
+        ) : null}
       </div>
     </header>
   );

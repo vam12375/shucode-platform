@@ -120,6 +120,28 @@ func TestTenantPlatformManagementIsRootOnly(t *testing.T) {
 	}
 }
 
+func TestOnlyRootModelDirectoryResponseContainsPricing(t *testing.T) {
+	f := newTenantFixture(t)
+	if _, err := f.store.UpsertModel(context.Background(), store.UpsertModelInput{
+		ModelID: "team-model", DisplayName: "Team model", InputPricePerMtok: "12.345678", OutputPricePerMtok: "67.890123",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	teamResponse := f.do("GET", "/console/api/models", f.adminCookie, "")
+	if teamResponse.Code != 200 {
+		t.Fatalf("团队管理员模型目录: %d %s", teamResponse.Code, teamResponse.Body.String())
+	}
+	for _, secretField := range []string{"inputPricePerMtok", "outputPricePerMtok", "cacheReadPricePerMtok", "cacheWritePricePerMtok", "offPeakMultiplier"} {
+		if strings.Contains(teamResponse.Body.String(), secretField) {
+			t.Fatalf("非 root 模型目录不得包含价格字段 %q: %s", secretField, teamResponse.Body.String())
+		}
+	}
+	rootResponse := f.do("GET", "/console/api/models?includeDisabled=1", f.rootCookie, "")
+	if rootResponse.Code != 200 || !strings.Contains(rootResponse.Body.String(), "inputPricePerMtok") {
+		t.Fatalf("root 模型目录需要保留受保护的价格字段: %d %s", rootResponse.Code, rootResponse.Body.String())
+	}
+}
+
 func TestTenantUsageAndExportsAreScopedAndRedacted(t *testing.T) {
 	f := newTenantFixture(t)
 	ctx := context.Background()

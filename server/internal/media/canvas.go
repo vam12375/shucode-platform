@@ -1,0 +1,113 @@
+package media
+
+import (
+	"context"
+	"fmt"
+	"github.com/google/uuid"
+	"github.com/vam12375/shucode-platform/server/internal/store"
+	"reflect"
+	"slices"
+	"strings"
+	"time"
+	"unicode/utf8"
+)
+
+type CanvasRequest struct {
+	Kind               string   `json:"kind"`
+	ModelID            string   `json:"modelId"`
+	Prompt             string   `json:"prompt"`
+	AssetIDs           []string `json:"assetIds"`
+	Resolution         string   `json:"resolution"`
+	AspectRatio        string   `json:"aspectRatio"`
+	Duration           int      `json:"duration"`
+	Count              int      `json:"count"`
+	ExpectedQuoteMicro int64    `json:"expectedQuoteMicro"`
+	BoardID            string   `json:"boardId"`
+	NodeID             string   `json:"nodeId"`
+	WorkspacePath      string   `json:"workspacePath"`
+	WorkspaceIdentity  string   `json:"workspaceIdentity,omitempty"`
+	RemoteSessionID    string   `json:"remoteSessionId,omitempty"`
+}
+
+func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id string, r CanvasRequest) (*Project, error) {
+	if _, err := uuid.Parse(id); err != nil {
+		return nil, ErrInvalid
+	}
+	if r.AssetIDs == nil {
+		r.AssetIDs = []string{}
+	}
+	existing, err := s.Repo.Get(ctx, team, id)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		if existing.UserID != user || !reflect.DeepEqual(existing.Canvas, &r) {
+			return nil, ErrConflict
+		}
+		return existing, nil
+	}
+	models, err := s.Repo.Models(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m, err := FindModel(models, r.ModelID, r.Kind)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(r.Prompt) == "" || utf8.RuneCountInString(r.Prompt) > 4000 || r.Count < 1 || r.Count > 4 || r.BoardID == "" || len(r.BoardID) > 200 || r.NodeID == "" || len(r.NodeID) > 200 || r.WorkspacePath == "" || len(r.WorkspacePath) > 4096 || len(r.WorkspaceIdentity) > 4096 || len(r.RemoteSessionID) > 200 {
+		return nil, ErrInvalid
+	}
+	if r.Kind == "image" {
+		if r.Duration != 0 || !slices.Contains(ImageResolutions(m), r.Resolution) || !slices.Contains(imageRatios, r.AspectRatio) || len(r.AssetIDs) > MaxReferenceImages(m) {
+			return nil, ErrInvalid
+		}
+	} else if r.Kind != "video" || !slices.Contains(videoRatios, r.AspectRatio) || !slices.Contains(m.Durations, r.Duration) || !slices.Contains(m.Resolutions, r.Resolution) || len(r.AssetIDs) > 2 {
+		return nil, ErrInvalid
+	}
+	policy, err := s.Repo.Store.GetTeamPolicy(ctx, team)
+	if err != nil {
+		return nil, err
+	}
+	if !store.TeamModelAllowed(policy, m.ID) {
+		return nil, fmt.Errorf("model_not_allowed")
+	}
+	assets, err := s.Repo.Assets(ctx, team)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	for _, id := range r.AssetIDs {
+		if seen[id] {
+			return nil, ErrInvalid
+		}
+		seen[id] = true
+		if !slices.ContainsFunc(assets, func(a Asset) bool { return a.ID == id && a.Kind == "image" }) {
+			return nil, ErrInvalid
+		}
+	}
+	unit := m.PriceMicro
+	if r.Kind == "video" {
+		unit *= int64(r.Duration)
+	}
+	total := unit * int64(r.Count)
+	if unit <= 0 || total > 1_000_000_000 || total != r.ExpectedQuoteMicro {
+		return nil, fmt.Errorf("generation_quote_changed")
+	}
+	shots := make([]Shot, r.Count)
+	for i := range shots {
+		shots[i] = Shot{Status: "pending", Attempt: 1, Plan: ShotPlan{Prompt: r.Prompt, ImagePrompt: r.Prompt, Duration: r.Duration}, QuoteMicro: unit}
+	}
+	now := time.Now().UTC()
+	p := &Project{ID: id, TeamID: team, UserID: user, DeviceID: device, Version: 1, Status: "queued", Canvas: &r, Models: []Model{m}, Shots: shots, QuoteMicro: total, CreatedAt: now, UpdatedAt: now}
+	if err = s.Repo.Index(ctx, ProjectKey(team, id)); err != nil {
+		return nil, err
+	}
+	if err = s.Repo.Save(ctx, p, nil); err != nil {
+		// 同 UUID 的并发受理只有 CAS 胜者拥有任务，败者读取它，不能重新创建另一份付费任务。
+		if err == ErrConflict {
+			return s.CreateCanvas(ctx, team, user, device, id, r)
+		}
+		return nil, err
+	}
+	return p, nil
+}

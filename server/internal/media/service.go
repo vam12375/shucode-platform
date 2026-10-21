@@ -174,7 +174,11 @@ func (s *Service) Action(ctx context.Context, team, id string, version int64, ac
 					remaining += shot.QuoteMicro - shot.ChargedMicro
 				}
 			}
-			if remaining+p.ChargedMicro > p.Brief.MaxCreditsMicro {
+			budget := p.Brief.MaxCreditsMicro
+			if p.Canvas != nil {
+				budget = p.QuoteMicro
+			}
+			if remaining+p.ChargedMicro > budget {
 				return fmt.Errorf("budget_exceeded")
 			}
 			p.Status = "queued"

@@ -106,11 +106,22 @@ func TestMediaAuthUploadTeamIsolationAndAdminBoundary(t *testing.T) {
 	if w = request("GET", "/console/api/media/projects", bytes.NewBuffer(nil), true, ""); w.Code == 200 {
 		t.Fatal("device cannot reconcile")
 	}
-	models := []media.Model{{ID: "v", Name: "video", Kind: "video"}, {ID: "other", Name: "other", Kind: "video"}}
+	models := []media.Model{
+		{ID: "v", Name: "video", Kind: "video", CostMicro: 123_000, PriceMicro: 456_000, PriceVersion: "secret-version"},
+		{ID: "other", Name: "other", Kind: "video", CostMicro: 789_000, PriceMicro: 987_000, PriceVersion: "secret-version"},
+	}
 	data, _ := json.Marshal(models)
 	f.store.SetConfigValue(context.Background(), media.ConfigKey, data)
 	f.store.SaveTeamPolicy(context.Background(), store.TeamPolicyRecord{TeamID: team, AllowedModelIDs: []string{"v"}})
 	w = request("GET", "/api/v1/media/overview", bytes.NewBuffer(nil), true, "")
+	for _, secretField := range []string{"costMicro", "priceVersion"} {
+		if strings.Contains(w.Body.String(), secretField) {
+			t.Fatalf("客户端媒体概览不得包含价格字段 %q: %s", secretField, w.Body.String())
+		}
+	}
+	if !strings.Contains(w.Body.String(), `"priceMicro":456000`) {
+		t.Fatalf("媒体概览需要下发用户消耗: %s", w.Body.String())
+	}
 	var overview struct {
 		Data struct {
 			Models []media.Model `json:"models"`

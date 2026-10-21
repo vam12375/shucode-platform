@@ -22,11 +22,7 @@ type gatewayAPI struct {
 }
 
 type userConfigModel struct {
-	ModelID                string
-	InputPricePerMtok      string
-	OutputPricePerMtok     string
-	CacheReadPricePerMtok  string
-	CacheWritePricePerMtok string
+	ModelID string
 	// ConfigMode = recommended 时不带 override，让客户端使用当前内置官方规则。
 	ConfigMode string
 	Config     []byte
@@ -167,10 +163,6 @@ func withPlatformAccessToken(envelope map[string]any, deviceToken string) map[st
 func computeUserConfigSyncID(input BuildUserConfigInput) string {
 	type modelStable struct {
 		ID         string `json:"id"`
-		In         string `json:"in"`
-		Out        string `json:"out"`
-		CR         string `json:"cr"`
-		CW         string `json:"cw"`
 		ConfigMode string `json:"configMode"`
 		Config     string `json:"config,omitempty"`
 	}
@@ -185,8 +177,7 @@ func computeUserConfigSyncID(input BuildUserConfigInput) string {
 			config = string(model.Config)
 		}
 		models = append(models, modelStable{
-			ID: model.ModelID, In: model.InputPricePerMtok, Out: model.OutputPricePerMtok,
-			CR: model.CacheReadPricePerMtok, CW: model.CacheWritePricePerMtok,
+			ID:         model.ModelID,
 			ConfigMode: mode, Config: config,
 		})
 	}

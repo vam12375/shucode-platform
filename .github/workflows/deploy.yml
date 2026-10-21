@@ -73,6 +73,18 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          # 控制台版本要显示当前提交的 tag；浅克隆拿不到 tags。
+          fetch-depth: 0
+      - name: 读取版本信息
+        id: version
+        run: |
+          TAG=$(git tag --points-at HEAD --sort=-v:refname | head -n1)
+          if [ -z "$TAG" ]; then
+            TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          fi
+          SUBJECT=$(git log -1 --pretty=%s)
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "subject=$SUBJECT" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
@@ -84,6 +96,9 @@ jobs:
           context: .
           target: ${{ matrix.target }}
           push: true
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.tag }}
+            APP_SUBJECT=${{ steps.version.outputs.subject }}
           tags: |
             ${{ env.IMAGE_PREFIX }}/${{ matrix.target }}:latest
             ${{ env.IMAGE_PREFIX }}/${{ matrix.target }}:sha-${{ github.sha }}

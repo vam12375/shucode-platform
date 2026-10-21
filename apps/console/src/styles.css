@@ -175,6 +175,17 @@ a:hover {
   letter-spacing: 0.08em;
 }
 
+.read .note {
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.25;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .mini {
   position: relative;
   height: 6px;
