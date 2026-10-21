@@ -24,9 +24,9 @@ func (s *tenantPolicyStore) ListTeamsForUser(ctx context.Context, userID string)
 	return s.PlatformStore.ListTeamsForUser(ctx, userID)
 }
 
-func (s *tenantPolicyStore) ReserveQuota(ctx context.Context, input store.ReserveQuotaInput) (store.ReserveResult, error) {
+func (s *tenantPolicyStore) AdmitUsage(ctx context.Context, input store.ReserveQuotaInput) (store.ReserveResult, error) {
 	s.reservedUser = input.UserID
-	return s.PlatformStore.ReserveQuota(ctx, input)
+	return s.PlatformStore.AdmitUsage(ctx, input)
 }
 
 func TestGatewayRequiresUnambiguousActiveMembership(t *testing.T) {
@@ -113,7 +113,7 @@ func TestGatewayTeamModelPolicyCannotBeBypassed(t *testing.T) {
 	}
 }
 
-func TestGatewayReservationIncludesMemberIdentity(t *testing.T) {
+func TestGatewayAdmissionIncludesMemberIdentity(t *testing.T) {
 	var wrapped *tenantPolicyStore
 	f := newGatewayFixture(t, func(_ *Env, f *gatewayFixture) {
 		wrapped = &tenantPolicyStore{PlatformStore: f.store}
@@ -134,7 +134,7 @@ func TestGatewayEnforcesStoredBudgetsBeforeUpstream(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			f := newGatewayFixture(t, nil)
 			ctx := context.Background()
-			budget := "0.000001"
+			budget := "0.000000"
 			if kind == "member monthly" {
 				if _, err := f.store.UpdateTeamMember(ctx, f.teamID, f.userID, store.TeamMemberPatch{MonthlyBudgetCredits: &budget}); err != nil {
 					t.Fatal(err)

@@ -241,6 +241,7 @@ const (
 )
 
 type ReserveQuotaInput struct {
+	Postpaid            bool
 	ReserveAllAvailable bool
 	RetainUntilSettled  bool
 	HeldByTask          bool
@@ -254,6 +255,7 @@ type ReserveQuotaInput struct {
 }
 
 type QuotaReservationRecord struct {
+	Postpaid           bool
 	RetainUntilSettled bool
 	HeldByTask         bool
 	UserID             string
@@ -278,23 +280,24 @@ type UsageChargeRates struct {
 
 // BackgroundGenerationJob keeps the reservation owner and billing snapshot until an upstream Responses task is terminal.
 type BackgroundGenerationJob struct {
-	ReservationID string           `json:"reservationId"`
-	ResponseID    string           `json:"responseId"`
-	ProviderID    string           `json:"providerId"`
-	BaseURL       string           `json:"baseUrl,omitempty"`
-	TeamID        string           `json:"teamId"`
-	UserID        string           `json:"userId"`
-	Record        UsageRecord      `json:"record"`
-	Rates         UsageChargeRates `json:"rates"`
-	Limited       bool             `json:"limited"`
-	NextPollAt    time.Time        `json:"nextPollAt"`
-	Attempts      int64            `json:"attempts"`
-	LastError     string           `json:"lastError,omitempty"`
-	CreatedAt     time.Time        `json:"createdAt"`
-	FinalResponse []byte           `json:"finalResponse,omitempty"`
-	FinalStatus   int              `json:"finalStatus,omitempty"`
-	FinalType     string           `json:"finalContentType,omitempty"`
-	CompletedAt   *time.Time       `json:"completedAt,omitempty"`
+	ReservationID   string           `json:"reservationId"`
+	ResponseID      string           `json:"responseId"`
+	ProviderID      string           `json:"providerId"`
+	BaseURL         string           `json:"baseUrl,omitempty"`
+	TeamID          string           `json:"teamId"`
+	UserID          string           `json:"userId"`
+	Record          UsageRecord      `json:"record"`
+	UsageObservedAt *time.Time       `json:"usageObservedAt,omitempty"`
+	Rates           UsageChargeRates `json:"rates"`
+	Limited         bool             `json:"limited"`
+	NextPollAt      time.Time        `json:"nextPollAt"`
+	Attempts        int64            `json:"attempts"`
+	LastError       string           `json:"lastError,omitempty"`
+	CreatedAt       time.Time        `json:"createdAt"`
+	FinalResponse   []byte           `json:"finalResponse,omitempty"`
+	FinalStatus     int              `json:"finalStatus,omitempty"`
+	FinalType       string           `json:"finalContentType,omitempty"`
+	CompletedAt     *time.Time       `json:"completedAt,omitempty"`
 }
 
 // OpsProviderStat:运维大盘的供应商维度。
@@ -371,25 +374,27 @@ type AlertEventRecord struct {
 }
 
 type UsageRecord struct {
-	ID                  string                `json:"id"`
-	RequestID           string                `json:"requestId"`
-	UserID              string                `json:"userId"`
-	TeamID              string                `json:"teamId"`
-	DeviceTokenID       string                `json:"deviceTokenId,omitempty"`
-	Model               string                `json:"model"`
-	UpstreamModel       string                `json:"upstreamModel"`
-	ProviderID          string                `json:"providerId,omitempty"`
-	InputTokens         int64                 `json:"inputTokens"`
-	OutputTokens        int64                 `json:"outputTokens"`
-	CacheReadTokens     int64                 `json:"cacheReadTokens"`
-	CacheCreationTokens int64                 `json:"cacheCreationTokens"`
-	CreditsMicro        int64                 `json:"creditsMicro"`
-	PriceSnapshot       *UsagePricingSnapshot `json:"priceSnapshot,omitempty"`
-	Status              UsageStatus           `json:"status"`
-	ErrorType           string                `json:"errorType,omitempty"`
-	ClientIP            string                `json:"clientIp,omitempty"`
-	LatencyMs           *int64                `json:"latencyMs,omitempty"`
-	CreatedAt           time.Time             `json:"createdAt"`
+	ID            string `json:"id"`
+	RequestID     string `json:"requestId"`
+	UserID        string `json:"userId"`
+	TeamID        string `json:"teamId"`
+	DeviceTokenID string `json:"deviceTokenId,omitempty"`
+	Model         string `json:"model"`
+	UpstreamModel string `json:"upstreamModel"`
+	ProviderID    string `json:"providerId,omitempty"`
+	// 后台受理核对保留已取得的供应商结果 ID；只随内部补偿 JSON 保存。
+	BackgroundResponseID string                `json:"backgroundResponseId,omitempty"`
+	InputTokens          int64                 `json:"inputTokens"`
+	OutputTokens         int64                 `json:"outputTokens"`
+	CacheReadTokens      int64                 `json:"cacheReadTokens"`
+	CacheCreationTokens  int64                 `json:"cacheCreationTokens"`
+	CreditsMicro         int64                 `json:"creditsMicro"`
+	PriceSnapshot        *UsagePricingSnapshot `json:"priceSnapshot,omitempty"`
+	Status               UsageStatus           `json:"status"`
+	ErrorType            string                `json:"errorType,omitempty"`
+	ClientIP             string                `json:"clientIp,omitempty"`
+	LatencyMs            *int64                `json:"latencyMs,omitempty"`
+	CreatedAt            time.Time             `json:"createdAt"`
 }
 
 // PendingSettlementStatus:结算失败后的持久化补偿状态。

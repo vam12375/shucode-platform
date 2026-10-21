@@ -175,11 +175,10 @@ export function TenantPage({ section }: { section: string }) {
                 quota={team.unlimited ? null : Number(team.quotaCredits)}
               />
               <p className="readout">
-                已消费 {money(team.usedCredits)} credit · 预留{" "}
-                {money(team.reservedCredits)} credit ·{" "}
+                已消费 {money(team.usedCredits)} credit ·{" "}
                 {team.unlimited
                   ? "额度不限"
-                  : `剩余 ${money(String(Number(team.quotaCredits) - Number(team.usedCredits) - Number(team.reservedCredits ?? 0)))} credit`}
+                  : `剩余 ${money(String(Number(team.quotaCredits) - Number(team.usedCredits)))} credit`}
               </p>
               <p className="readout">
                 增加团队总额度可提交人工额度申请。团队预算用于限制消费，不能增加可用余额。

@@ -121,8 +121,8 @@ func TestBackgroundGenerationVersionedAPIPrefix(t *testing.T) {
 	}
 	deps := backgroundTestDeps(f)
 	reconcileBackgroundGenerations(context.Background(), deps)
-	if polls.Load() != 2 || f.team().ReservedCredits != "100.000000" {
-		t.Fatalf("后台轮询须使用正确前缀并保持额度预留: polls=%d team=%+v", polls.Load(), f.team())
+	if polls.Load() != 2 || f.team().ReservedCredits != "0.000000" {
+		t.Fatalf("后台轮询须使用正确前缀且不占余额: polls=%d team=%+v", polls.Load(), f.team())
 	}
 	if rec := f.do("POST", "/v1/responses/resp_prefix/cancel", f.token, ""); rec.Code != 200 || !cancelled.Load() {
 		t.Fatalf("取消后台任务: %d %s", rec.Code, rec.Body.String())

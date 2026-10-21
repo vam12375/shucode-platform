@@ -113,6 +113,13 @@ func TestMediaAuthUploadTeamIsolationAndAdminBoundary(t *testing.T) {
 	data, _ := json.Marshal(models)
 	f.store.SetConfigValue(context.Background(), media.ConfigKey, data)
 	f.store.SaveTeamPolicy(context.Background(), store.TeamPolicyRecord{TeamID: team, AllowedModelIDs: []string{"v"}})
+	admissionID := uuid.NewString()
+	if result, err := f.store.AdmitUsage(context.Background(), store.ReserveQuotaInput{
+		ID: admissionID, TeamID: team, RequestID: "media-overview-" + admissionID,
+		Micro: 1_250_000, TTL: time.Minute, CreatedAt: time.Now(),
+	}); err != nil || result != store.ReserveReserved {
+		t.Fatalf("admit usage for overview: result=%s error=%v", result, err)
+	}
 	w = request("GET", "/api/v1/media/overview", bytes.NewBuffer(nil), true, "")
 	for _, secretField := range []string{"costMicro", "priceVersion"} {
 		if strings.Contains(w.Body.String(), secretField) {
@@ -125,11 +132,31 @@ func TestMediaAuthUploadTeamIsolationAndAdminBoundary(t *testing.T) {
 	var overview struct {
 		Data struct {
 			Models []media.Model `json:"models"`
+			Team   struct {
+				AvailableMicro int64 `json:"availableMicro"`
+				ReservedMicro  int64 `json:"reservedMicro"`
+			} `json:"team"`
 		} `json:"data"`
 	}
 	json.Unmarshal(w.Body.Bytes(), &overview)
 	if w.Code != 200 || len(overview.Data.Models) != 1 || overview.Data.Models[0].ID != "v" {
 		t.Fatal(w.Body.String())
+	}
+	if overview.Data.Team.AvailableMicro != 100_000_000 || overview.Data.Team.ReservedMicro != 0 {
+		t.Fatalf("媒体准入不得改变概览余额: %+v", overview.Data.Team)
+	}
+	if err := f.store.SettleReservation(context.Background(), admissionID, store.UsageRecord{
+		ID: admissionID, TeamID: team, RequestID: "media-overview-" + admissionID,
+		Model: "media:fixture", CreditsMicro: 100_858_123, Status: store.UsageStatusOk, CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	w = request("GET", "/api/v1/media/overview", bytes.NewBuffer(nil), true, "")
+	if err := json.Unmarshal(w.Body.Bytes(), &overview); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != 200 || overview.Data.Team.AvailableMicro != -858_123 || overview.Data.Team.ReservedMicro != 0 {
+		t.Fatalf("媒体概览必须保留完整实扣产生的负余额: %+v", overview.Data.Team)
 	}
 	if w = request("POST", "/api/v1/media/projects/none/cancel", bytes.NewBufferString(`{"version":1} {}`), true, "application/json"); w.Code != 400 {
 		t.Fatal("trailing json", w.Code)

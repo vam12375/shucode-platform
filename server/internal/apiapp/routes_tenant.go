@@ -595,9 +595,8 @@ func registerTenantRoutes(router *gin.Engine, deps *Deps) {
 			}
 		}
 		used, _ := credits.ParseCreditsToMicro(membership.Team.UsedCredits)
-		reserved, _ := credits.ParseCreditsToMicro(membership.Team.ReservedCredits)
 		if !membership.Team.Unlimited {
-			check("balance", "团队额度", membership.Team.QuotaCredits, used, reserved)
+			check("balance", "团队额度", membership.Team.QuotaCredits, used, 0)
 		}
 		zone := time.FixedZone("Asia/Shanghai", 8*60*60)
 		now := deps.Now().In(zone)

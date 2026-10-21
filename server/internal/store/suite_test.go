@@ -23,6 +23,8 @@ func runSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 	t.Run("team-accounting", func(t *testing.T) { testTeamAccounting(t, ctx, s) })
 	t.Run("quota-critical-section", func(t *testing.T) { testQuota(t, ctx, s) })
 	t.Run("quota-reservations", func(t *testing.T) { testReservations(t, ctx, s) })
+	t.Run("postpaid-usage", func(t *testing.T) { testPostpaidUsage(t, ctx, s) })
+	t.Run("background-usage-observation", func(t *testing.T) { testBackgroundUsageObservation(t, ctx, s) })
 	t.Run("full-precharge-background", func(t *testing.T) { testFullPrechargeAndBackgroundJobs(t, ctx, s) })
 	t.Run("pending-settlements", func(t *testing.T) { testPendingSettlements(t, ctx, s) })
 	t.Run("upstream-routes", func(t *testing.T) { testUpstreamRoutes(t, ctx, s) })

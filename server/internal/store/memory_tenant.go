@@ -274,7 +274,7 @@ func (s *memoryStore) reservationBudgetAllowedLocked(input ReserveQuotaInput, at
 		}
 	}
 	for _, reservation := range s.reservations {
-		if reservation.TeamID != input.TeamID || reservation.Status != ReservationReserved {
+		if input.Postpaid || reservation.TeamID != input.TeamID || reservation.Status != ReservationReserved {
 			continue
 		}
 		// 跨上海日/月界的在途请求可能在新周期结算，活动预留必须继续占用新周期预算。
@@ -288,7 +288,11 @@ func (s *memoryStore) reservationBudgetAllowedLocked(input ReserveQuotaInput, at
 		limit string
 		spent int64
 	}{{policy.DailyBudgetCredits, daily}, {policy.MonthlyBudgetCredits, monthly}, {memberBudget, personal}} {
-		allowed, err := budgetAllows(check.limit, check.spent, input.Micro)
+		allowBudget := budgetAllows
+		if input.Postpaid {
+			allowBudget = postpaidBudgetAllows
+		}
+		allowed, err := allowBudget(check.limit, check.spent, input.Micro)
 		if err != nil {
 			return "", err
 		}

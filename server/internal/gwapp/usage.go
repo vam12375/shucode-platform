@@ -21,7 +21,7 @@ type UsageCounts struct {
 	CacheCreationTokens int64
 }
 
-// 供应商计数必须是安全非负整数；非法/缺失 usage 交给预留估算，不能折成零。
+// 供应商计数必须是安全非负整数；非法/缺失 usage 只采用先前合法观察值，没有则零扣并标记待核对。
 func validCount(record map[string]any, key string, required bool) bool {
 	value, ok := record[key]
 	if !ok {

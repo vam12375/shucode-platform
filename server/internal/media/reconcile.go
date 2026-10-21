@@ -15,7 +15,7 @@ type Reconciliation struct {
 	Reason  string `json:"reason"`
 }
 
-// 核对先持有 CAS lease 再释放预留；进程中断后同一核对可重试，不能与 worker 并发提交。
+// 核对先持有 CAS lease 再关闭身份；进程中断后同一核对可重试，不能与 worker 并发提交。
 func (s *Service) Reconcile(ctx context.Context, team, id string, r Reconciliation) (*Project, error) {
 	if r.Version <= 0 || len(strings.TrimSpace(r.Reason)) < 5 || len(r.Reason) > 1000 {
 		return nil, ErrInvalid
@@ -59,10 +59,7 @@ func (s *Service) Reconcile(ctx context.Context, team, id string, r Reconciliati
 		switch r.Outcome {
 		case "not_accepted":
 			ss.Status = "failed"
-			ss.ReleasedMicro += ss.ReservedMicro
-			ss.ReservationID = ""
-			ss.ReservedMicro = 0
-			ss.Stage = ""
+			ss.clearPending()
 			ss.Error = "provider_not_accepted"
 			v.Status = "failed"
 			if v.CancelRequested {

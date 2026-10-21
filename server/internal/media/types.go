@@ -77,20 +77,21 @@ type Analysis struct {
 	WorkspaceIdentity string `json:"workspaceIdentity,omitempty"`
 }
 type Shot struct {
-	Plan          ShotPlan `json:"plan"`
-	Status        string   `json:"status"`
-	Attempt       int      `json:"attempt"`
-	VideoTaskID   string   `json:"videoTaskId,omitempty"`
-	ResultURL     string   `json:"resultUrl,omitempty"`
-	ImageAssetID  string   `json:"imageAssetId,omitempty"`
-	OutputAssetID string   `json:"outputAssetId,omitempty"`
-	Error         string   `json:"error,omitempty"`
-	ChargedMicro  int64    `json:"chargedMicro"`
-	QuoteMicro    int64    `json:"quoteMicro"`
-	ReservationID string   `json:"reservationId,omitempty"`
-	Stage         string   `json:"stage,omitempty"`
-	ReservedMicro int64    `json:"reservedMicro,omitempty"`
-	ReleasedMicro int64    `json:"releasedMicro,omitempty"`
+	Plan               ShotPlan `json:"plan"`
+	Status             string   `json:"status"`
+	Attempt            int      `json:"attempt"`
+	VideoTaskID        string   `json:"videoTaskId,omitempty"`
+	ResultURL          string   `json:"resultUrl,omitempty"`
+	ImageAssetID       string   `json:"imageAssetId,omitempty"`
+	OutputAssetID      string   `json:"outputAssetId,omitempty"`
+	Error              string   `json:"error,omitempty"`
+	ChargedMicro       int64    `json:"chargedMicro"`
+	QuoteMicro         int64    `json:"quoteMicro"`
+	ReservationID      string   `json:"reservationId,omitempty"`
+	Stage              string   `json:"stage,omitempty"`
+	PendingChargeMicro int64    `json:"pendingChargeMicro,omitempty"`
+	ReservedMicro      int64    `json:"reservedMicro,omitempty"`
+	ReleasedMicro      int64    `json:"releasedMicro,omitempty"`
 }
 type Project struct {
 	Canvas          *CanvasRequest `json:"canvas,omitempty"`
@@ -116,7 +117,7 @@ type Project struct {
 	LeaseUntil      time.Time      `json:"leaseUntil"`
 }
 
-// 用户投影不携带供应商路由、账本预留或 worker lease；这些字段只由平台状态机写入。
+// 用户投影不携带供应商路由、请求身份、锁定售价或 worker lease；这些字段只由平台状态机写入。
 type ProjectView struct {
 	Canvas          *CanvasRequest `json:"canvas,omitempty"`
 	ReservedMicro   int64          `json:"reservedMicro"`
@@ -149,11 +150,24 @@ type ShotView struct {
 
 func (p Project) View() ProjectView {
 	shots := make([]ShotView, 0, len(p.Shots))
-	var reserved, released int64
 	for _, s := range p.Shots {
-		reserved += s.ReservedMicro
-		released += s.ReleasedMicro
 		shots = append(shots, ShotView{Plan: s.Plan, Status: s.Status, Attempt: s.Attempt, ImageAssetID: s.ImageAssetID, OutputAssetID: s.OutputAssetID, Error: s.Error, ChargedMicro: s.ChargedMicro, QuoteMicro: s.QuoteMicro})
 	}
-	return ProjectView{Canvas: p.Canvas, ReservedMicro: reserved, ReleasedMicro: released, ID: p.ID, Version: p.Version, Status: p.Status, Brief: p.Brief, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Analysis: p.Analysis, Plan: p.Plan, Shots: shots, QuoteMicro: p.QuoteMicro, ChargedMicro: p.ChargedMicro, OutputAssetID: p.OutputAssetID, Error: p.Error, CancelRequested: p.CancelRequested}
+	return ProjectView{Canvas: p.Canvas, ReservedMicro: 0, ReleasedMicro: 0, ID: p.ID, Version: p.Version, Status: p.Status, Brief: p.Brief, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Analysis: p.Analysis, Plan: p.Plan, Shots: shots, QuoteMicro: p.QuoteMicro, ChargedMicro: p.ChargedMicro, OutputAssetID: p.OutputAssetID, Error: p.Error, CancelRequested: p.CancelRequested}
+}
+
+// 阶段售价独立于余额占用；旧任务仍从持久化预留金额恢复，不能因取消预留而免费交付。
+func (s Shot) pendingCharge() int64 {
+	if s.PendingChargeMicro > 0 {
+		return s.PendingChargeMicro
+	}
+	return s.ReservedMicro
+}
+
+func (s *Shot) clearPending() {
+	s.ReservationID = ""
+	s.PendingChargeMicro = 0
+	s.ReservedMicro = 0
+	s.ReleasedMicro = 0
+	s.Stage = ""
 }

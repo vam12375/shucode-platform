@@ -100,6 +100,14 @@ func (c *SettlementCompensator) Reconcile(ctx context.Context) error {
 		return errors.Join(append(errs, fmt.Errorf("读取待结算表: %w", err))...)
 	}
 	for _, item := range items {
+		// 旧版本可能把最大输出估算写入补偿；升级后不能把这些 token 当成真实用量自动实扣。
+		if reason := settlementReviewReason(item.Record); reason != "" {
+			if err := c.Store.MarkPendingSettlementFailed(ctx, item.ReservationID, item.Attempts, reason); err != nil {
+				errs = append(errs, fmt.Errorf("标记补偿待核对失败 %s: %w", item.ReservationID, err))
+			}
+			c.Logger.Warn("结算记录转人工核对，未自动扣费", "reservationId", item.ReservationID, "requestId", item.Record.RequestID)
+			continue
+		}
 		settleCtx, cancel := context.WithTimeout(ctx, settleTimeout)
 		settleErr := c.Store.SettleReservation(settleCtx, item.ReservationID, item.Record)
 		cancel()
@@ -290,4 +298,20 @@ func truncateError(err error) string {
 		return text[:1000]
 	}
 	return text
+}
+
+func legacyEstimatedUsage(record store.UsageRecord) bool {
+	return record.PriceSnapshot != nil && record.PriceSnapshot.Cost.UsageEstimated ||
+		strings.Contains(record.ErrorType, "usage_missing_estimated") ||
+		strings.Contains(record.ErrorType, "background_usage_invalid_estimated")
+}
+
+func settlementReviewReason(record store.UsageRecord) string {
+	if legacyEstimatedUsage(record) {
+		return "legacy_estimated_usage_requires_review"
+	}
+	if record.ErrorType == "background_submission_unknown" {
+		return "background_submission_requires_review"
+	}
+	return ""
 }

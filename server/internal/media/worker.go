@@ -67,9 +67,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		}
 		_, e := s.workerUpdate(ctx, p, func(v *Project) {
 			v.Status = "cancelled"
-			v.Shots[index].ReleasedMicro += v.Shots[index].ReservedMicro
-			v.Shots[index].ReservationID = ""
-			v.Shots[index].ReservedMicro = 0
+			v.Shots[index].clearPending()
 		})
 		return e
 	}
@@ -115,11 +113,10 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		}
 		_, e = s.workerUpdate(ctx, p, func(v *Project) {
 			ss := &v.Shots[index]
-			ss.ChargedMicro += ss.ReservedMicro
-			v.ChargedMicro += ss.ReservedMicro
-			ss.ReservedMicro = 0
-			ss.ReservationID = ""
-			ss.Stage = ""
+			charge := ss.pendingCharge()
+			ss.ChargedMicro += charge
+			v.ChargedMicro += charge
+			ss.clearPending()
 			if shot.Status == "image_saved" {
 				ss.Status = "image_ready"
 				if p.Canvas != nil {
@@ -133,7 +130,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		return e
 	}
 	if shot.Status == "image_generated" {
-		// 同步生图的返回 URL 是已付费结果；下载失败仅重试落盘，不能再次调用生图接口。
+		// 生图返回 URL 已代表供应商完成；下载失败仅重试落盘，成功保存后再结算，不能重复生成。
 		a, err := s.storeOutput(ctx, p.TeamID, shot.ResultURL, "image")
 		if err != nil {
 			if update(func(v *Shot) { v.Error = "result_download_failed" }) == nil {
@@ -181,10 +178,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			if update(func(v *Shot) {
 				v.Status = "failed"
 				v.Error = "provider_" + result.Status
-				v.ReleasedMicro += v.ReservedMicro
-				v.ReservationID = ""
-				v.ReservedMicro = 0
-				v.Stage = ""
+				v.clearPending()
 			}) == nil {
 				return ErrConflict
 			}
@@ -210,13 +204,20 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	}
 	if shot.ReservationID == "" {
 		shot.ReservationID = uuid.NewString()
-		shot.ReservedMicro = amount
+		shot.PendingChargeMicro = amount
 		shot.Stage = kind
-		if update(func(v *Shot) { v.ReservationID = shot.ReservationID; v.ReservedMicro = amount; v.Stage = kind }) == nil {
+		if update(func(v *Shot) {
+			v.ReservationID = shot.ReservationID
+			v.PendingChargeMicro = amount
+			v.ReservedMicro = 0
+			v.Stage = kind
+		}) == nil {
 			return ErrConflict
 		}
 	}
-	r, e := s.Repo.Store.ReserveQuota(ctx, store.ReserveQuotaInput{HeldByTask: true, ID: shot.ReservationID, UserID: p.UserID, TeamID: p.TeamID, RequestID: "media:" + shot.ReservationID, Micro: amount, TTL: 24 * time.Hour, CreatedAt: time.Now()})
+	// 请求身份和锁定售价必须可恢复，但进行中的生成不再占用账户余额。
+	amount = shot.pendingCharge()
+	r, e := s.Repo.Store.AdmitUsage(ctx, store.ReserveQuotaInput{HeldByTask: true, ID: shot.ReservationID, UserID: p.UserID, TeamID: p.TeamID, RequestID: "media:" + shot.ReservationID, Micro: amount, TTL: 24 * time.Hour, CreatedAt: time.Now()})
 	if e != nil {
 		return e
 	}
@@ -230,16 +231,14 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		if update(func(v *Shot) {
 			v.Status = "failed"
 			v.Error = reason
-			v.ReservationID = ""
-			v.ReservedMicro = 0
-			v.Stage = ""
+			v.clearPending()
 		}) == nil {
 			return ErrConflict
 		}
 		return nil
 	}
 	if r != store.ReserveReserved && r != store.ReserveDuplicate {
-		return fmt.Errorf("unknown media quota reservation result: %s", r)
+		return fmt.Errorf("unknown media usage admission result: %s", r)
 	}
 	if update(func(v *Shot) { v.Status = kind + "_submitting" }) == nil {
 		return ErrConflict
@@ -255,9 +254,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		_, e = s.workerUpdate(ctx, p, func(v *Project) {
 			v.Status = "cancelled"
 			v.Shots[index].Status = "pending"
-			v.Shots[index].ReleasedMicro += v.Shots[index].ReservedMicro
-			v.Shots[index].ReservationID = ""
-			v.Shots[index].ReservedMicro = 0
+			v.Shots[index].clearPending()
 		})
 		return e
 	}
@@ -319,7 +316,7 @@ func (s *Service) unknown(ctx context.Context, p *Project, i int) error {
 	return e
 }
 
-// 上游明确拒绝才释放；超时与 5xx 无法证明未受理，必须保留冻结进入核对。
+// 上游明确拒绝才关闭身份；超时与 5xx 无法证明未受理，保留身份与锁价核对但不占余额。
 func (s *Service) submissionFailure(ctx context.Context, p *Project, index int, shot Shot, cause error) error {
 	switch cause.Error() {
 	case "provider_http_400", "provider_http_401", "provider_http_403", "provider_http_404", "provider_http_413", "provider_http_422", "provider_http_429":
@@ -330,10 +327,7 @@ func (s *Service) submissionFailure(ctx context.Context, p *Project, index int, 
 			ss := &v.Shots[index]
 			ss.Status = "failed"
 			ss.Error = "provider_rejected"
-			ss.ReleasedMicro += ss.ReservedMicro
-			ss.ReservedMicro = 0
-			ss.ReservationID = ""
-			ss.Stage = ""
+			ss.clearPending()
 		})
 		return e
 	}

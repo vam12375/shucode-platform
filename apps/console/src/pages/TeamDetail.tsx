@@ -192,7 +192,6 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
 
   const { team, members, aggregates, recentUsage, quotaAdjustments } = detail;
   const used = Number.parseFloat(team.usedCredits) || 0;
-  const reserved = Number.parseFloat(team.reservedCredits) || 0;
   const quotaValue = Number.parseFloat(team.quotaCredits) || 0;
   const totalCredits = aggregates.reduce((sum, row) => sum + row.creditsMicro, 0);
   const totalRequests = aggregates.reduce((sum, row) => sum + row.requests, 0);
@@ -317,7 +316,7 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
                 </button>
               </div>
               <p id="team-credit-help" className="readout" style={{ marginTop: 8 }}>
-                增加团队总额度，已用和冻结金额保持不变；操作将记入额度流水。
+                增加团队总额度，保留已用金额；操作将记入额度流水。
               </p>
               {creditError ? (
                 <p role="alert" className="dialog-err">
@@ -330,9 +329,8 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
             可用余额{" "}
             {team.unlimited
               ? "不限"
-              : `${formatCreditsDisplay(quotaValue - used - reserved)} credit`}{" "}
-            · 已用 {formatCreditsDisplay(used)} credit · 冻结 {formatCreditsDisplay(reserved)}{" "}
-            credit 。额度扣减发生在模型网关，页面展示为实时汇总。
+              : `${formatCreditsDisplay(quotaValue - used)} credit`}{" "}
+            · 已用 {formatCreditsDisplay(used)} credit。按已结算用量扣减，页面展示为实时汇总。
           </p>
         </div>
       </section>

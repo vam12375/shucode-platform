@@ -378,5 +378,44 @@
         "micro": 0
       }
     ]
-  }
+  },
+  "cloudAssetPages": [
+    {
+      "team": {
+        "id": "team-fixture",
+        "name": "契约团队",
+        "storage": {
+          "usedBytes": 0,
+          "limitBytes": 5368709120
+        }
+      },
+      "assets": [],
+      "nextCursor": null
+    },
+    {
+      "team": {
+        "id": "team-fixture",
+        "name": "契约团队",
+        "storage": {
+          "usedBytes": 104857600,
+          "limitBytes": 5368709120
+        }
+      },
+      "assets": [
+        {
+          "id": "650f904c-7862-43f2-8e96-2a47b7c131e2",
+          "name": "分析📊.md",
+          "kind": "document",
+          "mime": "text/plain; charset=utf-8",
+          "size": 104857600,
+          "createdAt": "2026-10-21T00:00:00Z",
+          "uploadedBy": {
+            "id": "user-fixture",
+            "name": "成员"
+          }
+        }
+      ],
+      "nextCursor": "opaque-cursor"
+    }
+  ]
 }

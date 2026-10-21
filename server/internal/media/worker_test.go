@@ -147,7 +147,7 @@ func TestCreateIsolationStalePlanAndIdempotency(t *testing.T) {
 		t.Fatalf("stale plan: %v", e)
 	}
 }
-func TestUnknownSubmissionNeverResubmitsAndKeepsBudget(t *testing.T) {
+func TestUnknownSubmissionNeverResubmitsOrChangesBalance(t *testing.T) {
 	f := setup(t)
 	f.unknown = true
 	p := f.project(t)
@@ -162,8 +162,8 @@ func TestUnknownSubmissionNeverResubmitsAndKeepsBudget(t *testing.T) {
 		t.Fatal(e)
 	}
 	team, _ := f.s.Repo.Store.GetTeam(context.Background(), f.team)
-	if team.ReservedCredits != "0.500000" {
-		t.Fatalf("hold lost %s", team.ReservedCredits)
+	if team.ReservedCredits != "0.000000" || team.UsedCredits != "0.000000" || p.Shots[0].PendingChargeMicro != 500000 || p.Shots[0].ReservationID == "" {
+		t.Fatalf("unknown task changed balance or lost recovery state: %+v %+v", team, p.Shots[0])
 	}
 }
 func TestInsufficientCreditsDoesNotSubmit(t *testing.T) {
@@ -225,7 +225,7 @@ func TestMultiClipGenerationCompositionAndExactlyOnceCharge(t *testing.T) {
 	}
 }
 
-func TestCancelBeforeSubmitReleasesPersistedReservationIntent(t *testing.T) {
+func TestCancelBeforeSubmitClosesLegacyReservationIntent(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
 	p := f.project(t)
@@ -252,7 +252,7 @@ func TestCancelBeforeSubmitReleasesPersistedReservationIntent(t *testing.T) {
 		t.Fatalf("%s %+v", p.Status, team)
 	}
 }
-func TestRootReconciliationReleasesOnlyConfirmedUnacceptedSubmit(t *testing.T) {
+func TestRootReconciliationClosesOnlyConfirmedUnacceptedSubmit(t *testing.T) {
 	f := setup(t)
 	f.unknown = true
 	ctx := context.Background()
@@ -354,7 +354,7 @@ func TestPartialRetryReusesSuccessfulShotAndOnlyChargesNewSuccess(t *testing.T) 
 		t.Fatalf("retry submits=%d %+v", f.submits.Load(), p)
 	}
 }
-func TestImageDownloadRetryDoesNotRegenerateOrLoseReservation(t *testing.T) {
+func TestImageDownloadRetryDoesNotRegenerateOrLoseIdentity(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
 	p := f.project(t)

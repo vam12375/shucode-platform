@@ -358,11 +358,11 @@ func reservationBudgetAllowed(ctx context.Context, tx pgx.Tx, input ReserveQuota
 	}
 	day, endDay, month, endMonth := budgetWindow(at)
 	var daily, monthly, personal int64
-	// 团队行锁串行化预算检查和预留；活动预留不按创建时间过滤，避免跨日/月在途请求漏占新周期预算。
+	// 后付费只统计已结算用量；旧预留模式仍计算跨日/月在途占款，保持历史兼容。
 	err = tx.QueryRow(ctx, `WITH costs AS (
  SELECT created_at,user_id,credits_micro::numeric AS micro,false AS active FROM usage_records WHERE team_id=$1::uuid AND created_at >= $4 AND created_at < $5
- UNION ALL SELECT created_at,user_id,reserved_credits*1000000,true FROM quota_reservations WHERE team_id=$1::uuid AND status='reserved'
- ) SELECT COALESCE(sum(micro) FILTER(WHERE active OR (created_at >= $2 AND created_at < $3)),0)::bigint,COALESCE(sum(micro),0)::bigint,COALESCE(sum(micro) FILTER(WHERE user_id=$6::uuid),0)::bigint FROM costs`, input.TeamID, day, endDay, month, endMonth, nullIfEmpty(input.UserID)).Scan(&daily, &monthly, &personal)
+ UNION ALL SELECT created_at,user_id,reserved_credits*1000000,true FROM quota_reservations WHERE team_id=$1::uuid AND status='reserved' AND NOT $7
+ ) SELECT COALESCE(sum(micro) FILTER(WHERE active OR (created_at >= $2 AND created_at < $3)),0)::bigint,COALESCE(sum(micro),0)::bigint,COALESCE(sum(micro) FILTER(WHERE user_id=$6::uuid),0)::bigint FROM costs`, input.TeamID, day, endDay, month, endMonth, nullIfEmpty(input.UserID), input.Postpaid).Scan(&daily, &monthly, &personal)
 	if err != nil {
 		return "", err
 	}
@@ -370,7 +370,11 @@ func reservationBudgetAllowed(ctx context.Context, tx pgx.Tx, input ReserveQuota
 		limit string
 		spent int64
 	}{{policy.DailyBudgetCredits, daily}, {policy.MonthlyBudgetCredits, monthly}, {memberBudget, personal}} {
-		allowed, err := budgetAllows(check.limit, check.spent, input.Micro)
+		allowBudget := budgetAllows
+		if input.Postpaid {
+			allowBudget = postpaidBudgetAllows
+		}
+		allowed, err := allowBudget(check.limit, check.spent, input.Micro)
 		if err != nil {
 			return "", err
 		}

@@ -63,7 +63,7 @@ func TestClientCreditSnapshot(t *testing.T) {
 	if err := f.store.AddMember(ctx, team.ID, user.ID, store.MemberRoleMember); err != nil {
 		t.Fatalf("加入团队: %v", err)
 	}
-	// 预留 0.25 credit，验证接口把 reserved 计入余额和已用比例。
+	// 旧记录兼容字段不能再影响面向用户的已结算余额。
 	reserved, err := f.store.TryReserveQuota(ctx, team.ID, 250_000)
 	if err != nil || !reserved {
 		t.Fatalf("写入预留: ok=%v err=%v", reserved, err)
@@ -87,14 +87,14 @@ func TestClientCreditSnapshot(t *testing.T) {
 	if data["usedCredits"] != "0.000000" {
 		t.Fatalf("已用额度不符: %v", data["usedCredits"])
 	}
-	if data["reservedCredits"] != "0.250000" {
+	if data["reservedCredits"] != "0.000000" {
 		t.Fatalf("预留额度不符: %v", data["reservedCredits"])
 	}
-	if data["remainingCredits"] != "9.750000" {
+	if data["remainingCredits"] != "10.000000" {
 		t.Fatalf("剩余额度不符: %v", data["remainingCredits"])
 	}
 	usedRatio, ok := data["usedRatio"].(float64)
-	if !ok || usedRatio != 0.025 {
+	if !ok || usedRatio != 0 {
 		t.Fatalf("已用比例不符: %v", data["usedRatio"])
 	}
 
@@ -103,7 +103,7 @@ func TestClientCreditSnapshot(t *testing.T) {
 	}
 }
 
-func TestClientCreditShowsConfiguredDebtFloor(t *testing.T) {
+func TestClientCreditShowsFullPostpaidDebt(t *testing.T) {
 	f := newAPIFixture(t)
 	ctx := context.Background()
 	user, err := f.store.CreateUser(ctx, store.UserInput{
@@ -119,16 +119,20 @@ func TestClientCreditShowsConfiguredDebtFloor(t *testing.T) {
 	if err := f.store.AddMember(ctx, team.ID, user.ID, store.MemberRoleMember); err != nil {
 		t.Fatalf("加入团队: %v", err)
 	}
-	reserved, err := f.store.TryReserveQuota(ctx, team.ID, 10_000_000)
-	if err != nil || !reserved {
-		t.Fatalf("应允许预留到 0 credit: reserved=%v err=%v", reserved, err)
+	requestID := "postpaid-debt"
+	identityID := uuid.NewString()
+	result, err := f.store.AdmitUsage(ctx, store.ReserveQuotaInput{
+		ID: identityID, TeamID: team.ID, UserID: user.ID, RequestID: requestID, CreatedAt: time.Now(), TTL: time.Minute,
+	})
+	if err != nil || result != store.ReserveReserved {
+		t.Fatalf("正余额应准入且不占用余额: %s %v", result, err)
 	}
-	if err := f.store.SettleUsage(ctx, store.UsageRecord{
+	if err := f.store.SettleReservation(ctx, identityID, store.UsageRecord{
 		UserID: user.ID, TeamID: team.ID, Model: "m", UpstreamModel: "m",
-		RequestID: "floor-settle", CreditsMicro: 10_000_000 + store.TeamCreditDebtLimitMicro,
+		RequestID: requestID, CreditsMicro: 12_500_000,
 		Status: store.UsageStatusOk, CreatedAt: time.Now(),
-	}, 10_000_000); err != nil {
-		t.Fatalf("已准入请求可结算至尾差下限: %v", err)
+	}); err != nil {
+		t.Fatalf("已准入真实费用完整入账: %v", err)
 	}
 	token := createDeviceTokenForTest(t, f, user.ID)
 	rec := requestClientCredit(t, f, token)
@@ -136,15 +140,17 @@ func TestClientCreditShowsConfiguredDebtFloor(t *testing.T) {
 		t.Fatalf("额度接口: %d %s", rec.Code, rec.Body.String())
 	}
 	data := dataOf(t, rec)
-	if data["remainingCredits"] != "-0.010000" {
-		t.Fatalf("负余额必须准确展示至硬下限: %v", data["remainingCredits"])
+	if data["remainingCredits"] != "-2.500000" {
+		t.Fatalf("负余额必须准确展示完整费用: %v", data["remainingCredits"])
 	}
 	if data["usedRatio"] != float64(1) {
-		t.Fatalf("已用比例在下限处应饱和到 100%%: %v", data["usedRatio"])
+		t.Fatalf("负余额的已用比例应饱和到 100%%: %v", data["usedRatio"])
 	}
-	allowed, err := f.store.TryReserveQuota(ctx, team.ID, 1)
-	if err != nil || allowed {
-		t.Fatalf("达到 -0.01 后必须阻止新请求: allowed=%v err=%v", allowed, err)
+	result, err = f.store.AdmitUsage(ctx, store.ReserveQuotaInput{
+		ID: uuid.NewString(), TeamID: team.ID, UserID: user.ID, RequestID: "after-debt", CreatedAt: time.Now(), TTL: time.Minute,
+	})
+	if err != nil || result != store.ReserveDenied {
+		t.Fatalf("已结算负余额必须阻止新请求: result=%s err=%v", result, err)
 	}
 }
 
@@ -189,11 +195,7 @@ func TestClientCreditFormatsExistingTeamValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reservedMicro, err := credits.ParseCreditsToMicro(membership.Team.ReservedCredits)
-	if err != nil {
-		t.Fatal(err)
-	}
-	remainingMicro := quotaMicro - usedMicro - reservedMicro
+	remainingMicro := quotaMicro - usedMicro
 	if data["remainingCredits"] != credits.FormatMicroCredits(remainingMicro) {
 		t.Fatalf("剩余额度不符: got %v want %s", data["remainingCredits"], credits.FormatMicroCredits(remainingMicro))
 	}

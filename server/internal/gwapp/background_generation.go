@@ -100,27 +100,12 @@ func processBackgroundGeneration(ctx context.Context, deps Deps, job store.Backg
 	status, _ := payload["status"].(string)
 	if !terminalBackgroundStatus(status) {
 		if observed := ParseUsageFromResponsesJSON(payload); observed != nil {
-			micro, costErr := credits.ComputeUsageMicroCredits(credits.UsageTokenCounts{
-				InputTokens: observed.InputTokens, OutputTokens: observed.OutputTokens,
-				CacheReadTokens: observed.CacheReadTokens, CacheCreationTokens: observed.CacheCreationTokens,
-			}, credits.ModelPriceRates{
-				InputPerMtok: job.Rates.InputPerMtok, OutputPerMtok: job.Rates.OutputPerMtok,
-				CacheReadPerMtok: job.Rates.CacheReadPerMtok, CacheWritePerMtok: job.Rates.CacheWritePerMtok,
-			})
-			if job.Limited && costErr == nil && micro >= job.Record.CreditsMicro {
-				// 无限额度团队没有冻结额，不能按估算预留额取消真实生成。
-				unlimited := false
-				if team, teamErr := deps.Store.GetTeam(ctx, job.TeamID); teamErr == nil && team != nil {
-					unlimited = team.Unlimited
-				}
-				// 断开创建请求的 HTTP 连接不会取消后台生成，达到冻结额必须显式取消上游任务。
-				if !unlimited {
-					if err := cancelBackgroundUpstream(ctx, deps, baseURL, apiKey, job.ResponseID); err != nil {
-						deps.Logger.Error("后台生成费用达到冻结额，取消请求暂未确认", "reservationId", job.ReservationID)
-					}
-				}
+			if _, err := persistBackgroundUsage(ctx, deps, job, *observed); err != nil {
+				retryBackgroundGeneration(ctx, deps, job, "后台用量观察保存失败: "+err.Error())
+				return
 			}
 		}
+		// 后台任务按终态 usage 实扣，不以估算费用中断或占用余额。
 		_ = deps.Store.RetryBackgroundGeneration(ctx, job.ReservationID, deps.Now().Add(2*time.Second), "")
 		return
 	}
@@ -134,8 +119,23 @@ func finishBackgroundGeneration(ctx context.Context, deps Deps, job store.Backgr
 	if json.Unmarshal(body, &payload) != nil || !terminalBackgroundStatus(status) {
 		return false
 	}
+	// 创建 SSE 与轮询可分别观察 usage；终态使用已持久化的最新值，不能用过期 worker 快照覆盖。
+	readCtx, cancelRead := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	current, readErr := deps.Store.FindBackgroundGeneration(readCtx, job.TeamID, job.ResponseID)
+	cancelRead()
+	if readErr != nil || current == nil {
+		retryBackgroundGeneration(ctx, deps, job, "后台用量观察读取失败")
+		return false
+	}
+	job = *current
+	if job.CompletedAt != nil {
+		return true
+	}
 	completedAt := deps.Now()
 	record := job.Record
+	if record.PriceSnapshot != nil {
+		record.PriceSnapshot.Cost.UsageEstimated = false
+	}
 	record.CreatedAt = completedAt
 	latency := completedAt.Sub(job.CreatedAt).Milliseconds()
 	if latency < 0 {
@@ -150,21 +150,34 @@ func finishBackgroundGeneration(ctx context.Context, deps Deps, job store.Backgr
 		record.ErrorType = "background_" + status
 	}
 	usage := ParseUsageFromResponsesJSON(payload)
-	if usage == nil {
-		record.CreditsMicro = job.Record.CreditsMicro
-		if record.PriceSnapshot != nil {
-			record.PriceSnapshot.Cost.Status = "unknown"
-			record.PriceSnapshot.Cost.Reason = "usage_unavailable"
-			record.PriceSnapshot.Cost.EstimatedMicro = nil
-			record.PriceSnapshot.Cost.UsageEstimated = true
+	if usage != nil {
+		updated, err := persistBackgroundUsage(ctx, deps, job, *usage)
+		if err != nil {
+			retryBackgroundGeneration(ctx, deps, job, "后台最终用量观察保存失败: "+err.Error())
+			return false
+		}
+		if updated.CompletedAt != nil {
+			return true
+		}
+		record.PriceSnapshot = updated.Record.PriceSnapshot
+	}
+	missingUsage := usage == nil
+	if missingUsage {
+		if job.UsageObservedAt != nil {
+			usage = &UsageCounts{InputTokens: record.InputTokens, OutputTokens: record.OutputTokens,
+				CacheReadTokens: record.CacheReadTokens, CacheCreationTokens: record.CacheCreationTokens}
 		}
 		if record.ErrorType == "" {
-			record.ErrorType = "background_usage_missing_estimated"
+			record.ErrorType = "background_usage_missing"
 			if record.Status == store.UsageStatusOk {
 				record.Status = store.UsageStatusError
 			}
 		}
-	} else {
+	}
+	// 旧任务模板 CreditsMicro 是最大输出预估，绝不能作为终态无 usage 时的真实费用。
+	record.CreditsMicro = 0
+	record.InputTokens, record.OutputTokens, record.CacheReadTokens, record.CacheCreationTokens = 0, 0, 0, 0
+	if usage != nil {
 		record.InputTokens = usage.InputTokens
 		record.OutputTokens = usage.OutputTokens
 		record.CacheReadTokens = usage.CacheReadTokens
@@ -177,18 +190,32 @@ func finishBackgroundGeneration(ctx context.Context, deps Deps, job store.Backgr
 			CacheReadPerMtok: job.Rates.CacheReadPerMtok, CacheWritePerMtok: job.Rates.CacheWritePerMtok,
 		})
 		if chargeErr != nil {
-			record.CreditsMicro = job.Record.CreditsMicro
+			record.CreditsMicro = 0
 			record.Status = store.UsageStatusError
-			record.ErrorType = "background_usage_invalid_estimated"
+			record.ErrorType = "background_usage_invalid"
+			if record.PriceSnapshot != nil {
+				record.PriceSnapshot.Cost.Status = "unknown"
+				record.PriceSnapshot.Cost.Reason = "usage_invalid"
+				record.PriceSnapshot.Cost.EstimatedMicro = nil
+			}
 		} else {
 			record.CreditsMicro = charge
 			updateBackgroundCostSnapshot(record.PriceSnapshot, *usage)
 		}
 	}
+	if missingUsage && record.PriceSnapshot != nil {
+		record.PriceSnapshot.Cost.Status = "unknown"
+		record.PriceSnapshot.Cost.Reason = "usage_unavailable"
+		if usage != nil {
+			record.PriceSnapshot.Cost.Reason = "usage_incomplete"
+		}
+		record.PriceSnapshot.Cost.EstimatedMicro = nil
+		record.PriceSnapshot.Cost.UsageEstimated = false
+	}
 	settleCtx, cancelSettle := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	settleErr := deps.Store.SettleReservation(settleCtx, job.ReservationID, record)
 	cancelSettle()
-	if settleErr != nil && !errors.Is(settleErr, store.ErrCreditChargeCapped) {
+	if settleErr != nil {
 		retryBackgroundGeneration(ctx, deps, job, "后台生成结算失败: "+settleErr.Error())
 		return false
 	}
@@ -203,10 +230,19 @@ func finishBackgroundGeneration(ctx context.Context, deps Deps, job store.Backgr
 		deps.Logger.Error("后台生成已结算但最终响应留存失败", "reservationId", job.ReservationID, "error", finishErr)
 		return false
 	}
-	if errors.Is(settleErr, store.ErrCreditChargeCapped) {
-		deps.Logger.Warn("后台生成结算已按团队额度下限封顶", "requestId", record.RequestID, "reservationId", job.ReservationID)
-	}
 	return true
+}
+
+func persistBackgroundUsage(ctx context.Context, deps Deps, job store.BackgroundGenerationJob, usage UsageCounts) (*store.BackgroundGenerationJob, error) {
+	record := job.Record
+	record.InputTokens, record.OutputTokens = usage.InputTokens, usage.OutputTokens
+	record.CacheReadTokens, record.CacheCreationTokens = usage.CacheReadTokens, usage.CacheCreationTokens
+	record.CreatedAt = deps.Now()
+	updateBackgroundCostSnapshot(record.PriceSnapshot, usage)
+	// HTTP 断连不应丢弃已观察合法 usage，且保存观察值不触发任何账本扣款。
+	persistCtx, cancelPersist := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancelPersist()
+	return deps.Store.UpdateBackgroundGenerationUsage(persistCtx, job.ReservationID, record)
 }
 
 func cancelBackgroundUpstream(ctx context.Context, deps Deps, baseURL, apiKey, responseID string) error {
@@ -240,7 +276,7 @@ func retryBackgroundGeneration(ctx context.Context, deps Deps, job store.Backgro
 		deps.Logger.Error("后台生成重试计划写入失败", "reservationId", job.ReservationID, "error", err)
 		return
 	}
-	deps.Logger.Warn("后台生成暂未完成，额度预留保持有效", "reservationId", job.ReservationID, "attempt", job.Attempts, "retryAfter", delay)
+	deps.Logger.Warn("后台生成暂未完成，保留零占用核对任务", "reservationId", job.ReservationID, "attempt", job.Attempts, "retryAfter", delay)
 }
 
 func updateBackgroundCostSnapshot(snapshot *store.UsagePricingSnapshot, usage UsageCounts) {
@@ -376,18 +412,18 @@ func handleBackgroundResponseProxy(c *gin.Context, deps Deps, method string, can
 	baseURL, apiKey, err := backgroundProvider(c.Request.Context(), deps, *job)
 	if err != nil {
 		deps.Logger.Warn("读取后台生成供应商失败", "reservationId", job.ReservationID, "error", err)
-		openAIError(c, 502, "api_error", "后台任务供应商暂时不可用，额度仍在预留")
+		openAIError(c, 502, "api_error", "后台任务供应商暂时不可用，任务将继续核对")
 		return
 	}
 	if method == http.MethodDelete && job.CompletedAt == nil {
 		if err := cancelBackgroundUpstream(c.Request.Context(), deps, baseURL, apiKey, job.ResponseID); err != nil {
-			openAIError(c, 502, "api_error", "后台任务取消尚未确认，额度保持冻结")
+			openAIError(c, 502, "api_error", "后台任务取消尚未确认，请稍后重试")
 			return
 		}
 		processBackgroundGeneration(c.Request.Context(), deps, *job)
 		job, err = deps.Store.FindBackgroundGeneration(c.Request.Context(), membership.Team.ID, job.ResponseID)
 		if err != nil || job == nil || job.CompletedAt == nil {
-			openAIError(c, 409, "conflict_error", "后台任务正在取消或等待最终用量，额度保持冻结，请稍后重试删除")
+			openAIError(c, 409, "conflict_error", "后台任务正在取消或等待最终用量，请稍后重试删除")
 			return
 		}
 	}
@@ -414,6 +450,21 @@ func handleBackgroundResponseProxy(c *gin.Context, deps Deps, method string, can
 	contentType := strings.TrimSpace(resp.Header.Get("content-type"))
 	if contentType == "" {
 		contentType = "application/json"
+	}
+	if method != http.MethodDelete && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		_, responseStatus := backgroundResponseIdentity(body)
+		if terminalBackgroundStatus(responseStatus) {
+			finishBackgroundGeneration(c.Request.Context(), deps, *job, redactSecret(body, apiKey), responseStatus, contentType)
+		} else {
+			var payload any
+			if json.Unmarshal(body, &payload) == nil {
+				if usage := ParseUsageFromResponsesJSON(payload); usage != nil {
+					if _, err := persistBackgroundUsage(c.Request.Context(), deps, *job, *usage); err != nil {
+						deps.Logger.Error("后台查询用量观察保存失败", "reservationId", job.ReservationID, "error", err)
+					}
+				}
+			}
+		}
 	}
 	if method == http.MethodDelete && (resp.StatusCode >= 200 && resp.StatusCode < 300 || resp.StatusCode == http.StatusNotFound) {
 		if err := deps.Store.DeleteBackgroundGeneration(c.Request.Context(), job.ReservationID); err != nil {

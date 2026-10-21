@@ -15,6 +15,7 @@ import { Chip, Notice } from "../components/StatusChip.js";
 import {
   defaultReconciliationOutcome,
   isReconciliationOutcomeForStage,
+  pendingMediaChargeMicro,
   reconciliationOptionsForStage,
   reconciliationValueLabel,
   reconciliationValuePlaceholder,
@@ -26,7 +27,9 @@ interface PendingShot {
   status: string;
   stage?: string;
   attempt?: number;
+  pendingChargeMicro?: number;
   reservedMicro?: number;
+  chargedMicro?: number;
 }
 
 interface PendingProject {
@@ -63,7 +66,7 @@ function stageLabel(stage?: string): string {
 }
 
 function credits(micro?: number): string {
-  if (typeof micro !== "number" || micro <= 0) return "—";
+  if (typeof micro !== "number" || !Number.isFinite(micro)) return "—";
   return `${formatCreditsDisplay(micro / MICRO_CREDITS_PER_CREDIT)} credit`;
 }
 
@@ -173,9 +176,9 @@ function ReconcileDrawer({
               <b>{stageLabel(shot.stage)}</b>
             </p>
             <p className="readout drawer-note">
-              尝试 <b>{shot.attempt ?? 1}</b> 次 · 本镜头冻结额度{" "}
-              <b>{credits(shot.reservedMicro)}</b> · 制作单报价{" "}
-              <b>{credits(project.quoteMicro)}</b>
+              尝试 <b>{shot.attempt ?? 1}</b> 次 · 本阶段待结算{" "}
+              <b>{credits(pendingMediaChargeMicro(shot))}</b> · 制作单报价{" "}
+              <b>{credits(project.quoteMicro)}</b> · 本镜头已扣 <b>{credits(shot.chargedMicro ?? 0)}</b>
             </p>
             <p className="readout drawer-note">
               {shot.stage === "image" ? "图片模型" : "视频模型"}{" "}
@@ -186,11 +189,11 @@ function ReconcileDrawer({
 
           <form className="form-stack" onSubmit={(event) => void submit(event)}>
             <Notice>
-              这是上游提交结果未知时的管理员异常恢复入口。额度当前处于冻结状态，尚未结算；请先核实供应商记录。正常生成成功后由平台自动结算，普通用户无需核对，也不要重新发起生成。
+              这是上游提交结果未知时的管理员异常恢复入口。本阶段尚未结算且不占余额；请先核实供应商记录。正常生成成功后由平台自动结算，普通用户无需核对，也不要重新发起生成。
             </Notice>
             {!stageSupported ? (
               <Notice tone="stop" k="无法恢复">
-                任务阶段缺失或不受支持，无法安全选择恢复结果或释放额度。请先修复任务阶段记录。
+                任务阶段缺失或不受支持，无法安全选择恢复结果或关闭请求身份。请先修复任务阶段记录。
               </Notice>
             ) : null}
             {error ? (
@@ -212,7 +215,7 @@ function ReconcileDrawer({
 
             {outcome === "not_accepted" ? (
               <Notice tone="stop">
-                确认未受理会释放本镜头的预留额度。请确保供应商后台确实没有对应的受理记录。
+                确认未受理会零扣关闭本镜头的请求身份。请确保供应商后台确实没有对应的受理记录。
               </Notice>
             ) : outcome ? (
               <label className="field">
@@ -307,7 +310,7 @@ export function MediaReconciliation() {
 
         <div className="pane-b" style={{ paddingTop: 0 }}>
           <Notice>
-            此列表只处理上游提交结果未知的异常任务。额度保持冻结且尚未结算；正常生成成功后由平台自动扣点，普通用户无需参与核对。
+            此列表只处理上游提交结果未知的异常任务。当前阶段不占余额且尚未结算；正常生成成功后由平台自动扣点，普通用户无需参与核对。
           </Notice>
         </div>
 
@@ -341,7 +344,8 @@ export function MediaReconciliation() {
                     <th scope="col">制作单</th>
                     <th scope="col">镜头</th>
                     <th scope="col">阶段</th>
-                    <th scope="col">冻结额度</th>
+                    <th scope="col">待结算</th>
+                    <th scope="col">已扣</th>
                     <th scope="col">更新时间</th>
                     <th scope="col" aria-label="操作" />
                   </tr>
@@ -357,7 +361,8 @@ export function MediaReconciliation() {
                         镜头 {row.index + 1} · v{row.project.version}
                       </td>
                       <td>{stageLabel(row.shot.stage)}</td>
-                      <td className="num">{credits(row.shot.reservedMicro)}</td>
+                      <td className="num">{credits(pendingMediaChargeMicro(row.shot))}</td>
+                      <td className="num">{credits(row.shot.chargedMicro ?? 0)}</td>
                       <td className="readout">
                         {formatShanghaiTime(row.project.updatedAt).slice(5, 16)}
                       </td>

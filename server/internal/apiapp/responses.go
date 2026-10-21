@@ -91,7 +91,7 @@ type teamPublic struct {
 func toPublicTeam(team *store.TeamRecord) teamPublic {
 	return teamPublic{
 		ID: team.ID, Name: team.Name, QuotaCredits: team.QuotaCredits,
-		UsedCredits: team.UsedCredits, ReservedCredits: team.ReservedCredits,
+		UsedCredits: team.UsedCredits, ReservedCredits: "0.000000",
 		Unlimited: team.Unlimited, RPMLimit: team.RPMLimit, TPMLimit: team.TPMLimit,
 		ConcurrencyLimit: team.ConcurrencyLimit, CreatedAt: isoString(team.CreatedAt),
 		DisabledAt: isoStringPtr(team.DisabledAt),

@@ -37,6 +37,12 @@ type PlatformStore interface {
 	UpdateTeamWithAccounting(ctx context.Context, id string, patch UpdateTeamPatch, adjustmentAction string, audit *InsertAuditLogInput) (*TeamRecord, error)
 	ListMembers(ctx context.Context, teamID string) ([]TeamMemberView, error)
 	GetTeamMember(ctx context.Context, teamID, userID string) (*TeamMemberView, error)
+	// Team assets share one team-scoped quota. Commit checks idempotency before
+	// atomically enforcing limitBytes; created=false means an identical upload already exists.
+	CommitTeamAsset(ctx context.Context, teamID string, record TeamAssetRecord, limitBytes int64) (saved TeamAssetRecord, created bool, err error)
+	GetTeamAsset(ctx context.Context, teamID, id string) (*TeamAssetRecord, error)
+	// ListTeamAssetPage returns created_at/id DESC and total usage from one snapshot.
+	ListTeamAssetPage(ctx context.Context, teamID string, beforeCreatedAt *time.Time, beforeID string, limit int) (TeamAssetPage, error)
 	UpdateTeamMember(ctx context.Context, teamID, userID string, patch TeamMemberPatch) (*TeamMemberView, error)
 	GetTeamPolicy(ctx context.Context, teamID string) (*TeamPolicyRecord, error)
 	SaveTeamPolicy(ctx context.Context, record TeamPolicyRecord) (*TeamPolicyRecord, error)
@@ -147,7 +153,10 @@ type PlatformStore interface {
 	AggregateUsageSeries(ctx context.Context, filter UsageFilter, granularity UsageSeriesGranularity) ([]UsageSeriesRow, error)
 
 	// ---- quota(Gateway 临界区) ----
+	// 原子检查已结算余额/预算并登记请求身份；准入不预留金额，结算按实际费用完整入账。
+	AdmitUsage(ctx context.Context, input ReserveQuotaInput) (ReserveResult, error)
 	// 原子「检查 + 预留 + 幂等占位」:request_id 重复返回 duplicate。
+	// 仅供兼容历史与测试，新计费入口使用 AdmitUsage。
 	ReserveQuota(ctx context.Context, input ReserveQuotaInput) (ReserveResult, error)
 	GetQuotaReservation(ctx context.Context, id string) (*QuotaReservationRecord, error)
 	// SettleReservation:同事务完成预留状态、团队额度与 usage 落库；重复结算幂等。
@@ -158,6 +167,8 @@ type PlatformStore interface {
 	ExpireStaleReservations(ctx context.Context, before time.Time) (int64, error)
 	ListOpenReservations(ctx context.Context, limit int64) ([]QuotaReservationRecord, error)
 	CreateBackgroundGeneration(ctx context.Context, job BackgroundGenerationJob) error
+	// 只保存合法累计用量观察值，不结算；旧观察不能覆盖新值，返回权威任务快照。
+	UpdateBackgroundGenerationUsage(ctx context.Context, reservationID string, record UsageRecord) (*BackgroundGenerationJob, error)
 	FindBackgroundGeneration(ctx context.Context, teamID, responseID string) (*BackgroundGenerationJob, error)
 	ClaimBackgroundGenerations(ctx context.Context, now, leaseUntil time.Time, limit int64) ([]BackgroundGenerationJob, error)
 	RetryBackgroundGeneration(ctx context.Context, reservationID string, nextPollAt time.Time, lastError string) error
@@ -237,6 +248,9 @@ var (
 	ErrReservationMismatch     = errors.New("reservation owner mismatch")
 	ErrInvalidInput            = errors.New("invalid store input")
 	ErrDuplicate               = errors.New("duplicate store input")
+	ErrTeamAssetStorageLimit   = errors.New("team asset storage limit exceeded")
+	ErrTeamAssetConflict       = errors.New("team asset id conflicts with an existing upload")
+	ErrTeamAssetTeamNotFound   = errors.New("team asset team not found")
 )
 
 // ResolveUserTeam 显式拒绝既存多团队歧义，避免按列表顺序错误扣费。

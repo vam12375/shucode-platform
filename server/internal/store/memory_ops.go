@@ -132,12 +132,27 @@ func (s *memoryStore) RecoverUpstreamProvider(_ context.Context, id string, _ ti
 
 // ---- quota reservations ----
 
-func (s *memoryStore) ReserveQuota(_ context.Context, input ReserveQuotaInput) (ReserveResult, error) {
+func (s *memoryStore) AdmitUsage(ctx context.Context, input ReserveQuotaInput) (ReserveResult, error) {
+	input.Postpaid = true
+	input.ReserveAllAvailable = false
+	input.RetainUntilSettled = true
+	return s.reserveQuota(ctx, input)
+}
+
+func (s *memoryStore) ReserveQuota(ctx context.Context, input ReserveQuotaInput) (ReserveResult, error) {
+	input.Postpaid = false
+	return s.reserveQuota(ctx, input)
+}
+
+func (s *memoryStore) reserveQuota(_ context.Context, input ReserveQuotaInput) (ReserveResult, error) {
 	if input.Micro < 0 || input.Micro > maxCreditFieldMicro {
 		return ReserveDenied, nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, exists := s.reservations[input.ID]; input.ID != "" && exists {
+		return ReserveDuplicate, nil
+	}
 	for _, reservation := range s.reservations {
 		if reservation.TeamID == input.TeamID && reservation.RequestID == input.RequestID {
 			return ReserveDuplicate, nil
@@ -167,7 +182,12 @@ func (s *memoryStore) ReserveQuota(_ context.Context, input ReserveQuotaInput) (
 	if decision != ReserveReserved {
 		return decision, nil
 	}
-	withinLimit, err := teamCreditWithinLimit(team.UsedCredits, team.ReservedCredits, team.QuotaCredits, team.Unlimited, input.Micro)
+	var withinLimit bool
+	if input.Postpaid {
+		withinLimit, err = teamCreditAdmissionAllowed(team.UsedCredits, team.QuotaCredits, team.Unlimited, input.Micro)
+	} else {
+		withinLimit, err = teamCreditWithinLimit(team.UsedCredits, team.ReservedCredits, team.QuotaCredits, team.Unlimited, input.Micro)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -182,15 +202,21 @@ func (s *memoryStore) ReserveQuota(_ context.Context, input ReserveQuotaInput) (
 	if id == "" {
 		id = uuid.NewString()
 	}
+	reservedMicro := input.Micro
+	if input.Postpaid {
+		reservedMicro = 0
+	}
 	reservation := QuotaReservationRecord{
 		ID: id, TeamID: input.TeamID, UserID: input.UserID, RequestID: input.RequestID,
-		ReservedMicro: input.Micro, Status: ReservationReserved, HeldByTask: input.HeldByTask, RetainUntilSettled: input.RetainUntilSettled,
+		Postpaid: input.Postpaid, ReservedMicro: reservedMicro, Status: ReservationReserved, HeldByTask: input.HeldByTask, RetainUntilSettled: input.RetainUntilSettled,
 		CreatedAt: createdAt, ExpiresAt: createdAt.Add(ttl),
 	}
 	s.reservations[id] = reservation
-	reserved, _ := credits.ParseCreditsToMicro(team.ReservedCredits)
-	team.ReservedCredits = credits.FormatMicroCredits(reserved + input.Micro)
-	s.teams[team.ID] = team
+	if !input.Postpaid {
+		reserved, _ := credits.ParseCreditsToMicro(team.ReservedCredits)
+		team.ReservedCredits = credits.FormatMicroCredits(reserved + reservedMicro)
+		s.teams[team.ID] = team
+	}
 	return ReserveReserved, nil
 }
 
@@ -215,18 +241,18 @@ func (s *memoryStore) GetQuotaReservation(_ context.Context, id string) (*QuotaR
 func (s *memoryStore) SettleReservation(_ context.Context, reservationID string, record UsageRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if record.CreditsMicro < 0 {
+	if record.CreditsMicro < 0 || record.CreditsMicro > maxCreditFieldMicro {
 		return ErrInvalidCreditCharge
 	}
 	reservation, ok := s.reservations[reservationID]
 	if !ok {
 		return ErrReservationNotFound
 	}
+	if record.TeamID != reservation.TeamID || (reservation.UserID != "" && record.UserID != reservation.UserID) || (reservation.Postpaid && record.RequestID != reservation.RequestID) {
+		return ErrReservationMismatch
+	}
 	if reservation.Status == ReservationSettled || reservation.Status == ReservationReleased {
 		return nil
-	}
-	if record.TeamID != reservation.TeamID || (reservation.UserID != "" && record.UserID != reservation.UserID) {
-		return ErrReservationMismatch
 	}
 	team, ok := s.teams[reservation.TeamID]
 	capped := false
@@ -237,7 +263,7 @@ func (s *memoryStore) SettleReservation(_ context.Context, reservationID string,
 		}
 		reservedBefore := team.ReservedCredits
 		releasedMicro := int64(0)
-		if reservation.Status == ReservationReserved {
+		if !reservation.Postpaid && reservation.Status == ReservationReserved {
 			reserved, err := credits.ParseCreditsToMicro(reservedBefore)
 			if err != nil {
 				return err
@@ -245,7 +271,13 @@ func (s *memoryStore) SettleReservation(_ context.Context, reservationID string,
 			team.ReservedCredits = credits.FormatMicroCredits(maxInt64(0, reserved-reservation.ReservedMicro))
 			releasedMicro = reservation.ReservedMicro
 		}
-		charge, wasCapped, err := capTeamCreditCharge(team.UsedCredits, reservedBefore, team.QuotaCredits, team.Unlimited, releasedMicro, record.CreditsMicro)
+		var charge int64
+		var wasCapped bool
+		if reservation.Postpaid {
+			charge, err = fullTeamCreditCharge(team.UsedCredits, record.CreditsMicro)
+		} else {
+			charge, wasCapped, err = capTeamCreditCharge(team.UsedCredits, reservedBefore, team.QuotaCredits, team.Unlimited, releasedMicro, record.CreditsMicro)
+		}
 		if err != nil {
 			return err
 		}
@@ -282,7 +314,7 @@ func (s *memoryStore) ReleaseReservationByID(_ context.Context, reservationID st
 	if !ok || reservation.Status != ReservationReserved {
 		return nil
 	}
-	if team, ok := s.teams[reservation.TeamID]; ok {
+	if team, ok := s.teams[reservation.TeamID]; ok && !reservation.Postpaid {
 		reserved, err := credits.ParseCreditsToMicro(team.ReservedCredits)
 		if err != nil {
 			return err
@@ -303,7 +335,7 @@ func (s *memoryStore) ExpireStaleReservations(_ context.Context, before time.Tim
 	perTeam := map[string]int64{}
 	var count int64
 	for id, reservation := range s.reservations {
-		if reservation.RetainUntilSettled || reservation.HeldByTask || reservation.Status != ReservationReserved || !reservation.ExpiresAt.Before(before) {
+		if reservation.Postpaid || reservation.RetainUntilSettled || reservation.HeldByTask || reservation.Status != ReservationReserved || !reservation.ExpiresAt.Before(before) {
 			continue
 		}
 		perTeam[reservation.TeamID] += reservation.ReservedMicro
@@ -366,10 +398,23 @@ func (s *memoryStore) CreateBackgroundGeneration(_ context.Context, job Backgrou
 			return ErrDuplicate
 		}
 	}
-	job.Record = cloneUsage(job.Record)
-	job.FinalResponse = append([]byte(nil), job.FinalResponse...)
-	s.backgroundJobs[job.ReservationID] = job
+	s.backgroundJobs[job.ReservationID] = cloneBackgroundGeneration(job)
 	return nil
+}
+
+func (s *memoryStore) UpdateBackgroundGenerationUsage(_ context.Context, reservationID string, record UsageRecord) (*BackgroundGenerationJob, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	job, ok := s.backgroundJobs[reservationID]
+	if !ok {
+		return nil, ErrReservationNotFound
+	}
+	if err := updateBackgroundUsage(&job, record); err != nil {
+		return nil, err
+	}
+	s.backgroundJobs[reservationID] = cloneBackgroundGeneration(job)
+	copy := cloneBackgroundGeneration(job)
+	return &copy, nil
 }
 
 func (s *memoryStore) FindBackgroundGeneration(_ context.Context, teamID, responseID string) (*BackgroundGenerationJob, error) {
@@ -377,13 +422,8 @@ func (s *memoryStore) FindBackgroundGeneration(_ context.Context, teamID, respon
 	defer s.mu.Unlock()
 	for _, job := range s.backgroundJobs {
 		if job.TeamID == teamID && job.ResponseID == responseID {
-			job.Record = cloneUsage(job.Record)
-			job.FinalResponse = append([]byte(nil), job.FinalResponse...)
-			if job.CompletedAt != nil {
-				completedAt := *job.CompletedAt
-				job.CompletedAt = &completedAt
-			}
-			return &job, nil
+			copy := cloneBackgroundGeneration(job)
+			return &copy, nil
 		}
 	}
 	return nil, nil
@@ -409,12 +449,8 @@ func (s *memoryStore) ClaimBackgroundGenerations(_ context.Context, now, leaseUn
 		job := out[i]
 		job.Attempts++
 		job.NextPollAt = leaseUntil
-		job.Record = cloneUsage(job.Record)
-		job.FinalResponse = append([]byte(nil), job.FinalResponse...)
-		s.backgroundJobs[job.ReservationID] = job
-		job.Record = cloneUsage(job.Record)
-		job.FinalResponse = append([]byte(nil), job.FinalResponse...)
-		out[i] = job
+		s.backgroundJobs[job.ReservationID] = cloneBackgroundGeneration(job)
+		out[i] = cloneBackgroundGeneration(job)
 	}
 	return out, nil
 }

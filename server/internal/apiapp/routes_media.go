@@ -154,8 +154,8 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		}
 		quota, _ := credits.ParseCreditsToMicro(m.Team.QuotaCredits)
 		used, _ := credits.ParseCreditsToMicro(m.Team.UsedCredits)
-		reserved, _ := credits.ParseCreditsToMicro(m.Team.ReservedCredits)
-		c.JSON(200, okData(gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": max(int64(0), quota-used-reserved), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "assets": assets, "projects": projects, "generations": generations, "compositionAvailable": media.CompositionAvailable()}))
+		// 余额只由已结算账本决定；进行中的聊天和媒体不占用点数，负余额如实返回。
+		c.JSON(200, okData(gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": quota - used, "reservedMicro": int64(0), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "assets": assets, "projects": projects, "generations": generations, "compositionAvailable": media.CompositionAvailable()}))
 	})
 	router.POST("/api/v1/media/assets", func(c *gin.Context) {
 		_, m, ok := mediaIdentity(c, deps)

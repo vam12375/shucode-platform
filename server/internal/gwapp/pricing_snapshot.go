@@ -130,6 +130,7 @@ func (capture usagePricingCapture) snapshot(target upstreamTarget, usage UsageCo
 	}
 	snapshot.Cost.Status, snapshot.Cost.Reason = "estimated", ""
 	snapshot.Cost.EstimatedMicro = &micro
-	snapshot.Cost.UsageEstimated = strings.Contains(errorType, "usage_missing")
+	// 新账单只使用已观察的合法 token；缺失计量不再伪造估算 token。
+	snapshot.Cost.UsageEstimated = false
 	return snapshot
 }

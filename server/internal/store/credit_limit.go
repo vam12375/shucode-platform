@@ -4,6 +4,31 @@ import "github.com/vam12375/shucode-platform/server/internal/credits"
 
 const maxCreditFieldMicro int64 = 999_999_999_999_999_999
 
+func teamCreditAdmissionAllowed(used, quota string, unlimited bool, requested int64) (bool, error) {
+	if requested < 0 || requested > maxCreditFieldMicro {
+		return false, nil
+	}
+	usedMicro, usedErr := credits.ParseCreditsToMicro(used)
+	quotaMicro, quotaErr := credits.ParseCreditsToMicro(quota)
+	if usedErr != nil || quotaErr != nil || usedMicro < 0 || usedMicro > maxCreditFieldMicro || quotaMicro < 0 || quotaMicro > maxCreditFieldMicro {
+		return false, ErrInvalidCreditCharge
+	}
+	if unlimited {
+		return true, nil
+	}
+	// 余额仅按已结算账本计算；并发已受理请求不占额度，实际费用可以使余额为负。
+	return usedMicro < quotaMicro && requested <= quotaMicro-usedMicro, nil
+}
+
+func fullTeamCreditCharge(used string, chargeMicro int64) (int64, error) {
+	usedMicro, err := credits.ParseCreditsToMicro(used)
+	if err != nil || usedMicro < 0 || usedMicro > maxCreditFieldMicro || chargeMicro < 0 || chargeMicro > maxCreditFieldMicro-usedMicro {
+		return 0, ErrInvalidCreditCharge
+	}
+	// 已受理请求必须完整实扣，只检查账本存储范围，不能以余额或旧尾差上限截断真实费用。
+	return chargeMicro, nil
+}
+
 func prepareTeamCreditIncrease(oldQuota string, patch UpdateTeamPatch, audit *InsertAuditLogInput) (UpdateTeamPatch, error) {
 	if patch.QuotaIncreaseMicro == nil {
 		return patch, nil

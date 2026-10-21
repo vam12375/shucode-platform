@@ -1,6 +1,6 @@
 // Package gwapp:模型网关(specs/go-rewrite.md §2.6)。
 // 管道与 apps/gateway/src/app.ts 逐行为对齐:
-// 鉴权 → 模型校验 → 上游解析 → 额度预留(原子) → 透传转发 → usage 结算。
+// 鉴权 → 模型校验 → 上游解析 → 零占用准入(原子) → 透传转发 → usage 结算。
 // 三协议差异只体现在请求体字段读取、上游鉴权头、usage 解析与流式采集器。
 package gwapp
 
@@ -80,20 +80,6 @@ func openAIError(c *gin.Context, status int, typ, message string) {
 	}))
 }
 
-func writeCreditLimitStreamError(w io.Writer, family string) {
-	payload := mustJSON(map[string]any{
-		"type":  "error",
-		"error": map[string]any{"type": "rate_limit_error", "message": "本次计费用量超出预留，已中断生成，请联系团队管理员"},
-	})
-	if family == "anthropic" {
-		_, _ = io.WriteString(w, "event: error\ndata: ")
-	} else {
-		_, _ = io.WriteString(w, "data: ")
-	}
-	_, _ = w.Write(payload)
-	_, _ = io.WriteString(w, "\n\n")
-}
-
 func mustJSON(v any) []byte {
 	raw, err := json.Marshal(v)
 	if err != nil {
@@ -110,7 +96,7 @@ type protocolSpec struct {
 	readModelID   func(body map[string]any) string
 	readMaxTokens func(body map[string]any) int64
 	// applyOutputLimit:把平台实际采用的输出上限写回上游请求。
-	// 缺省值/夹紧值必须与额度预留使用同一个数，否则上游可能超出预留。
+	// 缺省值/夹紧值必须写回上游，确保实际执行遵守平台输出上限。
 	applyOutputLimit func(body map[string]any, limit int64)
 	isStream         func(body map[string]any) bool
 	buildUpstream    func(r *http.Request, body map[string]any, upstreamModel string, stream bool, apiKey, anthropicVersion string) (map[string]string, []byte)
@@ -525,7 +511,6 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		spec.errorResponse(c, 400, "invalid_request_error", "请求体必须是 JSON 对象")
 		return
 	}
-	fullPrecharge := requiresFullCreditPrecharge(body)
 	backgroundGeneration := spec.routePath == "/v1/responses" && body["background"] == true
 	modelID := spec.readModelID(body)
 	if modelID == "" {
@@ -568,10 +553,6 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		spec.errorResponse(c, 503, "api_error", "模型计费配置无效，已阻止上游调用")
 		return
 	}
-	promptTokens := estimatePromptTokens(body)
-	perRequestMaxTokens = affordableOutputLimit(primary, promptTokens, outputCount, perRequestMaxTokens, rates)
-	maxTokens = perRequestMaxTokens * outputCount
-	spec.applyOutputLimit(body, perRequestMaxTokens)
 	priceCapture := captureUsagePricing(ctx, deps, model, priceCapturedAt)
 
 	// ---- 解析上游目标：渠道池按 priority/weight 产出候选；无路由时兼容回退 ----
@@ -627,21 +608,18 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		}
 	}
 
-	// ---- 额度准入：预留状态机 + request_id 幂等 ----
-	estimateMicro := credits.EstimateReservationMicroCredits(promptTokens, maxTokens, rates)
+	// ---- 额度准入：只校验已结算余额，登记 request_id 幂等身份，不占用余额 ----
 	reservationID, _ := contracts.RandomUUIDv4()
-	// 持续流量会不断重置 idle timer，旧实现可活过预留 TTL，被 sweeper 提前释放后绕过预算。
-	// 从准入开始让所有重试共用总寿命，并在 TTL 前保留结算窗口；短 TTL 按比例留余量。
+	// 流式与重试共用有界总寿命并保留结算窗口；请求身份持久化但金额恒为 0。
 	requestLifetime, settlementTimeout := reservationRequestWindows(deps.Env.ReservationTTL)
 	requestCtx, cancelRequest := context.WithTimeout(ctx, requestLifetime)
 	defer cancelRequest()
-	reserveResult, err := deps.Store.ReserveQuota(requestCtx, store.ReserveQuotaInput{
+	reserveResult, err := deps.Store.AdmitUsage(requestCtx, store.ReserveQuotaInput{
 		ID: reservationID, TeamID: primary.ID, UserID: user.ID, RequestID: requestID,
-		Micro: estimateMicro, TTL: deps.Env.ReservationTTL, CreatedAt: deps.Now(), RetainUntilSettled: true,
-		ReserveAllAvailable: fullPrecharge,
+		Micro: 0, TTL: deps.Env.ReservationTTL, CreatedAt: deps.Now(), RetainUntilSettled: true,
 	})
 	if err != nil {
-		deps.Logger.Error("额度预留失败", "error", err)
+		deps.Logger.Error("额度准入失败", "error", err)
 		spec.errorResponse(c, 500, "api_error", "网关内部错误")
 		return
 	}
@@ -651,16 +629,7 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	}
 	switch reserveResult {
 	case store.ReserveDenied:
-		remaining := "unknown"
-		if quota, quotaErr := credits.ParseCreditsToMicro(primary.QuotaCredits); quotaErr == nil {
-			used, usedErr := credits.ParseCreditsToMicro(primary.UsedCredits)
-			reserved, reservedErr := credits.ParseCreditsToMicro(primary.ReservedCredits)
-			if usedErr == nil && reservedErr == nil {
-				remaining = credits.FormatMicroCredits(quota - used - reserved)
-			}
-		}
-		spec.errorResponse(c, 429, "rate_limit_error", "团队额度不足：本次请求需预留 "+credits.FormatMicroCredits(estimateMicro)+
-			" credit，团队余额快照为 "+remaining+" credit；余额到 0 即拒绝新请求。请求未发送到上游，请缩短上下文或降低输出上限")
+		spec.errorResponse(c, 429, "rate_limit_error", "团队余额已用尽，请充值或联系团队管理员；请求未发送到上游")
 		return
 	case store.ReserveDeniedBudget:
 		spec.errorResponse(c, 429, "rate_limit_error", "团队或成员预算已用尽，请联系团队管理员")
@@ -673,17 +642,7 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		spec.errorResponse(c, 429, "rate_limit_error", "团队额度状态异常，已在上游调用前拒绝请求")
 		return
 	}
-	if fullPrecharge {
-		// 全额冻结必须读取团队锁内实际预留值，旧余额快照不能充当并发准入事实。
-		reservation, reservationErr := deps.Store.GetQuotaReservation(requestCtx, reservationID)
-		if reservationErr != nil || reservation == nil {
-			deps.Logger.Error("实际冻结金额读取失败，预留保持有效", "reservationId", reservationID, "error", reservationErr)
-			spec.errorResponse(c, 500, "api_error", "冻结金额暂不可确认，请联系管理员核对预留")
-			return
-		}
-		estimateMicro = reservation.ReservedMicro
-	}
-	// 慢客户端也不能把处理器卡在响应写入，拖到预留过期才开始结算。
+	// 慢客户端也不能把响应写入无限期阻塞，结算使用独立有界 context。
 	responseController := http.NewResponseController(c.Writer)
 	requestDeadline, _ := requestCtx.Deadline()
 	if responseController.SetWriteDeadline(requestDeadline) == nil {
@@ -759,15 +718,24 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		record.LatencyMs = &latency
 		return record
 	}
-	persistBackground := func(target upstreamTarget, responseID string) bool {
+	var backgroundJob *store.BackgroundGenerationJob
+	var backgroundResponseID string
+	persistBackground := func(target upstreamTarget, responseID string, observed *UsageCounts) bool {
 		if !safeResponseID.MatchString(responseID) {
 			return false
 		}
-		record := buildUsageRecord(target, UsageCounts{}, store.UsageStatusOk, "", estimateMicro)
+		backgroundResponseID = responseID
+		record := buildUsageRecord(target, UsageCounts{}, store.UsageStatusOk, "", 0)
+		var observedAt *time.Time
+		if observed != nil {
+			record = buildUsageRecord(target, *observed, store.UsageStatusOk, "", 0)
+			at := deps.Now()
+			observedAt = &at
+		}
 		job := store.BackgroundGenerationJob{
 			ReservationID: reservationID, ResponseID: responseID, ProviderID: target.ProviderID,
 			BaseURL: target.BaseURL, TeamID: primary.ID, UserID: user.ID,
-			Record: record, Limited: !primary.Unlimited, CreatedAt: startedAt, NextPollAt: deps.Now(),
+			Record: record, UsageObservedAt: observedAt, Limited: !primary.Unlimited, CreatedAt: startedAt, NextPollAt: deps.Now(),
 			Rates: store.UsageChargeRates{
 				InputPerMtok: rates.InputPerMtok, OutputPerMtok: rates.OutputPerMtok,
 				CacheReadPerMtok: rates.CacheReadPerMtok, CacheWritePerMtok: rates.CacheWritePerMtok,
@@ -776,50 +744,58 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		persistCtx, cancelPersist := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancelPersist()
 		if err := deps.Store.CreateBackgroundGeneration(persistCtx, job); err != nil {
-			deps.Logger.Error("后台生成状态保存失败，额度保持冻结", "reservationId", reservationID, "error", err)
+			deps.Logger.Error("后台生成状态保存失败，保留零占用请求身份待核对", "reservationId", reservationID, "error", err)
 			return false
 		}
+		backgroundJob = &job
 		return true
 	}
 
-	usageMicro := func(usage UsageCounts) int64 {
-		micro, err := credits.ComputeUsageMicroCredits(credits.UsageTokenCounts{
-			InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens,
-			CacheReadTokens: usage.CacheReadTokens, CacheCreationTokens: usage.CacheCreationTokens,
-		}, rates)
-		if err != nil {
-			deps.Logger.Error("用量计价失败", "requestId", requestID, "error", err)
-			return estimateMicro
+	defer func() {
+		if !backgroundGeneration || backgroundJob != nil || settled.Load() {
+			return
 		}
-		return micro
-	}
+		// 未拿到任务 ID 或任务保存失败时仍可能已受理；持久化归属和锁价供核对，不能盲目重提/扣费。
+		record := buildUsageRecord(lastTarget, UsageCounts{}, store.UsageStatusError, "background_submission_unknown", 0)
+		record.BackgroundResponseID = backgroundResponseID
+		reviewCtx, cancelReview := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancelReview()
+		var reviewErr error
+		if deps.SettlementFallback != nil {
+			reviewErr = deps.SettlementFallback.Persist(reviewCtx, reservationID, record)
+		} else {
+			reviewErr = deps.Store.EnqueuePendingSettlement(reviewCtx, reservationID, record)
+		}
+		if reviewErr != nil {
+			deps.Logger.Error("后台未知受理核对记录保存失败", "reservationId", reservationID, "error", reviewErr)
+		}
+	}()
 
-	settle := func(target upstreamTarget, usage UsageCounts, status store.UsageStatus, errorType string, microOverride *int64) {
+	settle := func(target upstreamTarget, usage UsageCounts, status store.UsageStatus, errorType string) {
 		if settled.Swap(true) {
 			return
 		}
-		micro := usageMicro(usage)
-		if microOverride != nil {
-			micro = *microOverride
+		micro, chargeErr := credits.ComputeUsageMicroCredits(credits.UsageTokenCounts{
+			InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens,
+			CacheReadTokens: usage.CacheReadTokens, CacheCreationTokens: usage.CacheCreationTokens,
+		}, rates)
+		if chargeErr != nil {
+			deps.Logger.Error("用量计价失败，保留原始计量待核对", "requestId", requestID, "error", chargeErr)
+			micro, status = 0, store.UsageStatusError
+			if errorType == "" {
+				errorType = "usage_invalid"
+			}
 		}
 		record := buildUsageRecord(target, usage, status, errorType, micro)
-		if microOverride != nil && record.PriceSnapshot != nil {
-			record.PriceSnapshot.Cost.UsageEstimated = true
-		}
 		// 客户端取消/断连会取消请求 ctx；结算必须使用独立且有界的 ctx，
 		// 否则 Postgres 事务在 Begin 阶段即失败，已发生用量永远落不了库。
-		// 多次重试共享结算窗口，避免每次重新计时后累计超过预留 TTL。
+		// 多次重试共享结算窗口，避免失败时无限期阻塞。
 		settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settlementTimeout)
 		defer cancel()
 		var lastErr error
 		for attempt := 0; attempt < 3; attempt++ {
 			lastErr = deps.Store.SettleReservation(settleCtx, reservationID, record)
 			if lastErr == nil {
-				return
-			}
-			if errors.Is(lastErr, store.ErrCreditChargeCapped) {
-				deps.Logger.Warn("实扣已按团队 -0.01 credit 硬下限封顶，保留原始用量快照供对账",
-					"requestId", requestID, "reservedMicro", estimateMicro, "reportedMicro", micro)
 				return
 			}
 			if attempt == 2 {
@@ -852,23 +828,25 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	}
 
 	failWithUsage := func(target upstreamTarget, status store.UsageStatus, errorType string) {
-		settle(target, UsageCounts{}, status, errorType, nil)
+		settle(target, UsageCounts{}, status, errorType)
 	}
 
-	// 上游成功返回但缺少 usage：零计费会让所有实际消耗免费，按准入预留额保守结算，
-	// 并以 usage_missing_estimated 标记，供对账/告警人工核销。
+	// 旧逻辑把最大输出当作实际 usage，停止或缺失计量时会虚扣；只结算合法已观察值。
+	// 后台任务独立于 HTTP 生命周期，结果不明时保留核对身份，不占余额且不盲目重发。
 	settleMissingUsage := func(target upstreamTarget, status store.UsageStatus, errorType string) {
 		if backgroundGeneration {
-			// 网络错误不能证明后台任务停止；没有终态证据时保持冻结供对账。
-			deps.Logger.Error("后台生成结果不明，额度保持冻结", "reservationId", reservationID, "errorType", errorType)
+			deps.Logger.Error("后台生成结果不明，保留零占用核对身份", "reservationId", reservationID, "errorType", errorType)
 			return
 		}
-		usage := UsageCounts{InputTokens: promptTokens, OutputTokens: maxTokens}
-		settle(target, usage, status, errorType, &estimateMicro)
+		settle(target, UsageCounts{}, status, errorType)
 	}
-	settleIncompleteUsage := func(target upstreamTarget, usage UsageCounts, status store.UsageStatus, errorType string) {
-		micro := max(estimateMicro, usageMicro(usage))
-		settle(target, usage, status, errorType, &micro)
+	settleClientAbort := func(target upstreamTarget, usage UsageCounts, upstreamMayHaveRun bool) {
+		if backgroundGeneration && upstreamMayHaveRun {
+			deps.Logger.Error("后台生成取消时无法确认上游终态，保留零占用核对身份", "reservationId", reservationID)
+			return
+		}
+		// 前台取消同步取消上游；结束本次身份，有合法 usage 则实扣，没有则扣 0。
+		settle(target, usage, store.UsageStatusAborted, "client_aborted")
 	}
 
 	respondLifetimeTimeout := func() {
@@ -933,6 +911,12 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			respondLifetimeTimeout()
 			return
 		}
+		if ctx.Err() != nil {
+			// 准入后、上游发送前发生取消时，确认没有上游工作，结算零用量并结束当前请求身份。
+			recordAttempt(target, attempt, attemptStarted, nil, "client_aborted", "", true)
+			settleClientAbort(target, UsageCounts{}, false)
+			return
+		}
 		upstreamConnectTimeoutMs := target.TimeoutMs
 		if upstreamConnectTimeoutMs <= 0 {
 			upstreamConnectTimeoutMs = deps.Env.UpstreamTimeoutMs
@@ -974,6 +958,11 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 				respondLifetimeTimeout()
 				return
 			}
+			if ctx.Err() != nil {
+				recordAttempt(target, attempt, attemptStarted, nil, "client_aborted", "", true)
+				settleClientAbort(target, UsageCounts{}, true)
+				return
+			}
 			errorType := "upstream_unavailable"
 			if headerTimedOut.Load() {
 				errorType = "upstream_timeout"
@@ -981,11 +970,6 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			deps.Logger.Warn("上游请求失败", "requestId", requestID, "attempt", attempt+1,
 				"providerId", target.ProviderID, "timedOut", headerTimedOut.Load(), "error", err)
 			reportFailure(target.ProviderID, errorType)
-			if ctx.Err() != nil {
-				recordAttempt(target, attempt, attemptStarted, nil, "client_aborted", "", true)
-				settleMissingUsage(target, store.UsageStatusAborted, "client_aborted")
-				return
-			}
 			lastStatus, lastErrorType = 502, errorType
 			lastMessage = "上游供应商暂时不可用，请稍后重试"
 			lastBody = nil
@@ -1059,6 +1043,11 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 					respondLifetimeTimeout()
 					return
 				}
+				if ctx.Err() != nil {
+					recordAttempt(target, attempt, attemptStarted, &resp.StatusCode, "client_aborted", providerRequestIDFrom(resp), true)
+					settleClientAbort(target, UsageCounts{}, true)
+					return
+				}
 				errorType := "upstream_body_failure"
 				if headerTimedOut.Load() {
 					errorType = "upstream_timeout"
@@ -1080,8 +1069,8 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			reportSuccess(target.ProviderID)
 			if backgroundGeneration {
 				responseID, responseStatus := backgroundResponseIdentity(text)
-				if !persistBackground(target, responseID) {
-					spec.errorResponse(c, 502, "api_error", "后台任务已提交但状态暂不可确认，额度保持冻结，请联系管理员")
+				if !persistBackground(target, responseID, spec.parseUsageJSON(string(text))) {
+					spec.errorResponse(c, 502, "api_error", "后台任务已提交但状态暂不可确认，请联系管理员核对")
 					return
 				}
 				if terminalBackgroundStatus(responseStatus) {
@@ -1096,14 +1085,10 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 
 			parsedUsage := spec.parseUsageJSON(string(text))
 			if parsedUsage == nil {
-				deps.Logger.Warn("上游成功响应缺少 usage，按准入预留额保守结算", "requestId", requestID)
-				settleMissingUsage(target, store.UsageStatusError, "usage_missing_estimated")
-			} else if usageMicro(*parsedUsage) > estimateMicro {
-				settle(target, *parsedUsage, store.UsageStatusError, "credit_reservation_exceeded", nil)
-				spec.errorResponse(c, 502, "api_error", "上游用量超出预留，响应已拒绝，请联系管理员对账")
-				return
+				deps.Logger.Warn("上游成功响应缺少 usage，不估算扣费，记录待核对", "requestId", requestID)
+				settleMissingUsage(target, store.UsageStatusError, "usage_missing")
 			} else {
-				settle(target, *parsedUsage, store.UsageStatusOk, "", nil)
+				settle(target, *parsedUsage, store.UsageStatusOk, "")
 			}
 			contentType := resp.Header.Get("content-type")
 			if contentType == "" {
@@ -1117,6 +1102,23 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		headerTimer.Stop()
 		scanner := spec.newScanner()
 		backgroundSaved := false
+		persistObservedBackgroundUsage := func() {
+			if !backgroundSaved || backgroundJob == nil || !scanner.UsageObserved() {
+				return
+			}
+			observed := scanner.Usage()
+			previous := backgroundJob.Record
+			if backgroundJob.UsageObservedAt != nil && previous.InputTokens == observed.InputTokens && previous.OutputTokens == observed.OutputTokens && previous.CacheReadTokens == observed.CacheReadTokens && previous.CacheCreationTokens == observed.CacheCreationTokens {
+				return
+			}
+			updated, err := persistBackgroundUsage(ctx, deps, *backgroundJob, observed)
+			if err != nil {
+				deps.Logger.Error("后台流合法用量观察保存失败", "reservationId", reservationID, "error", err)
+				return
+			}
+			backgroundJob = updated
+		}
+		defer persistObservedBackgroundUsage()
 		var idleFired atomic.Bool
 		idleTimer := time.AfterFunc(time.Duration(upstreamIdleTimeoutMs)*time.Millisecond, func() {
 			idleFired.Store(true)
@@ -1143,21 +1145,29 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 				return
 			}
 			if backgroundGeneration && !scanner.UsageComplete() {
-				deps.Logger.Error("后台生成流缺少任务 ID 或终态，额度保持冻结", "reservationId", reservationID)
+				deps.Logger.Error("后台生成流缺少任务 ID 或终态，保留零占用核对身份", "reservationId", reservationID)
+				return
+			}
+			if status == store.UsageStatusAborted {
+				usage := scanner.Usage()
+				if !scanner.UsageObserved() {
+					usage = UsageCounts{}
+				}
+				settleClientAbort(target, usage, true)
 				return
 			}
 			if !scanner.UsageComplete() || scanner.Dropped() > 0 {
-				deps.Logger.Warn("流式响应缺少完整最终 usage，按准入预留额保守结算",
+				deps.Logger.Warn("流式响应缺少完整最终 usage，仅结算已观察合法用量",
 					"requestId", requestID, "status", status)
 				if errorType == "" {
-					settleIncompleteUsage(target, scanner.Usage(), status, "usage_missing_estimated")
+					settle(target, scanner.Usage(), status, "usage_missing")
 				} else {
-					// 保留 client_aborted 等既有语义，但同样按预留额保守结算。
-					settleIncompleteUsage(target, scanner.Usage(), status, errorType)
+					// 保留上游异常原因，不估算未知尾部用量。
+					settle(target, scanner.Usage(), status, errorType)
 				}
 				return
 			}
-			settle(target, scanner.Usage(), status, errorType, nil)
+			settle(target, scanner.Usage(), status, errorType)
 		}
 		finalizeLifetimeTimeout := func() {
 			idleTimer.Stop()
@@ -1165,13 +1175,13 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			recordAttempt(target, attempt, attemptStarted, &resp.StatusCode, "request_lifetime_timeout", providerRequestIDFrom(resp), true)
 			reportFailure(target.ProviderID, "request_lifetime_timeout")
 			if !backgroundGeneration {
-				settleIncompleteUsage(target, scanner.Usage(), store.UsageStatusError, "request_lifetime_timeout")
+				settle(target, scanner.Usage(), store.UsageStatusError, "request_lifetime_timeout")
 			}
 		}
-		// 仅有已观察的中间 usage 不能证明生成已经结束；断流的未知尾部不能释放为可消费余额。
+		// 断流仅结算合法已观察 usage，不能把未知尾部按输出上限虚扣。
 		failStreamWithUsage := func(errorType string) {
 			if !backgroundGeneration {
-				settleIncompleteUsage(target, scanner.Usage(), store.UsageStatusError, errorType)
+				settle(target, scanner.Usage(), store.UsageStatusError, errorType)
 			}
 		}
 
@@ -1192,7 +1202,12 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 				scanner.Push(string(buf[:n]))
 				if backgroundGeneration && !backgroundSaved {
 					if responses, ok := scanner.(*ResponsesScanner); ok && responses.ResponseID() != "" {
-						backgroundSaved = persistBackground(target, responses.ResponseID())
+						var observed *UsageCounts
+						if scanner.UsageObserved() {
+							usage := scanner.Usage()
+							observed = &usage
+						}
+						backgroundSaved = persistBackground(target, responses.ResponseID(), observed)
 						if !backgroundSaved {
 							idleTimer.Stop()
 							cancelUpstream()
@@ -1201,29 +1216,9 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 						}
 					}
 				}
-				if scanner.UsageObserved() && !primary.Unlimited && usageMicro(scanner.Usage()) > estimateMicro {
-					// 用量事件已超出已预留敞口时立即取消上游，避免继续生成累积费用。
-					deps.Logger.Error("上游累计用量超过本次原子预留，已中断流式请求",
-						"requestId", requestID, "reservedMicro", estimateMicro,
-						"reportedMicro", usageMicro(scanner.Usage()))
-					idleTimer.Stop()
-					cancelUpstream()
-					_ = resp.Body.Close()
-					recordAttempt(target, attempt, attemptStarted, &resp.StatusCode,
-						"credit_reservation_exceeded", providerRequestIDFrom(resp), true)
-					writeCreditLimitStreamError(c.Writer, spec.family)
-					c.Writer.Flush()
-					if backgroundGeneration {
-						if responses, ok := scanner.(*ResponsesScanner); ok && responses.ResponseID() != "" {
-							_ = cancelBackgroundUpstream(ctx, deps, target.BaseURL, target.APIKey, responses.ResponseID())
-						}
-					} else {
-						settle(target, scanner.Usage(), store.UsageStatusError, "credit_reservation_exceeded", nil)
-					}
-					return
-				}
+				persistObservedBackgroundUsage()
 				if _, writeErr := c.Writer.Write(buf[:n]); writeErr != nil {
-					// 客户端断开仍需覆盖上游未知尾部，不能只按输入侧中间 usage 结算。
+					// 客户端断开同步终止上游并按已观察用量结算，不能估算未知尾部。
 					resp.Body.Close()
 					if errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
 						finalizeLifetimeTimeout()
@@ -1242,6 +1237,11 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 				finalizeLifetimeTimeout()
 				return
 			}
+			if ctx.Err() != nil {
+				// 上游可能因客户端取消返回 EOF 或 transport error，先检查请求 context 识别中断。
+				finalize(store.UsageStatusAborted)
+				return
+			}
 			// 空闲看门狗会取消上游 ctx；取消后上游通常以 EOF 结束，
 			// 必须先判定 idleFired，否则会把超时误记成成功。
 			if idleFired.Load() {
@@ -1253,11 +1253,6 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			}
 			if readErr == io.EOF {
 				finalize(store.UsageStatusOk)
-				return
-			}
-			if ctx.Err() != nil {
-				// 客户端断开触发的取消。
-				finalize(store.UsageStatusAborted)
 				return
 			}
 			deps.Logger.Warn("上游流式中断", "requestId", requestID, "error", readErr)

@@ -142,7 +142,7 @@ export function ReadoutRail() {
   // 原实现固定 100%/0%，与真实余额无关；近额时填充转为信号色。
   const quotaCredits = Number(team?.quotaCredits ?? 0);
   const remainingCredits = team
-    ? quotaCredits - Number(team.usedCredits) - Number(team.reservedCredits ?? 0)
+    ? quotaCredits - Number(team.usedCredits)
     : 0;
   const remainingPercent =
     team?.unlimited === true

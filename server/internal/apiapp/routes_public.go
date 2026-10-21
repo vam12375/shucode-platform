@@ -267,15 +267,11 @@ func registerClientCreditRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
-		reservedMicro, err := credits.ParseCreditsToMicro(team.ReservedCredits)
-		if err != nil {
-			internalError(c, deps, err)
-			return
-		}
-		remainingMicro := quotaMicro - usedMicro - reservedMicro
+		// 余额只扣除已结算用量；历史兼容字段不能再把进行中请求显示为余额归零。
+		remainingMicro := quotaMicro - usedMicro
 		usedRatio := 0.0
 		if !team.Unlimited && quotaMicro > 0 {
-			usedRatio = float64(usedMicro+reservedMicro) / float64(quotaMicro)
+			usedRatio = float64(usedMicro) / float64(quotaMicro)
 			if usedRatio < 0 {
 				usedRatio = 0
 			}
@@ -290,7 +286,7 @@ func registerClientCreditRoutes(router *gin.Engine, deps *Deps) {
 			"unlimited":        team.Unlimited,
 			"quotaCredits":     credits.FormatMicroCredits(quotaMicro),
 			"usedCredits":      credits.FormatMicroCredits(usedMicro),
-			"reservedCredits":  credits.FormatMicroCredits(reservedMicro),
+			"reservedCredits":  credits.FormatMicroCredits(0),
 			"remainingCredits": credits.FormatMicroCredits(remainingMicro),
 			"usedRatio":        usedRatio,
 		}))

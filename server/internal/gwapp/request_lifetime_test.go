@@ -52,8 +52,8 @@ func assertLifetimeSettlement(t *testing.T, f *gatewayFixture, checked *lifetime
 		t.Fatalf("必须在 sweeper 可释放预留前结算: %+v", check)
 	}
 	records := f.usageRecords()
-	if len(records) != 1 || records[0].Status != store.UsageStatusError || records[0].ErrorType != "request_lifetime_timeout" || records[0].CreditsMicro <= 0 || records[0].PriceSnapshot == nil || !records[0].PriceSnapshot.Cost.UsageEstimated {
-		t.Fatalf("成功上游缺失最终 usage 时，总时限应按预留额保守结算一次: %+v", records)
+	if len(records) != 1 || records[0].Status != store.UsageStatusError || records[0].ErrorType != "request_lifetime_timeout" || records[0].CreditsMicro != 0 || records[0].PriceSnapshot == nil || records[0].PriceSnapshot.Cost.UsageEstimated {
+		t.Fatalf("总时限无 usage 应只记一次零费用终态: %+v", records)
 	}
 	if team := f.team(); team.ReservedCredits != "0.000000" {
 		t.Fatalf("结算后不应残留预留: %+v", team)

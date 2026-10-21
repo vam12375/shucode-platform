@@ -166,6 +166,7 @@ func (s *Service) Action(ctx context.Context, team, id string, version int64, ac
 					shot.Attempt++
 					shot.ReservationID = ""
 					shot.VideoTaskID = ""
+					shot.PendingChargeMicro = 0
 					shot.ReservedMicro = 0
 					shot.Stage = ""
 					shot.ResultURL = ""
@@ -235,7 +236,7 @@ func (s *Service) Tick(ctx context.Context) {
 						allDone = false
 					}
 				}
-				// 基础设施错误保留阶段和预留；只有已完成付费阶段的合成失败可安全显式重试。
+				// 基础设施错误保留阶段、身份与锁定售价；只有已完成付费阶段的合成失败可安全显式重试。
 				if allDone {
 					v.Status = "failed"
 					v.Error = "composition_failed"
@@ -271,5 +272,5 @@ func (s *Service) storeOutput(ctx context.Context, team, rawURL string, kind str
 	return a, e
 }
 func (s *Service) usage(p *Project, shot Shot, m Model) store.UsageRecord {
-	return store.UsageRecord{ID: shot.ReservationID, RequestID: "media:" + shot.ReservationID, UserID: p.UserID, TeamID: p.TeamID, DeviceTokenID: p.DeviceID, Model: "media:" + m.ID, UpstreamModel: m.UpstreamModel, ProviderID: m.ProviderID, CreditsMicro: shot.ReservedMicro, Status: store.UsageStatusOk, CreatedAt: time.Now().UTC()}
+	return store.UsageRecord{ID: shot.ReservationID, RequestID: "media:" + shot.ReservationID, UserID: p.UserID, TeamID: p.TeamID, DeviceTokenID: p.DeviceID, Model: "media:" + m.ID, UpstreamModel: m.UpstreamModel, ProviderID: m.ProviderID, CreditsMicro: shot.pendingCharge(), Status: store.UsageStatusOk, CreatedAt: time.Now().UTC()}
 }

@@ -67,6 +67,16 @@ func budgetAllows(limit string, spent, requested int64) (bool, error) {
 	return micro > 0 && requested <= micro && spent <= micro-requested, nil
 }
 
+func postpaidBudgetAllows(limit string, spent, requested int64) (bool, error) {
+	allowed, err := budgetAllows(limit, spent, requested)
+	if err != nil || !allowed || limit == "" {
+		return allowed, err
+	}
+	micro, err := credits.ParseCreditsToMicro(limit)
+	// 未知价格以零准入时也必须还有预算，已耗尽预算不能继续调用供应商。
+	return spent < micro, err
+}
+
 // 与趋势图统一按上海自然日/月，不能沿用 UTC 日界来执行团队预算。
 func budgetWindow(at time.Time) (time.Time, time.Time, time.Time, time.Time) {
 	zone := time.FixedZone("Asia/Shanghai", 8*60*60)

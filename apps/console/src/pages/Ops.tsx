@@ -131,7 +131,7 @@ const HOUR_OPTIONS = [
 const METRIC_OPTIONS = [
   { value: "error_rate", label: "错误率" },
   { value: "p95_latency_ms", label: "P95 延迟 (ms)" },
-  { value: "open_reservations", label: "未释放预留数" },
+  { value: "open_reservations", label: "未结束请求身份数" },
   { value: "pending_settlements", label: "待结算补偿数" },
   { value: "audit_outbox", label: "待入库审计数" },
   { value: "daily_credits", label: "窗口消费 (credit)" },
@@ -425,7 +425,7 @@ export function OpsPage() {
           <p className="stat-sub">窗口内有请求的设备</p>
         </div>
         <div className="ops-metric">
-          <p className="stat-label">未释放预留</p>
+          <p className="stat-label">未结束请求身份</p>
           <p className="stat-value">{overview?.openReservations.toLocaleString("en-US") ?? "—"}</p>
           <p className="stat-sub">
             过期 {reconciliation?.staleCount ?? 0} 条
@@ -680,10 +680,13 @@ export function OpsPage() {
 
       <section className="pane d2">
         <div className="pane-h">
-          <h2>预留对账</h2>
+          <h2>请求身份对账</h2>
           <span className="readout">
-            未释放 {reconciliation?.openCount ?? 0} · 已过期 {reconciliation?.staleCount ?? 0}
+            未结束 {reconciliation?.openCount ?? 0} · 已过期 {reconciliation?.staleCount ?? 0}
           </span>
+        </div>
+        <div className="pane-b">
+          <p className="readout">请求身份用于恢复与幂等结算，不占余额。历史预留列仅兼容旧记录，新请求金额恒为 0。</p>
         </div>
         <div className="pane-b flush table-scroll">
           <table className="table">
@@ -693,7 +696,7 @@ export function OpsPage() {
                 <th scope="col">过期时间</th>
                 <th scope="col">request ID</th>
                 <th scope="col">团队</th>
-                <th scope="col" className="num">预留（credit）</th>
+                <th scope="col" className="num">历史预留（credit）</th>
               </tr>
             </thead>
             <tbody>
@@ -708,7 +711,7 @@ export function OpsPage() {
               ))}
               {(reconciliation?.open.length ?? 0) === 0 ? (
                 <tr>
-                  <td colSpan={5} className="readout">没有未释放的预留。</td>
+                  <td colSpan={5} className="readout">没有未结束的请求身份。</td>
                 </tr>
               ) : null}
             </tbody>

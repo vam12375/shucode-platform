@@ -395,7 +395,7 @@ func TestOpenAIStreamForcesUsageOption(t *testing.T) {
 	}
 }
 
-func TestMissingUsageConservativeSettlement(t *testing.T) {
+func TestMissingUsageDoesNotChargeEstimate(t *testing.T) {
 	f := newGatewayFixture(t, nil)
 	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "application/json")
@@ -411,13 +411,13 @@ func TestMissingUsageConservativeSettlement(t *testing.T) {
 		t.Fatalf("应写入一条 usage: %d", len(records))
 	}
 	record := records[0]
-	if record.Status != store.UsageStatusError || record.ErrorType != "usage_missing_estimated" ||
-		record.CreditsMicro <= 0 {
-		t.Fatalf("缺少 usage 应按预留额保守结算: %+v", record)
+	if record.Status != store.UsageStatusError || record.ErrorType != "usage_missing" ||
+		record.CreditsMicro != 0 {
+		t.Fatalf("缺少 usage 不得按输出上限估算扣款: %+v", record)
 	}
 }
 
-func TestStreamingMissingUsageConservativeSettlement(t *testing.T) {
+func TestStreamingMissingUsageDoesNotChargeEstimate(t *testing.T) {
 	f := newGatewayFixture(t, nil)
 	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "text/event-stream")
@@ -434,28 +434,28 @@ func TestStreamingMissingUsageConservativeSettlement(t *testing.T) {
 		t.Fatalf("应写入一条 usage: %d", len(records))
 	}
 	record := records[0]
-	if record.ErrorType != "usage_missing_estimated" || record.CreditsMicro <= 0 {
-		t.Fatalf("流式缺少 usage 应保守结算: %+v", record)
+	if record.ErrorType != "usage_missing" || record.CreditsMicro != 0 {
+		t.Fatalf("流式缺少 usage 不得估算扣款: %+v", record)
 	}
 }
 
-func TestStreamingUsageBeyondReservationIsInterrupted(t *testing.T) {
+func TestStreamingUsageBeyondEstimateCompletesAndChargesActual(t *testing.T) {
 	f := newGatewayFixture(t, nil)
 	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "text/event-stream")
-		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"too much\"}}],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":100}}\n\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"too much\"}}],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":100}}\n\ndata: [DONE]\n\n"))
 	})
 	rec := f.do("POST", "/v1/chat/completions", f.token,
 		`{"model":"claude-sonnet-4-5","stream":true,"max_tokens":1}`)
 	if rec.Code != 200 {
 		t.Fatalf("流式请求状态: %d %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "rate_limit_error") || strings.Contains(rec.Body.String(), "too much") {
-		t.Fatalf("超出预留后必须停止透传并返回额度错误事件: %s", rec.Body.String())
+	if strings.Contains(rec.Body.String(), "rate_limit_error") || !strings.Contains(rec.Body.String(), "too much") {
+		t.Fatalf("已准入请求不能按估算费用截断: %s", rec.Body.String())
 	}
 	records := f.usageRecords()
-	if len(records) != 1 || records[0].ErrorType != "credit_reservation_exceeded" {
-		t.Fatalf("中断原因必须进入用量账本: %+v", records)
+	if len(records) != 1 || records[0].Status != store.UsageStatusOk || records[0].CreditsMicro != 1560 {
+		t.Fatalf("完整真实费用必须进入用量账本: %+v", records)
 	}
 }
 
@@ -756,60 +756,176 @@ func (s *settleContextStore) contextError() error {
 	return s.settleErr
 }
 
-func TestStreamingClientAbort(t *testing.T) {
+func TestStreamingClientAbortSettlement(t *testing.T) {
+	tests := []struct {
+		name             string
+		usageEvent       string
+		wantInput        int64
+		wantOutput       int64
+		wantCreditsMicro int64
+	}{
+		{name: "settles observed usage without a terminal frame", usageEvent: "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":40}}\n\n", wantInput: 100, wantOutput: 40, wantCreditsMicro: 900},
+		{name: "closes without usage", wantCreditsMicro: 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			checker := &settleContextStore{}
+			f := newGatewayFixture(t, func(_ *Env, f *gatewayFixture) {
+				checker.PlatformStore = f.store
+				f.store = checker
+			})
+			otherReservationID := uuid.NewString()
+			result, err := f.store.AdmitUsage(context.Background(), store.ReserveQuotaInput{
+				ID: otherReservationID, TeamID: f.teamID, UserID: f.userID, RequestID: "other-" + otherReservationID,
+				Micro: 0, TTL: time.Minute, CreatedAt: time.Now(),
+			})
+			if err != nil || result != store.ReserveReserved {
+				t.Fatalf("create concurrent zero-balance identity: result=%s error=%v", result, err)
+			}
+			f.setHandler(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("content-type", "text/event-stream")
+				flusher := w.(http.Flusher)
+				if tc.usageEvent != "" {
+					_, _ = w.Write([]byte(tc.usageEvent))
+					flusher.Flush()
+				}
+				for i := 0; i < 100; i++ {
+					_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n"))
+					flusher.Flush()
+					select {
+					case <-time.After(20 * time.Millisecond):
+					case <-r.Context().Done():
+						return
+					}
+				}
+			})
+			server := httptest.NewServer(f.engine)
+			defer server.Close()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			req, _ := http.NewRequestWithContext(ctx, "POST", server.URL+"/v1/chat/completions",
+				bytes.NewReader([]byte(`{"model":"claude-sonnet-4-5","stream":true}`)))
+			req.Header.Set("authorization", "Bearer "+f.token)
+			req.Header.Set("content-type", "application/json")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			buf := make([]byte, 128)
+			_, _ = resp.Body.Read(buf)
+			cancel()
+			_ = resp.Body.Close()
+
+			deadline := time.Now().Add(3 * time.Second)
+			for time.Now().Before(deadline) {
+				records := f.usageRecords()
+				if len(records) == 1 {
+					record := records[0]
+					if record.Status != store.UsageStatusAborted || record.ErrorType != "client_aborted" {
+						t.Fatalf("中断应记录 aborted: %+v", record)
+					}
+					if record.InputTokens != tc.wantInput || record.OutputTokens != tc.wantOutput {
+						t.Fatalf("中断应只记录合法已观察用量: %+v", record)
+					}
+					if record.CreditsMicro != tc.wantCreditsMicro {
+						t.Fatalf("中断实扣与已观察 usage 不符: %+v", record)
+					}
+					if team := f.team(); team.ReservedCredits != "0.000000" {
+						t.Fatalf("中断后没有冻结，不能终结其他并发请求: %s", team.ReservedCredits)
+					}
+					otherReservation, err := f.store.GetQuotaReservation(context.Background(), otherReservationID)
+					if err != nil || otherReservation == nil || otherReservation.Status != store.ReservationReserved {
+						t.Fatalf("其他并发 reservation 不应被结算: reservation=%+v error=%v", otherReservation, err)
+					}
+					if err := checker.contextError(); err != nil {
+						t.Fatalf("结算必须使用独立 context，不能沿用已取消的请求 context: %v", err)
+					}
+					return
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			t.Fatal("客户端中断后未写入 usage 记录")
+		})
+	}
+}
+
+func TestClientAbortWhileWaitingForUpstreamHeaders(t *testing.T) {
 	checker := &settleContextStore{}
 	f := newGatewayFixture(t, func(_ *Env, f *gatewayFixture) {
 		checker.PlatformStore = f.store
 		f.store = checker
 	})
-	f.setHandler(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("content-type", "text/event-stream")
-		flusher := w.(http.Flusher)
-		for i := 0; i < 100; i++ {
-			_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n"))
-			flusher.Flush()
-			select {
-			case <-time.After(20 * time.Millisecond):
-			case <-r.Context().Done():
-				return
-			}
-		}
+	otherReservationID := uuid.NewString()
+	result, err := f.store.AdmitUsage(context.Background(), store.ReserveQuotaInput{
+		ID: otherReservationID, TeamID: f.teamID, UserID: f.userID, RequestID: "other-" + otherReservationID,
+		Micro: 0, TTL: time.Minute, CreatedAt: time.Now(),
+	})
+	if err != nil || result != store.ReserveReserved {
+		t.Fatalf("create concurrent zero-balance identity: result=%s error=%v", result, err)
+	}
+	upstreamStarted := make(chan struct{}, 1)
+	upstreamCanceled := make(chan struct{}, 1)
+	f.setHandler(func(_ http.ResponseWriter, r *http.Request) {
+		upstreamStarted <- struct{}{}
+		<-r.Context().Done()
+		upstreamCanceled <- struct{}{}
 	})
 	server := httptest.NewServer(f.engine)
 	defer server.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "POST", server.URL+"/v1/chat/completions",
-		bytes.NewReader([]byte(`{"model":"claude-sonnet-4-5","stream":true}`)))
+		bytes.NewReader([]byte(`{"model":"claude-sonnet-4-5"}`)))
 	req.Header.Set("authorization", "Bearer "+f.token)
 	req.Header.Set("content-type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
+	responseErr := make(chan error, 1)
+	go func() {
+		resp, err := http.DefaultClient.Do(req)
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		responseErr <- err
+	}()
+	select {
+	case <-upstreamStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("gateway did not dispatch upstream request")
 	}
-	buf := make([]byte, 64)
-	_, _ = resp.Body.Read(buf)
 	cancel()
-	_ = resp.Body.Close()
+	select {
+	case <-upstreamCanceled:
+	case <-time.After(3 * time.Second):
+		t.Fatal("client cancellation did not cancel the in-flight upstream request")
+	}
+	select {
+	case <-responseErr:
+	case <-time.After(3 * time.Second):
+		t.Fatal("gateway request did not finish after client cancellation")
+	}
 
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		records := f.usageRecords()
 		if len(records) == 1 {
-			if records[0].Status != store.UsageStatusAborted || records[0].ErrorType != "client_aborted" {
-				t.Fatalf("中断应记录 aborted: %+v", records[0])
+			if records[0].Status != store.UsageStatusAborted || records[0].ErrorType != "client_aborted" || records[0].CreditsMicro != 0 {
+				t.Fatalf("等待上游响应头时取消应记录零实扣的 aborted 终态: %+v", records[0])
 			}
-			if team := f.team(); team.ReservedCredits != "0.000000" {
-				t.Fatalf("中断后预留应释放: %s", team.ReservedCredits)
+			if team := f.team(); team.ReservedCredits != "0.000000" || team.UsedCredits != "0.000000" {
+				t.Fatalf("取消不能占用余额或虚扣: %+v", team)
+			}
+			otherReservation, err := f.store.GetQuotaReservation(context.Background(), otherReservationID)
+			if err != nil || otherReservation == nil || otherReservation.Status != store.ReservationReserved {
+				t.Fatalf("其他并发 reservation 不应被结算: reservation=%+v error=%v", otherReservation, err)
 			}
 			if err := checker.contextError(); err != nil {
-				t.Fatalf("结算必须使用独立 context，不能沿用它已取消的请求 context: %v", err)
+				t.Fatalf("结算不能沿用已取消的客户端 context: %v", err)
 			}
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatal("客户端中断后未写入 usage 记录")
+	t.Fatal("等待上游响应头时取消后没有写入 aborted usage 记录")
 }
 
 func TestStreamingIdleTimeout(t *testing.T) {
@@ -836,9 +952,9 @@ func TestStreamingIdleTimeout(t *testing.T) {
 			if records[0].Status != store.UsageStatusError || records[0].ErrorType != "upstream_idle_timeout" {
 				t.Fatalf("空闲超时记录不符: %+v", records[0])
 			}
-			// 没有采集到 usage 时按预留额估算，不能按零结算。
-			if records[0].CreditsMicro <= 0 {
-				t.Fatalf("空闲超时应保守结算而不是零计费: %+v", records[0])
+			// 无合法 usage 时不能把输出上限当成实际用量向用户扣费。
+			if records[0].CreditsMicro != 0 {
+				t.Fatalf("空闲超时无 usage 应零计费: %+v", records[0])
 			}
 			if team := f.team(); team.ReservedCredits != "0.000000" {
 				t.Fatalf("空闲超时应释放预留: %s", team.ReservedCredits)
@@ -974,8 +1090,8 @@ func TestStreamingFailureKeepsObservedUsage(t *testing.T) {
 			if record.Status != store.UsageStatusError || record.ErrorType != "upstream_idle_timeout" {
 				t.Fatalf("状态不符: %+v", record)
 			}
-			// 中间 usage 只证明已观察部分用量；未知尾部按预留估算且保留已观察的 token。
-			if record.InputTokens != 100 || record.OutputTokens != 40 || record.CreditsMicro <= 0 || record.PriceSnapshot == nil || !record.PriceSnapshot.Cost.UsageEstimated {
+			// 断流仅按合法已观察 usage 入账，不估算未知尾部。
+			if record.InputTokens != 100 || record.OutputTokens != 40 || record.CreditsMicro != 900 || record.PriceSnapshot == nil || record.PriceSnapshot.Cost.UsageEstimated {
 				t.Fatalf("异常流式请求应保留已采集 usage: %+v", record)
 			}
 			return

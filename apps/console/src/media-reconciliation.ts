@@ -8,11 +8,11 @@ const VIDEO_OUTCOMES: ReconciliationOutcome[] = ["video_task", "not_accepted"];
 const OUTCOME_OPTIONS: Record<"image" | "video", SelectOption[]> = {
   image: [
     { value: "image_result", label: "图片已生成，补录结果 URL" },
-    { value: "not_accepted", label: "确认未受理，释放预留" },
+    { value: "not_accepted", label: "确认未受理，零扣关闭" },
   ],
   video: [
     { value: "video_task", label: "视频已受理，补录 task ID" },
-    { value: "not_accepted", label: "确认未受理，释放预留" },
+    { value: "not_accepted", label: "确认未受理，零扣关闭" },
   ],
 };
 
@@ -60,4 +60,14 @@ export function isReconciliationOutcomeForStage(
   return reconciliationOutcomesForStage(stage).includes(
     outcome as ReconciliationOutcome,
   );
+}
+
+// 历史项目把阶段售价写在 shot.reservedMicro；账本升级归零不应抹掉恢复价格。
+export function pendingMediaChargeMicro(shot: {
+  pendingChargeMicro?: number;
+  reservedMicro?: number;
+}): number {
+  return (shot.pendingChargeMicro ?? 0) > 0
+    ? shot.pendingChargeMicro!
+    : shot.reservedMicro ?? 0;
 }
