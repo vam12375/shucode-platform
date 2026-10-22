@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"reflect"
 	"time"
+
+	"github.com/vam12375/shucode-platform/server/internal/store"
 )
 
 func equalAnalysisPlan(left, right Plan) bool {
@@ -34,14 +36,33 @@ func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int
 	if a.TaskID == "" || a.InputID == "" || a.WorkspacePath == "" {
 		return nil, ErrInvalid
 	}
+	if (p.Brief.SourceOnly && a.Kind != "source") || (p.SourceAnalysis != nil && !p.Brief.SourceOnly && a.Kind != "adaptation") || (!p.Brief.SourceOnly && p.SourceAnalysis == nil && a.Kind != "") {
+		return nil, ErrInvalid
+	}
+	adaptation := a.Kind == "adaptation"
+	if adaptation {
+		if p.AnalysisFee == nil || p.SourceAnalysis == nil || p.SourceAnalysis.SourceChecksum != p.SourceChecksum {
+			return nil, ErrConflict
+		}
+		identity, err := s.Repo.Store.GetQuotaReservation(ctx, p.AnalysisFee.ID)
+		if err != nil {
+			return nil, err
+		}
+		if identity == nil || !identity.Postpaid || identity.Status != store.ReservationSettled || identity.TeamID != team || identity.UserID != p.UserID || identity.RequestID != p.AnalysisFee.RequestID {
+			return nil, ErrConflict
+		}
+	}
 	// 失败状态已落盘但释放可能中断；先关闭旧身份，避免重试覆盖唯一恢复引用。
-	if p.Status == "analysis_failed" && p.AnalysisFee != nil {
+	if p.Status == "analysis_failed" && p.AnalysisFee != nil && !adaptation {
 		if err := s.releaseFixedFee(ctx, team, p.UserID, *p.AnalysisFee); err != nil {
 			return nil, err
 		}
 	}
 	var fee *FixedFee
-	if p.Brief.ReferenceAssetID != "" {
+	if adaptation {
+		// 原片事实已成功结算；素材方案只复用同一费用身份与 scope 预算，不再次准入或实扣。
+		fee = p.AnalysisFee
+	} else if p.Brief.ReferenceAssetID != "" {
 		pricing, err := s.Repo.ReferencePricing(ctx)
 		if err != nil {
 			return nil, err
@@ -62,7 +83,7 @@ func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int
 		v.Error = ""
 		return nil
 	})
-	if err != nil && fee != nil {
+	if err != nil && fee != nil && !adaptation {
 		// CAS 响应可能丢失；先确认真实绑定，不能释放并发获胜者的收费身份。
 		checkCtx, checkCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer checkCancel()
@@ -101,6 +122,12 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 		if v.Status != "analyzing" || v.Analysis == nil || v.Analysis.InputID != input {
 			return ErrConflict
 		}
+		if v.Brief.SourceOnly || (v.SourceAnalysis != nil && v.Analysis.Kind != "adaptation") {
+			return ErrConflict
+		}
+		if err := validateSourceBoundaries(v, plan); err != nil {
+			return err
+		}
 		shots, total, err := BuildShots(v.Brief, plan, v.Models)
 		if err != nil {
 			return err
@@ -112,7 +139,7 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 		if !v.Brief.ReviewPlan {
 			v.Status = "queued"
 		}
-		if v.AnalysisFee != nil {
+		if v.AnalysisFee != nil && v.Analysis.Kind != "adaptation" {
 			v.Status = "analysis_settling"
 		}
 		return nil
@@ -120,14 +147,14 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 	if err != nil {
 		return nil, err
 	}
-	if p.AnalysisFee != nil {
+	if p.Status == "analysis_settling" {
 		return s.finishAnalysisFee(ctx, p)
 	}
 	return p, nil
 }
 
 func (s *Service) finishAnalysisFee(ctx context.Context, p *Project) (*Project, error) {
-	if p.Status != "analysis_settling" || p.AnalysisFee == nil || p.Plan == nil {
+	if p.Status != "analysis_settling" || p.AnalysisFee == nil || (p.Plan == nil && (!p.Brief.SourceOnly || p.SourceAnalysis == nil)) {
 		return nil, ErrConflict
 	}
 	settlementCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
@@ -152,7 +179,9 @@ func (s *Service) finishAnalysisFee(ctx context.Context, p *Project) (*Project, 
 			}
 			v.AnalysisChargedMicro = p.AnalysisFee.Micro
 			v.Status = "review"
-			if !v.Brief.ReviewPlan {
+			if v.Brief.SourceOnly && v.SourceAnalysis != nil {
+				v.Status = "source_ready"
+			} else if !v.Brief.ReviewPlan {
 				v.Status = "queued"
 			}
 			if v.CancelRequested {

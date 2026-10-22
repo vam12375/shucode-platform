@@ -49,6 +49,12 @@ type modelMaxOutputTokens struct {
 
 type modelOptionSpecs struct {
 	MaxOutputTokens modelMaxOutputTokens `json:"maxOutputTokens"`
+	ReasoningLevel  *modelReasoningLevel `json:"reasoningLevel,omitempty"`
+}
+
+type modelReasoningLevel struct {
+	Values []string `json:"values"`
+	Map    string   `json:"map"`
 }
 
 type modelCapabilityConfig struct {

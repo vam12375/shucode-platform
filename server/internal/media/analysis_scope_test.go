@@ -53,11 +53,11 @@ func TestAnalysisScopeBindsIdentityModelAndExpiry(t *testing.T) {
 		{"expired", ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", now.Add(time.Hour)},
 		{"future", ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", now.Add(-time.Second)},
 	} {
-		if err := ValidateAnalysisScope(ctx, f.s.Repo, box, test.ticket, test.team, test.user, test.device, test.model, 10, test.at); !errors.Is(err, ErrAnalysisScopeInvalid) {
+		if err := ValidateAnalysisScope(ctx, f.s.Repo, box, test.ticket, test.team, test.user, test.device, test.model, 10, test.at, "high"); !errors.Is(err, ErrAnalysisScopeInvalid) {
 			t.Errorf("%s accepted: %v", test.name, err)
 		}
 	}
-	if err := ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", 100, now); err != nil {
+	if err := ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", 100, now, "high"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -96,7 +96,7 @@ func TestAnalysisScopeRejectsEndedAndStaleBindings(t *testing.T) {
 			if err = f.s.Repo.Save(ctx, &next, p); err != nil {
 				t.Fatal(err)
 			}
-			if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", 100, now); !errors.Is(err, ErrAnalysisScopeInvalid) {
+			if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", 100, now, "high"); !errors.Is(err, ErrAnalysisScopeInvalid) {
 				t.Fatalf("%s remained usable: %v", kind, err)
 			}
 		})
@@ -117,7 +117,7 @@ func TestAnalysisScopeReissueSharesRequestAndTokenBudget(t *testing.T) {
 				count, tokens = 1, AnalysisScopeMaxTokens
 			}
 			for range count {
-				if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", tokens, now); err != nil {
+				if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", tokens, now, "high"); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -125,7 +125,7 @@ func TestAnalysisScopeReissueSharesRequestAndTokenBudget(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", 1, now); !errors.Is(err, ErrAnalysisScopeBudget) {
+			if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", 1, now, "high"); !errors.Is(err, ErrAnalysisScopeBudget) {
 				t.Fatalf("reissue reset %s budget: %v", kind, err)
 			}
 		})
@@ -150,7 +150,7 @@ func TestAnalysisScopeConcurrentBudgetIsAtomic(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", 1, now)
+			err := ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", 1, now, "high")
 			if err == nil {
 				accepted.Add(1)
 			} else if !errors.Is(err, ErrAnalysisScopeBudget) {

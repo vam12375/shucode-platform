@@ -556,7 +556,7 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			spec.errorResponse(c, 403, "permission_error", "video_analysis_scope_invalid")
 			return
 		}
-		if err := media.ValidateAnalysisScope(ctx, media.Repository{Store: deps.Store}, deps.SecretBox, scopeValues[0], primary.ID, user.ID, device.ID, modelID, estimateRequestTokens(body, maxTokens), deps.Now()); err != nil {
+		if err := media.ValidateAnalysisScope(ctx, media.Repository{Store: deps.Store}, deps.SecretBox, scopeValues[0], primary.ID, user.ID, device.ID, modelID, estimateRequestTokens(body, maxTokens), deps.Now(), sourceAnalysisReasoning(spec, body)); err != nil {
 			status, typ := 403, "permission_error"
 			if errors.Is(err, media.ErrAnalysisScopeBudget) {
 				status, typ = 429, "rate_limit_error"
@@ -585,6 +585,16 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	if routeErr != nil {
 		spec.errorResponse(c, routeErr.Status, routeErr.Type, routeErr.Message)
 		return
+	}
+
+	if analysisScoped {
+		// Scope 签发后目录仍可能更新；请求发出前核对最终路由，防止改配后切到其它模型。
+		for _, target := range targets {
+			if !media.IsDeepSeekAnalysisModel(target.UpstreamModel) {
+				spec.errorResponse(c, 403, "permission_error", "analysis_model_not_allowed")
+				return
+			}
+		}
 	}
 
 	requestID := strings.TrimSpace(c.Request.Header.Get("x-request-id"))
@@ -717,6 +727,7 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		}
 	}
 
+	reasoningEffort, reasoningBudget := requestReasoning(spec, body)
 	buildUsageRecord := func(target upstreamTarget, usage UsageCounts, status store.UsageStatus, errorType string, micro int64) store.UsageRecord {
 		record := store.UsageRecord{
 			RequestID:       requestID,
@@ -725,6 +736,7 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			DeviceTokenID:   device.ID,
 			Model:           model.ModelID,
 			UpstreamModel:   target.UpstreamModel,
+			ReasoningEffort: reasoningEffort, ReasoningBudgetTokens: reasoningBudget,
 			InputTokens:     usage.InputTokens,
 			OutputTokens:    usage.OutputTokens,
 			CacheReadTokens: usage.CacheReadTokens, CacheCreationTokens: usage.CacheCreationTokens,

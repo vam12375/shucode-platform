@@ -513,24 +513,29 @@ func testPendingSettlements(t *testing.T, ctx context.Context, s PlatformStore) 
 	if result, err := s.ReserveQuota(ctx, input); err != nil || result != ReserveReserved {
 		t.Fatalf("预留失败: %s %v", result, err)
 	}
+	budget := int64(4096)
 	record := UsageRecord{
-		ID:            fmt.Sprintf("00000000-0000-4000-8000-%012d", (time.Now().UnixNano()+1)%1_000_000_000_000),
-		RequestID:     input.RequestID,
-		UserID:        u.ID,
-		TeamID:        team.ID,
-		Model:         "pending-model",
-		UpstreamModel: "pending-upstream",
-		CreditsMicro:  500,
-		PriceSnapshot: &UsagePricingSnapshot{SchemaVersion: 1, CapturedAt: now},
-		Status:        UsageStatusError,
-		ErrorType:     "upstream_idle_timeout",
-		CreatedAt:     now,
+		ID:              fmt.Sprintf("00000000-0000-4000-8000-%012d", (time.Now().UnixNano()+1)%1_000_000_000_000),
+		RequestID:       input.RequestID,
+		UserID:          u.ID,
+		TeamID:          team.ID,
+		Model:           "pending-model",
+		UpstreamModel:   "pending-upstream",
+		CreditsMicro:    500,
+		PriceSnapshot:   &UsagePricingSnapshot{SchemaVersion: 1, CapturedAt: now},
+		ReasoningEffort: "max", ReasoningBudgetTokens: &budget,
+		Status:    UsageStatusError,
+		ErrorType: "upstream_idle_timeout",
+		CreatedAt: now,
 	}
 	if err := s.EnqueuePendingSettlement(ctx, reservationID, record); err != nil {
 		t.Fatal(err)
 	}
-	// 重复入队幂等。
-	if err := s.EnqueuePendingSettlement(ctx, reservationID, record); err != nil {
+	// 思考预算指针必须隔离，幂等入队不能用后来的请求参数覆盖首次事实。
+	budget = 1
+	replayed := record
+	replayed.ReasoningEffort = "low"
+	if err := s.EnqueuePendingSettlement(ctx, reservationID, replayed); err != nil {
 		t.Fatal(err)
 	}
 	pending, err := s.ListPendingSettlements(ctx, PendingSettlementFilter{
@@ -542,8 +547,14 @@ func testPendingSettlements(t *testing.T, ctx context.Context, s PlatformStore) 
 	item := pending[0]
 	if item.ReservationID != reservationID || item.Record.RequestID != input.RequestID ||
 		item.Record.CreditsMicro != 500 || item.Record.Status != UsageStatusError ||
-		item.Record.PriceSnapshot == nil || item.Attempts != 0 {
+		item.Record.PriceSnapshot == nil || item.Attempts != 0 ||
+		item.Record.ReasoningEffort != "max" || item.Record.ReasoningBudgetTokens == nil || *item.Record.ReasoningBudgetTokens != 4096 {
 		t.Fatalf("待结算记录不符: %+v", item)
+	}
+	*item.Record.ReasoningBudgetTokens = 2
+	stored, err := s.ListPendingSettlements(ctx, PendingSettlementFilter{Status: PendingSettlementPending, Limit: 10})
+	if err != nil || len(stored) != 1 || stored[0].Record.ReasoningBudgetTokens == nil || *stored[0].Record.ReasoningBudgetTokens != 4096 {
+		t.Fatalf("读取待结算思考预算必须返回副本: %+v %v", stored, err)
 	}
 	if count, err := s.CountPendingSettlements(ctx, PendingSettlementPending); err != nil || count != 1 {
 		t.Fatalf("待结算计数不符: %d %v", count, err)
@@ -573,7 +584,7 @@ func testPendingSettlements(t *testing.T, ctx context.Context, s PlatformStore) 
 	applied, err := s.ListPendingSettlements(ctx, PendingSettlementFilter{
 		Status: PendingSettlementApplied, Limit: 10,
 	})
-	if err != nil || len(applied) != 1 {
+	if err != nil || len(applied) != 1 || applied[0].Record.ReasoningEffort != "max" || applied[0].Record.ReasoningBudgetTokens == nil || *applied[0].Record.ReasoningBudgetTokens != 4096 {
 		t.Fatalf("applied 状态不符: %d %v", len(applied), err)
 	}
 	// 已完成的补偿不能被后续幂等入队重置回 pending。

@@ -374,14 +374,16 @@ type AlertEventRecord struct {
 }
 
 type UsageRecord struct {
-	ID            string `json:"id"`
-	RequestID     string `json:"requestId"`
-	UserID        string `json:"userId"`
-	TeamID        string `json:"teamId"`
-	DeviceTokenID string `json:"deviceTokenId,omitempty"`
-	Model         string `json:"model"`
-	UpstreamModel string `json:"upstreamModel"`
-	ProviderID    string `json:"providerId,omitempty"`
+	ID                    string `json:"id"`
+	RequestID             string `json:"requestId"`
+	UserID                string `json:"userId"`
+	TeamID                string `json:"teamId"`
+	DeviceTokenID         string `json:"deviceTokenId,omitempty"`
+	Model                 string `json:"model"`
+	UpstreamModel         string `json:"upstreamModel"`
+	ProviderID            string `json:"providerId,omitempty"`
+	ReasoningEffort       string `json:"reasoningEffort,omitempty"`
+	ReasoningBudgetTokens *int64 `json:"reasoningBudgetTokens,omitempty"`
 	// 后台受理核对保留已取得的供应商结果 ID；只随内部补偿 JSON 保存。
 	BackgroundResponseID string                `json:"backgroundResponseId,omitempty"`
 	InputTokens          int64                 `json:"inputTokens"`

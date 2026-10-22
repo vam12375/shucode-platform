@@ -88,6 +88,14 @@ a:hover {
   font-variant-numeric: tabular-nums;
 }
 
+.usage-model {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  overflow-wrap: anywhere;
+}
+
 .error {
   color: var(--signal);
   margin: 8px 0;

@@ -10,6 +10,8 @@ import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { Gauge } from "../components/Gauge.js";
 import { Chip, Notice, type ChipTone } from "../components/StatusChip.js";
 import { formatShanghaiTime } from "../time.js";
+import { UsageModel } from "../components/UsageModel.js";
+import type { UsageReasoningParameters } from "../usage-reasoning.js";
 
 interface TeamDetail {
   team: {
@@ -35,7 +37,7 @@ interface TeamDetail {
     outputTokens: number;
     creditsMicro: number;
   }>;
-  recentUsage: Array<{
+  recentUsage: Array<UsageReasoningParameters & {
     id: string;
     model: string;
     status: string;
@@ -656,7 +658,7 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
                 return (
                   <tr key={record.id}>
                     <td className="num">{formatShanghaiTime(record.createdAt)}</td>
-                    <td>{record.model}</td>
+                    <td><UsageModel record={record} /></td>
                     <td>
                       <Chip tone={status.tone}>{status.label}</Chip>
                     </td>

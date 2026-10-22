@@ -7,7 +7,7 @@
 - 跨端接口契约以 `specs/multi-tenant-saas.md` 为准——它是 Shucode 客户端仓库 `specs/platform/multi-tenant-saas.md` 的镜像副本：平台侧契约演进在本副本上进行，客户端侧章节以客户端仓库为准；**任何跨端契约改动（provisioning 信封 schema、登录流、网关协议、公开配置信封、Release 清单）必须同步更新两边文件**。
 - 跨端 schema 的权威源在 Shucode 客户端仓库 `packages/shared/src/`（镜像副本见 specs）；服务端可执行镜像在 `server/internal/contracts`，与客户端 schema **必须同构**并受 `testdata/fixtures.json`（冻结对齐用例，随契约同步更新）测试夹紧。`packages/contracts` 现仅保留 console 消费的 `credits.ts`。
 - 网关设备 token 必须写入 provider 规则的 `config.access.apiKey`（Go: `withPlatformAccessToken`），credentials 保持空数组——客户端 Registry 完整校验要求 access 完整，缺 apiKey 时整个 Provider 被丢弃（provider-not-found → 信封回滚）。
-- 信封的 `defaultModelSelection` 只是"偏好"：客户端会剥离后自己补 reasoningLevel 档位再写入，云端不需要也无法知道各模型的合法档位。
+- 通用用户配置信封的 `defaultModelSelection` 只是"偏好"：客户端按模型当前合法能力初始化 reasoningLevel。参考原片分析是用户指定的例外：平台校验现有 DeepSeek 视觉模型公开支持 `high`，并在预检和 scoped 信封中显式下发 `options.reasoningLevel: "high"`；不支持时拒绝，不能静默降档。
 - 平台用户级配置只拥有 `platform:gateway` 一个 provider，应用语义是合并（同名覆盖、其余保留），不是整份替换。
 - 额度写入由存储事务唯一执行；文本准入在网关，媒体准入在媒体 owner。准入检查已结算余额/预算，不预留或冻结；SSE/JSON 结束按合法实际 usage 幂等实扣，缺少 usage 不按最大输出估算。并发已受理费用完整入账、可负余额，余额耗尽后拒绝新请求。后台未知结果保持核对任务、不占余额。详见 `specs/credit-settlement.md`。
 - 设备凭据只签发一次（`consumeLoginFlow` 条件更新）；token 只存 sha256 哈希 + AES-256-GCM 密文，吊销即时生效。

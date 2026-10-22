@@ -19,16 +19,17 @@ var ErrAnalysisScopeBudget = errors.New("video_analysis_scope_budget_exhausted")
 var ErrAnalysisScopeUnavailable = errors.New("video_analysis_scope_unavailable")
 
 type analysisScope struct {
-	Purpose   string `json:"purpose"`
-	TeamID    string `json:"teamId"`
-	UserID    string `json:"userId"`
-	DeviceID  string `json:"deviceId"`
-	ProjectID string `json:"projectId"`
-	InputID   string `json:"inputId"`
-	FeeID     string `json:"feeId"`
-	ModelID   string `json:"modelId"`
-	IssuedAt  int64  `json:"issuedAt"`
-	ExpiresAt int64  `json:"expiresAt"`
+	Purpose           string `json:"purpose"`
+	TeamID            string `json:"teamId"`
+	UserID            string `json:"userId"`
+	DeviceID          string `json:"deviceId"`
+	ProjectID         string `json:"projectId"`
+	InputID           string `json:"inputId"`
+	FeeID             string `json:"feeId"`
+	ModelID           string `json:"modelId"`
+	RequiredReasoning string `json:"requiredReasoning,omitempty"`
+	IssuedAt          int64  `json:"issuedAt"`
+	ExpiresAt         int64  `json:"expiresAt"`
 }
 
 type analysisScopeBudget struct {
@@ -48,7 +49,27 @@ func analysisScopeCurrent(ctx context.Context, repo Repository, scope analysisSc
 	if err != nil {
 		return ErrAnalysisScopeUnavailable
 	}
-	if identity == nil || !identity.Postpaid || identity.Status != store.ReservationReserved || identity.TeamID != scope.TeamID || identity.UserID != scope.UserID || identity.RequestID != p.AnalysisFee.RequestID {
+	expectedStatus := store.ReservationReserved
+	if p.Analysis.Kind == "source" {
+		if !p.Brief.SourceOnly || p.SourceAnalysis != nil {
+			return ErrAnalysisScopeInvalid
+		}
+	} else if p.Analysis.Kind == "adaptation" {
+		if p.Brief.SourceOnly || p.SourceAnalysis == nil || p.SourceAnalysis.SourceChecksum != p.SourceChecksum {
+			return ErrAnalysisScopeInvalid
+		}
+		expectedStatus = store.ReservationSettled
+	} else if p.Brief.SourceOnly || p.SourceAnalysis != nil {
+		return ErrAnalysisScopeInvalid
+	}
+	expectedReasoning := "high"
+	if p.Analysis.Kind == "adaptation" {
+		expectedReasoning = ""
+	}
+	if scope.RequiredReasoning != expectedReasoning {
+		return ErrAnalysisScopeInvalid
+	}
+	if identity == nil || !identity.Postpaid || identity.Status != expectedStatus || identity.TeamID != scope.TeamID || identity.UserID != scope.UserID || identity.RequestID != p.AnalysisFee.RequestID {
 		return ErrAnalysisScopeInvalid
 	}
 	return nil
@@ -62,6 +83,9 @@ func IssueAnalysisScope(ctx context.Context, repo Repository, box *crypto.Secret
 		return "", ErrAnalysisScopeInvalid
 	}
 	scope := analysisScope{Purpose: "media:reference-analysis:v1", TeamID: p.TeamID, UserID: p.UserID, DeviceID: p.DeviceID, ProjectID: p.ID, InputID: p.Analysis.InputID, FeeID: p.AnalysisFee.ID, ModelID: model, IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix()}
+	if p.Analysis.Kind != "adaptation" {
+		scope.RequiredReasoning = "high"
+	}
 	if err := analysisScopeCurrent(ctx, repo, scope); err != nil {
 		return "", err
 	}
@@ -76,7 +100,7 @@ func IssueAnalysisScope(ctx context.Context, repo Repository, box *crypto.Secret
 	return ticket, nil
 }
 
-func ValidateAnalysisScope(ctx context.Context, repo Repository, box *crypto.SecretBox, ticket, team, user, device, model string, estimatedTokens int64, now time.Time) error {
+func ValidateAnalysisScope(ctx context.Context, repo Repository, box *crypto.SecretBox, ticket, team, user, device, model string, estimatedTokens int64, now time.Time, actualReasoning string) error {
 	if box == nil || ticket == "" || len(ticket) > 8192 || estimatedTokens < 1 {
 		return ErrAnalysisScopeInvalid
 	}
@@ -90,6 +114,10 @@ func ValidateAnalysisScope(ctx context.Context, repo Repository, box *crypto.Sec
 	}
 	if err = analysisScopeCurrent(ctx, repo, scope); err != nil {
 		return err
+	}
+	// 原片固定 high 是签名准入规则，不能只依赖客户端信封或由思考预算推断。
+	if scope.RequiredReasoning != "" && actualReasoning != scope.RequiredReasoning {
+		return ErrAnalysisScopeInvalid
 	}
 	// 计数归属已准入费用身份；跨进程、重签scope与并发请求都不能重置分析预算。
 	err = updateJSON(ctx, repo.Store, "media:analysis-scope-budget:"+team+":"+scope.FeeID, analysisScopeBudget{}, func(budget *analysisScopeBudget) error {

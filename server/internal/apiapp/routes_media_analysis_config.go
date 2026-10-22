@@ -47,6 +47,19 @@ func registerMediaAnalysisConfigRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(403, fail(403, "analysis_model_not_allowed"))
 			return
 		}
+		if deps.SecretBox == nil {
+			c.JSON(503, fail(503, "video_analysis_scope_unavailable"))
+			return
+		}
+		available, err := analysisModelAvailable(ctx, deps, *model, p.SourceAnalysis == nil)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if !available {
+			c.JSON(403, fail(403, "analysis_model_not_allowed"))
+			return
+		}
 		ticket, err := media.IssueAnalysisScope(ctx, deps.Media.Repo, deps.SecretBox, p, modelID, deps.Now())
 		if err != nil {
 			status := 403
@@ -79,6 +92,9 @@ func registerMediaAnalysisConfigRoutes(router *gin.Engine, deps *Deps) {
 		}
 		personal["providerOrder"] = []any{providerID}
 		personal["defaultModelSelection"].(map[string]any)["providerId"] = providerID
+		if p.SourceAnalysis == nil {
+			setSourceAnalysisReasoning(envelope)
+		}
 		// ticket 有效期随签发更新；内容身份也必须变化，避免客户端跳过新scope。
 		digest := sha256.Sum256([]byte(providerID + ":" + ticket))
 		envelope["syncId"] = "ucfg_" + hex.EncodeToString(digest[:])[:40]

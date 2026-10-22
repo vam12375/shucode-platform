@@ -135,25 +135,27 @@ func toPublicModel(model *store.PlatformModelRecord) modelPublic {
 }
 
 type usagePublic struct {
-	PriceSnapshot       *store.UsagePricingSnapshot `json:"priceSnapshot"`
-	ID                  string                      `json:"id"`
-	RequestID           string                      `json:"requestId"`
-	UserID              string                      `json:"userId"`
-	TeamID              string                      `json:"teamId"`
-	DeviceTokenID       *string                     `json:"deviceTokenId"`
-	Model               string                      `json:"model"`
-	UpstreamModel       string                      `json:"upstreamModel"`
-	ProviderID          *string                     `json:"providerId"`
-	InputTokens         int64                       `json:"inputTokens"`
-	OutputTokens        int64                       `json:"outputTokens"`
-	CacheReadTokens     int64                       `json:"cacheReadTokens"`
-	CacheCreationTokens int64                       `json:"cacheCreationTokens"`
-	CreditsMicro        int64                       `json:"creditsMicro"`
-	Status              string                      `json:"status"`
-	ErrorType           *string                     `json:"errorType"`
-	ClientIP            *string                     `json:"clientIp"`
-	LatencyMs           *int64                      `json:"latencyMs"`
-	CreatedAt           string                      `json:"createdAt"`
+	PriceSnapshot         *store.UsagePricingSnapshot `json:"priceSnapshot"`
+	ID                    string                      `json:"id"`
+	RequestID             string                      `json:"requestId"`
+	UserID                string                      `json:"userId"`
+	TeamID                string                      `json:"teamId"`
+	DeviceTokenID         *string                     `json:"deviceTokenId"`
+	Model                 string                      `json:"model"`
+	UpstreamModel         string                      `json:"upstreamModel"`
+	ProviderID            *string                     `json:"providerId"`
+	ReasoningEffort       *string                     `json:"reasoningEffort"`
+	ReasoningBudgetTokens *int64                      `json:"reasoningBudgetTokens"`
+	InputTokens           int64                       `json:"inputTokens"`
+	OutputTokens          int64                       `json:"outputTokens"`
+	CacheReadTokens       int64                       `json:"cacheReadTokens"`
+	CacheCreationTokens   int64                       `json:"cacheCreationTokens"`
+	CreditsMicro          int64                       `json:"creditsMicro"`
+	Status                string                      `json:"status"`
+	ErrorType             *string                     `json:"errorType"`
+	ClientIP              *string                     `json:"clientIp"`
+	LatencyMs             *int64                      `json:"latencyMs"`
+	CreatedAt             string                      `json:"createdAt"`
 }
 
 func toPublicUsage(record *store.UsageRecord) usagePublic {
@@ -162,7 +164,8 @@ func toPublicUsage(record *store.UsageRecord) usagePublic {
 		ID:            record.ID, RequestID: record.RequestID, UserID: record.UserID, TeamID: record.TeamID,
 		DeviceTokenID: stringPtrOrNil(record.DeviceTokenID),
 		Model:         record.Model, UpstreamModel: record.UpstreamModel,
-		ProviderID:  stringPtrOrNil(record.ProviderID),
+		ProviderID:      stringPtrOrNil(record.ProviderID),
+		ReasoningEffort: stringPtrOrNil(record.ReasoningEffort), ReasoningBudgetTokens: record.ReasoningBudgetTokens,
 		InputTokens: record.InputTokens, OutputTokens: record.OutputTokens,
 		CacheReadTokens: record.CacheReadTokens, CacheCreationTokens: record.CacheCreationTokens,
 		CreditsMicro: record.CreditsMicro, Status: string(record.Status),

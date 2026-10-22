@@ -149,7 +149,8 @@ func TestTenantUsageAndExportsAreScopedAndRedacted(t *testing.T) {
 		team, user string
 		cost       int64
 	}{{f.team.ID, f.admin.ID, 100}, {f.team.ID, f.member.ID, 200}, {f.otherTeam.ID, f.other.ID, 900}} {
-		err := f.store.InsertUsage(ctx, store.UsageRecord{ID: uuid.NewString(), RequestID: fmt.Sprintf("request-%d", i), TeamID: item.team, UserID: item.user, Model: "visible-model", UpstreamModel: "private-upstream-model", ProviderID: uuid.NewString(), ClientIP: "192.0.2.123", CreditsMicro: item.cost, InputTokens: 1, Status: store.UsageStatusOk, CreatedAt: time.Now()})
+		budget := int64(8192)
+		err := f.store.InsertUsage(ctx, store.UsageRecord{ID: uuid.NewString(), RequestID: fmt.Sprintf("request-%d", i), TeamID: item.team, UserID: item.user, Model: "visible-model", UpstreamModel: "private-upstream-model", ProviderID: uuid.NewString(), ClientIP: "192.0.2.123", CreditsMicro: item.cost, InputTokens: 1, Status: store.UsageStatusOk, CreatedAt: time.Now(), ReasoningEffort: "high", ReasoningBudgetTokens: &budget})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -176,6 +177,9 @@ func TestTenantUsageAndExportsAreScopedAndRedacted(t *testing.T) {
 			if item.user != "" && row["userId"] != item.user {
 				t.Fatal("another member usage leaked")
 			}
+			if row["reasoningEffort"] != "high" || row["reasoningBudgetTokens"] != float64(8192) {
+				t.Fatalf("authorized request reasoning was redacted: %+v", row)
+			}
 			for _, key := range []string{"upstreamModel", "providerId", "clientIp", "priceSnapshot"} {
 				if _, exists := row[key]; exists {
 					t.Fatalf("private field %s leaked", key)
@@ -185,6 +189,9 @@ func TestTenantUsageAndExportsAreScopedAndRedacted(t *testing.T) {
 		csv := f.do("GET", "/console/api/usage/export", item.cookie, "")
 		if csv.Code != 200 || strings.Contains(csv.Body.String(), "private-upstream") || strings.Contains(csv.Body.String(), "192.0.2.123") || strings.Contains(csv.Body.String(), f.otherTeam.ID) {
 			t.Fatalf("CSV scope/redaction: %d %s", csv.Code, csv.Body.String())
+		}
+		if !strings.Contains(csv.Body.String(), "思考强度") || !strings.Contains(csv.Body.String(), ",high,8192,") {
+			t.Fatalf("authorized CSV reasoning missing: %s", csv.Body.String())
 		}
 	}
 	series := dataOf(t, f.do("GET", "/console/api/usage/series?granularity=day", f.adminCookie, ""))["series"].([]any)
@@ -198,6 +205,10 @@ func TestTenantUsageAndExportsAreScopedAndRedacted(t *testing.T) {
 	detail := dataOf(t, f.do("GET", "/console/api/teams/"+f.team.ID, f.memberCookie, ""))
 	if len(detail["members"].([]any)) != 1 || len(detail["recentUsage"].([]any)) != 1 {
 		t.Fatalf("member detail must only expose personal data: %v", detail)
+	}
+	recent := detail["recentUsage"].([]any)[0].(map[string]any)
+	if recent["reasoningEffort"] != "high" || recent["reasoningBudgetTokens"] != float64(8192) {
+		t.Fatalf("team recent request reasoning missing: %+v", recent)
 	}
 	for _, item := range []struct{ team, action string }{{f.team.ID, "member.update"}, {f.otherTeam.ID, "other.private"}, {"", "pricing.update"}} {
 		if err := f.store.InsertAuditLog(ctx, store.InsertAuditLogInput{TeamID: item.team, ActorUserID: f.root.ID, Action: item.action, Detail: []byte(`{}`)}); err != nil {

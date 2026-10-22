@@ -21,6 +21,9 @@ type Service struct {
 }
 
 func (s *Service) Create(ctx context.Context, team, user, device, id string, b Brief) (*Project, error) {
+	if b.SourceOnly {
+		return s.CreateReferenceAnalysis(ctx, team, user, device, id, b.ReferenceAssetID)
+	}
 	if _, e := uuid.Parse(id); e != nil {
 		return nil, ErrInvalid
 	}
@@ -123,6 +126,9 @@ func (s *Service) Revise(ctx context.Context, team, id string, version int64, pl
 		if p.Status != "review" {
 			return ErrConflict
 		}
+		if err := validateSourceBoundaries(p, plan); err != nil {
+			return err
+		}
 		shots, total, err := BuildShots(p.Brief, plan, p.Models)
 		if err != nil {
 			return err
@@ -144,7 +150,7 @@ func (s *Service) Action(ctx context.Context, team, id string, version int64, ac
 				return ErrConflict
 			}
 			p.CancelRequested = true
-			if p.Status == "draft" || p.Status == "analyzing" || p.Status == "review" || p.Status == "analysis_failed" {
+			if p.Status == "draft" || p.Status == "analyzing" || p.Status == "source_ready" || p.Status == "review" || p.Status == "analysis_failed" {
 				p.Status = "cancelled"
 			}
 		case "analysis-failed":

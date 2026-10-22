@@ -208,6 +208,7 @@ func usageForConsole(c *gin.Context, record *store.UsageRecord) any {
 	return gin.H{
 		"id": row.ID, "requestId": row.RequestID, "userId": row.UserID, "teamId": row.TeamID,
 		"deviceTokenId": row.DeviceTokenID, "model": row.Model, "inputTokens": row.InputTokens,
+		"reasoningEffort": row.ReasoningEffort, "reasoningBudgetTokens": row.ReasoningBudgetTokens,
 		"outputTokens": row.OutputTokens, "cacheReadTokens": row.CacheReadTokens,
 		"cacheCreationTokens": row.CacheCreationTokens, "creditsMicro": row.CreditsMicro,
 		"status": row.Status, "errorType": row.ErrorType, "latencyMs": row.LatencyMs, "createdAt": row.CreatedAt,

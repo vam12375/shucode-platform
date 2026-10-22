@@ -13,6 +13,12 @@ import { api, apiUrl } from "../api.js";
 import { useAuth } from "../auth.js";
 import { type PriceSnapshot } from "../usage-costs.js";
 import {
+  reasoningBudgetText,
+  reasoningEffortText,
+  type UsageReasoningParameters,
+} from "../usage-reasoning.js";
+import { UsageModel } from "../components/UsageModel.js";
+import {
   ComposedTrendChart,
   ModelDonutChart,
   type ChartDatum,
@@ -100,7 +106,7 @@ type ChartPreset =
 type ChartGranularity = "day" | "hour";
 
 /** 与 /console/api/usage 响应对齐：后端直接返回存储层记录，字段全量下发。 */
-interface UsageRecordRow {
+interface UsageRecordRow extends UsageReasoningParameters {
   id: string;
   requestId: string;
   userId: string;
@@ -1373,7 +1379,7 @@ export function UsagePage() {
                         record.userId.slice(0, 8)}
                     </td>
                     {isRoot ? <td>{record.clientIp ?? "—"}</td> : null}
-                    <td>{record.model}</td>
+                    <td><UsageModel record={record} /></td>
                     <td>
                       <Chip tone={status.tone}>{status.label}</Chip>
                     </td>
@@ -1466,6 +1472,12 @@ export function UsagePage() {
                   </DetailRow>
                   <DetailRow k="设备">
                     {deviceLabel(detail.deviceTokenId)}
+                  </DetailRow>
+                  <DetailRow k="思考强度">
+                    {reasoningEffortText(detail)}
+                  </DetailRow>
+                  <DetailRow k="思考预算">
+                    {reasoningBudgetText(detail)}
                   </DetailRow>
                   {isRoot ? (
                     <>

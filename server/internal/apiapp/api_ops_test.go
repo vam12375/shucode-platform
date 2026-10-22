@@ -2,12 +2,39 @@ package apiapp
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/vam12375/shucode-platform/server/internal/store"
 )
+
+func TestUsageReasoningUnknownRemainsNullable(t *testing.T) {
+	f := newAPIFixture(t)
+	cookie := f.loginAdmin()
+	ctx := context.Background()
+	admin, _ := f.store.FindUserByEmail(ctx, "admin@mendao.chat")
+	teams, _ := f.store.ListTeams(ctx)
+	for i, model := range []string{"historical-model", "media:source-analysis"} {
+		id := fmt.Sprintf("00000000-0000-4000-8000-%012d", 910+i)
+		if err := f.store.InsertUsage(ctx, store.UsageRecord{ID: id, RequestID: id, TeamID: teams[0].Team.ID, UserID: admin.ID, Model: model, Status: store.UsageStatusOk, CreatedAt: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+		response := f.do("GET", "/console/api/usage?requestId="+id, cookie, "")
+		records := dataOf(t, response)["records"].([]any)
+		if len(records) != 1 {
+			t.Fatal("request missing", response.Body.String())
+		}
+		row := records[0].(map[string]any)
+		for _, field := range []string{"reasoningEffort", "reasoningBudgetTokens"} {
+			value, exists := row[field]
+			if !exists || value != nil {
+				t.Fatalf("unknown %s must remain explicit null: %+v", field, row)
+			}
+		}
+	}
+}
 
 func TestUsageExportRequestIDAndOps(t *testing.T) {
 	f := newAPIFixture(t)
@@ -24,11 +51,13 @@ func TestUsageExportRequestIDAndOps(t *testing.T) {
 	team := teams[0].Team
 	requestID := "api-ops-" + time.Now().UTC().Format("150405.000000")
 	latency := int64(123)
+	budget := int64(8192)
 	if err := f.store.InsertUsage(ctx, store.UsageRecord{
 		ID: "00000000-0000-4000-8000-000000000901", RequestID: requestID,
 		UserID: admin.ID, TeamID: team.ID, Model: "claude-sonnet-4-5", UpstreamModel: "claude-sonnet-4-5",
 		InputTokens: 10, OutputTokens: 5, CreditsMicro: 123_456, Status: store.UsageStatusOk,
 		LatencyMs: &latency, CreatedAt: time.Now().UTC(),
+		ReasoningEffort: "max", ReasoningBudgetTokens: &budget,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -42,6 +71,10 @@ func TestUsageExportRequestIDAndOps(t *testing.T) {
 	if len(records) != 1 {
 		t.Fatalf("requestId 过滤应命中 1 条: %d", len(records))
 	}
+	row := records[0].(map[string]any)
+	if row["reasoningEffort"] != "max" || row["reasoningBudgetTokens"] != float64(8192) {
+		t.Fatalf("actual request reasoning missing in root list: %+v", row)
+	}
 
 	// CSV 导出（含 UTF-8 BOM 与 request_id）。
 	exportRec := f.do("GET", "/console/api/usage/export?requestId="+requestID, adminCookie, "")
@@ -49,7 +82,7 @@ func TestUsageExportRequestIDAndOps(t *testing.T) {
 		t.Fatalf("导出响应不符: %d %s", exportRec.Code, exportRec.Header().Get("content-type"))
 	}
 	body := exportRec.Body.String()
-	if !strings.HasPrefix(body, "\ufeff") || !strings.Contains(body, requestID) || !strings.Contains(body, "request_id") {
+	if !strings.HasPrefix(body, "\ufeff") || !strings.Contains(body, requestID) || !strings.Contains(body, "request_id") || !strings.Contains(body, "思考强度") || !strings.Contains(body, ",max,8192,") {
 		t.Fatalf("CSV 内容不符: %s", body)
 	}
 

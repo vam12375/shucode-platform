@@ -976,7 +976,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		}
 		_, _ = c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
 		writer := csv.NewWriter(c.Writer)
-		header := []string{"时间(UTC)", "request_id", "用户ID", "团队ID", "设备ID", "模型", "输入Token", "输出Token", "缓存读", "缓存写", "费用microCR", "状态", "错误类型", "延迟ms"}
+		header := []string{"时间(UTC)", "request_id", "用户ID", "团队ID", "设备ID", "模型", "思考强度", "思考预算Token", "输入Token", "输出Token", "缓存读", "缓存写", "费用microCR", "状态", "错误类型", "延迟ms"}
 		if user.Role == store.RoleRoot {
 			header = append(header, "上游模型", "供应商ID", "客户端IP")
 		}
@@ -986,7 +986,11 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 			if record.LatencyMs != nil {
 				latency = strconv.FormatInt(*record.LatencyMs, 10)
 			}
-			row := []string{isoString(record.CreatedAt), record.RequestID, record.UserID, record.TeamID, record.DeviceTokenID, record.Model,
+			budget := ""
+			if record.ReasoningBudgetTokens != nil {
+				budget = strconv.FormatInt(*record.ReasoningBudgetTokens, 10)
+			}
+			row := []string{isoString(record.CreatedAt), record.RequestID, record.UserID, record.TeamID, record.DeviceTokenID, record.Model, record.ReasoningEffort, budget,
 				strconv.FormatInt(record.InputTokens, 10), strconv.FormatInt(record.OutputTokens, 10), strconv.FormatInt(record.CacheReadTokens, 10), strconv.FormatInt(record.CacheCreationTokens, 10),
 				strconv.FormatInt(record.CreditsMicro, 10), string(record.Status), record.ErrorType, latency}
 			if user.Role == store.RoleRoot {

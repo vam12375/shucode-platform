@@ -21,6 +21,9 @@ func gatewayAnalysisFixture(t *testing.T) (*gatewayFixture, media.Repository, *m
 	t.Helper()
 	f := newGatewayFixture(t, nil)
 	ctx := context.Background()
+	if _, err := f.store.UpsertModel(ctx, store.UpsertModelInput{ModelID: "claude-sonnet-4-5", DisplayName: "fixture-alias", ProvideUpstreamModel: true, UpstreamModel: "deepseek-fixture", InputPricePerMtok: "3", OutputPricePerMtok: "15"}); err != nil {
+		t.Fatal(err)
+	}
 	device, err := f.store.FindDeviceTokenByHash(ctx, crypto.HashToken(f.token))
 	if err != nil || device == nil {
 		t.Fatal("missing fixture device")
@@ -74,7 +77,7 @@ func TestAnalysisScopeGatewayZeroSaleRetainsUsageCostAndNormalChatPrice(t *testi
 	if _, err := f.store.SaveModelPricing(context.Background(), []store.PricingEntry{snapshotCostEntry("claude-sonnet-4-5", "CNY")}, pricing.EmptyVersion); err != nil {
 		t.Fatal(err)
 	}
-	const body = `{"model":"claude-sonnet-4-5","max_tokens":100}`
+	const body = `{"model":"claude-sonnet-4-5","max_tokens":100,"reasoning_effort":"high"}`
 	response := requestAnalysisScope(f, "POST", "/v1/chat/completions", f.token, ticket, body)
 	if response.Code != 200 {
 		t.Fatalf("scoped request: %d %s", response.Code, response.Body.String())
@@ -97,7 +100,7 @@ func TestAnalysisScopeGatewayRejectsInvalidAndOverBudgetBeforeUpstream(t *testin
 		t.Run(kind, func(t *testing.T) {
 			f, repo, p, box, ticket, calls := gatewayAnalysisFixture(t)
 			ctx := context.Background()
-			body, token, expected := `{"model":"claude-sonnet-4-5","max_tokens":100}`, f.token, 403
+			body, token, expected := `{"model":"claude-sonnet-4-5","max_tokens":100,"reasoning_effort":"high"}`, f.token, 403
 			var err error
 			switch kind {
 			case "forged":
@@ -141,7 +144,7 @@ func TestAnalysisScopeGatewayRejectsInvalidAndOverBudgetBeforeUpstream(t *testin
 				_, err = f.store.SaveTeamPolicy(ctx, store.TeamPolicyRecord{TeamID: f.teamID, DailyBudgetCredits: "0.000000"})
 				expected = 429
 			case "scope-tokens":
-				body, expected = `{"model":"claude-sonnet-4-5","max_tokens":256000,"n":16}`, 429
+				body, expected = `{"model":"claude-sonnet-4-5","max_tokens":256000,"n":16,"reasoning_effort":"high"}`, 429
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -149,6 +152,33 @@ func TestAnalysisScopeGatewayRejectsInvalidAndOverBudgetBeforeUpstream(t *testin
 			response := requestAnalysisScope(f, "POST", "/v1/chat/completions", token, ticket, body)
 			if response.Code != expected || calls.Load() != 0 || len(f.usageRecords()) != 0 {
 				t.Fatalf("invalid scope reached upstream/fell back: code=%d body=%s calls=%d", response.Code, response.Body.String(), calls.Load())
+			}
+		})
+	}
+}
+
+func TestSourceAnalysisScopeRequiresActualHighBeforeUpstream(t *testing.T) {
+	for _, test := range []struct {
+		name, route, fragment string
+		allowed               bool
+	}{
+		{"missing", "/v1/chat/completions", `"messages":[]`, false},
+		{"max", "/v1/chat/completions", `"reasoning_effort":"max"`, false},
+		{"budget-only", "/v1/chat/completions", `"thinking":{"type":"enabled","budget_tokens":32768}`, false},
+		{"disabled", "/v1/chat/completions", `"reasoning_effort":"high","thinking":{"type":"disabled"}`, false},
+		{"high", "/v1/chat/completions", `"reasoning_effort":"high","thinking":{"type":"enabled"}`, true},
+		{"responses-high", "/v1/responses", `"reasoning":{"effort":"high"},"thinking":{"type":"disabled"}`, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f, _, _, _, ticket, calls := gatewayAnalysisFixture(t)
+			body := `{"model":"claude-sonnet-4-5","max_tokens":100,` + test.fragment + `}`
+			response := requestAnalysisScope(f, "POST", test.route, f.token, ticket, body)
+			if test.allowed {
+				if response.Code != 200 || calls.Load() != 1 || f.usageRecords()[0].ReasoningEffort != "high" {
+					t.Fatalf("explicit high should be retained: %d %s", response.Code, response.Body.String())
+				}
+			} else if response.Code != 403 || calls.Load() != 0 || len(f.usageRecords()) != 0 {
+				t.Fatalf("source high requirement was bypassed: %d calls=%d %s", response.Code, calls.Load(), response.Body.String())
 			}
 		})
 	}
@@ -170,8 +200,19 @@ func TestAnalysisScopeGatewayRejectsBackgroundAndEnforcesRequestBudget(t *testin
 	if err := repo.Store.SetConfigValue(context.Background(), "media:analysis-scope-budget:"+p.TeamID+":"+p.AnalysisFee.ID, []byte(`{"requests":128,"tokens":100}`)); err != nil {
 		t.Fatal(err)
 	}
-	w := requestAnalysisScope(f, "POST", "/v1/chat/completions", f.token, ticket, `{"model":"claude-sonnet-4-5"}`)
+	w := requestAnalysisScope(f, "POST", "/v1/chat/completions", f.token, ticket, `{"model":"claude-sonnet-4-5","reasoning_effort":"high"}`)
 	if w.Code != 429 || calls.Load() != 0 {
 		t.Fatalf("request budget bypassed: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAnalysisScopeRejectsUpstreamModelChangedAfterIssue(t *testing.T) {
+	f, _, _, _, ticket, calls := gatewayAnalysisFixture(t)
+	if _, err := f.store.UpsertModel(context.Background(), store.UpsertModelInput{ModelID: "claude-sonnet-4-5", DisplayName: "fixture-alias", ProvideUpstreamModel: true, UpstreamModel: "other-fixture", InputPricePerMtok: "3", OutputPricePerMtok: "15"}); err != nil {
+		t.Fatal(err)
+	}
+	response := requestAnalysisScope(f, "POST", "/v1/chat/completions", f.token, ticket, `{"model":"claude-sonnet-4-5","max_tokens":100,"reasoning_effort":"high"}`)
+	if response.Code != 403 || calls.Load() != 0 || len(f.usageRecords()) != 0 {
+		t.Fatalf("scope changed upstream model: %d %s calls=%d", response.Code, response.Body.String(), calls.Load())
 	}
 }

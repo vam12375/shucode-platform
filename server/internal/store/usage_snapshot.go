@@ -31,6 +31,10 @@ type UsageCostSnapshot struct {
 }
 
 func cloneUsage(record UsageRecord) UsageRecord {
+	if record.ReasoningBudgetTokens != nil {
+		budget := *record.ReasoningBudgetTokens
+		record.ReasoningBudgetTokens = &budget
+	}
 	if record.LatencyMs != nil {
 		latency := *record.LatencyMs
 		record.LatencyMs = &latency

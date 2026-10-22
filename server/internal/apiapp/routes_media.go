@@ -90,6 +90,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 	registerMediaReferenceRoutes(router, deps)
 	registerReferencePricingRoutes(router, deps)
 	registerMediaAnalysisConfigRoutes(router, deps)
+	registerMediaSourceRoutes(router, deps)
 	registerCanvasGenerationRoutes(router, deps)
 	router.GET("/api/v1/media/blobs/:team/:id", func(c *gin.Context) {
 		team, id := c.Param("team"), c.Param("id")
@@ -225,7 +226,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		if !mediaBody(c, &body) {
 			return
 		}
-		if !media.CompositionAvailable() {
+		if !body.Brief.SourceOnly && !media.CompositionAvailable() {
 			c.JSON(503, fail(503, "composition_dependencies_missing"))
 			return
 		}
@@ -253,21 +254,32 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		c.JSON(200, okData(p.View()))
 	})
 	router.POST("/api/v1/media/projects/:id/:action", func(c *gin.Context) {
-		_, m, ok := mediaIdentity(c, deps)
+		auth, m, ok := mediaIdentity(c, deps)
 		if !ok {
 			return
 		}
 		var body struct {
-			Version  int64          `json:"version"`
-			Analysis media.Analysis `json:"analysis"`
-			InputID  string         `json:"inputId"`
-			Plan     media.Plan     `json:"plan"`
+			Version        int64                `json:"version"`
+			Analysis       media.Analysis       `json:"analysis"`
+			InputID        string               `json:"inputId"`
+			Plan           media.Plan           `json:"plan"`
+			Brief          media.Brief          `json:"brief"`
+			SourceAnalysis media.SourceAnalysis `json:"sourceAnalysis"`
 		}
 		if !mediaBody(c, &body) {
 			return
 		}
 		if body.Version <= 0 {
 			c.JSON(400, fail(400, "缺少制作单版本"))
+			return
+		}
+		current, err := s.Repo.Get(c.Request.Context(), m.Team.ID, c.Param("id"))
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if current != nil && current.SourceChecksum != "" && (current.UserID != auth.User.ID || current.DeviceID != auth.Device.ID) {
+			c.JSON(403, fail(403, "video_analysis_scope_invalid"))
 			return
 		}
 		var p *media.Project
@@ -277,9 +289,17 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			p, e = s.Bind(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.Analysis)
 		case "plan":
 			p, e = s.SetPlan(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.InputID, body.Plan)
+		case "source-analysis":
+			p, e = s.SetSourceAnalysis(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.InputID, body.SourceAnalysis)
+		case "configure":
+			p, e = s.ConfigureReference(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.Brief)
 		case "revise":
 			p, e = s.Revise(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.Plan)
 		default:
+			if c.Param("action") == "generate" && !media.CompositionAvailable() {
+				c.JSON(503, fail(503, "composition_dependencies_missing"))
+				return
+			}
 			p, e = s.Action(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, c.Param("action"))
 		}
 		if e != nil {

@@ -16,6 +16,7 @@ import (
 func analysisConfigFixture(t *testing.T) (*apiFixture, string, *media.Project) {
 	t.Helper()
 	f, token, team := newUserConfigPolicyFixture(t)
+	installAnalysisModel(t, f, "model-a", true)
 	ctx := context.Background()
 	device, err := f.store.FindDeviceTokenByHash(ctx, crypto.HashToken(token))
 	if err != nil || device == nil {
@@ -55,6 +56,9 @@ func TestAnalysisConfigIssuesSingleModelScopedProviderAndKeepsNormalConfig(t *te
 	}
 	envelope := data["envelope"].(map[string]any)
 	personal := envelope["personalConfig"].(map[string]any)
+	if personal["defaultModelSelection"].(map[string]any)["options"].(map[string]any)["reasoningLevel"] != "high" {
+		t.Fatalf("legacy reference analysis must explicitly select high: %s", w.Body.String())
+	}
 	rules := personal["providerConfigRules"].(map[string]any)["providerRules"].([]any)
 	if len(rules) != 1 {
 		t.Fatal("analysis config must contain one provider")
@@ -73,7 +77,7 @@ func TestAnalysisConfigIssuesSingleModelScopedProviderAndKeepsNormalConfig(t *te
 		t.Fatal("scoped provider identities are inconsistent")
 	}
 	ticket := config["api"].(map[string]any)["headers"].(map[string]any)[media.AnalysisScopeHeader].(string)
-	if err := media.ValidateAnalysisScope(context.Background(), f.deps.Media.Repo, f.deps.SecretBox, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", 1, f.deps.Now()); err != nil {
+	if err := media.ValidateAnalysisScope(context.Background(), f.deps.Media.Repo, f.deps.SecretBox, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", 1, f.deps.Now(), "high"); err != nil {
 		t.Fatalf("issued scope cannot be validated: %v", err)
 	}
 	second := requestAnalysisConfig(f, token, p.ID, "model-a")

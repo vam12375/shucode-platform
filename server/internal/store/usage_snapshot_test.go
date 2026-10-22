@@ -22,6 +22,7 @@ func runUsageSnapshotSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 			}
 			at := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
 			micro := int64(17)
+			budget := int64(8192)
 			snapshot := &UsagePricingSnapshot{
 				SchemaVersion: 1, CapturedAt: at,
 				Sale: UsagePriceSnapshot{InputPerMtok: "3", OutputPerMtok: "15", CacheReadPerMtok: "0.3", CacheWritePerMtok: "3.75", Multiplier: "1", Currency: "CNY"},
@@ -34,6 +35,7 @@ func runUsageSnapshotSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 				ID: uuid.NewString(), RequestID: "snapshot-" + mode, UserID: user.ID, TeamID: team.ID,
 				Model: "snapshot-model", UpstreamModel: "upstream-snapshot-model", InputTokens: 3, OutputTokens: 2,
 				CreditsMicro: 31, Status: UsageStatusOk, CreatedAt: at, PriceSnapshot: snapshot,
+				ReasoningEffort: "high", ReasoningBudgetTokens: &budget,
 			}
 			if mode == "settle" {
 				reservationID := uuid.NewString()
@@ -60,12 +62,16 @@ func runUsageSnapshotSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 			snapshot.Sale.InputPerMtok = "999"
 			snapshot.Cost.Rates.Currency = "CNY"
 			*snapshot.Cost.EstimatedMicro = 999
+			budget = 1
 			assertStored := func(records []UsageRecord, err error) {
 				t.Helper()
 				if err != nil || len(records) != 1 || records[0].PriceSnapshot == nil {
 					t.Fatalf("快照读取失败: %+v %v", records, err)
 				}
 				got := records[0].PriceSnapshot
+				if records[0].ReasoningEffort != "high" || records[0].ReasoningBudgetTokens == nil || *records[0].ReasoningBudgetTokens != 8192 {
+					t.Fatalf("request reasoning was lost or aliased: %+v", records[0])
+				}
 				if got.Sale.InputPerMtok != "3" || got.Cost.Rates.Currency != "USD" || got.Cost.EstimatedMicro == nil || *got.Cost.EstimatedMicro != 17 || got.Cost.PricingVersion != "prc_frozen" || !got.CapturedAt.Equal(at) {
 					t.Fatalf("历史价格快照被篡改: %+v", got)
 				}
@@ -76,6 +82,7 @@ func runUsageSnapshotSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 			records[0].PriceSnapshot.Sale.InputPerMtok = "888"
 			records[0].PriceSnapshot.Cost.Rates.Currency = "CNY"
 			*records[0].PriceSnapshot.Cost.EstimatedMicro = 888
+			*records[0].ReasoningBudgetTokens = 2
 			assertStored(s.ListUsage(ctx, filter))
 			exported, err := s.ListUsageForExport(ctx, filter, 10)
 			assertStored(exported, err)
@@ -83,11 +90,12 @@ func runUsageSnapshotSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 			assertStored(s.ListUsageForExport(ctx, filter, 10))
 			old := record
 			old.ID, old.RequestID, old.PriceSnapshot = uuid.NewString(), record.RequestID+"-legacy", nil
+			old.ReasoningEffort, old.ReasoningBudgetTokens = "", nil
 			if err := s.InsertUsage(ctx, old); err != nil {
 				t.Fatal(err)
 			}
 			legacy, err := s.ListUsage(ctx, UsageFilter{TeamID: team.ID, RequestID: old.RequestID})
-			if err != nil || len(legacy) != 1 || legacy[0].PriceSnapshot != nil {
+			if err != nil || len(legacy) != 1 || legacy[0].PriceSnapshot != nil || legacy[0].ReasoningEffort != "" || legacy[0].ReasoningBudgetTokens != nil {
 				t.Fatalf("旧记录必须保留未知成本，不能回填零: %+v %v", legacy, err)
 			}
 		})

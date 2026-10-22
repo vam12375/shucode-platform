@@ -688,17 +688,18 @@ func (s *PostgresStore) EnqueuePendingSettlement(ctx context.Context, reservatio
 			reservation_id, request_id, user_id, team_id, device_token_id, model, upstream_model,
 			provider_id, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
 			credits_micro, price_snapshot, usage_status, error_type, client_ip, latency_ms,
-			usage_created_at
+			usage_created_at, reasoning_effort, reasoning_budget_tokens
 		) VALUES (
 			$1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6, $7,
-			$8::uuid, $9, $10, $11, $12, $13, $14::jsonb, $15, $16, $17, $18, $19::timestamptz
+			$8::uuid, $9, $10, $11, $12, $13, $14::jsonb, $15, $16, $17, $18, $19::timestamptz, $20, $21
 		)
 		ON CONFLICT (reservation_id) DO NOTHING`,
 		reservationID, record.RequestID, record.UserID, record.TeamID, nullIfEmpty(record.DeviceTokenID),
 		record.Model, record.UpstreamModel, nullIfEmpty(record.ProviderID),
 		record.InputTokens, record.OutputTokens, record.CacheReadTokens, record.CacheCreationTokens,
 		record.CreditsMicro, nullableBytes(snapshotJSON), string(record.Status),
-		nullIfEmpty(record.ErrorType), nullIfEmpty(record.ClientIP), record.LatencyMs, record.CreatedAt)
+		nullIfEmpty(record.ErrorType), nullIfEmpty(record.ClientIP), record.LatencyMs, record.CreatedAt,
+		nullIfEmpty(record.ReasoningEffort), record.ReasoningBudgetTokens)
 	return err
 }
 
@@ -717,7 +718,7 @@ func (s *PostgresStore) ListPendingSettlements(ctx context.Context, filter Pendi
 			cache_read_tokens, cache_creation_tokens, credits_micro, price_snapshot,
 			usage_status, COALESCE(error_type, ''), COALESCE(client_ip, ''), latency_ms,
 			usage_created_at, status, attempts, COALESCE(last_error, ''),
-			next_attempt_at, created_at, updated_at
+			next_attempt_at, created_at, updated_at, COALESCE(reasoning_effort, ''), reasoning_budget_tokens
 		FROM pending_settlements
 		WHERE ($1::text = '' OR status = $1)
 			AND ($2::timestamptz IS NULL OR next_attempt_at <= $2::timestamptz)
@@ -741,7 +742,7 @@ func (s *PostgresStore) ListPendingSettlements(ctx context.Context, filter Pendi
 			&record.InputTokens, &record.OutputTokens, &record.CacheReadTokens, &record.CacheCreationTokens,
 			&record.CreditsMicro, &snapshot, &usageState, &record.ErrorType, &record.ClientIP,
 			&record.LatencyMs, &record.CreatedAt, &status, &item.Attempts, &item.LastError,
-			&item.NextAttemptAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			&item.NextAttemptAt, &item.CreatedAt, &item.UpdatedAt, &record.ReasoningEffort, &record.ReasoningBudgetTokens); err != nil {
 			return nil, err
 		}
 		record.Status = UsageStatus(usageState)
@@ -850,16 +851,17 @@ func insertUsageExec(ctx context.Context, tx pgx.Tx, record UsageRecord) error {
 		INSERT INTO usage_records (
 			id, request_id, user_id, team_id, device_token_id, model, upstream_model,
 			input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-			credits_micro, status, error_type, client_ip, latency_ms, provider_id, created_at, price_snapshot
+			credits_micro, status, error_type, client_ip, latency_ms, provider_id, created_at, price_snapshot,
+			reasoning_effort, reasoning_budget_tokens
 		) VALUES (
 			$1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6, $7,
-			$8, $9, $10, $11, $12, $13, $14, $15, $16, $17::uuid, $18::timestamptz, $19::jsonb
+			$8, $9, $10, $11, $12, $13, $14, $15, $16, $17::uuid, $18::timestamptz, $19::jsonb, $20, $21
 		)`,
 		record.ID, record.RequestID, record.UserID, record.TeamID, nullIfEmpty(record.DeviceTokenID),
 		record.Model, record.UpstreamModel, record.InputTokens, record.OutputTokens,
 		record.CacheReadTokens, record.CacheCreationTokens, record.CreditsMicro, string(record.Status),
 		emptyToNil(record.ErrorType), emptyToNil(record.ClientIP), record.LatencyMs,
-		nullIfEmpty(record.ProviderID), record.CreatedAt, nullableBytes(snapshotJSON))
+		nullIfEmpty(record.ProviderID), record.CreatedAt, nullableBytes(snapshotJSON), nullIfEmpty(record.ReasoningEffort), record.ReasoningBudgetTokens)
 	return err
 }
 

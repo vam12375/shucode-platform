@@ -41,7 +41,7 @@ func TestBackgroundGenerationDoesNotHoldCreditsAndSettlesAfterRestart(t *testing
 		polls.Add(1)
 		fmt.Fprint(w, `{"id":"resp_background","status":"completed","output":[],"usage":{"input_tokens":100,"output_tokens":20}}`)
 	})
-	rec := f.do("POST", "/v1/responses", f.token, `{"model":"claude-sonnet-4-5","background":true,"input":"hello"}`)
+	rec := f.do("POST", "/v1/responses", f.token, `{"model":"claude-sonnet-4-5","background":true,"input":"hello","reasoning":{"effort":"max"}}`)
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"status":"queued"`) {
 		t.Fatalf("后台任务应正常创建: %d %s", rec.Code, rec.Body.String())
 	}
@@ -50,7 +50,7 @@ func TestBackgroundGenerationDoesNotHoldCreditsAndSettlesAfterRestart(t *testing
 		t.Fatalf("未完成任务不占余额且不实扣: %+v", team)
 	}
 	job, err := f.store.FindBackgroundGeneration(context.Background(), f.teamID, "resp_background")
-	if err != nil || job == nil || job.Record.CreditsMicro != 0 {
+	if err != nil || job == nil || job.Record.CreditsMicro != 0 || job.Record.ReasoningEffort != "max" {
 		t.Fatalf("后台任务必须持久化: %+v %v", job, err)
 	}
 	if expired, err := f.store.ExpireStaleReservations(context.Background(), time.Now().Add(24*time.Hour)); err != nil || expired != 0 {
@@ -61,7 +61,7 @@ func TestBackgroundGenerationDoesNotHoldCreditsAndSettlesAfterRestart(t *testing
 	reconcileBackgroundGenerations(context.Background(), deps)
 	reconcileBackgroundGenerations(context.Background(), deps)
 	team = f.team()
-	if team.ReservedCredits != "0.000000" || team.UsedCredits != "0.000600" || len(f.usageRecords()) != 1 || polls.Load() != 1 {
+	if team.ReservedCredits != "0.000000" || team.UsedCredits != "0.000600" || len(f.usageRecords()) != 1 || f.usageRecords()[0].ReasoningEffort != "max" || polls.Load() != 1 {
 		t.Fatalf("终态扣实且幂等: team=%+v usage=%+v polls=%d", team, f.usageRecords(), polls.Load())
 	}
 	rec = f.do("GET", "/v1/responses/resp_background", f.token, "")

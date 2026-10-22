@@ -82,6 +82,9 @@ func TestPersistFallsBackToSpoolAndReconcileSettles(t *testing.T) {
 	ctx := context.Background()
 	f := newMemoryFixture(t)
 	comp := f.compensator()
+	budget := int64(8192)
+	f.record.ReasoningEffort = "high"
+	f.record.ReasoningBudgetTokens = &budget
 	// 包一层让数据库入队失败，强制走本地 spool。
 	failing := NewSettlementCompensator(f.store, f.spool,
 		slog.New(slog.NewTextHandler(io.Discard, nil)), time.Now)
@@ -91,6 +94,8 @@ func TestPersistFallsBackToSpoolAndReconcileSettles(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(f.spool, "00000000-0000-4000-8000-000000000801.json")); err != nil {
 		t.Fatalf("spool 文件未写入: %v", err)
 	}
+	// spool 是原始请求事实的持久副本，后续指针修改不能进入补偿账本。
+	budget = 1
 	if err := comp.Reconcile(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -102,8 +107,21 @@ func TestPersistFallsBackToSpoolAndReconcileSettles(t *testing.T) {
 	if err != nil || len(usage) != 1 {
 		t.Fatalf("补偿后应有 1 条 usage: %d %v", len(usage), err)
 	}
-	if usage[0].ID != f.record.ID || usage[0].CreditsMicro != f.record.CreditsMicro {
+	if usage[0].ID != f.record.ID || usage[0].CreditsMicro != f.record.CreditsMicro || usage[0].ReasoningEffort != "high" || usage[0].ReasoningBudgetTokens == nil || *usage[0].ReasoningBudgetTokens != 8192 {
 		t.Fatalf("usage 记录不符: %+v", usage[0])
+	}
+	*usage[0].ReasoningBudgetTokens = 2
+	replayed := f.record
+	replayed.ReasoningEffort = "low"
+	if err := comp.Persist(ctx, "00000000-0000-4000-8000-000000000801", replayed); err != nil {
+		t.Fatal(err)
+	}
+	if err := comp.Reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	again, err := f.store.PlatformStore.ListUsage(ctx, store.UsageFilter{TeamID: f.teamID})
+	if err != nil || len(again) != 1 || again[0].ReasoningEffort != "high" || again[0].ReasoningBudgetTokens == nil || *again[0].ReasoningBudgetTokens != 8192 {
+		t.Fatalf("读取副本及幂等补偿不得改写首次思考参数: %+v %v", again, err)
 	}
 	team, err := f.store.PlatformStore.GetTeam(ctx, f.teamID)
 	if err != nil || team.UsedCredits != "0.000500" {
