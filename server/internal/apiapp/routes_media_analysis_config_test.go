@@ -45,6 +45,11 @@ func requestAnalysisConfig(f *apiFixture, token, id, model string) *httptest.Res
 
 func TestAnalysisConfigIssuesSingleModelScopedProviderAndKeepsNormalConfig(t *testing.T) {
 	f, token, p := analysisConfigFixture(t)
+	if _, err := f.store.UpsertModel(context.Background(), store.UpsertModelInput{
+		ModelID: "model-a", DisplayName: "DeepSeek V4 Pro", InputPricePerMtok: "1", OutputPricePerMtok: "2",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	w := requestAnalysisConfig(f, token, p.ID, "model-a")
 	if w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("analysis config: %d %s", w.Code, w.Body.String())
@@ -75,6 +80,9 @@ func TestAnalysisConfigIssuesSingleModelScopedProviderAndKeepsNormalConfig(t *te
 	modelRules := personal["modelConfigRules"].(map[string]any)["providerModelRules"].([]any)
 	if len(modelRules) != 1 || modelRules[0].(map[string]any)["providerId"] != providerID || personal["defaultModelSelection"].(map[string]any)["providerId"] != providerID {
 		t.Fatal("scoped provider identities are inconsistent")
+	}
+	if modelRules[0].(map[string]any)["config"].(map[string]any)["displayName"] != "DeepSeek V4 Pro" {
+		t.Fatal("scoped analysis must preserve the catalog display name")
 	}
 	ticket := config["api"].(map[string]any)["headers"].(map[string]any)[media.AnalysisScopeHeader].(string)
 	if err := media.ValidateAnalysisScope(context.Background(), f.deps.Media.Repo, f.deps.SecretBox, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", f.deps.Now(), "high"); err != nil {

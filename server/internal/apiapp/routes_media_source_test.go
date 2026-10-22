@@ -71,7 +71,7 @@ func TestAnalysisModelUsesExistingAllowedDeepSeekCapabilities(t *testing.T) {
 	enabled := true
 	for i, id := range []string{"deepseek-text", "deepseek-vision"} {
 		cfg, _ := json.Marshal(map[string]any{"properties": map[string]any{"contextWindow": 128000, "inputFormat": map[string]any{"supportsText": true, "supportsImage": i == 1}, "outputFormat": map[string]any{"supportsText": true}}, "optionSpecs": map[string]any{"reasoningLevel": map[string]any{"values": []string{"low", "high"}, "map": "({ reasoning_effort: reasoningLevel })"}, "maxOutputTokens": map[string]any{"max": 32000}}})
-		if _, err = f.store.UpsertModel(ctx, store.UpsertModelInput{ModelID: id, DisplayName: id, UpstreamProviderID: provider.ID, UpstreamModel: id, InputPricePerMtok: "1", OutputPricePerMtok: "1", ProvideUpstreamProviderID: true, ProvideUpstreamModel: true, Enabled: &enabled, SortOrder: int64Pointer(int64(i))}); err != nil {
+		if _, err = f.store.UpsertModel(ctx, store.UpsertModelInput{ModelID: id, DisplayName: "DeepSeek V4.1 Flash", UpstreamProviderID: provider.ID, UpstreamModel: id, InputPricePerMtok: "1", OutputPricePerMtok: "1", ProvideUpstreamProviderID: true, ProvideUpstreamModel: true, Enabled: &enabled, SortOrder: int64Pointer(int64(i))}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err = f.store.SetModelConfig(ctx, id, "manual", cfg); err != nil {
@@ -89,6 +89,10 @@ func TestAnalysisModelUsesExistingAllowedDeepSeekCapabilities(t *testing.T) {
 	}
 	if personal["defaultModelSelection"].(map[string]any)["options"].(map[string]any)["reasoningLevel"] != "high" {
 		t.Fatalf("source analysis must explicitly select high: %s", response.Body.String())
+	}
+	modelRules := personal["modelConfigRules"].(map[string]any)["providerModelRules"].([]any)
+	if len(modelRules) != 1 || modelRules[0].(map[string]any)["config"].(map[string]any)["displayName"] != "DeepSeek V4.1 Flash" {
+		t.Fatalf("analysis preflight must carry the catalog display name: %s", response.Body.String())
 	}
 	response = sourceRequest(f, token, "GET", "/api/v1/media/analysis-model?vision=0", nil)
 	if response.Code != 200 || dataOf(t, response)["envelope"].(map[string]any)["personalConfig"].(map[string]any)["defaultModelSelection"].(map[string]any)["modelId"] != "deepseek-text" {

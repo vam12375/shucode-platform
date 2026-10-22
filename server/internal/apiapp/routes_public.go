@@ -191,9 +191,10 @@ func registerUserConfigRoutes(router *gin.Engine, deps *Deps) {
 				continue
 			}
 			input.Models = append(input.Models, userConfigModel{
-				ModelID:    model.ModelID,
-				ConfigMode: model.ConfigMode,
-				Config:     canonicalModelConfig(model.ModelConfig),
+				ModelID:     model.ModelID,
+				DisplayName: model.DisplayName,
+				ConfigMode:  model.ConfigMode,
+				Config:      canonicalModelConfig(model.ModelConfig),
 			})
 		}
 		if len(input.Models) > 0 {

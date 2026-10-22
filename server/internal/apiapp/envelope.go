@@ -22,8 +22,9 @@ type gatewayAPI struct {
 }
 
 type userConfigModel struct {
-	ModelID string
-	// ConfigMode = recommended 时不带 override，让客户端使用当前内置官方规则。
+	ModelID     string
+	DisplayName string
+	// ConfigMode = recommended 时不带能力 override，让客户端使用当前内置官方规则。
 	ConfigMode string
 	Config     []byte
 }
@@ -71,6 +72,10 @@ func buildUserConfigEnvelope(input BuildUserConfigInput) map[string]any {
 	providerModelRules := make([]any, 0, len(input.Models))
 	for _, model := range input.Models {
 		ruleConfig := map[string]any{"enabled": true}
+		// 目录名称曾在信封投影时丢失，客户端只能显示 ID；名称单独覆盖，能力仍按原模式继承。
+		if displayName := strings.TrimSpace(model.DisplayName); displayName != "" {
+			ruleConfig["displayName"] = displayName
+		}
 		if model.ConfigMode == modelConfigManual && len(model.Config) > 0 {
 			var override map[string]any
 			if json.Unmarshal(model.Config, &override) == nil {
@@ -162,9 +167,10 @@ func withPlatformAccessToken(envelope map[string]any, deviceToken string) map[st
 // 稳定序列化口径与 TS 一致:字段固定顺序、models 按 id 排序(大小写无关近似 localeCompare)。
 func computeUserConfigSyncID(input BuildUserConfigInput) string {
 	type modelStable struct {
-		ID         string `json:"id"`
-		ConfigMode string `json:"configMode"`
-		Config     string `json:"config,omitempty"`
+		ID          string `json:"id"`
+		DisplayName string `json:"displayName,omitempty"`
+		ConfigMode  string `json:"configMode"`
+		Config      string `json:"config,omitempty"`
 	}
 	models := make([]modelStable, 0, len(input.Models))
 	for _, model := range input.Models {
@@ -177,8 +183,9 @@ func computeUserConfigSyncID(input BuildUserConfigInput) string {
 			config = string(model.Config)
 		}
 		models = append(models, modelStable{
-			ID:         model.ModelID,
-			ConfigMode: mode, Config: config,
+			ID:          model.ModelID,
+			DisplayName: strings.TrimSpace(model.DisplayName),
+			ConfigMode:  mode, Config: config,
 		})
 	}
 	sort.SliceStable(models, func(i, j int) bool {

@@ -74,7 +74,7 @@ func registerMediaAnalysisConfigRoutes(router *gin.Engine, deps *Deps) {
 			UserID: auth.User.ID, TeamID: membership.Team.ID, DeviceTokenID: auth.Device.ID,
 			GatewayBaseURL: deps.Env.GatewayBaseURL,
 			GatewayAPI:     gatewayAPI{Type: deps.Env.GatewayAPIType, BaseURL: deps.Env.GatewayAPIBaseURL},
-			Models:         []userConfigModel{{ModelID: model.ModelID, ConfigMode: model.ConfigMode, Config: canonicalModelConfig(model.ModelConfig)}},
+			Models:         []userConfigModel{{ModelID: model.ModelID, DisplayName: model.DisplayName, ConfigMode: model.ConfigMode, Config: canonicalModelConfig(model.ModelConfig)}},
 			DefaultModelID: model.ModelID, ProviderName: "Mendao Video Analysis",
 		})
 		envelope = withPlatformAccessToken(envelope, auth.PlaintextToken)
