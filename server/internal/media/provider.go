@@ -54,7 +54,12 @@ func (p Provider) Image(ctx context.Context, m Model, prompt, image string) (str
 			URL string `json:"url"`
 		} `json:"data"`
 	}
-	e := p.request(ctx, "POST", "/images/generations", map[string]any{"model": m.UpstreamModel, "prompt": prompt, "image": image, "response_format": "url", "size": "2K", "watermark": true}, &out)
+	body := map[string]any{"model": m.UpstreamModel, "prompt": prompt, "response_format": "url", "size": "2K", "watermark": true}
+	// 无参考图时按脚本生成首帧；空 image 并非供应商合法的文生图参数。
+	if image != "" {
+		body["image"] = image
+	}
+	e := p.request(ctx, "POST", "/images/generations", body, &out)
 	if e != nil {
 		return "", e
 	}
@@ -73,6 +78,9 @@ func videoSubmitBody(m Model, b Brief, s ShotPlan, image string) map[string]any 
 }
 
 func (p Provider) Submit(ctx context.Context, m Model, b Brief, s ShotPlan, image string) (string, error) {
+	if image == "" {
+		return "", fmt.Errorf("first_frame_required")
+	}
 	var out struct {
 		ID string `json:"id"`
 	}

@@ -60,6 +60,7 @@ type Env struct {
 	AuditOutboxDir string
 	// ReleaseManifestEnabled:桌面更新清单已接入真实安装包分发；未启用时禁止强制更新。
 	ReleaseManifestEnabled bool
+	SnapAnyAPIKey          string
 }
 
 func LoadPlatformEnv() (*Env, error) {
@@ -163,6 +164,7 @@ func LoadPlatformEnv() (*Env, error) {
 		PendingSettlementDir:   platformenv.EnvOr("PENDING_SETTLEMENT_DIR", "./data/pending-settlements"),
 		AuditOutboxDir:         platformenv.EnvOr("AUDIT_OUTBOX_DIR", "./data/audit-outbox"),
 		ReleaseManifestEnabled: platformenv.Truthy(os.Getenv("RELEASE_MANIFEST_ENABLED")),
+		SnapAnyAPIKey:          strings.TrimSpace(os.Getenv("SNAPANY_API_KEY")),
 	}, nil
 }
 

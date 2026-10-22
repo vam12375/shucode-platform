@@ -25,6 +25,7 @@ import (
 	"github.com/vam12375/shucode-platform/server/internal/contracts"
 	"github.com/vam12375/shucode-platform/server/internal/credits"
 	"github.com/vam12375/shucode-platform/server/internal/crypto"
+	"github.com/vam12375/shucode-platform/server/internal/media"
 	"github.com/vam12375/shucode-platform/server/internal/pricing"
 	"github.com/vam12375/shucode-platform/server/internal/ratelimit"
 	"github.com/vam12375/shucode-platform/server/internal/store"
@@ -547,6 +548,25 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	maxTokens := perRequestMaxTokens * outputCount
 	clampRequestedMaxTokens(body)
 	spec.applyOutputLimit(body, perRequestMaxTokens)
+	scopeValues, analysisScoped := c.Request.Header[http.CanonicalHeaderKey(media.AnalysisScopeHeader)]
+	if analysisScoped {
+		// scope 只在平台鉴权边界消费，不能出现在供应商请求或错误日志中。
+		c.Request.Header.Del(media.AnalysisScopeHeader)
+		if len(scopeValues) != 1 || backgroundGeneration {
+			spec.errorResponse(c, 403, "permission_error", "video_analysis_scope_invalid")
+			return
+		}
+		if err := media.ValidateAnalysisScope(ctx, media.Repository{Store: deps.Store}, deps.SecretBox, scopeValues[0], primary.ID, user.ID, device.ID, modelID, estimateRequestTokens(body, maxTokens), deps.Now()); err != nil {
+			status, typ := 403, "permission_error"
+			if errors.Is(err, media.ErrAnalysisScopeBudget) {
+				status, typ = 429, "rate_limit_error"
+			} else if errors.Is(err, media.ErrAnalysisScopeUnavailable) {
+				status, typ = 503, "api_error"
+			}
+			spec.errorResponse(c, status, typ, err.Error())
+			return
+		}
+	}
 	priceCapturedAt := deps.Now()
 	rates := priceRates(model, priceCapturedAt, deps.Env.PeakHoursHolidays)
 	if !validPriceRates(rates) {
@@ -554,6 +574,11 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		return
 	}
 	priceCapture := captureUsagePricing(ctx, deps, model, priceCapturedAt)
+	if analysisScoped {
+		// 原片分析的总价由 media owner 结算；本请求保留token与成本，用户token售价为零。
+		rates = credits.ModelPriceRates{}
+		priceCapture.sale = store.UsagePriceSnapshot{InputPerMtok: "0", OutputPerMtok: "0", CacheReadPerMtok: "0", CacheWritePerMtok: "0", Multiplier: "1", Currency: "CNY"}
+	}
 
 	// ---- 解析上游目标：渠道池按 priority/weight 产出候选；无路由时兼容回退 ----
 	targets, routeErr := resolveTargets(ctx, deps, model, spec)

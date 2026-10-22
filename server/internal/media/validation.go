@@ -2,6 +2,7 @@ package media
 
 import (
 	"fmt"
+	"math"
 	"net/url"
 	"slices"
 	"strings"
@@ -50,13 +51,28 @@ func ValidateModels(models []Model) error {
 	return nil
 }
 func ValidateBrief(b Brief, models []Model, assets []Asset) error {
+	replica := b.ReferenceAssetID != ""
 	if b.Mode != "auto" && b.Mode != "replicate" {
 		return ErrInvalid
 	}
-	if strings.TrimSpace(b.Product) == "" || utf8.RuneCountInString(b.Product) > 200 || utf8.RuneCountInString(b.SellingPoints) > 4000 || len(b.AssetIDs) == 0 || len(b.AssetIDs) > 20 || len(b.ReferenceURLs) > 10 || b.MaxCreditsMicro <= 0 || b.MaxCreditsMicro > 1_000_000_000 || b.Duration < 5 || b.Duration > 120 {
+	if strings.TrimSpace(b.Product) == "" || utf8.RuneCountInString(b.Product) > 200 || utf8.RuneCountInString(b.SellingPoints) > 4000 || (!replica && len(b.AssetIDs) == 0) || len(b.AssetIDs) > 20 || len(b.ReferenceURLs) > 10 || b.MaxCreditsMicro <= 0 || b.MaxCreditsMicro > 1_000_000_000 || (!replica && b.Duration < 5) || b.Duration < 1 || b.Duration > 120 || utf8.RuneCountInString(b.ReplacementInstructions) > 4000 {
 		return ErrInvalid
 	}
-	if b.Mode == "replicate" && len(b.ReferenceURLs) == 0 {
+	if replica {
+		if b.Mode != "replicate" || !b.ReviewPlan || !finitePositive(b.ReferenceDurationSeconds) || b.ReferenceDurationSeconds > MaxReferenceSeconds || (len(b.AssetIDs) == 0 && b.ImageModel == "") {
+			return ErrInvalid
+		}
+		found := false
+		for _, a := range assets {
+			if a.ID == b.ReferenceAssetID && a.Kind == "video" && math.Abs(a.DurationSeconds-b.ReferenceDurationSeconds) < .001 {
+				found = true
+			}
+		}
+		if !found {
+			return fmt.Errorf("reference_asset_not_found")
+		}
+	}
+	if !replica && b.Mode == "replicate" && len(b.ReferenceURLs) == 0 {
 		return ErrInvalid
 	}
 	for _, u := range b.ReferenceURLs {
@@ -64,7 +80,7 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 			return ErrInvalid
 		}
 	}
-	if !slices.Contains([]string{"9:16", "16:9", "1:1"}, b.AspectRatio) || len(b.Platforms) == 0 {
+	if !slices.Contains([]string{"9:16", "16:9", "1:1"}, b.AspectRatio) || (!replica && len(b.Platforms) == 0) {
 		return ErrInvalid
 	}
 	for _, p := range b.Platforms {
@@ -88,7 +104,7 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 			}
 		}
 	}
-	if !possible[b.Duration] {
+	if !replica && !possible[b.Duration] {
 		return fmt.Errorf("duration_not_supported")
 	}
 	if b.ImageModel != "" {
@@ -110,12 +126,14 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	return nil
 }
 func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
+	replica := b.ReferenceAssetID != ""
 	if len(plan.Shots) == 0 || len(plan.Shots) > 30 || len(plan.References) == 0 || len(plan.References) > 20 {
 		return nil, 0, ErrInvalid
 	}
 	refs := map[string]bool{}
 	for _, r := range plan.References {
-		if !ValidURL(r.URL) || r.Title == "" || r.Evidence == "" || r.SelectionReason == "" || r.CapturedAt.IsZero() {
+		validSource := ValidURL(r.URL) || (replica && r.URL == "" && len(b.ReferenceURLs) == 0)
+		if !validSource || r.Title == "" || r.Evidence == "" || r.SelectionReason == "" || r.CapturedAt.IsZero() {
 			return nil, 0, ErrInvalid
 		}
 		if utf8.RuneCountInString(r.Title) > 300 || utf8.RuneCountInString(r.Evidence) > 3000 || utf8.RuneCountInString(r.SelectionReason) > 1000 || (r.Likes != nil && *r.Likes < 0) {
@@ -130,12 +148,23 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 	out := []Shot{}
 	var total int64
 	duration := 0
+	sourceEnd := float64(0)
 	for _, p := range plan.Shots {
 		if utf8.RuneCountInString(p.Prompt) > 4000 || utf8.RuneCountInString(p.ImagePrompt) > 4000 || utf8.RuneCountInString(p.Subtitle) > 300 || utf8.RuneCountInString(p.Camera) > 500 || utf8.RuneCountInString(p.Framing) > 500 || utf8.RuneCountInString(p.Action) > 1000 || utf8.RuneCountInString(p.Purpose) > 500 {
 			return nil, 0, ErrInvalid
 		}
-		if !refs[p.SourceURL] || p.SourceStart < 0 || p.SourceEnd <= p.SourceStart || !slices.Contains(v.Durations, p.Duration) || !slices.Contains(b.AssetIDs, p.AssetID) || p.Prompt == "" || len(p.Prompt) > 12000 || len(p.Subtitle) > 900 || p.Framing == "" || p.Camera == "" || p.Action == "" || p.Purpose == "" {
+		validShotSource := refs[p.SourceURL] || (replica && p.SourceURL == "" && len(b.ReferenceURLs) == 0 && refs[""])
+		if !validShotSource || math.IsNaN(p.SourceStart) || math.IsInf(p.SourceStart, 0) || !finitePositive(p.SourceEnd) || p.SourceStart < 0 || p.SourceEnd <= p.SourceStart || !slices.Contains(v.Durations, p.Duration) || ((!replica || p.AssetID != "") && !slices.Contains(b.AssetIDs, p.AssetID)) || p.Prompt == "" || len(p.Prompt) > 12000 || len(p.Subtitle) > 900 || p.Framing == "" || p.Camera == "" || p.Action == "" || p.Purpose == "" {
 			return nil, 0, ErrInvalid
+		}
+		if replica {
+			if math.Abs(p.SourceStart-sourceEnd) > .001 || p.SourceEnd > b.ReferenceDurationSeconds+.001 || p.SourceEnd-p.SourceStart < 1.0/30 || p.SourceEnd-p.SourceStart > float64(p.Duration)+.001 || (p.AssetID == "" && (b.ImageModel == "" || p.ImagePrompt == "")) || (p.Transition != "" && p.Transition != "cut" && p.Transition != "fade") || utf8.RuneCountInString(p.TransitionDescription) > 1000 || utf8.RuneCountInString(p.Subject) > 1000 || utf8.RuneCountInString(p.Scene) > 1000 || utf8.RuneCountInString(p.Sound) > 1000 {
+				return nil, 0, ErrInvalid
+			}
+			if p.SourceURL != "" && len(b.ReferenceURLs) > 0 && !slices.Contains(b.ReferenceURLs, p.SourceURL) {
+				return nil, 0, ErrInvalid
+			}
+			sourceEnd = p.SourceEnd
 		}
 		q := v.PriceMicro * int64(p.Duration)
 		if p.ImagePrompt != "" {
@@ -149,8 +178,10 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 		duration += p.Duration
 		out = append(out, Shot{Plan: p, Status: "pending", Attempt: 1, QuoteMicro: q})
 	}
-	if duration != b.Duration || total > b.MaxCreditsMicro {
+	if (!replica && duration != b.Duration) || (replica && math.Abs(sourceEnd-b.ReferenceDurationSeconds) > .001) || total > b.MaxCreditsMicro {
 		return nil, 0, fmt.Errorf("duration_or_budget_exceeded")
 	}
 	return out, total, nil
 }
+
+func finitePositive(v float64) bool { return v > 0 && !math.IsNaN(v) && !math.IsInf(v, 0) }

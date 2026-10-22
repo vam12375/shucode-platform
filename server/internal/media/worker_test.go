@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/vam12375/shucode-platform/server/internal/store"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -29,6 +31,8 @@ type fixture struct {
 	videoDownloads         atomic.Int64
 	queries                atomic.Int64
 	failFirstVideoDownload bool
+	requestMu              sync.Mutex
+	requestBodies          []map[string]any
 }
 
 func setup(t *testing.T) *fixture {
@@ -52,6 +56,13 @@ func setup(t *testing.T) *fixture {
 	f := &fixture{team: team.ID, user: user.ID}
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+			}
+			f.requestMu.Lock()
+			f.requestBodies = append(f.requestBodies, body)
+			f.requestMu.Unlock()
 			f.submits.Add(1)
 			if f.unknown {
 				w.WriteHeader(502)
@@ -103,6 +114,61 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(e)
 	}
 	return f
+}
+
+func TestScriptOnlyFirstFrameIsGeneratedBeforeVideoAndSettledOnce(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	f.video, _ = os.ReadFile("testdata/blue.mp4")
+	p := f.project(t)
+	p, err := f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
+		v.Models = append(v.Models, Model{ID: "i", Kind: "image", PriceMicro: 200_000, ProviderID: "fixture", UpstreamModel: "image-model", Adapter: "ark", PriceVersion: "v1"})
+		v.Brief.ImageModel = "i"
+		v.Shots[0].Plan.AssetID = ""
+		v.Shots[0].Plan.ImagePrompt = "从脚本生成舞蹈人物首帧"
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 7 {
+		f.s.Tick(ctx)
+	}
+	p = current(t, f, p)
+	if p.Shots[0].Status != "succeeded" || p.ChargedMicro != 700_000 || f.submits.Load() != 2 || f.imageDownloads.Load() != 2 {
+		t.Fatalf("unexpected script-only lifecycle: %+v submits=%d", p, f.submits.Load())
+	}
+	f.requestMu.Lock()
+	defer f.requestMu.Unlock()
+	if _, exists := f.requestBodies[0]["image"]; exists {
+		t.Fatalf("script-only image sent reference: %#v", f.requestBodies[0])
+	}
+	content := f.requestBodies[1]["content"].([]any)
+	frame := content[1].(map[string]any)["image_url"].(map[string]any)["url"]
+	if frame != f.s.Blobs.URL(f.team, p.Shots[0].ImageAssetID) {
+		t.Fatalf("video did not use generated first frame: %v", frame)
+	}
+	team, _ := f.s.Repo.Store.GetTeam(ctx, f.team)
+	if team.UsedCredits != "0.700000" || team.ReservedCredits != "0.000000" {
+		t.Fatalf("double or missing settlement: %+v", team)
+	}
+}
+
+func TestRestoredShotWithoutFirstFrameFailsBeforeAdmission(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	p := f.project(t)
+	_, err := f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error { v.Shots[0].Plan.AssetID = ""; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		f.s.Tick(ctx)
+	}
+	p = current(t, f, p)
+	if p.Status != "failed" || p.Shots[0].Error != "first_frame_required" || p.Shots[0].ReservationID != "" || f.submits.Load() != 0 {
+		t.Fatalf("invalid restored plan admitted: %+v submits=%d", p, f.submits.Load())
+	}
 }
 func (f *fixture) project(t *testing.T) *Project {
 	t.Helper()
@@ -222,6 +288,76 @@ func TestMultiClipGenerationCompositionAndExactlyOnceCharge(t *testing.T) {
 	fmt.Sscanf(string(out), "%f", &duration)
 	if duration < 9.9 || duration > 10.2 {
 		t.Fatalf("duration=%v", duration)
+	}
+}
+
+func TestReplicaFractionalCompositionPreservesClockAndAppliesFade(t *testing.T) {
+	if !CompositionAvailable() {
+		t.Skip("ffmpeg unavailable")
+	}
+	for _, transition := range []string{"cut", "fade"} {
+		t.Run(transition, func(t *testing.T) {
+			f := setup(t)
+			ctx := context.Background()
+			videoPath := filepath.Join(t.TempDir(), "fixture.mp4")
+			cmd := exec.Command("ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=160x90:r=30", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "5", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", videoPath)
+			if err := cmd.Run(); err != nil {
+				t.Fatal(err)
+			}
+			f.video, _ = os.ReadFile(videoPath)
+			p := f.project(t)
+			p, err := f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
+				v.Brief.ReferenceAssetID = "source"
+				v.Brief.ReferenceDurationSeconds = 2.251
+				v.Brief.Resolution = "480p"
+				v.Shots[0].Plan.SourceStart, v.Shots[0].Plan.SourceEnd = 0, 1.117
+				v.Shots[1].Plan.SourceStart, v.Shots[1].Plan.SourceEnd = 1.117, 2.251
+				v.Shots[1].Plan.Transition = transition
+				for i := range v.Shots {
+					v.Shots[i].Plan.Subtitle = ""
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for range 12 {
+				f.s.Tick(ctx)
+				p = current(t, f, p)
+				if p.Status == "completed" {
+					break
+				}
+			}
+			if p.Status != "completed" || p.ChargedMicro != 1_000_000 || f.submits.Load() != 2 {
+				t.Fatalf("source trim changed supplier billing or failed: %+v submits=%d", p, f.submits.Load())
+			}
+			output := f.s.Blobs.Path(f.team, p.OutputAssetID)
+			raw, err := exec.Command("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", output).Output()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var duration float64
+			if _, err = fmt.Sscanf(string(raw), "%f", &duration); err != nil || math.Abs(duration-2.251) > .04 {
+				t.Fatalf("duration=%f source=2.251 err=%v", duration, err)
+			}
+			blue := func(at string) byte {
+				t.Helper()
+				frame, err := exec.Command("ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-ss", at, "-i", output, "-vf", "scale=1:1", "-frames:v", "1", "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1").Output()
+				if err != nil || len(frame) != 3 {
+					t.Fatalf("sample=%v err=%v", frame, err)
+				}
+				return frame[2]
+			}
+			if got := blue("0.5"); got < 180 {
+				t.Fatalf("normal frame unexpectedly faded: blue=%d", got)
+			}
+			if got := blue("1.12"); (transition == "fade" && got > 100) || (transition == "cut" && got < 180) {
+				t.Fatalf("boundary %s: blue=%d", transition, got)
+			}
+			if got := blue("1.4"); got < 180 {
+				t.Fatalf("fade did not restore image: blue=%d", got)
+			}
+		})
 	}
 }
 

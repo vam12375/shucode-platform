@@ -1314,7 +1314,10 @@ textarea {
 
 .dialog {
   width: 440px;
-  max-width: 100%;
+  /* 网格的自动最小尺寸会被连续的变量名撑宽，按视口收敛并允许换行。 */
+  max-width: calc(100vw - 32px);
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 16px 18px;
   background: var(--surface);
   border: 1px solid var(--line);

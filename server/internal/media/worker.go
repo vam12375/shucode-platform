@@ -103,6 +103,22 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		kind = p.Canvas.Kind
 		modelID = p.Canvas.ModelID
 	}
+	if p.Canvas == nil && (shot.Status == "pending" || shot.Status == "image_ready") && ((kind == "image" && modelID == "") || (kind == "video" && shot.Plan.AssetID == "" && shot.ImageAssetID == "")) {
+		// 旧快照可能绕过新计划校验；缺首帧必须在准入前失败，不能发送空图后误判为未知受理。
+		if shot.ReservationID != "" {
+			if e := s.Repo.Store.ReleaseReservationByID(ctx, shot.ReservationID, time.Now()); e != nil {
+				return e
+			}
+		}
+		_, e := s.workerUpdate(ctx, p, func(v *Project) {
+			v.Status = "failed"
+			v.Error = "first_frame_required"
+			v.Shots[index].Status = "failed"
+			v.Shots[index].Error = "first_frame_required"
+			v.Shots[index].clearPending()
+		})
+		return e
+	}
 	m, e := FindModel(p.Models, modelID, kind)
 	if e != nil {
 		return e

@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 func NewMediaService(deps *Deps) *media.Service {
@@ -32,6 +33,10 @@ func NewMediaService(deps *Deps) *media.Service {
 		client = &http.Client{Transport: netguard.NewTransport(false), Timeout: 60_000_000_000, CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("redirect_forbidden") }}
 	}
 	s := &media.Service{Repo: media.Repository{Store: deps.Store}, Blobs: media.Blobs{Root: root, Origin: strings.TrimRight(deps.Env.PublicAPIOrigin, "/"), SigningKey: key, Client: client}, WorkerID: uuid.NewString()}
+	parserClient := media.NewReferenceHTTPClient(90 * time.Second)
+	s.SourceParser = &media.SourceParser{Client: parserClient, ResolveKey: func(ctx context.Context) (string, error) {
+		return resolveSourceParserKey(ctx, deps)
+	}}
 	s.Provider = func(ctx context.Context, m media.Model) (media.Provider, error) {
 		p, e := deps.Store.GetUpstreamProvider(ctx, m.ProviderID)
 		if e != nil {
@@ -82,6 +87,9 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		deps.Media = NewMediaService(deps)
 	}
 	s := deps.Media
+	registerMediaReferenceRoutes(router, deps)
+	registerReferencePricingRoutes(router, deps)
+	registerMediaAnalysisConfigRoutes(router, deps)
 	registerCanvasGenerationRoutes(router, deps)
 	router.GET("/api/v1/media/blobs/:team/:id", func(c *gin.Context) {
 		team, id := c.Param("team"), c.Param("id")
@@ -155,7 +163,12 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		quota, _ := credits.ParseCreditsToMicro(m.Team.QuotaCredits)
 		used, _ := credits.ParseCreditsToMicro(m.Team.UsedCredits)
 		// 余额只由已结算账本决定；进行中的聊天和媒体不占用点数，负余额如实返回。
-		c.JSON(200, okData(gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": quota - used, "reservedMicro": int64(0), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "assets": assets, "projects": projects, "generations": generations, "compositionAvailable": media.CompositionAvailable()}))
+		pricing, e := s.Repo.ReferencePricing(c.Request.Context())
+		if e != nil {
+			c.JSON(503, fail(503, "reference_pricing_unavailable"))
+			return
+		}
+		c.JSON(200, okData(gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": quota - used, "reservedMicro": int64(0), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "assets": assets, "projects": projects, "generations": generations, "compositionAvailable": media.CompositionAvailable(), "referencePricing": pricing}))
 	})
 	router.POST("/api/v1/media/assets", func(c *gin.Context) {
 		_, m, ok := mediaIdentity(c, deps)
@@ -264,6 +277,8 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			p, e = s.Bind(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.Analysis)
 		case "plan":
 			p, e = s.SetPlan(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.InputID, body.Plan)
+		case "revise":
+			p, e = s.Revise(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.Plan)
 		default:
 			p, e = s.Action(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, c.Param("action"))
 		}

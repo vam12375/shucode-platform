@@ -17,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/vam12375/shucode-platform/server/internal/credits"
+	"github.com/vam12375/shucode-platform/server/internal/media"
 	"github.com/vam12375/shucode-platform/server/internal/store"
 	"github.com/vam12375/shucode-platform/server/internal/upstreamurl"
 )
@@ -381,6 +382,11 @@ func backgroundResponseIdentity(raw []byte) (string, string) {
 func handleBackgroundResponseProxy(c *gin.Context, deps Deps, method string, cancel bool) {
 	_, user, ok := authenticate(c.Request, deps, openAIError, c)
 	if !ok {
+		return
+	}
+	if _, scoped := c.Request.Header[http.CanonicalHeaderKey(media.AnalysisScopeHeader)]; scoped {
+		c.Request.Header.Del(media.AnalysisScopeHeader)
+		openAIError(c, 403, "permission_error", "video_analysis_scope_invalid")
 		return
 	}
 	if !safeResponseID.MatchString(c.Param("responseID")) {

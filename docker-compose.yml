@@ -85,6 +85,7 @@ services:
       PORT: "8787"
       CONSOLE_DIST_DIR: /app/apps/console/dist
       MEDIA_STORAGE_DIR: /app/data/media
+      SNAPANY_API_KEY: ${SNAPANY_API_KEY:-}
     ports:
       # 基础编排允许设置监听地址；生产覆写强制绑定 127.0.0.1，由宿主 Nginx 回源。
       - "${API_HOST_IP:-0.0.0.0}:${API_HOST_PORT:-8787}:8787"
@@ -120,6 +121,7 @@ services:
     environment:
       <<: *app-env
       GATEWAY_PORT: "8788"
+      SNAPANY_API_KEY: ""
     ports:
       - "${GATEWAY_HOST_IP:-0.0.0.0}:${GATEWAY_HOST_PORT:-8788}:8788"
     depends_on:

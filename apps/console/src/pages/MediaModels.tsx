@@ -8,6 +8,8 @@ import { toastErr, toastOk } from "../components/Feedback.js";
 import { Select } from "../components/Select.js";
 import { Chip, Notice } from "../components/StatusChip.js";
 import { MediaReconciliation } from "./MediaReconciliation.js";
+import { ReferencePricing } from "./ReferencePricing.js";
+import { SourceParserStatus } from "./SourceParserStatus.js";
 
 const KIND_OPTIONS = [
   { value: "video", label: "视频" },
@@ -655,6 +657,9 @@ export function MediaModelsPage() {
           {loading ? "加载中…" : `${videoCount} 视频 · ${imageCount} 图片`}
         </span>
       </header>
+
+      <SourceParserStatus />
+      <ReferencePricing />
 
       {error ? (
         <Notice tone="stop" k="操作未完成">

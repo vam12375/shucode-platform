@@ -12,10 +12,12 @@ import (
 )
 
 type Service struct {
-	Repo     Repository
-	Blobs    Blobs
-	Provider func(context.Context, Model) (Provider, error)
-	WorkerID string
+	Repo           Repository
+	Blobs          Blobs
+	Provider       func(context.Context, Model) (Provider, error)
+	WorkerID       string
+	SourceParser   *SourceParser
+	ReferenceProbe func(context.Context, string) (ReferenceMetadata, error)
 }
 
 func (s *Service) Create(ctx context.Context, team, user, device, id string, b Brief) (*Project, error) {
@@ -25,6 +27,10 @@ func (s *Service) Create(ctx context.Context, team, user, device, id string, b B
 	if existing, e := s.Repo.Get(ctx, team, id); e != nil {
 		return nil, e
 	} else if existing != nil {
+		if b.ReferenceAssetID != "" && b.ReferenceAssetID == existing.Brief.ReferenceAssetID {
+			b.ReferenceDurationSeconds = existing.Brief.ReferenceDurationSeconds
+			b.ReviewPlan = true
+		}
 		// 自动检索请求重放复用首次绑定，避免新上传素材改变同 requestId 的制作内容。
 		if len(b.AssetIDs) == 0 {
 			b.AssetIDs = existing.Brief.AssetIDs
@@ -49,7 +55,20 @@ func (s *Service) Create(ctx context.Context, team, user, device, id string, b B
 	if e != nil {
 		return nil, e
 	}
-	if len(b.AssetIDs) == 0 {
+	if b.ReferenceAssetID != "" {
+		found := false
+		for _, asset := range assets {
+			if asset.ID == b.ReferenceAssetID && asset.Kind == "video" && asset.DurationSeconds > 0 && asset.DurationSeconds <= MaxReferenceSeconds {
+				b.ReferenceDurationSeconds = asset.DurationSeconds
+				b.ReviewPlan = true
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("reference_asset_not_found")
+		}
+	} else if len(b.AssetIDs) == 0 {
 		b.AssetIDs = matchProductAssets(b.Product, assets)
 		if len(b.AssetIDs) == 0 {
 			return nil, fmt.Errorf("product_assets_not_found")
@@ -93,40 +112,27 @@ func (s *Service) Mutate(ctx context.Context, team, id string, version int64, fn
 	return p, nil
 }
 func (s *Service) Bind(ctx context.Context, team, id string, version int64, a Analysis) (*Project, error) {
-	return s.Mutate(ctx, team, id, version, func(p *Project) error {
-		if p.Status != "draft" && p.Status != "analysis_failed" {
-			return ErrConflict
-		}
-		if a.TaskID == "" || a.InputID == "" || a.WorkspacePath == "" {
-			return ErrInvalid
-		}
-		p.Analysis = &a
-		p.Status = "analyzing"
-		p.Error = ""
-		return nil
-	})
+	return s.bindAnalysis(ctx, team, id, version, a)
 }
 func (s *Service) SetPlan(ctx context.Context, team, id string, version int64, input string, plan Plan) (*Project, error) {
+	return s.acceptAnalysisPlan(ctx, team, id, version, input, plan)
+}
+
+func (s *Service) Revise(ctx context.Context, team, id string, version int64, plan Plan) (*Project, error) {
 	return s.Mutate(ctx, team, id, version, func(p *Project) error {
-		if p.Status != "analyzing" || p.Analysis == nil || p.Analysis.InputID != input {
+		if p.Status != "review" {
 			return ErrConflict
 		}
-		shots, total, e := BuildShots(p.Brief, plan, p.Models)
-		if e != nil {
-			return e
+		shots, total, err := BuildShots(p.Brief, plan, p.Models)
+		if err != nil {
+			return err
 		}
-		p.Plan = &plan
-		p.Shots = shots
-		p.QuoteMicro = total
-		p.Status = "review"
-		if !p.Brief.ReviewPlan {
-			p.Status = "queued"
-		}
+		p.Plan, p.Shots, p.QuoteMicro = &plan, shots, total
 		return nil
 	})
 }
 func (s *Service) Action(ctx context.Context, team, id string, version int64, action string) (*Project, error) {
-	return s.Mutate(ctx, team, id, version, func(p *Project) error {
+	p, err := s.Mutate(ctx, team, id, version, func(p *Project) error {
 		switch action {
 		case "generate":
 			if p.Status != "review" {
@@ -189,6 +195,17 @@ func (s *Service) Action(ctx context.Context, team, id string, version int64, ac
 		}
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	if (action == "cancel" || action == "analysis-failed") && p.AnalysisFee != nil && p.AnalysisChargedMicro == 0 && (p.Status == "cancelled" || p.Status == "analysis_failed") {
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		if err := s.releaseFixedFee(cleanup, p.TeamID, p.UserID, *p.AnalysisFee); err != nil && !errors.Is(err, ErrConflict) {
+			return nil, err
+		}
+	}
+	return p, nil
 }
 func (s *Service) Run(ctx context.Context) {
 	ticker := time.NewTicker(3 * time.Second)
@@ -210,6 +227,15 @@ func (s *Service) Tick(ctx context.Context) {
 	for _, p := range projects {
 		if ctx.Err() != nil {
 			return
+		}
+		if p.Status == "analysis_settling" {
+			_, _ = s.finishAnalysisFee(ctx, &p)
+			continue
+		}
+		if (p.Status == "analysis_failed" || p.Status == "cancelled") && p.AnalysisFee != nil && p.AnalysisChargedMicro == 0 {
+			// 状态落盘与关闭收费身份之间可能退出；轮询恢复关闭，取消/失败仍为零扣。
+			_ = s.releaseFixedFee(ctx, p.TeamID, p.UserID, *p.AnalysisFee)
+			continue
 		}
 		if p.Status != "queued" && p.Status != "running" && p.Status != "composing" && p.Status != "cancelling" {
 			continue

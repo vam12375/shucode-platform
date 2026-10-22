@@ -49,6 +49,7 @@ DOCKER_BASE := docker run --rm -t \
 
 DOCKER_RUN   := $(DOCKER_BASE) -e GOPROXY="$(GOPROXY)"
 DOCKER_WORUN := $(DOCKER_BASE) -e GOPROXY="$(GOPROXY)" -e CGO_ENABLED=1
+API_DEV_ENV := $(DEV_ENV) $(if $(SNAPANY_API_KEY),-e SNAPANY_API_KEY="$(SNAPANY_API_KEY)")
 
 .PHONY: lint test vuln build run-api run-gateway migrate seed tidy sqlc clean
 
@@ -68,7 +69,7 @@ build:
 
 # 本地开发:容器内 go run,端口映射回宿主(与 pnpm dev 配合)。
 run-api:
-	$(DOCKER_RUN) $(DEV_ENV) -e PORT="$(PORT)" -p "$(PORT):$(PORT)" $(GO_IMAGE) go run ./cmd/api
+	$(DOCKER_RUN) $(API_DEV_ENV) -e PORT="$(PORT)" -p "$(PORT):$(PORT)" $(GO_IMAGE) go run ./cmd/api
 
 run-gateway:
 	$(DOCKER_RUN) $(DEV_ENV) -e PORT="$(PORT)" -e GATEWAY_PORT="$(GATEWAY_PORT)" \
