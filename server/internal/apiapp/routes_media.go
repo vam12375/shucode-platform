@@ -33,6 +33,7 @@ func NewMediaService(deps *Deps) *media.Service {
 		client = &http.Client{Transport: netguard.NewTransport(false), Timeout: 60_000_000_000, CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("redirect_forbidden") }}
 	}
 	s := &media.Service{Repo: media.Repository{Store: deps.Store}, Blobs: media.Blobs{Root: root, Origin: strings.TrimRight(deps.Env.PublicAPIOrigin, "/"), SigningKey: key, Client: client}, WorkerID: uuid.NewString()}
+	s.ArchiveCanvasOutput = newCanvasArchivePublisher(deps, s.Blobs)
 	parserClient := media.NewReferenceHTTPClient(90 * time.Second)
 	s.SourceParser = &media.SourceParser{Client: parserClient, ResolveKey: func(ctx context.Context) (string, error) {
 		return resolveSourceParserKey(ctx, deps)

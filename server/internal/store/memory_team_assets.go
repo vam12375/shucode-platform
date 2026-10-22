@@ -14,6 +14,14 @@ func sameTeamAssetUpload(existing, incoming TeamAssetRecord) bool {
 }
 
 func (s *memoryStore) CommitTeamAsset(ctx context.Context, teamID string, record TeamAssetRecord, limitBytes int64) (TeamAssetRecord, bool, error) {
+	return s.commitTeamAsset(ctx, teamID, record, limitBytes, false)
+}
+
+func (s *memoryStore) CommitTeamAssetForActiveMember(ctx context.Context, teamID string, record TeamAssetRecord, limitBytes int64) (TeamAssetRecord, bool, error) {
+	return s.commitTeamAsset(ctx, teamID, record, limitBytes, true)
+}
+
+func (s *memoryStore) commitTeamAsset(ctx context.Context, teamID string, record TeamAssetRecord, limitBytes int64, activeMember bool) (TeamAssetRecord, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return TeamAssetRecord{}, false, err
 	}
@@ -24,6 +32,14 @@ func (s *memoryStore) CommitTeamAsset(ctx context.Context, teamID string, record
 	defer s.mu.Unlock()
 	if _, ok := s.teams[teamID]; !ok {
 		return TeamAssetRecord{}, false, ErrTeamAssetTeamNotFound
+	}
+	if activeMember {
+		// 后台归档没有路由鉴权快照，成员失效与资产登记必须在同一临界区裁决。
+		actor, err := s.teamAssetActorLocked(teamID, record.UploadedByID)
+		if err != nil {
+			return TeamAssetRecord{}, false, err
+		}
+		record.UploadedByName = actor.User.DisplayName
 	}
 	assets := s.teamAssets[teamID]
 	// 已批准身份和 blob 永久保留墓碑，阻止迟到上传恢复资产或复用待清理字节。
@@ -58,6 +74,23 @@ func (s *memoryStore) CommitTeamAsset(ctx context.Context, teamID string, record
 	blobIDs[record.BlobID] = record.ID
 	s.teamAssetUsedBytes[teamID] = used + record.Size
 	return record, true, nil
+}
+
+func (s *memoryStore) IsTeamAssetDeleted(ctx context.Context, teamID, id string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if !canonicalUUID(teamID) || !canonicalUUID(id) {
+		return false, ErrInvalidInput
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, r := range s.teamAssetDeletions[teamID] {
+		if r.AssetID == id && r.Status == "approved" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *memoryStore) GetTeamAsset(ctx context.Context, teamID, id string) (*TeamAssetRecord, error) {

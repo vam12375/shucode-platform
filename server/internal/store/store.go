@@ -40,6 +40,8 @@ type PlatformStore interface {
 	// Team assets share one team-scoped quota. Commit checks idempotency before
 	// atomically enforcing limitBytes; created=false means an identical upload already exists.
 	CommitTeamAsset(ctx context.Context, teamID string, record TeamAssetRecord, limitBytes int64) (saved TeamAssetRecord, created bool, err error)
+	CommitTeamAssetForActiveMember(ctx context.Context, teamID string, record TeamAssetRecord, limitBytes int64) (saved TeamAssetRecord, created bool, err error)
+	IsTeamAssetDeleted(ctx context.Context, teamID, id string) (bool, error)
 	GetTeamAsset(ctx context.Context, teamID, id string) (*TeamAssetRecord, error)
 	// ListTeamAssetPage returns created_at/id DESC and total usage from one snapshot.
 	ListTeamAssetPage(ctx context.Context, teamID string, beforeCreatedAt *time.Time, beforeID string, limit int) (TeamAssetPage, error)

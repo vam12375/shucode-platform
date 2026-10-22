@@ -8,7 +8,10 @@ import (
 	"github.com/vam12375/shucode-platform/server/internal/store"
 )
 
-type Repository struct{ Store store.PlatformStore }
+type Repository struct {
+	Store               store.PlatformStore
+	RequireActiveMember bool
+}
 
 func toStoreRecord(record Record) store.TeamAssetRecord {
 	return store.TeamAssetRecord{
@@ -90,7 +93,11 @@ func (r Repository) Commit(ctx context.Context, team string, record Record) (Rec
 	if record.Size < 1 || record.Size > MaxAssetBytes {
 		return Record{}, ErrInvalid
 	}
-	saved, _, err := r.Store.CommitTeamAsset(ctx, team, toStoreRecord(record), TeamStorageLimitBytes)
+	commit := r.Store.CommitTeamAsset
+	if r.RequireActiveMember {
+		commit = r.Store.CommitTeamAssetForActiveMember
+	}
+	saved, _, err := commit(ctx, team, toStoreRecord(record), TeamStorageLimitBytes)
 	if err != nil {
 		return Record{}, mapStoreError(err)
 	}

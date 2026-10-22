@@ -109,54 +109,56 @@ type Shot struct {
 	ReleasedMicro      int64    `json:"releasedMicro,omitempty"`
 }
 type Project struct {
-	SourceChecksum       string          `json:"sourceChecksum,omitempty"`
-	SourceAnalysis       *SourceAnalysis `json:"sourceAnalysis,omitempty"`
-	AnalysisFee          *FixedFee       `json:"analysisFee,omitempty"`
-	AnalysisChargedMicro int64           `json:"analysisChargedMicro"`
-	Canvas               *CanvasRequest  `json:"canvas,omitempty"`
-	ID                   string          `json:"id"`
-	Version              int64           `json:"version"`
-	Status               string          `json:"status"`
-	Brief                Brief           `json:"brief"`
-	CreatedAt            time.Time       `json:"createdAt"`
-	UpdatedAt            time.Time       `json:"updatedAt"`
-	Analysis             *Analysis       `json:"analysis,omitempty"`
-	Plan                 *Plan           `json:"plan,omitempty"`
-	Shots                []Shot          `json:"shots"`
-	QuoteMicro           int64           `json:"quoteMicro"`
-	ChargedMicro         int64           `json:"chargedMicro"`
-	OutputAssetID        string          `json:"outputAssetId,omitempty"`
-	Error                string          `json:"error,omitempty"`
-	CancelRequested      bool            `json:"cancelRequested"`
-	TeamID               string          `json:"teamId"`
-	UserID               string          `json:"userId"`
-	DeviceID             string          `json:"deviceId"`
-	Models               []Model         `json:"models"`
-	LeaseOwner           string          `json:"leaseOwner,omitempty"`
-	LeaseUntil           time.Time       `json:"leaseUntil"`
+	SourceChecksum       string                   `json:"sourceChecksum,omitempty"`
+	SourceAnalysis       *SourceAnalysis          `json:"sourceAnalysis,omitempty"`
+	AnalysisFee          *FixedFee                `json:"analysisFee,omitempty"`
+	AnalysisChargedMicro int64                    `json:"analysisChargedMicro"`
+	Canvas               *CanvasRequest           `json:"canvas,omitempty"`
+	TeamAssetArchives    []CanvasTeamAssetArchive `json:"teamAssetArchives,omitempty"`
+	ID                   string                   `json:"id"`
+	Version              int64                    `json:"version"`
+	Status               string                   `json:"status"`
+	Brief                Brief                    `json:"brief"`
+	CreatedAt            time.Time                `json:"createdAt"`
+	UpdatedAt            time.Time                `json:"updatedAt"`
+	Analysis             *Analysis                `json:"analysis,omitempty"`
+	Plan                 *Plan                    `json:"plan,omitempty"`
+	Shots                []Shot                   `json:"shots"`
+	QuoteMicro           int64                    `json:"quoteMicro"`
+	ChargedMicro         int64                    `json:"chargedMicro"`
+	OutputAssetID        string                   `json:"outputAssetId,omitempty"`
+	Error                string                   `json:"error,omitempty"`
+	CancelRequested      bool                     `json:"cancelRequested"`
+	TeamID               string                   `json:"teamId"`
+	UserID               string                   `json:"userId"`
+	DeviceID             string                   `json:"deviceId"`
+	Models               []Model                  `json:"models"`
+	LeaseOwner           string                   `json:"leaseOwner,omitempty"`
+	LeaseUntil           time.Time                `json:"leaseUntil"`
 }
 
 // 用户投影不携带供应商路由、请求身份、锁定售价或 worker lease；这些字段只由平台状态机写入。
 type ProjectView struct {
-	SourceAnalysis       *SourceAnalysis `json:"sourceAnalysis,omitempty"`
-	AnalysisChargedMicro int64           `json:"analysisChargedMicro"`
-	Canvas               *CanvasRequest  `json:"canvas,omitempty"`
-	ReservedMicro        int64           `json:"reservedMicro"`
-	ReleasedMicro        int64           `json:"releasedMicro"`
-	ID                   string          `json:"id"`
-	Version              int64           `json:"version"`
-	Status               string          `json:"status"`
-	Brief                Brief           `json:"brief"`
-	CreatedAt            time.Time       `json:"createdAt"`
-	UpdatedAt            time.Time       `json:"updatedAt"`
-	Analysis             *Analysis       `json:"analysis,omitempty"`
-	Plan                 *Plan           `json:"plan,omitempty"`
-	Shots                []ShotView      `json:"shots"`
-	QuoteMicro           int64           `json:"quoteMicro"`
-	ChargedMicro         int64           `json:"chargedMicro"`
-	OutputAssetID        string          `json:"outputAssetId,omitempty"`
-	Error                string          `json:"error,omitempty"`
-	CancelRequested      bool            `json:"cancelRequested"`
+	SourceAnalysis       *SourceAnalysis          `json:"sourceAnalysis,omitempty"`
+	AnalysisChargedMicro int64                    `json:"analysisChargedMicro"`
+	Canvas               *CanvasRequest           `json:"canvas,omitempty"`
+	TeamAssetArchives    []CanvasTeamAssetArchive `json:"teamAssetArchives,omitempty"`
+	ReservedMicro        int64                    `json:"reservedMicro"`
+	ReleasedMicro        int64                    `json:"releasedMicro"`
+	ID                   string                   `json:"id"`
+	Version              int64                    `json:"version"`
+	Status               string                   `json:"status"`
+	Brief                Brief                    `json:"brief"`
+	CreatedAt            time.Time                `json:"createdAt"`
+	UpdatedAt            time.Time                `json:"updatedAt"`
+	Analysis             *Analysis                `json:"analysis,omitempty"`
+	Plan                 *Plan                    `json:"plan,omitempty"`
+	Shots                []ShotView               `json:"shots"`
+	QuoteMicro           int64                    `json:"quoteMicro"`
+	ChargedMicro         int64                    `json:"chargedMicro"`
+	OutputAssetID        string                   `json:"outputAssetId,omitempty"`
+	Error                string                   `json:"error,omitempty"`
+	CancelRequested      bool                     `json:"cancelRequested"`
 }
 type ShotView struct {
 	Plan          ShotPlan `json:"plan"`
@@ -174,7 +176,11 @@ func (p Project) View() ProjectView {
 	for _, s := range p.Shots {
 		shots = append(shots, ShotView{Plan: s.Plan, Status: s.Status, Attempt: s.Attempt, ImageAssetID: s.ImageAssetID, OutputAssetID: s.OutputAssetID, Error: s.Error, ChargedMicro: s.ChargedMicro, QuoteMicro: s.QuoteMicro})
 	}
-	return ProjectView{SourceAnalysis: cloneSourceAnalysis(p.SourceAnalysis), AnalysisChargedMicro: p.AnalysisChargedMicro, Canvas: p.Canvas, ReservedMicro: 0, ReleasedMicro: 0, ID: p.ID, Version: p.Version, Status: p.Status, Brief: p.Brief, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Analysis: p.Analysis, Plan: p.Plan, Shots: shots, QuoteMicro: p.QuoteMicro, ChargedMicro: p.ChargedMicro, OutputAssetID: p.OutputAssetID, Error: p.Error, CancelRequested: p.CancelRequested}
+	var archives []CanvasTeamAssetArchive
+	if p.Canvas != nil {
+		archives = canvasCurrentArchives(p)
+	}
+	return ProjectView{SourceAnalysis: cloneSourceAnalysis(p.SourceAnalysis), AnalysisChargedMicro: p.AnalysisChargedMicro, Canvas: p.Canvas, TeamAssetArchives: archives, ReservedMicro: 0, ReleasedMicro: 0, ID: p.ID, Version: p.Version, Status: p.Status, Brief: p.Brief, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Analysis: p.Analysis, Plan: p.Plan, Shots: shots, QuoteMicro: p.QuoteMicro, ChargedMicro: p.ChargedMicro, OutputAssetID: p.OutputAssetID, Error: p.Error, CancelRequested: p.CancelRequested}
 }
 
 // 阶段售价独立于余额占用；旧任务仍从持久化预留金额恢复，不能因取消预留而免费交付。

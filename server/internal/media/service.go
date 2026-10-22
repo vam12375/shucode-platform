@@ -12,12 +12,13 @@ import (
 )
 
 type Service struct {
-	Repo           Repository
-	Blobs          Blobs
-	Provider       func(context.Context, Model) (Provider, error)
-	WorkerID       string
-	SourceParser   *SourceParser
-	ReferenceProbe func(context.Context, string) (ReferenceMetadata, error)
+	Repo                Repository
+	Blobs               Blobs
+	Provider            func(context.Context, Model) (Provider, error)
+	WorkerID            string
+	SourceParser        *SourceParser
+	ReferenceProbe      func(context.Context, string) (ReferenceMetadata, error)
+	ArchiveCanvasOutput func(context.Context, CanvasArchiveInput) CanvasTeamAssetArchive
 }
 
 func (s *Service) Create(ctx context.Context, team, user, device, id string, b Brief) (*Project, error) {
@@ -252,6 +253,8 @@ func (s *Service) Tick(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		// 归档有独立恢复事实；先处理所有成功shot，终态和部分成功也不能漏收录。
+		p = s.reconcileCanvasArchives(ctx, p)
 		if p.Status == "analysis_settling" {
 			_, _ = s.finishAnalysisFee(ctx, &p)
 			continue

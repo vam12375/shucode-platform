@@ -25,6 +25,14 @@ func scanTeamAsset(row pgx.Row) (*TeamAssetRecord, error) {
 }
 
 func (s *PostgresStore) CommitTeamAsset(ctx context.Context, teamID string, record TeamAssetRecord, limitBytes int64) (TeamAssetRecord, bool, error) {
+	return s.commitTeamAsset(ctx, teamID, record, limitBytes, false)
+}
+
+func (s *PostgresStore) CommitTeamAssetForActiveMember(ctx context.Context, teamID string, record TeamAssetRecord, limitBytes int64) (TeamAssetRecord, bool, error) {
+	return s.commitTeamAsset(ctx, teamID, record, limitBytes, true)
+}
+
+func (s *PostgresStore) commitTeamAsset(ctx context.Context, teamID string, record TeamAssetRecord, limitBytes int64, activeMember bool) (TeamAssetRecord, bool, error) {
 	if err := validateTeamAssetRecord(teamID, record, limitBytes); err != nil {
 		return TeamAssetRecord{}, false, err
 	}
@@ -41,6 +49,16 @@ func (s *PostgresStore) CommitTeamAsset(ctx context.Context, teamID string, reco
 			return TeamAssetRecord{}, false, ErrTeamAssetTeamNotFound
 		}
 		return TeamAssetRecord{}, false, err
+	}
+	if activeMember {
+		// 团队锁串行成员变更，用户共享锁串行账号停用；不能沿用后台启动时的权限。
+		err := tx.QueryRow(ctx, `SELECT u.display_name FROM team_members m JOIN users u ON u.id=m.user_id JOIN teams t ON t.id=m.team_id WHERE m.team_id=$1::uuid AND m.user_id=$2::uuid AND m.disabled_at IS NULL AND u.disabled_at IS NULL AND t.disabled_at IS NULL FOR SHARE OF m,u`, teamID, record.UploadedByID).Scan(&record.UploadedByName)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return TeamAssetRecord{}, false, ErrTeamAssetForbidden
+		}
+		if err != nil {
+			return TeamAssetRecord{}, false, err
+		}
 	}
 	// 墓碑与清理事实永久保留，迟到重试不能重新引用已批准删除的身份或字节。
 	var retired bool
@@ -91,6 +109,15 @@ func (s *PostgresStore) CommitTeamAsset(ctx context.Context, teamID string, reco
 		return TeamAssetRecord{}, false, err
 	}
 	return *saved, true, nil
+}
+
+func (s *PostgresStore) IsTeamAssetDeleted(ctx context.Context, teamID, id string) (bool, error) {
+	if !canonicalUUID(teamID) || !canonicalUUID(id) {
+		return false, ErrInvalidInput
+	}
+	var deleted bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM team_asset_deletion_requests WHERE team_id=$1::uuid AND asset_id=$2::uuid AND status='approved')`, teamID, id).Scan(&deleted)
+	return deleted, err
 }
 
 func (s *PostgresStore) GetTeamAsset(ctx context.Context, teamID, id string) (*TeamAssetRecord, error) {
