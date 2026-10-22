@@ -556,11 +556,9 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			spec.errorResponse(c, 403, "permission_error", "video_analysis_scope_invalid")
 			return
 		}
-		if err := media.ValidateAnalysisScope(ctx, media.Repository{Store: deps.Store}, deps.SecretBox, scopeValues[0], primary.ID, user.ID, device.ID, modelID, estimateRequestTokens(body, maxTokens), deps.Now(), sourceAnalysisReasoning(spec, body)); err != nil {
+		if err := media.ValidateAnalysisScope(ctx, media.Repository{Store: deps.Store}, deps.SecretBox, scopeValues[0], primary.ID, user.ID, device.ID, modelID, deps.Now(), sourceAnalysisReasoning(spec, body)); err != nil {
 			status, typ := 403, "permission_error"
-			if errors.Is(err, media.ErrAnalysisScopeBudget) {
-				status, typ = 429, "rate_limit_error"
-			} else if errors.Is(err, media.ErrAnalysisScopeUnavailable) {
+			if errors.Is(err, media.ErrAnalysisScopeUnavailable) {
 				status, typ = 503, "api_error"
 			}
 			spec.errorResponse(c, status, typ, err.Error())

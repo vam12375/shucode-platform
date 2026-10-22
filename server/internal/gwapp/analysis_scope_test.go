@@ -3,6 +3,7 @@ package gwapp
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -72,6 +73,138 @@ func requestAnalysisScope(f *gatewayFixture, method, path, token, ticket, body s
 	return w
 }
 
+func multimodalAnalysisBody(imageCount, imageBytes, maxTokens int) string {
+	content := make([]any, 0, imageCount+1)
+	content = append(content, map[string]any{"type": "text", "text": "请分析这些抽帧的真实画面、镜头和声音证据。"})
+	payload := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("x", imageBytes)))
+	for range imageCount {
+		content = append(content, map[string]any{
+			"type":      "image_url",
+			"image_url": map[string]any{"url": "data:image/jpeg;base64," + payload},
+		})
+	}
+	body, _ := json.Marshal(map[string]any{
+		"model":            "claude-sonnet-4-5",
+		"max_tokens":       maxTokens,
+		"reasoning_effort": "high",
+		"messages":         []any{map[string]any{"role": "user", "content": content}},
+	})
+	return string(body)
+}
+
+func remoteMultimodalAnalysisBody(imageCount, maxTokens int) string {
+	content := make([]any, 0, imageCount+1)
+	content = append(content, map[string]any{"type": "text", "text": "请分析这些远程抽帧。"})
+	for i := 0; i < imageCount; i++ {
+		content = append(content, map[string]any{
+			"type":      "image_url",
+			"image_url": map[string]any{"url": "https://cdn.example.test/frame-" + uuid.NewString() + ".jpg"},
+		})
+	}
+	body, _ := json.Marshal(map[string]any{
+		"model":            "claude-sonnet-4-5",
+		"max_tokens":       maxTokens,
+		"reasoning_effort": "high",
+		"messages":         []any{map[string]any{"role": "user", "content": content}},
+	})
+	return string(body)
+}
+
+func TestAnalysisScopeAllowsFullFrameBatchesAcrossRoundsWithoutBudgetState(t *testing.T) {
+	f, repo, p, _, ticket, calls := gatewayAnalysisFixture(t)
+	// 复刻 scope 仅校验授权；全量抽帧不能因旧版 1M 总预算被拒绝。
+	body := multimodalAnalysisBody(40, 75*1024, 256_000)
+	response := requestAnalysisScope(f, "POST", "/v1/chat/completions", f.token, ticket, body)
+	if response.Code != 200 || calls.Load() != 1 {
+		t.Fatalf("full frame batch should pass scope authorization: %d calls=%d %s", response.Code, calls.Load(), response.Body.String())
+	}
+	response = requestAnalysisScope(f, "POST", "/v1/chat/completions", f.token, ticket, `{"model":"claude-sonnet-4-5","max_tokens":256000,"reasoning_effort":"high","messages":[{"role":"user","content":"请汇总原片分析结果。"}]}`)
+	if response.Code != 200 || calls.Load() != 2 {
+		t.Fatalf("follow-up summary should pass scope authorization: %d calls=%d %s", response.Code, calls.Load(), response.Body.String())
+	}
+	raw, err := repo.Store.GetConfigValue(context.Background(), "media:analysis-scope-budget:"+p.TeamID+":"+p.AnalysisFee.ID)
+	if err != nil || len(raw) != 0 {
+		t.Fatalf("scope authorization wrote budget state: %s %v", raw, err)
+	}
+	response = requestAnalysisScope(f, "POST", "/v1/chat/completions", f.token, ticket, body)
+	if response.Code != 200 || calls.Load() != 3 {
+		t.Fatalf("repeating the full image batch must remain authorized: %d calls=%d %s", response.Code, calls.Load(), response.Body.String())
+	}
+}
+
+func TestAnalysisScopeAllowsLargeInputsWithoutDedicatedTokenLimit(t *testing.T) {
+	f, _, _, _, ticket, calls := gatewayAnalysisFixture(t)
+	// 图片加输出预估超过旧 1M 限制也只能接受普通团队限流校验。
+	body := remoteMultimodalAnalysisBody(64, 256_000)
+	response := requestAnalysisScope(f, "POST", "/v1/chat/completions", f.token, ticket, body)
+	if response.Code != 200 || calls.Load() != 1 {
+		t.Fatalf("large input was incorrectly blocked by scope: %d calls=%d %s", response.Code, calls.Load(), response.Body.String())
+	}
+	// 大文本和多候选输出同样沿用普通对话规则，不再经过scope总量门槛。
+	body = `{"model":"claude-sonnet-4-5","max_tokens":256000,"n":16,"reasoning_effort":"high","messages":[{"role":"user","content":"` + strings.Repeat("x", 4_000_000) + `"}]}`
+	response = requestAnalysisScope(f, "POST", "/v1/chat/completions", f.token, ticket, body)
+	if response.Code != 200 || calls.Load() != 2 {
+		t.Fatalf("large token request was incorrectly blocked by scope: %d calls=%d %s", response.Code, calls.Load(), response.Body.String())
+	}
+}
+
+func TestAnalysisScopeUsesSameOutputLimitAsNormalChat(t *testing.T) {
+	for _, test := range []struct {
+		name, path, body, field string
+	}{
+		{"chat", "/v1/chat/completions", `{"model":"claude-sonnet-4-5","max_completion_tokens":256000,"reasoning_effort":"high","messages":[]}`, "max_completion_tokens"},
+		{"responses", "/v1/responses", `{"model":"claude-sonnet-4-5","max_output_tokens":256000,"reasoning":{"effort":"high"},"input":[]}`, "max_output_tokens"},
+		{"anthropic", "/v1/messages", `{"model":"claude-sonnet-4-5","max_tokens":256000,"output_config":{"effort":"high"},"messages":[]}`, "max_tokens"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f, _, _, _, ticket, calls := gatewayAnalysisFixture(t)
+			f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+				calls.Add(1)
+				w.Header().Set("content-type", "application/json")
+				_, _ = w.Write([]byte(`{"usage":{"prompt_tokens":1,"completion_tokens":1,"input_tokens":1,"output_tokens":1}}`))
+			})
+			response := requestAnalysisScope(f, "POST", test.path, f.token, ticket, test.body)
+			_, raw := f.upstreamRequest()
+			var actual map[string]any
+			if err := json.Unmarshal(raw, &actual); err != nil {
+				t.Fatal(err)
+			}
+			if response.Code != 200 || calls.Load() != 1 || actual[test.field] != float64(maxMaxTokens) {
+				t.Fatalf("scoped output differs from normal chat limit: %d actual=%v %s", response.Code, actual[test.field], response.Body.String())
+			}
+			response = f.do("POST", test.path, f.token, test.body)
+			_, raw = f.upstreamRequest()
+			if err := json.Unmarshal(raw, &actual); err != nil {
+				t.Fatal(err)
+			}
+			if response.Code != 200 || calls.Load() != 2 || actual[test.field] != float64(maxMaxTokens) {
+				t.Fatalf("normal chat output limit changed: %d actual=%v %s", response.Code, actual[test.field], response.Body.String())
+			}
+		})
+	}
+}
+
+func TestAnalysisScopeDoesNotCreateBudgetStateAfterUpstreamFailure(t *testing.T) {
+	f, repo, p, _, ticket, calls := gatewayAnalysisFixture(t)
+	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":{"type":"api_error","message":"fixture unavailable"}}`))
+	})
+	response := requestAnalysisScope(f, "POST", "/v1/chat/completions", f.token, ticket, `{"model":"claude-sonnet-4-5","max_tokens":100,"reasoning_effort":"high"}`)
+	if response.Code != 503 || calls.Load() != 1 {
+		t.Fatalf("unexpected fixture failure response: %d calls=%d %s", response.Code, calls.Load(), response.Body.String())
+	}
+	raw, err := repo.Store.GetConfigValue(context.Background(), "media:analysis-scope-budget:"+p.TeamID+":"+p.AnalysisFee.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) != 0 {
+		t.Fatalf("upstream failure wrote scope budget state: %s", raw)
+	}
+}
+
 func TestAnalysisScopeGatewayZeroSaleRetainsUsageCostAndNormalChatPrice(t *testing.T) {
 	f, _, _, _, ticket, calls := gatewayAnalysisFixture(t)
 	if _, err := f.store.SaveModelPricing(context.Background(), []store.PricingEntry{snapshotCostEntry("claude-sonnet-4-5", "CNY")}, pricing.EmptyVersion); err != nil {
@@ -95,8 +228,8 @@ func TestAnalysisScopeGatewayZeroSaleRetainsUsageCostAndNormalChatPrice(t *testi
 	}
 }
 
-func TestAnalysisScopeGatewayRejectsInvalidAndOverBudgetBeforeUpstream(t *testing.T) {
-	for _, kind := range []string{"forged", "empty", "expired", "ended", "stale-input", "released-fee", "wrong-model", "wrong-device", "wrong-user", "missing-auth", "team-budget", "scope-tokens"} {
+func TestAnalysisScopeGatewayRejectsInvalidAuthorizationAndTeamBudgetBeforeUpstream(t *testing.T) {
+	for _, kind := range []string{"forged", "empty", "expired", "ended", "stale-input", "released-fee", "wrong-model", "wrong-device", "wrong-user", "missing-auth", "team-budget"} {
 		t.Run(kind, func(t *testing.T) {
 			f, repo, p, box, ticket, calls := gatewayAnalysisFixture(t)
 			ctx := context.Background()
@@ -143,8 +276,6 @@ func TestAnalysisScopeGatewayRejectsInvalidAndOverBudgetBeforeUpstream(t *testin
 			case "team-budget":
 				_, err = f.store.SaveTeamPolicy(ctx, store.TeamPolicyRecord{TeamID: f.teamID, DailyBudgetCredits: "0.000000"})
 				expected = 429
-			case "scope-tokens":
-				body, expected = `{"model":"claude-sonnet-4-5","max_tokens":256000,"n":16,"reasoning_effort":"high"}`, 429
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -184,7 +315,7 @@ func TestSourceAnalysisScopeRequiresActualHighBeforeUpstream(t *testing.T) {
 	}
 }
 
-func TestAnalysisScopeGatewayRejectsBackgroundAndEnforcesRequestBudget(t *testing.T) {
+func TestAnalysisScopeGatewayRejectsBackgroundAndIgnoresLegacyBudget(t *testing.T) {
 	f, repo, p, _, ticket, calls := gatewayAnalysisFixture(t)
 	for _, test := range []struct{ method, path, body string }{
 		{"POST", "/v1/responses", `{"model":"claude-sonnet-4-5","background":true}`},
@@ -197,12 +328,12 @@ func TestAnalysisScopeGatewayRejectsBackgroundAndEnforcesRequestBudget(t *testin
 			t.Fatalf("scope allowed background operation: %d %s", w.Code, w.Body.String())
 		}
 	}
-	if err := repo.Store.SetConfigValue(context.Background(), "media:analysis-scope-budget:"+p.TeamID+":"+p.AnalysisFee.ID, []byte(`{"requests":128,"tokens":100}`)); err != nil {
+	if err := repo.Store.SetConfigValue(context.Background(), "media:analysis-scope-budget:"+p.TeamID+":"+p.AnalysisFee.ID, []byte(`{"requests":128,"tokens":1000000}`)); err != nil {
 		t.Fatal(err)
 	}
 	w := requestAnalysisScope(f, "POST", "/v1/chat/completions", f.token, ticket, `{"model":"claude-sonnet-4-5","reasoning_effort":"high"}`)
-	if w.Code != 429 || calls.Load() != 0 {
-		t.Fatalf("request budget bypassed: %d %s", w.Code, w.Body.String())
+	if w.Code != 200 || calls.Load() != 1 {
+		t.Fatalf("legacy budget blocked valid authorization: %d %s", w.Code, w.Body.String())
 	}
 }
 

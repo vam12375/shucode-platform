@@ -3,11 +3,9 @@ package media
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -53,11 +51,11 @@ func TestAnalysisScopeBindsIdentityModelAndExpiry(t *testing.T) {
 		{"expired", ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", now.Add(time.Hour)},
 		{"future", ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", now.Add(-time.Second)},
 	} {
-		if err := ValidateAnalysisScope(ctx, f.s.Repo, box, test.ticket, test.team, test.user, test.device, test.model, 10, test.at, "high"); !errors.Is(err, ErrAnalysisScopeInvalid) {
+		if err := ValidateAnalysisScope(ctx, f.s.Repo, box, test.ticket, test.team, test.user, test.device, test.model, test.at, "high"); !errors.Is(err, ErrAnalysisScopeInvalid) {
 			t.Errorf("%s accepted: %v", test.name, err)
 		}
 	}
-	if err := ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", 100, now, "high"); err != nil {
+	if err := ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", now, "high"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -96,43 +94,14 @@ func TestAnalysisScopeRejectsEndedAndStaleBindings(t *testing.T) {
 			if err = f.s.Repo.Save(ctx, &next, p); err != nil {
 				t.Fatal(err)
 			}
-			if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", 100, now, "high"); !errors.Is(err, ErrAnalysisScopeInvalid) {
+			if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", now, "high"); !errors.Is(err, ErrAnalysisScopeInvalid) {
 				t.Fatalf("%s remained usable: %v", kind, err)
 			}
 		})
 	}
 }
 
-func TestAnalysisScopeReissueSharesRequestAndTokenBudget(t *testing.T) {
-	for _, kind := range []string{"requests", "tokens"} {
-		t.Run(kind, func(t *testing.T) {
-			f, p, box, now := analysisScopeFixture(t)
-			ctx := context.Background()
-			ticket, err := IssueAnalysisScope(ctx, f.s.Repo, box, p, "model-a", now)
-			if err != nil {
-				t.Fatal(err)
-			}
-			count, tokens := AnalysisScopeMaxRequests, int64(1)
-			if kind == "tokens" {
-				count, tokens = 1, AnalysisScopeMaxTokens
-			}
-			for range count {
-				if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", tokens, now, "high"); err != nil {
-					t.Fatal(err)
-				}
-			}
-			ticket, err = IssueAnalysisScope(ctx, f.s.Repo, box, p, "model-a", now)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", 1, now, "high"); !errors.Is(err, ErrAnalysisScopeBudget) {
-				t.Fatalf("reissue reset %s budget: %v", kind, err)
-			}
-		})
-	}
-}
-
-func TestAnalysisScopeConcurrentBudgetIsAtomic(t *testing.T) {
+func TestAnalysisScopeAllowsRepeatedAndConcurrentAuthorizationWithoutBudgetState(t *testing.T) {
 	f, p, box, now := analysisScopeFixture(t)
 	ctx := context.Background()
 	ticket, err := IssueAnalysisScope(ctx, f.s.Repo, box, p, "model-a", now)
@@ -140,26 +109,36 @@ func TestAnalysisScopeConcurrentBudgetIsAtomic(t *testing.T) {
 		t.Fatal(err)
 	}
 	key := "media:analysis-scope-budget:" + p.TeamID + ":" + p.AnalysisFee.ID
-	raw, _ := json.Marshal(analysisScopeBudget{Requests: AnalysisScopeMaxRequests - 2, Tokens: AnalysisScopeMaxTokens - 2})
-	if err = f.s.Repo.Store.SetConfigValue(ctx, key, raw); err != nil {
+	// 旧服务留下的损坏/耗尽记录不应成为新授权的输入，也不能继续写它。
+	const legacy = `{"requests":128,"tokens":1000000}`
+	if err = f.s.Repo.Store.SetConfigValue(ctx, key, []byte(legacy)); err != nil {
 		t.Fatal(err)
 	}
-	var accepted atomic.Int64
+	for range 256 {
+		if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", now, "high"); err != nil {
+			t.Fatalf("valid repeated authorization rejected: %v", err)
+		}
+	}
 	var wg sync.WaitGroup
 	for range 20 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", 1, now, "high")
-			if err == nil {
-				accepted.Add(1)
-			} else if !errors.Is(err, ErrAnalysisScopeBudget) {
-				t.Errorf("unexpected budget failure: %v", err)
+			if err := ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", now, "high"); err != nil {
+				t.Errorf("valid concurrent authorization rejected: %v", err)
 			}
 		}()
 	}
 	wg.Wait()
-	if accepted.Load() != 2 {
-		t.Fatalf("budget admitted %d requests, want 2", accepted.Load())
+	ticket, err = IssueAnalysisScope(ctx, f.s.Repo, box, p, "model-a", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", now, "high"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := f.s.Repo.Store.GetConfigValue(ctx, key)
+	if err != nil || string(raw) != legacy {
+		t.Fatalf("authorization changed legacy budget state: %q %v", raw, err)
 	}
 }

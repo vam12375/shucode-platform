@@ -162,7 +162,7 @@ func TestSourceFirstRejectsInvalidFactsKindsStaleInputsAndChangedBoundaries(t *t
 	}
 }
 
-func TestSourceFirstScopeSharesFeeBudgetAndRequiresCorrectSettlementPhase(t *testing.T) {
+func TestSourceFirstScopeSharesFeeIdentityAndRequiresCorrectSettlementPhase(t *testing.T) {
 	f, p, report, brief, _ := sourceFixture(t)
 	ctx := context.Background()
 	box, err := crypto.NewSecretBox(base64.StdEncoding.EncodeToString([]byte(strings.Repeat("t", 32))))
@@ -178,14 +178,14 @@ func TestSourceFirstScopeSharesFeeBudgetAndRequiresCorrectSettlementPhase(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "deepseek-fixture", 1, now, "high"); err != nil {
+	if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "deepseek-fixture", now, "high"); err != nil {
 		t.Fatal(err)
 	}
 	p, err = f.s.SetSourceAnalysis(ctx, f.team, p.ID, p.Version, "source-input", report)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "deepseek-fixture", 1, now, "high"); err == nil {
+	if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "deepseek-fixture", now, "high"); err == nil {
 		t.Fatal("completed source scope stayed valid")
 	}
 	p, err = f.s.ConfigureReference(ctx, f.team, p.ID, p.Version, brief)
@@ -200,16 +200,15 @@ func TestSourceFirstScopeSharesFeeBudgetAndRequiresCorrectSettlementPhase(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "deepseek-fixture", 1, now, "medium"); err != nil {
+	if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "deepseek-fixture", now, "medium"); err != nil {
 		t.Fatalf("adaptation must preserve its legal initialized reasoning: %v", err)
 	}
 	budgetKey := "media:analysis-scope-budget:" + p.TeamID + ":" + p.AnalysisFee.ID
-	raw, _ := json.Marshal(analysisScopeBudget{Requests: AnalysisScopeMaxRequests, Tokens: 1})
-	if err = f.s.Repo.Store.SetConfigValue(ctx, budgetKey, raw); err != nil {
+	if err = f.s.Repo.Store.SetConfigValue(ctx, budgetKey, []byte(`{"requests":128,"tokens":1000000}`)); err != nil {
 		t.Fatal(err)
 	}
-	if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "deepseek-fixture", 1, now, "high"); !errors.Is(err, ErrAnalysisScopeBudget) {
-		t.Fatalf("adaptation reset fee budget: %v", err)
+	if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "deepseek-fixture", now, "high"); err != nil {
+		t.Fatalf("legacy fee budget blocked adaptation authorization: %v", err)
 	}
 	p, err = f.s.Action(ctx, f.team, p.ID, p.Version, "analysis-failed")
 	if err != nil {

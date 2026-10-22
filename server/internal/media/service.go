@@ -138,6 +138,23 @@ func (s *Service) Revise(ctx context.Context, team, id string, version int64, pl
 	})
 }
 func (s *Service) Action(ctx context.Context, team, id string, version int64, action string) (*Project, error) {
+	return s.action(ctx, team, id, version, action, "", "analysis_failed")
+}
+
+// FailAnalysis 只保存有限业务码；原始模型异常可能含请求内容，不能成为制作单错误。
+func (s *Service) FailAnalysis(ctx context.Context, team, id string, version int64, input, code string) (*Project, error) {
+	if input == "" {
+		return nil, ErrInvalid
+	}
+	switch code {
+	case "analysis_failed", "video_analysis_scope_invalid", "video_analysis_scope_budget_exhausted", "video_analysis_scope_unavailable", "source_timeline_invalid", "source_url_mismatch":
+	default:
+		return nil, ErrInvalid
+	}
+	return s.action(ctx, team, id, version, "analysis-failed", input, code)
+}
+
+func (s *Service) action(ctx context.Context, team, id string, version int64, action, input, failureCode string) (*Project, error) {
 	p, err := s.Mutate(ctx, team, id, version, func(p *Project) error {
 		switch action {
 		case "generate":
@@ -154,11 +171,12 @@ func (s *Service) Action(ctx context.Context, team, id string, version int64, ac
 				p.Status = "cancelled"
 			}
 		case "analysis-failed":
-			if p.Status != "analyzing" {
+			// 版本与输入在同一 CAS 路径检查，旧会话终态不能结束后来绑定的新输入。
+			if p.Status != "analyzing" || (input != "" && (p.Analysis == nil || p.Analysis.InputID != input)) {
 				return ErrConflict
 			}
 			p.Status = "analysis_failed"
-			p.Error = "analysis_failed"
+			p.Error = failureCode
 		case "retry":
 			if p.Status != "failed" {
 				return ErrConflict

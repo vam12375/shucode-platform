@@ -262,6 +262,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			Version        int64                `json:"version"`
 			Analysis       media.Analysis       `json:"analysis"`
 			InputID        string               `json:"inputId"`
+			Error          string               `json:"error"`
 			Plan           media.Plan           `json:"plan"`
 			Brief          media.Brief          `json:"brief"`
 			SourceAnalysis media.SourceAnalysis `json:"sourceAnalysis"`
@@ -295,6 +296,12 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			p, e = s.ConfigureReference(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.Brief)
 		case "revise":
 			p, e = s.Revise(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.Plan)
+		case "analysis-failed":
+			if body.InputID == "" && body.Error == "" {
+				p, e = s.Action(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, "analysis-failed")
+			} else {
+				p, e = s.FailAnalysis(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.InputID, body.Error)
+			}
 		default:
 			if c.Param("action") == "generate" && !media.CompositionAvailable() {
 				c.JSON(503, fail(503, "composition_dependencies_missing"))

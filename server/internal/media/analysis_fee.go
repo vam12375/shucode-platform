@@ -60,7 +60,7 @@ func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int
 	}
 	var fee *FixedFee
 	if adaptation {
-		// 原片事实已成功结算；素材方案只复用同一费用身份与 scope 预算，不再次准入或实扣。
+		// 原片事实已成功结算；素材方案只复用同一费用身份，不再次准入或实扣。
 		fee = p.AnalysisFee
 	} else if p.Brief.ReferenceAssetID != "" {
 		pricing, err := s.Repo.ReferencePricing(ctx)

@@ -77,7 +77,7 @@ func TestAnalysisConfigIssuesSingleModelScopedProviderAndKeepsNormalConfig(t *te
 		t.Fatal("scoped provider identities are inconsistent")
 	}
 	ticket := config["api"].(map[string]any)["headers"].(map[string]any)[media.AnalysisScopeHeader].(string)
-	if err := media.ValidateAnalysisScope(context.Background(), f.deps.Media.Repo, f.deps.SecretBox, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", 1, f.deps.Now(), "high"); err != nil {
+	if err := media.ValidateAnalysisScope(context.Background(), f.deps.Media.Repo, f.deps.SecretBox, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", f.deps.Now(), "high"); err != nil {
 		t.Fatalf("issued scope cannot be validated: %v", err)
 	}
 	second := requestAnalysisConfig(f, token, p.ID, "model-a")

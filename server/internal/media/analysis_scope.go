@@ -11,11 +11,8 @@ import (
 )
 
 const AnalysisScopeHeader = "X-Mendao-Video-Analysis"
-const AnalysisScopeMaxRequests int64 = 128
-const AnalysisScopeMaxTokens int64 = 1_000_000
 
 var ErrAnalysisScopeInvalid = errors.New("video_analysis_scope_invalid")
-var ErrAnalysisScopeBudget = errors.New("video_analysis_scope_budget_exhausted")
 var ErrAnalysisScopeUnavailable = errors.New("video_analysis_scope_unavailable")
 
 type analysisScope struct {
@@ -30,11 +27,6 @@ type analysisScope struct {
 	RequiredReasoning string `json:"requiredReasoning,omitempty"`
 	IssuedAt          int64  `json:"issuedAt"`
 	ExpiresAt         int64  `json:"expiresAt"`
-}
-
-type analysisScopeBudget struct {
-	Requests int64 `json:"requests"`
-	Tokens   int64 `json:"tokens"`
 }
 
 func analysisScopeCurrent(ctx context.Context, repo Repository, scope analysisScope) error {
@@ -100,8 +92,8 @@ func IssueAnalysisScope(ctx context.Context, repo Repository, box *crypto.Secret
 	return ticket, nil
 }
 
-func ValidateAnalysisScope(ctx context.Context, repo Repository, box *crypto.SecretBox, ticket, team, user, device, model string, estimatedTokens int64, now time.Time, actualReasoning string) error {
-	if box == nil || ticket == "" || len(ticket) > 8192 || estimatedTokens < 1 {
+func ValidateAnalysisScope(ctx context.Context, repo Repository, box *crypto.SecretBox, ticket, team, user, device, model string, now time.Time, actualReasoning string) error {
+	if box == nil || ticket == "" || len(ticket) > 8192 {
 		return ErrAnalysisScopeInvalid
 	}
 	plain, err := box.Decrypt(ticket)
@@ -119,17 +111,7 @@ func ValidateAnalysisScope(ctx context.Context, repo Repository, box *crypto.Sec
 	if scope.RequiredReasoning != "" && actualReasoning != scope.RequiredReasoning {
 		return ErrAnalysisScopeInvalid
 	}
-	// 计数归属已准入费用身份；跨进程、重签scope与并发请求都不能重置分析预算。
-	err = updateJSON(ctx, repo.Store, "media:analysis-scope-budget:"+team+":"+scope.FeeID, analysisScopeBudget{}, func(budget *analysisScopeBudget) error {
-		if budget.Requests < 0 || budget.Tokens < 0 || budget.Requests >= AnalysisScopeMaxRequests || estimatedTokens > AnalysisScopeMaxTokens || budget.Tokens > AnalysisScopeMaxTokens-estimatedTokens {
-			return ErrAnalysisScopeBudget
-		}
-		budget.Requests++
-		budget.Tokens += estimatedTokens
-		return nil
-	})
-	if err != nil && !errors.Is(err, ErrAnalysisScopeBudget) {
-		return ErrAnalysisScopeUnavailable
-	}
-	return err
+	// scope 只证明本次分析授权。旧版累计请求/token预算会把全量视觉
+	// 证据误判为限流；新请求不再读取或写入该计数，输出遵循普通对话规则。
+	return nil
 }
