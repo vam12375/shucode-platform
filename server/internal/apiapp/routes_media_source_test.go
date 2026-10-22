@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/vam12375/shucode-platform/server/internal/crypto"
 	"github.com/vam12375/shucode-platform/server/internal/media"
 	"github.com/vam12375/shucode-platform/server/internal/store"
 )
@@ -99,6 +100,183 @@ func TestAnalysisModelUsesExistingAllowedDeepSeekCapabilities(t *testing.T) {
 	response = sourceRequest(f, token, "GET", "/api/v1/media/analysis-model?vision=1", nil)
 	if response.Code != 503 || strings.Contains(response.Body.String(), `"envelope"`) {
 		t.Fatalf("should not fall back to other provider: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestAnalysisModelManualConfigOverlaysActiveReleaseCapabilities(t *testing.T) {
+	makeFixture := func(t *testing.T, image bool, reasoning any) (*apiFixture, string, *media.Project) {
+		t.Helper()
+		f, token, team := newUserConfigPolicyFixture(t)
+		installAnalysisModel(t, f, "deepseek-flash", true)
+		installActiveDeepSeekRelease31(t, f)
+		optionSpecs := map[string]any{"maxOutputTokens": map[string]any{"max": 384000}}
+		if reasoning != nil {
+			optionSpecs["reasoningLevel"] = reasoning
+		}
+		manual := map[string]any{
+			"properties": map[string]any{
+				"contextWindow": int64(1000000),
+				"inputFormat": map[string]any{
+					"supportsText": true, "supportsImage": image, "supportsVideo": true,
+					"supportsAudio": true, "supportsPdf": true,
+				},
+				"outputFormat":     map[string]any{"supportsText": true},
+				"supportsToolCall": true, "supportsJsonSchemaOutput": true,
+				"supportsNativeWebSearch": true, "supportsMidConversationSystem": true,
+				"requiresMfjsToolSchema": false,
+			},
+			"optionSpecs": optionSpecs,
+		}
+		rawManual, err := json.Marshal(manual)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.store.SetModelConfig(context.Background(), "deepseek-flash", modelConfigManual, rawManual); err != nil {
+			t.Fatal(err)
+		}
+		device, err := f.store.FindDeviceTokenByHash(context.Background(), crypto.HashToken(token))
+		if err != nil || device == nil {
+			t.Fatalf("missing fixture device: %v", err)
+		}
+		fee := &media.FixedFee{ID: uuid.NewString(), RequestID: "test-analysis:" + uuid.NewString(), Model: "media:source-analysis", Micro: media.ReferenceAnalysisFeeMicro, CreatedAt: time.Now().UTC()}
+		if result, err := f.store.AdmitUsage(context.Background(), store.ReserveQuotaInput{ID: fee.ID, TeamID: team, UserID: device.UserID, RequestID: fee.RequestID, Micro: fee.Micro}); err != nil || result != store.ReserveReserved {
+			t.Fatalf("analysis admission: %s %v", result, err)
+		}
+		project := &media.Project{
+			ID: uuid.NewString(), Version: 1, TeamID: team, UserID: device.UserID, DeviceID: device.ID,
+			Status: "analyzing", Brief: media.Brief{ReferenceAssetID: "reference-video"},
+			Analysis: &media.Analysis{InputID: uuid.NewString()}, AnalysisFee: fee,
+		}
+		if err = f.deps.Media.Repo.Save(context.Background(), project, nil); err != nil {
+			t.Fatal(err)
+		}
+		return f, token, project
+	}
+
+	t.Run("inherits high and map when manual config only sets max output", func(t *testing.T) {
+		f, token, project := makeFixture(t, true, nil)
+		preflight := sourceRequest(f, token, "GET", "/api/v1/media/analysis-model?vision=1", nil)
+		if preflight.Code != 200 {
+			t.Fatalf("sparse manual config should inherit active Release high: %d %s", preflight.Code, preflight.Body.String())
+		}
+		preflightSelection := dataOf(t, preflight)["envelope"].(map[string]any)["personalConfig"].(map[string]any)["defaultModelSelection"].(map[string]any)
+		if preflightSelection["options"].(map[string]any)["reasoningLevel"] != "high" {
+			t.Fatalf("preflight must still explicitly select high: %s", preflight.Body.String())
+		}
+
+		userConfig := requestUserConfig(f, token, "")
+		if userConfig.Code != 200 {
+			t.Fatalf("user config: %d %s", userConfig.Code, userConfig.Body.String())
+		}
+		personal := dataOf(t, userConfig)["envelope"].(map[string]any)["personalConfig"].(map[string]any)
+		var manualConfig map[string]any
+		for _, raw := range personal["modelConfigRules"].(map[string]any)["providerModelRules"].([]any) {
+			rule := raw.(map[string]any)
+			if rule["modelId"] == "deepseek-flash" {
+				manualConfig = rule["config"].(map[string]any)
+				break
+			}
+		}
+		if manualConfig == nil {
+			t.Fatalf("user config missing manual model: %s", userConfig.Body.String())
+		}
+		if _, exists := manualConfig["optionSpecs"].(map[string]any)["reasoningLevel"]; exists {
+			t.Fatalf("capability resolution must not persist built-in fields into manual config: %v", manualConfig)
+		}
+		if got := manualConfig["optionSpecs"].(map[string]any)["maxOutputTokens"].(map[string]any)["max"]; got != float64(384000) {
+			t.Fatalf("manual max output was not preserved: %v", manualConfig)
+		}
+
+		scoped := requestAnalysisConfig(f, token, project.ID, "deepseek-flash")
+		if scoped.Code != 200 {
+			t.Fatalf("scoped config should resolve the same effective capabilities: %d %s", scoped.Code, scoped.Body.String())
+		}
+		selection := dataOf(t, scoped)["envelope"].(map[string]any)["personalConfig"].(map[string]any)["defaultModelSelection"].(map[string]any)
+		if selection["options"].(map[string]any)["reasoningLevel"] != "high" {
+			t.Fatalf("scoped config must still explicitly select high: %s", scoped.Body.String())
+		}
+	})
+
+	t.Run("partial values override retains active map", func(t *testing.T) {
+		f, token, _ := makeFixture(t, true, map[string]any{"values": []string{"disabled", "low", "high"}})
+		response := sourceRequest(f, token, "GET", "/api/v1/media/analysis-model?vision=1", nil)
+		if response.Code != 200 {
+			t.Fatalf("partial reasoning values should inherit the active map: %d %s", response.Code, response.Body.String())
+		}
+	})
+
+	for name, input := range map[string]struct {
+		image     bool
+		reasoning any
+	}{
+		"explicit image disable": {image: false, reasoning: map[string]any{"values": []string{"disabled", "low", "high"}}},
+		"explicitly omits high":  {image: true, reasoning: map[string]any{"values": []string{"disabled", "low", "max"}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f, token, _ := makeFixture(t, input.image, input.reasoning)
+			response := sourceRequest(f, token, "GET", "/api/v1/media/analysis-model?vision=1", nil)
+			if response.Code != 503 || strings.Contains(response.Body.String(), `"envelope"`) {
+				t.Fatalf("explicit capability restriction must remain enforced: %d %s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func installActiveDeepSeekRelease31(t *testing.T, f *apiFixture) {
+	t.Helper()
+	ctx := context.Background()
+	admin, err := f.store.CreateUser(ctx, store.UserInput{Email: "release-publisher@test.local", DisplayName: "发布者", PasswordHash: "x", Role: store.RoleRoot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deepseekMap := `{
+  "thinking": {
+    "type": "enabled"
+  },
+  "reasoning_effort": reasoningLevel
+}`
+	genericMap := `{
+  "thinking": {
+    "type": reasoningLevel == "disabled" || reasoningLevel == "none" ? "disabled" : "enabled"
+  },
+  "enable_thinking": reasoningLevel != "disabled" && reasoningLevel != "none",
+  "reasoning_effort": reasoningLevel == "disabled" ? "none" : reasoningLevel == "enabled" ? "high" : reasoningLevel,
+  "reasoning": {
+    "effort": reasoningLevel == "disabled" ? "none" : reasoningLevel == "enabled" ? "high" : reasoningLevel
+  }
+}`
+	releaseConfig := map[string]any{
+		"schemaVersion": 1,
+		"revision":      31,
+		"config": map[string]any{
+			"modelConfigRules": map[string]any{
+				"modelRules": []any{
+					map[string]any{"modelMatch": ".*", "config": map[string]any{
+						"properties":  map[string]any{"contextWindow": 200000, "inputFormat": map[string]any{"supportsText": true, "supportsImage": false}, "outputFormat": map[string]any{"supportsText": true}},
+						"optionSpecs": map[string]any{"reasoningLevel": map[string]any{"map": "{}", "values": []string{"disabled", "enabled"}}, "maxOutputTokens": map[string]any{"max": 32000}},
+					}},
+					map[string]any{"modelMatch": "deepseek-flash", "config": map[string]any{
+						"properties":  map[string]any{"contextWindow": 1000000, "inputFormat": map[string]any{"supportsImage": true}},
+						"optionSpecs": map[string]any{"reasoningLevel": map[string]any{"values": []string{"disabled", "low", "high", "max"}}, "maxOutputTokens": map[string]any{"max": 384000}},
+					}},
+				},
+				"modelApiRules": []any{
+					map[string]any{"modelMatch": ".*", "apiTypeMatch": "openai-chat-completions", "config": map[string]any{"optionSpecs": map[string]any{"reasoningLevel": map[string]any{"map": genericMap}}}},
+					map[string]any{"modelMatch": "deepseek-flash", "apiTypeMatch": "openai-chat-completions", "config": map[string]any{"optionSpecs": map[string]any{"reasoningLevel": map[string]any{"map": deepseekMap}}}},
+				},
+				"providerSiteRules": []any{},
+			},
+		},
+	}
+	content, err := json.Marshal(releaseConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.store.InsertRelease(ctx, store.InsertReleaseInput{Revision: 31, Content: content, PublishedBy: admin.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.store.ActivateRelease(ctx, 31); err != nil {
+		t.Fatal(err)
 	}
 }
 

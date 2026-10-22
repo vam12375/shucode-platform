@@ -42,7 +42,10 @@ func TestPostpaidMigrationPreservesExecutionIdentity(t *testing.T) {
 	team, user := postpaidFixture(t, ctx, s, "migration")
 	at := time.Now().UTC().Truncate(time.Millisecond)
 	usageID := uuid.NewString()
-	if err := s.InsertUsage(ctx, UsageRecord{ID: usageID, TeamID: team.ID, UserID: user.ID, RequestID: "historical-usage", Model: "m", UpstreamModel: "m", CreditsMicro: 250_000, Status: UsageStatusOk, CreatedAt: at}); err != nil {
+	// 根因：升级夹具只有 0024 表结构，不能调用依赖后续字段的当前写入接口；按历史列直接建数。
+	if _, err := s.pool.Exec(ctx, `INSERT INTO usage_records
+		(id,team_id,user_id,request_id,model,upstream_model,credits_micro,status,created_at)
+		VALUES($1::uuid,$2::uuid,$3::uuid,'historical-usage','m','m',250000,'ok',$4)`, usageID, team.ID, user.ID, at); err != nil {
 		t.Fatal(err)
 	}
 	identities := map[QuotaReservationStatus]string{}
@@ -69,10 +72,17 @@ func TestPostpaidMigrationPreservesExecutionIdentity(t *testing.T) {
 	}
 	activeID := identities[ReservationReserved]
 	actual := UsageRecord{ID: uuid.NewString(), TeamID: team.ID, UserID: user.ID, RequestID: "migrate-reserved", Model: "m", UpstreamModel: "m", CreditsMicro: 1_500_000, Status: UsageStatusOk, CreatedAt: at}
-	if err := s.EnqueuePendingSettlement(ctx, activeID, actual); err != nil {
+	if _, err := s.pool.Exec(ctx, `INSERT INTO pending_settlements
+		(reservation_id,request_id,user_id,team_id,model,upstream_model,credits_micro,usage_status,usage_created_at)
+		VALUES($1::uuid,$2,$3::uuid,$4::uuid,$5,$6,$7,$8,$9)`, activeID, actual.RequestID, actual.UserID, actual.TeamID, actual.Model, actual.UpstreamModel, actual.CreditsMicro, actual.Status, actual.CreatedAt); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.CreateBackgroundGeneration(ctx, BackgroundGenerationJob{ReservationID: activeID, TeamID: team.ID, UserID: user.ID, ResponseID: "migration-response", BaseURL: "https://provider.test", Record: actual, NextPollAt: at, CreatedAt: at}); err != nil {
+	if _, err := s.pool.Exec(ctx, `INSERT INTO gateway_background_generations
+		(reservation_id,team_id,user_id,response_id,base_url,record_template,charge_rates,next_poll_at,created_at)
+		VALUES($1::uuid,$2::uuid,$3::uuid,'migration-response','https://provider.test',
+			jsonb_build_object('id',$4::text,'teamId',$2::text,'userId',$3::text,'requestId',$5::text,
+				'model','m','upstreamModel','m','creditsMicro',$6::bigint,'status','ok','createdAt',$7::timestamptz),
+			'{}'::jsonb,$7,$7)`, activeID, team.ID, user.ID, actual.ID, actual.RequestID, actual.CreditsMicro, at); err != nil {
 		t.Fatal(err)
 	}
 	conn, err := s.pool.Acquire(ctx)
@@ -83,6 +93,17 @@ func TestPostpaidMigrationPreservesExecutionIdentity(t *testing.T) {
 	conn.Release()
 	if err != nil {
 		t.Fatal(err)
+	}
+	// 0028 只能新增未知参数列，不能以当前模型配置回填旧账本或补偿记录。
+	for _, legacy := range []struct{ query, id string }{
+		{`SELECT reasoning_effort,reasoning_budget_tokens FROM usage_records WHERE id=$1::uuid`, usageID},
+		{`SELECT reasoning_effort,reasoning_budget_tokens FROM pending_settlements WHERE reservation_id=$1::uuid`, activeID},
+	} {
+		var effort *string
+		var budget *int64
+		if err := s.pool.QueryRow(ctx, legacy.query, legacy.id).Scan(&effort, &budget); err != nil || effort != nil || budget != nil {
+			t.Fatalf("历史思考参数必须保留 SQL NULL: effort=%v budget=%v err=%v", effort, budget, err)
+		}
 	}
 	updated, err := s.GetTeam(ctx, team.ID)
 	if err != nil || updated.ReservedCredits != "0.000000" || updated.UsedCredits != "0.250000" {
@@ -108,9 +129,15 @@ func TestPostpaidMigrationPreservesExecutionIdentity(t *testing.T) {
 	if err != nil || len(pending) != 1 || pending[0].ReservationID != activeID || pending[0].Record.CreditsMicro != actual.CreditsMicro {
 		t.Fatalf("补偿原身份和费用不能丢失: %+v %v", pending, err)
 	}
+	if pending[0].Record.ReasoningEffort != "" || pending[0].Record.ReasoningBudgetTokens != nil {
+		t.Fatalf("历史补偿不能伪造思考参数: %+v", pending[0].Record)
+	}
 	job, err := s.FindBackgroundGeneration(ctx, team.ID, "migration-response")
 	if err != nil || job == nil || job.ReservationID != activeID || job.Record.CreditsMicro != actual.CreditsMicro {
 		t.Fatalf("后台原身份和费用不能丢失: %+v %v", job, err)
+	}
+	if job.Record.ReasoningEffort != "" || job.Record.ReasoningBudgetTokens != nil {
+		t.Fatalf("历史后台模板不能伪造思考参数: %+v", job.Record)
 	}
 	if err := s.SettleReservation(ctx, activeID, actual); err != nil {
 		t.Fatal(err)

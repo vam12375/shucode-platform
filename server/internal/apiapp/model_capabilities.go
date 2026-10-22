@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/vam12375/shucode-platform/server/internal/events"
+	"github.com/vam12375/shucode-platform/server/internal/store"
 )
 
 // 客户端模型能力配置（与客户端 packages/shared/src/model-config.ts 同构）。
@@ -230,6 +231,39 @@ func overlayModelConfigMap(base, next map[string]any) map[string]any {
 		base[key] = overlayModelConfigMap(baseObject, nextObject)
 	}
 	return base
+}
+
+func effectiveAnalysisModelCapabilities(ctx context.Context, deps *Deps, model store.PlatformModelRecord) (*modelCapabilityConfig, error) {
+	analyzed, err := analyzeModelCapabilities(ctx, deps, model.ModelID)
+	if err != nil {
+		return nil, err
+	}
+	if model.ConfigMode != modelConfigManual {
+		return &analyzed.Config, nil
+	}
+	if decodeModelCapabilityConfig(model.ModelConfig) == nil {
+		return nil, nil
+	}
+
+	// manual 是客户端稀疏覆盖：缺省 reasoning 能力应继承 active Release，显式叶子仍由 manual 覆盖。
+	baseRaw, err := json.Marshal(analyzed.Config)
+	if err != nil {
+		return nil, err
+	}
+	var base map[string]any
+	if err := json.Unmarshal(baseRaw, &base); err != nil {
+		return nil, err
+	}
+	var manual map[string]any
+	if err := json.Unmarshal(model.ModelConfig, &manual); err != nil || manual == nil {
+		return nil, nil
+	}
+	merged := overlayModelConfigMap(base, manual)
+	mergedRaw, err := json.Marshal(merged)
+	if err != nil {
+		return nil, err
+	}
+	return decodeModelCapabilityConfig(mergedRaw), nil
 }
 
 func capabilityPatternMatches(pattern, value string, ignoreCase bool) bool {

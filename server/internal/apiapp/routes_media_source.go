@@ -75,13 +75,9 @@ func registerMediaSourceRoutes(router *gin.Engine, deps *Deps) {
 }
 
 func analysisModelAvailable(ctx context.Context, deps *Deps, model store.PlatformModelRecord, vision bool) (bool, error) {
-	config := decodeModelCapabilityConfig(model.ModelConfig)
-	if model.ConfigMode != modelConfigManual {
-		analyzed, err := analyzeModelCapabilities(ctx, deps, model.ModelID)
-		if err != nil {
-			return false, err
-		}
-		config = &analyzed.Config
+	config, err := effectiveAnalysisModelCapabilities(ctx, deps, model)
+	if err != nil {
+		return false, err
 	}
 	if config == nil || config.Properties.ContextWindow <= 0 || config.OptionSpecs.MaxOutputTokens.Max <= 0 || !config.Properties.InputFormat.SupportsText || !config.Properties.OutputFormat.SupportsText || (vision && !config.Properties.InputFormat.SupportsImage) {
 		return false, nil
