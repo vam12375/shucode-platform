@@ -16,7 +16,7 @@ import (
 )
 
 func deletionProjection(r store.TeamAssetDeletionRecord) contracts.CloudAssetDeletionRequest {
-	out := contracts.CloudAssetDeletionRequest{ID: r.ID, AssetID: r.AssetID, AssetName: r.AssetName, RequestedBy: Uploader{ID: r.RequestedByID, Name: r.RequestedByName}, CreatedAt: r.CreatedAt, Status: r.Status, ReviewedAt: r.ReviewedAt}
+	out := contracts.CloudAssetDeletionRequest{ID: r.ID, AssetID: r.AssetID, AssetName: r.AssetName, RequestedBy: Uploader{ID: r.RequestedByID, Name: r.RequestedByName}, CreatedAt: r.CreatedAt, Status: r.Status, ReviewedAt: r.ReviewedAt, WithdrawnAt: r.WithdrawnAt}
 	if r.ReviewedAt != nil {
 		out.ReviewedBy = &Uploader{ID: r.ReviewedByID, Name: r.ReviewedByName}
 	}
@@ -28,6 +28,15 @@ func (s Service) RequestDeletion(ctx context.Context, team, actorID, assetID str
 	if err != nil {
 		return contracts.CloudAssetDeletionRequest{}, mapStoreError(err)
 	}
+	return deletionProjection(r), nil
+}
+
+func (s Service) WithdrawDeletion(ctx context.Context, team, actorID, requestID string) (contracts.CloudAssetDeletionRequest, error) {
+	r, err := s.Repository.Store.WithdrawTeamAssetDeletion(ctx, team, actorID, requestID, s.Now())
+	if err != nil {
+		return contracts.CloudAssetDeletionRequest{}, mapStoreError(err)
+	}
+	// 撤回只终结申请，不能进入已批准请求的字节清理路径。
 	return deletionProjection(r), nil
 }
 

@@ -467,6 +467,29 @@
       "teamId": "team-fixture",
       "pendingCount": 0,
       "nextCursor": null
+    },
+    {
+      "viewer": {
+        "id": "user-fixture",
+        "canReview": false
+      },
+      "requests": [
+        {
+          "id": "00000000-0000-4000-8000-000000000101",
+          "assetId": "00000000-0000-4000-8000-000000000100",
+          "assetName": "湖泊📊.png",
+          "requestedBy": {
+            "id": "user-fixture",
+            "name": "成员"
+          },
+          "createdAt": "2026-10-22T00:00:00Z",
+          "status": "withdrawn",
+          "withdrawnAt": "2026-10-22T01:00:00Z"
+        }
+      ],
+      "teamId": "team-fixture",
+      "pendingCount": 0,
+      "nextCursor": null
     }
   ]
 }

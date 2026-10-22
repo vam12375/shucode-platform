@@ -46,6 +46,7 @@ type PlatformStore interface {
 	RequestTeamAssetDeletion(ctx context.Context, teamID, actorID, assetID, requestID string, at time.Time) (TeamAssetDeletionRecord, error)
 	ListTeamAssetDeletionRequests(ctx context.Context, teamID, actorID string, beforeAt *time.Time, beforeID string) (TeamAssetDeletionPage, bool, error)
 	ReviewTeamAssetDeletion(ctx context.Context, teamID, actorID, requestID, decision string, at time.Time) (TeamAssetDeletionRecord, error)
+	WithdrawTeamAssetDeletion(ctx context.Context, teamID, actorID, requestID string, at time.Time) (TeamAssetDeletionRecord, error)
 	MarkTeamAssetDeletionBlobCleaned(ctx context.Context, teamID, requestID string, at time.Time) error
 	ListTeamAssetBlobCleanups(ctx context.Context, teamID string) ([]TeamAssetDeletionRecord, error)
 	UpdateTeamMember(ctx context.Context, teamID, userID string, patch TeamMemberPatch) (*TeamMemberView, error)

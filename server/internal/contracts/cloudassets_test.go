@@ -62,7 +62,7 @@ func TestCloudAssetDeletionClientFixtures(t *testing.T) {
 	if err := json.Unmarshal(raw, &fixtures); err != nil {
 		t.Fatal(err)
 	}
-	if len(fixtures.Overviews) != 2 {
+	if len(fixtures.Overviews) != 3 {
 		t.Fatal("缺少删除审批跨端冻结样本")
 	}
 	for _, raw := range fixtures.Overviews {

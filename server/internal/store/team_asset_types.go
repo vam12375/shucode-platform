@@ -35,6 +35,7 @@ type TeamAssetDeletionRecord struct {
 	Status                         string
 	ReviewedByID, ReviewedByName   string
 	ReviewedAt                     *time.Time
+	WithdrawnAt                    *time.Time
 	BlobID                         string
 	Size                           int64
 	BlobCleanedAt                  *time.Time
@@ -48,6 +49,7 @@ type TeamAssetDeletionPage struct {
 
 func cloneTeamAssetDeletion(record TeamAssetDeletionRecord) TeamAssetDeletionRecord {
 	record.ReviewedAt = copyTime(record.ReviewedAt)
+	record.WithdrawnAt = copyTime(record.WithdrawnAt)
 	record.BlobCleanedAt = copyTime(record.BlobCleanedAt)
 	return record
 }

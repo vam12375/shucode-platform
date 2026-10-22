@@ -111,8 +111,9 @@ func (s *memoryStore) ListTeamAssetDeletionRequests(ctx context.Context, teamID,
 	})
 	sort.Slice(history, func(i, j int) bool {
 		a, b := history[i], history[j]
-		if !a.ReviewedAt.Equal(*b.ReviewedAt) {
-			return a.ReviewedAt.After(*b.ReviewedAt)
+		at, bt := teamAssetDeletionCompletedAt(a), teamAssetDeletionCompletedAt(b)
+		if !at.Equal(bt) {
+			return at.After(bt)
 		}
 		return a.ID > b.ID
 	})
@@ -120,6 +121,48 @@ func (s *memoryStore) ListTeamAssetDeletionRequests(ctx context.Context, teamID,
 	page.Records = append(page.Records, pending[:min(len(pending), 100)]...)
 	page.Records = append(page.Records, history[:min(len(history), 100)]...)
 	return page, canReview, nil
+}
+
+func teamAssetDeletionCompletedAt(r TeamAssetDeletionRecord) time.Time {
+	// 撤回不伪造审批人或审批时间；历史按各终态真实完成时间统一排序。
+	if r.WithdrawnAt != nil {
+		return *r.WithdrawnAt
+	}
+	return *r.ReviewedAt
+}
+
+func (s *memoryStore) WithdrawTeamAssetDeletion(ctx context.Context, teamID, actorID, requestID string, at time.Time) (TeamAssetDeletionRecord, error) {
+	if err := ctx.Err(); err != nil {
+		return TeamAssetDeletionRecord{}, err
+	}
+	if !canonicalUUID(teamID) || !canonicalUUID(actorID) || !canonicalUUID(requestID) || at.IsZero() {
+		return TeamAssetDeletionRecord{}, ErrInvalidInput
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.teamAssetActorLocked(teamID, actorID); err != nil {
+		return TeamAssetDeletionRecord{}, err
+	}
+	r, ok := s.teamAssetDeletions[teamID][requestID]
+	if !ok {
+		return TeamAssetDeletionRecord{}, ErrTeamAssetNotFound
+	}
+	// 本人权限先于幂等判断，管理员也不能借重试撤回他人的申请。
+	if r.RequestedByID != actorID {
+		return TeamAssetDeletionRecord{}, ErrTeamAssetForbidden
+	}
+	if r.Status == "withdrawn" {
+		return cloneTeamAssetDeletion(r), nil
+	}
+	if r.Status != "pending" {
+		return TeamAssetDeletionRecord{}, ErrTeamAssetConflict
+	}
+	// 与审批共用同一临界区，只转换 pending；不改动资产、用量或清理事实。
+	r.Status = "withdrawn"
+	utc := at.UTC()
+	r.WithdrawnAt = &utc
+	s.teamAssetDeletions[teamID][requestID] = r
+	return cloneTeamAssetDeletion(r), nil
 }
 
 func (s *memoryStore) ReviewTeamAssetDeletion(ctx context.Context, teamID, actorID, requestID, decision string, at time.Time) (TeamAssetDeletionRecord, error) {

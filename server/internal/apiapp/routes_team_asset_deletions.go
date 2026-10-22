@@ -70,4 +70,24 @@ func registerTeamAssetDeletionRoutes(assets *gin.RouterGroup, deps *Deps, servic
 		}
 		c.JSON(http.StatusOK, okData(out))
 	})
+	assets.POST("/deletion-requests/:id/withdraw", func(c *gin.Context) {
+		auth, membership, ok := resolveActor(c)
+		if !ok {
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1024)
+		var payload map[string]json.RawMessage
+		decoder := json.NewDecoder(c.Request.Body)
+		// 撤回目标和操作者只来自已鉴权身份与路径，拒绝客户端覆盖终态或申请人。
+		if decoder.Decode(&payload) != nil || payload == nil || len(payload) != 0 || decoder.Decode(new(any)) != io.EOF {
+			c.JSON(http.StatusBadRequest, fail(http.StatusBadRequest, "team_asset_invalid"))
+			return
+		}
+		out, err := service.WithdrawDeletion(c.Request.Context(), membership.Team.ID, auth.User.ID, c.Param("id"))
+		if err != nil {
+			teamAssetRouteError(c, deps, err)
+			return
+		}
+		c.JSON(http.StatusOK, okData(out))
+	})
 }

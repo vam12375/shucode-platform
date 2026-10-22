@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const teamAssetDeletionCols = `id::text,asset_id::text,asset_name,requested_by_id::text,requested_by_name,created_at,status,COALESCE(reviewed_by_id::text,''),reviewed_by_name,reviewed_at,blob_id::text,size,blob_cleaned_at`
+const teamAssetDeletionCols = `id::text,asset_id::text,asset_name,requested_by_id::text,requested_by_name,created_at,status,COALESCE(reviewed_by_id::text,''),reviewed_by_name,reviewed_at,withdrawn_at,blob_id::text,size,blob_cleaned_at`
 
 func (s *PostgresStore) ListTeamAssetBlobCleanups(ctx context.Context, teamID string) ([]TeamAssetDeletionRecord, error) {
 	if !canonicalUUID(teamID) {
@@ -32,7 +32,7 @@ func (s *PostgresStore) ListTeamAssetBlobCleanups(ctx context.Context, teamID st
 
 func scanTeamAssetDeletion(row pgx.Row) (TeamAssetDeletionRecord, error) {
 	var r TeamAssetDeletionRecord
-	err := row.Scan(&r.ID, &r.AssetID, &r.AssetName, &r.RequestedByID, &r.RequestedByName, &r.CreatedAt, &r.Status, &r.ReviewedByID, &r.ReviewedByName, &r.ReviewedAt, &r.BlobID, &r.Size, &r.BlobCleanedAt)
+	err := row.Scan(&r.ID, &r.AssetID, &r.AssetName, &r.RequestedByID, &r.RequestedByName, &r.CreatedAt, &r.Status, &r.ReviewedByID, &r.ReviewedByName, &r.ReviewedAt, &r.WithdrawnAt, &r.BlobID, &r.Size, &r.BlobCleanedAt)
 	return r, err
 }
 
@@ -146,7 +146,7 @@ func (s *PostgresStore) ListTeamAssetDeletionRequests(ctx context.Context, teamI
 		page.Records = page.Records[:100]
 	}
 	if beforeAt == nil {
-		rows, err = tx.Query(ctx, `SELECT `+teamAssetDeletionCols+` FROM team_asset_deletion_requests WHERE team_id=$1::uuid AND ($3::boolean OR requested_by_id=$2::uuid) AND status<>'pending' ORDER BY reviewed_at DESC,id DESC LIMIT 100`, teamID, actorID, canReview)
+		rows, err = tx.Query(ctx, `SELECT `+teamAssetDeletionCols+` FROM team_asset_deletion_requests WHERE team_id=$1::uuid AND ($3::boolean OR requested_by_id=$2::uuid) AND status<>'pending' ORDER BY COALESCE(withdrawn_at,reviewed_at) DESC,id DESC LIMIT 100`, teamID, actorID, canReview)
 		if err != nil {
 			return TeamAssetDeletionPage{}, false, err
 		}
@@ -164,6 +164,45 @@ func (s *PostgresStore) ListTeamAssetDeletionRequests(ctx context.Context, teamI
 		}
 	}
 	return page, canReview, nil
+}
+
+func (s *PostgresStore) WithdrawTeamAssetDeletion(ctx context.Context, teamID, actorID, requestID string, at time.Time) (TeamAssetDeletionRecord, error) {
+	if !canonicalUUID(teamID) || !canonicalUUID(actorID) || !canonicalUUID(requestID) || at.IsZero() {
+		return TeamAssetDeletionRecord{}, ErrInvalidInput
+	}
+	tx, _, _, err := s.beginTeamAssetActor(ctx, teamID, actorID)
+	if err != nil {
+		return TeamAssetDeletionRecord{}, err
+	}
+	defer tx.Rollback(ctx)
+	r, err := scanTeamAssetDeletion(tx.QueryRow(ctx, `SELECT `+teamAssetDeletionCols+` FROM team_asset_deletion_requests WHERE team_id=$1::uuid AND id=$2::uuid`, teamID, requestID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return TeamAssetDeletionRecord{}, ErrTeamAssetNotFound
+	}
+	if err != nil {
+		return TeamAssetDeletionRecord{}, err
+	}
+	if r.RequestedByID != actorID {
+		return TeamAssetDeletionRecord{}, ErrTeamAssetForbidden
+	}
+	if r.Status == "withdrawn" {
+		return r, nil
+	}
+	if r.Status != "pending" {
+		return TeamAssetDeletionRecord{}, ErrTeamAssetConflict
+	}
+	// 与审批和角色变更使用同一团队锁；条件更新保留 pending 的单次终态边界。
+	r, err = scanTeamAssetDeletion(tx.QueryRow(ctx, `UPDATE team_asset_deletion_requests SET status='withdrawn',withdrawn_at=$3 WHERE team_id=$1::uuid AND id=$2::uuid AND status='pending' RETURNING `+teamAssetDeletionCols, teamID, requestID, at.UTC()))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return TeamAssetDeletionRecord{}, ErrTeamAssetConflict
+	}
+	if err != nil {
+		return TeamAssetDeletionRecord{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return TeamAssetDeletionRecord{}, err
+	}
+	return r, nil
 }
 
 func (s *PostgresStore) ReviewTeamAssetDeletion(ctx context.Context, teamID, actorID, requestID, decision string, at time.Time) (TeamAssetDeletionRecord, error) {

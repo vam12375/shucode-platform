@@ -50,6 +50,7 @@ type CloudAssetDeletionRequest struct {
 	Status      string              `json:"status"`
 	ReviewedBy  *CloudAssetUploader `json:"reviewedBy,omitempty"`
 	ReviewedAt  *time.Time          `json:"reviewedAt,omitempty"`
+	WithdrawnAt *time.Time          `json:"withdrawnAt,omitempty"`
 }
 
 type CloudAssetDeletionViewer struct {
