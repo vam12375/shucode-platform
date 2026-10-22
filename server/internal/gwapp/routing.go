@@ -321,36 +321,106 @@ func probeProvider(ctx context.Context, deps Deps, provider store.UpstreamProvid
 }
 
 func estimatePromptTokens(body map[string]any) int64 {
-	// /4 会低估中文与多模态输入；完整 JSON 字节数加网关改写余量作为保守上界。
+	// 费用准入保留完整 JSON 字节数加网关改写余量的保守口径。
 	return int64(len(mustJSON(body))) + 128
 }
 
 func estimateRequestTokens(body map[string]any, maxTokens int64) int64 {
-	// TPM 保持近似 token 速率口径；费用准入单独使用保守上界。
-	total := int64(countJSONText(body)/4) + maxTokens
+	// 图片的 data URI 不是自然语言：Base64 字符数会把同一张图放大成
+	// 数万“token”，既不符合视觉模型计量，也会让几十张抽帧错误触发
+	// 团队 TPM。文本与图片分别估算后再加输出上限；不用于费用实扣。
+	textBytes, imageTokens := estimateMultimodalInput(body)
+	total := ceilDiv(textBytes, 4) + imageTokens + maxTokens
 	if total < 1 {
 		return 1
 	}
 	return total
 }
 
-func countJSONText(value any) int {
-	switch typed := value.(type) {
-	case string:
-		return len(typed)
-	case []any:
-		total := 0
-		for _, item := range typed {
-			total += countJSONText(item)
-		}
-		return total
-	case map[string]any:
-		total := 0
-		for key, item := range typed {
-			total += len(key) + countJSONText(item)
-		}
-		return total
-	default:
+// 图片压缩字节数不能推出视觉 token 数；这是按每个真实协议图片输入
+// 固定消耗的保守准入额度，并非供应商的实际 token 或费用估算。
+const imageInputTokenAllowance int64 = 16_384
+
+func ceilDiv(value, divisor int64) int64 {
+	if value <= 0 {
 		return 0
 	}
+	return (value + divisor - 1) / divisor
+}
+
+func estimateMultimodalInput(value any) (textBytes, imageTokens int64) {
+	switch typed := value.(type) {
+	case string:
+		return int64(len(typed)), 0
+	case []any:
+		for _, item := range typed {
+			text, images := estimateMultimodalInput(item)
+			textBytes += text
+			imageTokens += images
+		}
+	case map[string]any:
+		imageField := imagePayloadField(typed)
+		for key, item := range typed {
+			textBytes += int64(len(key))
+			if key == imageField {
+				imageTokens += imageInputTokenAllowance
+				textBytes += imagePayloadMetadataBytes(item)
+				continue
+			}
+			text, images := estimateMultimodalInput(item)
+			textBytes += text
+			imageTokens += images
+		}
+	}
+	return textBytes, imageTokens
+}
+
+func imagePayloadField(value map[string]any) string {
+	// 只识别已支持协议的图片块，避免工具 schema 或普通 text 里出现
+	// "image"/data URI 时跳过真实文字计量。额外的非图片字段仍按文本累计。
+	typ, _ := value["type"].(string)
+	switch typ {
+	case "image_url": // Chat Completions
+		if _, ok := value["image_url"]; ok {
+			return "image_url"
+		}
+	case "input_image": // Responses
+		for _, field := range []string{"image_url", "file_id"} {
+			if _, ok := value[field]; ok {
+				return field
+			}
+		}
+	case "image": // Anthropic Messages
+		if source, ok := value["source"].(map[string]any); ok {
+			if sourceType, _ := source["type"].(string); sourceType == "url" {
+				if _, exists := source["url"]; exists {
+					return "source"
+				}
+			}
+			if mediaType, _ := source["media_type"].(string); strings.HasPrefix(mediaType, "image/") {
+				if _, exists := source["data"]; exists {
+					return "source"
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func imagePayloadMetadataBytes(value any) int64 {
+	// 图片载荷旁的 detail、source.type 或其它文字仍计量，不能因为同处
+	// 图片对象就把额外大段文本一起隐藏。只排除协议承载图片的字段值。
+	payload, ok := value.(map[string]any)
+	if !ok {
+		return 0
+	}
+	var textBytes int64
+	for key, item := range payload {
+		textBytes += int64(len(key))
+		if key == "url" || key == "data" {
+			continue
+		}
+		textBytes += int64(len(mustJSON(item)))
+	}
+	return textBytes
 }
