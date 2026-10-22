@@ -26,6 +26,12 @@ func (s *memoryStore) CommitTeamAsset(ctx context.Context, teamID string, record
 		return TeamAssetRecord{}, false, ErrTeamAssetTeamNotFound
 	}
 	assets := s.teamAssets[teamID]
+	// 已批准身份和 blob 永久保留墓碑，阻止迟到上传恢复资产或复用待清理字节。
+	for _, deletion := range s.teamAssetDeletions[teamID] {
+		if deletion.Status == "approved" && (deletion.AssetID == record.ID || deletion.BlobID == record.BlobID) {
+			return TeamAssetRecord{}, false, ErrTeamAssetConflict
+		}
+	}
 	if existing, ok := assets[record.ID]; ok {
 		if !sameTeamAssetUpload(existing, record) {
 			return TeamAssetRecord{}, false, ErrTeamAssetConflict

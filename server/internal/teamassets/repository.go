@@ -40,6 +40,10 @@ func mapStoreError(err error) error {
 		return ErrConflict
 	case errors.Is(err, store.ErrTeamAssetTeamNotFound):
 		return ErrNotFound
+	case errors.Is(err, store.ErrTeamAssetNotFound):
+		return ErrNotFound
+	case errors.Is(err, store.ErrTeamAssetForbidden):
+		return ErrForbidden
 	case errors.Is(err, store.ErrInvalidInput):
 		return ErrInvalid
 	default:

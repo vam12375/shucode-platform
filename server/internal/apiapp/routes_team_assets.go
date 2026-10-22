@@ -26,6 +26,7 @@ func registerTeamAssetRoutes(router *gin.Engine, deps *Deps) {
 		Repository: teamassets.Repository{Store: deps.Store},
 		Blobs:      media.Blobs{Root: filepath.Join(deps.Media.Blobs.Root, "team-assets")},
 		Now:        deps.Now,
+		Logger:     deps.Logger,
 	}
 
 	resolveActor := func(c *gin.Context) (*AuthenticatedDevice, *store.TeamMembership, bool) {
@@ -49,6 +50,7 @@ func registerTeamAssetRoutes(router *gin.Engine, deps *Deps) {
 		}
 		return auth, membership, true
 	}
+	registerTeamAssetDeletionRoutes(assets, deps, service, resolveActor)
 
 	assets.GET("", func(c *gin.Context) {
 		_, membership, ok := resolveActor(c)
@@ -173,6 +175,8 @@ func teamAssetRouteError(c *gin.Context, deps *Deps, err error) {
 		c.JSON(http.StatusConflict, fail(http.StatusConflict, "team_asset_write_busy"))
 	case errors.Is(err, teamassets.ErrNotFound):
 		c.JSON(http.StatusNotFound, fail(http.StatusNotFound, "team_asset_not_found"))
+	case errors.Is(err, teamassets.ErrForbidden):
+		c.JSON(http.StatusForbidden, fail(http.StatusForbidden, "team_asset_forbidden"))
 	default:
 		internalError(c, deps, err)
 	}

@@ -40,3 +40,27 @@ type CloudAssetPage struct {
 	Assets     []CloudAsset   `json:"assets"`
 	NextCursor *string        `json:"nextCursor"`
 }
+
+type CloudAssetDeletionRequest struct {
+	ID          string              `json:"id"`
+	AssetID     string              `json:"assetId"`
+	AssetName   string              `json:"assetName"`
+	RequestedBy CloudAssetUploader  `json:"requestedBy"`
+	CreatedAt   time.Time           `json:"createdAt"`
+	Status      string              `json:"status"`
+	ReviewedBy  *CloudAssetUploader `json:"reviewedBy,omitempty"`
+	ReviewedAt  *time.Time          `json:"reviewedAt,omitempty"`
+}
+
+type CloudAssetDeletionViewer struct {
+	ID        string `json:"id"`
+	CanReview bool   `json:"canReview"`
+}
+
+type CloudAssetDeletionOverview struct {
+	TeamID       string                      `json:"teamId"`
+	Viewer       CloudAssetDeletionViewer    `json:"viewer"`
+	Requests     []CloudAssetDeletionRequest `json:"requests"`
+	PendingCount int64                       `json:"pendingCount"`
+	NextCursor   *string                     `json:"nextCursor"`
+}

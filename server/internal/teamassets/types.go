@@ -20,6 +20,7 @@ var (
 	ErrConflict     = errors.New("team_asset_id_conflict")
 	ErrBusy         = errors.New("team_asset_write_busy")
 	ErrNotFound     = errors.New("team_asset_not_found")
+	ErrForbidden    = errors.New("team_asset_forbidden")
 )
 
 type Asset = contracts.CloudAsset

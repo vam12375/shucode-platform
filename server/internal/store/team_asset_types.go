@@ -28,6 +28,36 @@ type TeamAssetPage struct {
 	UsedBytes int64
 }
 
+type TeamAssetDeletionRecord struct {
+	ID, AssetID, AssetName         string
+	RequestedByID, RequestedByName string
+	CreatedAt                      time.Time
+	Status                         string
+	ReviewedByID, ReviewedByName   string
+	ReviewedAt                     *time.Time
+	BlobID                         string
+	Size                           int64
+	BlobCleanedAt                  *time.Time
+}
+
+type TeamAssetDeletionPage struct {
+	Records      []TeamAssetDeletionRecord
+	PendingCount int64
+	HasMore      bool
+}
+
+func cloneTeamAssetDeletion(record TeamAssetDeletionRecord) TeamAssetDeletionRecord {
+	record.ReviewedAt = copyTime(record.ReviewedAt)
+	record.BlobCleanedAt = copyTime(record.BlobCleanedAt)
+	return record
+}
+
+func teamAssetDeletionDisplayName(name string) string {
+	// 审批仅保存有界展示快照，身份仍以用户ID为准，避免长名称撑破跨端消息预算。
+	runes := []rune(name)
+	return string(runes[:min(len(runes), 255)])
+}
+
 const TeamAssetMaxBytes int64 = 100 * 1024 * 1024
 
 func validateTeamAssetRecord(teamID string, record TeamAssetRecord, limitBytes int64) error {

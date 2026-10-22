@@ -35,6 +35,7 @@ type memoryStore struct {
 	teamAssets         map[string]map[string]TeamAssetRecord
 	teamAssetBlobIDs   map[string]map[string]string
 	teamAssetUsedBytes map[string]int64
+	teamAssetDeletions map[string]map[string]TeamAssetDeletionRecord
 	members            map[string]map[string]struct{} // teamID -> userIDs
 	memberRoles        map[string]TeamMemberRole      // "teamId:userId"
 	memberDisabled     map[string]*time.Time
@@ -76,6 +77,7 @@ func NewMemoryStore(ctx context.Context, opts MemoryOptions) (*memoryStore, erro
 		teamAssets:         map[string]map[string]TeamAssetRecord{},
 		teamAssetBlobIDs:   map[string]map[string]string{},
 		teamAssetUsedBytes: map[string]int64{},
+		teamAssetDeletions: map[string]map[string]TeamAssetDeletionRecord{},
 		members:            map[string]map[string]struct{}{},
 		memberRoles:        map[string]TeamMemberRole{},
 		memberJoinedAt:     map[string]time.Time{},

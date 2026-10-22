@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -26,6 +27,7 @@ type Service struct {
 	Repository Repository
 	Blobs      media.Blobs
 	Now        func() time.Time
+	Logger     *slog.Logger
 }
 
 func validID(id string) bool {

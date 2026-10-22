@@ -43,6 +43,11 @@ type PlatformStore interface {
 	GetTeamAsset(ctx context.Context, teamID, id string) (*TeamAssetRecord, error)
 	// ListTeamAssetPage returns created_at/id DESC and total usage from one snapshot.
 	ListTeamAssetPage(ctx context.Context, teamID string, beforeCreatedAt *time.Time, beforeID string, limit int) (TeamAssetPage, error)
+	RequestTeamAssetDeletion(ctx context.Context, teamID, actorID, assetID, requestID string, at time.Time) (TeamAssetDeletionRecord, error)
+	ListTeamAssetDeletionRequests(ctx context.Context, teamID, actorID string, beforeAt *time.Time, beforeID string) (TeamAssetDeletionPage, bool, error)
+	ReviewTeamAssetDeletion(ctx context.Context, teamID, actorID, requestID, decision string, at time.Time) (TeamAssetDeletionRecord, error)
+	MarkTeamAssetDeletionBlobCleaned(ctx context.Context, teamID, requestID string, at time.Time) error
+	ListTeamAssetBlobCleanups(ctx context.Context, teamID string) ([]TeamAssetDeletionRecord, error)
 	UpdateTeamMember(ctx context.Context, teamID, userID string, patch TeamMemberPatch) (*TeamMemberView, error)
 	GetTeamPolicy(ctx context.Context, teamID string) (*TeamPolicyRecord, error)
 	SaveTeamPolicy(ctx context.Context, record TeamPolicyRecord) (*TeamPolicyRecord, error)
@@ -251,6 +256,8 @@ var (
 	ErrTeamAssetStorageLimit   = errors.New("team asset storage limit exceeded")
 	ErrTeamAssetConflict       = errors.New("team asset id conflicts with an existing upload")
 	ErrTeamAssetTeamNotFound   = errors.New("team asset team not found")
+	ErrTeamAssetNotFound       = errors.New("team asset or deletion request not found")
+	ErrTeamAssetForbidden      = errors.New("team asset operation forbidden")
 )
 
 // ResolveUserTeam 显式拒绝既存多团队歧义，避免按列表顺序错误扣费。

@@ -42,6 +42,14 @@ func (s *PostgresStore) CommitTeamAsset(ctx context.Context, teamID string, reco
 		}
 		return TeamAssetRecord{}, false, err
 	}
+	// 墓碑与清理事实永久保留，迟到重试不能重新引用已批准删除的身份或字节。
+	var retired bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM team_asset_deletion_requests WHERE team_id=$1::uuid AND status='approved' AND (asset_id=$2::uuid OR blob_id=$3::uuid))`, teamID, record.ID, record.BlobID).Scan(&retired); err != nil {
+		return TeamAssetRecord{}, false, err
+	}
+	if retired {
+		return TeamAssetRecord{}, false, ErrTeamAssetConflict
+	}
 
 	existing, err := scanTeamAsset(tx.QueryRow(ctx, `SELECT `+teamAssetCols+` FROM team_assets WHERE team_id=$1::uuid AND id=$2::uuid`, teamID, record.ID))
 	if err == nil {
