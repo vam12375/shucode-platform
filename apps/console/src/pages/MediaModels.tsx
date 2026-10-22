@@ -142,6 +142,12 @@ interface MediaModel {
   generateAudio: boolean;
   priceMicro: number;
   priceVersion: string;
+  videoReference?: {
+    maxDurationSeconds: number;
+    maxImages: number;
+    costMicro: number;
+    priceMicro: number;
+  };
 }
 
 interface ProviderOption {
@@ -163,6 +169,13 @@ interface MediaModelDraft {
   generateAudio: boolean;
   priceCredits: string;
   priceVersion: string;
+  videoReference?: {
+    enabled: boolean;
+    maxDurationSeconds: string;
+    maxImages: string;
+    costCredits: string;
+    priceCredits: string;
+  };
 }
 
 function errorMessage(error: unknown): string {
@@ -176,7 +189,7 @@ function priceInputValue(micro: number): string {
     .replace(/\.?0+$/, "");
 }
 
-function toDraft(model: MediaModel): MediaModelDraft {
+export function toDraft(model: MediaModel): MediaModelDraft {
   return {
     id: model.id,
     name: model.name,
@@ -189,10 +202,21 @@ function toDraft(model: MediaModel): MediaModelDraft {
     generateAudio: model.generateAudio === true,
     priceCredits: priceInputValue(model.priceMicro),
     priceVersion: model.priceVersion,
+    ...(model.videoReference
+      ? {
+          videoReference: {
+            enabled: true,
+            maxDurationSeconds: String(model.videoReference.maxDurationSeconds),
+            maxImages: String(model.videoReference.maxImages),
+            costCredits: priceInputValue(model.videoReference.costMicro),
+            priceCredits: priceInputValue(model.videoReference.priceMicro),
+          },
+        }
+      : {}),
   };
 }
 
-function toApiModel(draft: MediaModelDraft): MediaModel {
+export function toApiModel(draft: MediaModelDraft): MediaModel {
   const upstreamModel = draft.upstreamModel.trim();
   return {
     // 平台模型 ID 默认等于上游模型；手动填写后才作为独立别名保存。
@@ -208,10 +232,20 @@ function toApiModel(draft: MediaModelDraft): MediaModel {
     generateAudio: draft.kind === "video" ? draft.generateAudio : false,
     priceMicro: parseCreditsToMicro(draft.priceCredits),
     priceVersion: draft.priceVersion.trim(),
+    ...(draft.kind === "video" && draft.videoReference?.enabled
+      ? {
+          videoReference: {
+            maxDurationSeconds: Number(draft.videoReference.maxDurationSeconds),
+            maxImages: Number(draft.videoReference.maxImages),
+            costMicro: parseCreditsToMicro(draft.videoReference.costCredits),
+            priceMicro: parseCreditsToMicro(draft.videoReference.priceCredits),
+          },
+        }
+      : {}),
   };
 }
 
-function validateDrafts(
+export function validateDrafts(
   drafts: MediaModelDraft[],
   providers: ProviderOption[],
 ): string | null {
@@ -247,6 +281,35 @@ function validateDrafts(
     if (draft.kind === "video") {
       if (draft.resolutions.length === 0) return `「${label}」至少选择一个分辨率。`;
       if (draft.durations.length === 0) return `「${label}」至少选择一个镜头时长。`;
+    }
+    if (draft.videoReference?.enabled) {
+      if (draft.kind !== "video") return `「${label}」只有视频模型可以启用视频参考。`;
+      if (!/^\d+$/.test(draft.videoReference.maxDurationSeconds.trim())) {
+        return `「${label}」视频参考片段上限必须为 1–90 秒的整数。`;
+      }
+      const maxDurationSeconds = Number(draft.videoReference.maxDurationSeconds);
+      if (!Number.isSafeInteger(maxDurationSeconds) || maxDurationSeconds < 1 || maxDurationSeconds > 90) {
+        return `「${label}」视频参考片段上限必须为 1–90 秒的整数。`;
+      }
+      if (!/^\d+$/.test(draft.videoReference.maxImages.trim())) {
+        return `「${label}」视频参考图上限必须为 1–8 张的整数。`;
+      }
+      const maxImages = Number(draft.videoReference.maxImages);
+      if (!Number.isSafeInteger(maxImages) || maxImages < 1 || maxImages > 8) {
+        return `「${label}」视频参考图上限必须为 1–8 张的整数。`;
+      }
+      for (const [field, value, allowZero] of [
+        ["成本价", draft.videoReference.costCredits, true],
+        ["售价", draft.videoReference.priceCredits, false],
+      ] as const) {
+        if (!/^\d+(\.\d{1,6})?$/.test(value.trim())) {
+          return `「${label}」视频参考${field}格式不正确（credit，最多 6 位小数）。`;
+        }
+        const micro = parseCreditsToMicro(value);
+        if (micro < (allowZero ? 0 : 1) || micro > 100_000_000) {
+          return `「${label}」视频参考${field}需在 ${allowZero ? "0" : "0.000001"}–100 credit 之间。`;
+        }
+      }
     }
   }
   return null;
@@ -290,7 +353,7 @@ function exampleJson(providerId: string): string {
 }
 
 /** 高级 JSON 导入：宽松读取字段，具体合法性交给保存前校验与服务端。 */
-function draftsFromJson(raw: string): MediaModelDraft[] {
+export function draftsFromJson(raw: string): MediaModelDraft[] {
   const parsed: unknown = JSON.parse(raw);
   if (!Array.isArray(parsed)) throw new Error("JSON 顶层必须是模型数组。");
   return parsed.map((value, index) => {
@@ -303,6 +366,32 @@ function draftsFromJson(raw: string): MediaModelDraft[] {
     if (!kind) throw new Error(`第 ${index + 1} 项的 kind 必须是 image 或 video。`);
     const priceMicro = Number(record.priceMicro);
     const costMicro = Number(record.costMicro);
+    let videoReference: MediaModelDraft["videoReference"];
+    if (record.videoReference !== undefined) {
+      if (!record.videoReference || typeof record.videoReference !== "object" || Array.isArray(record.videoReference)) {
+        throw new Error(`第 ${index + 1} 项的视频参考配置必须是对象。`);
+      }
+      const capability = record.videoReference as Record<string, unknown>;
+      if (
+        typeof capability.maxDurationSeconds !== "number" ||
+        typeof capability.maxImages !== "number" ||
+        typeof capability.priceMicro !== "number" ||
+        typeof capability.costMicro !== "number" ||
+        !Number.isSafeInteger(capability.maxDurationSeconds) ||
+        !Number.isSafeInteger(capability.maxImages) ||
+        !Number.isSafeInteger(capability.priceMicro) ||
+        !Number.isSafeInteger(capability.costMicro)
+      ) {
+        throw new Error(`第 ${index + 1} 项的视频参考配置字段不完整。`);
+      }
+      videoReference = {
+        enabled: true,
+        maxDurationSeconds: String(capability.maxDurationSeconds),
+        maxImages: String(capability.maxImages),
+        costCredits: priceInputValue(capability.costMicro),
+        priceCredits: priceInputValue(capability.priceMicro),
+      };
+    }
     return {
       id: typeof record.id === "string" ? record.id : "",
       name: typeof record.name === "string" ? record.name : "",
@@ -331,6 +420,7 @@ function draftsFromJson(raw: string): MediaModelDraft[] {
           : "",
       priceVersion:
         typeof record.priceVersion === "string" ? record.priceVersion : "",
+      ...(videoReference ? { videoReference } : {}),
     };
   });
 }
@@ -816,12 +906,107 @@ export function MediaModelsPage() {
                         onChange={(value) =>
                           update(index, {
                             kind: value === "image" ? "image" : "video",
+                            ...(value === "image" ? { videoReference: undefined } : {}),
                           })
                         }
                         options={KIND_OPTIONS}
                       />
                     </label>
                   </div>
+
+                  {draft.kind === "video" ? (
+                    <div className="model-card-row">
+                      <label className="field" style={{ flex: "1 1 180px" }}>
+                        <span className="field-label">视频参考输入</span>
+                        <span className="choice-row">
+                          <input
+                            type="checkbox"
+                            aria-label={`模型 ${index + 1} 启用视频参考`}
+                            checked={draft.videoReference?.enabled === true}
+                            disabled={busy}
+                            onChange={(event) =>
+                              update(index, {
+                                videoReference: event.target.checked
+                                  ? draft.videoReference ?? {
+                                      enabled: true,
+                                      maxDurationSeconds: "",
+                                      maxImages: "",
+                                      costCredits: "0",
+                                      priceCredits: "",
+                                    }
+                                  : undefined,
+                              })
+                            }
+                          />
+                          <span>允许原片段与替换图共同输入</span>
+                        </span>
+                      </label>
+                      {draft.videoReference?.enabled ? (
+                        <>
+                          <label className="field" style={{ flex: "0.7 1 120px" }}>
+                            <span className="field-label">参考片段上限（秒）</span>
+                            <input
+                              className="input num"
+                              type="number"
+                              inputMode="numeric"
+                              min={1}
+                              max={90}
+                              step={1}
+                              aria-label={`模型 ${index + 1} 视频参考时长上限`}
+                              value={draft.videoReference.maxDurationSeconds}
+                              disabled={busy}
+                              onChange={(event) => update(index, {
+                                videoReference: { ...draft.videoReference!, maxDurationSeconds: event.target.value },
+                              })}
+                            />
+                          </label>
+                          <label className="field" style={{ flex: "0.7 1 120px" }}>
+                            <span className="field-label">替换参考图上限</span>
+                            <input
+                              className="input num"
+                              type="number"
+                              inputMode="numeric"
+                              min={1}
+                              max={8}
+                              step={1}
+                              aria-label={`模型 ${index + 1} 视频参考图上限`}
+                              value={draft.videoReference.maxImages}
+                              disabled={busy}
+                              onChange={(event) => update(index, {
+                                videoReference: { ...draft.videoReference!, maxImages: event.target.value },
+                              })}
+                            />
+                          </label>
+                          <label className="field" style={{ flex: "0.9 1 150px" }}>
+                            <span className="field-label">参考成本（credit / 输出秒）</span>
+                            <input
+                              className="input num"
+                              inputMode="decimal"
+                              aria-label={`模型 ${index + 1} 视频参考成本价`}
+                              value={draft.videoReference.costCredits}
+                              disabled={busy}
+                              onChange={(event) => update(index, {
+                                videoReference: { ...draft.videoReference!, costCredits: event.target.value },
+                              })}
+                            />
+                          </label>
+                          <label className="field" style={{ flex: "0.9 1 150px" }}>
+                            <span className="field-label">参考售价（credit / 输出秒）</span>
+                            <input
+                              className="input num"
+                              inputMode="decimal"
+                              aria-label={`模型 ${index + 1} 视频参考售价`}
+                              value={draft.videoReference.priceCredits}
+                              disabled={busy}
+                              onChange={(event) => update(index, {
+                                videoReference: { ...draft.videoReference!, priceCredits: event.target.value },
+                              })}
+                            />
+                          </label>
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
 
                   <div className="model-card-row">
                     <label className="field" style={{ flex: "1.2 1 170px" }}>

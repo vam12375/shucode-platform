@@ -1,10 +1,13 @@
 {
   "brief": {
     "mode": "replicate",
+    "generationMode": "video_reference",
     "product": "商品",
     "sellingPoints": "展示",
     "assetIds": ["asset-fixture"],
     "referenceUrls": ["https://example.com/video"],
+    "referenceAssetId": "source-fixture",
+    "referenceDurationSeconds": 10,
     "platforms": ["douyin"],
     "videoModel": "v",
     "resolution": "720p",
@@ -40,8 +43,8 @@
       },
       {
         "sourceUrl": "https://example.com/video",
-        "sourceStart": 0,
-        "sourceEnd": 5,
+        "sourceStart": 5,
+        "sourceEnd": 10,
         "duration": 5,
         "framing": "近景",
         "camera": "推进",
@@ -64,8 +67,14 @@
       "resolutions": ["720p"],
       "durations": [5],
       "priceMicro": 100000,
-      "priceVersion": "v1"
+      "priceVersion": "v1",
+      "videoReference": {
+        "maxDurationSeconds": 5,
+        "maxImages": 3,
+        "priceMicro": 250000,
+        "costMicro": 0
+      }
     }
   ],
-  "quoteMicro": 1000000
+  "quoteMicro": 2500000
 }

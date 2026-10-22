@@ -6,19 +6,28 @@ const ConfigKey = "media:catalog:v1"
 const IndexKey = "media:projects:v1"
 
 type Model struct {
-	ID            string   `json:"id"`
-	Name          string   `json:"name"`
-	Kind          string   `json:"kind"`
-	ProviderID    string   `json:"providerId"`
-	UpstreamModel string   `json:"upstreamModel"`
-	Adapter       string   `json:"adapter"`
-	Resolutions   []string `json:"resolutions"`
-	Durations     []int    `json:"durations"`
-	CostMicro     int64    `json:"costMicro"`
-	GenerateAudio bool     `json:"generateAudio"`
-	PriceMicro    int64    `json:"priceMicro"`
-	PriceVersion  string   `json:"priceVersion"`
+	ID             string                    `json:"id"`
+	Name           string                    `json:"name"`
+	Kind           string                    `json:"kind"`
+	ProviderID     string                    `json:"providerId"`
+	UpstreamModel  string                    `json:"upstreamModel"`
+	Adapter        string                    `json:"adapter"`
+	Resolutions    []string                  `json:"resolutions"`
+	Durations      []int                     `json:"durations"`
+	CostMicro      int64                     `json:"costMicro"`
+	GenerateAudio  bool                      `json:"generateAudio"`
+	PriceMicro     int64                     `json:"priceMicro"`
+	PriceVersion   string                    `json:"priceVersion"`
+	VideoReference *VideoReferenceCapability `json:"videoReference,omitempty"`
 }
+
+type VideoReferenceCapability struct {
+	MaxDurationSeconds int   `json:"maxDurationSeconds"`
+	MaxImages          int   `json:"maxImages"`
+	PriceMicro         int64 `json:"priceMicro"`
+	CostMicro          int64 `json:"costMicro"`
+}
+
 type Asset struct {
 	ID              string    `json:"id"`
 	Name            string    `json:"name"`
@@ -33,9 +42,11 @@ type Asset struct {
 	Height          int       `json:"height,omitempty"`
 	SourceURL       string    `json:"sourceUrl,omitempty"`
 	Checksum        string    `json:"checksum,omitempty"`
+	Internal        bool      `json:"internal,omitempty"`
 }
 type Brief struct {
 	SourceOnly               bool     `json:"sourceOnly,omitempty"`
+	GenerationMode           string   `json:"generationMode,omitempty"`
 	Mode                     string   `json:"mode"`
 	Product                  string   `json:"product"`
 	SellingPoints            string   `json:"sellingPoints"`
@@ -65,6 +76,7 @@ type ShotPlan struct {
 	SourceURL             string  `json:"sourceUrl"`
 	SourceStart           float64 `json:"sourceStart"`
 	SourceEnd             float64 `json:"sourceEnd"`
+	ReferenceVideoAssetID string  `json:"referenceVideoAssetId,omitempty"`
 	Duration              int     `json:"duration"`
 	Framing               string  `json:"framing"`
 	Camera                string  `json:"camera"`
@@ -92,21 +104,22 @@ type Analysis struct {
 	WorkspaceIdentity string `json:"workspaceIdentity,omitempty"`
 }
 type Shot struct {
-	Plan               ShotPlan `json:"plan"`
-	Status             string   `json:"status"`
-	Attempt            int      `json:"attempt"`
-	VideoTaskID        string   `json:"videoTaskId,omitempty"`
-	ResultURL          string   `json:"resultUrl,omitempty"`
-	ImageAssetID       string   `json:"imageAssetId,omitempty"`
-	OutputAssetID      string   `json:"outputAssetId,omitempty"`
-	Error              string   `json:"error,omitempty"`
-	ChargedMicro       int64    `json:"chargedMicro"`
-	QuoteMicro         int64    `json:"quoteMicro"`
-	ReservationID      string   `json:"reservationId,omitempty"`
-	Stage              string   `json:"stage,omitempty"`
-	PendingChargeMicro int64    `json:"pendingChargeMicro,omitempty"`
-	ReservedMicro      int64    `json:"reservedMicro,omitempty"`
-	ReleasedMicro      int64    `json:"releasedMicro,omitempty"`
+	Plan                  ShotPlan `json:"plan"`
+	Status                string   `json:"status"`
+	Attempt               int      `json:"attempt"`
+	VideoTaskID           string   `json:"videoTaskId,omitempty"`
+	ReferenceVideoAssetID string   `json:"referenceVideoAssetId,omitempty"`
+	ResultURL             string   `json:"resultUrl,omitempty"`
+	ImageAssetID          string   `json:"imageAssetId,omitempty"`
+	OutputAssetID         string   `json:"outputAssetId,omitempty"`
+	Error                 string   `json:"error,omitempty"`
+	ChargedMicro          int64    `json:"chargedMicro"`
+	QuoteMicro            int64    `json:"quoteMicro"`
+	ReservationID         string   `json:"reservationId,omitempty"`
+	Stage                 string   `json:"stage,omitempty"`
+	PendingChargeMicro    int64    `json:"pendingChargeMicro,omitempty"`
+	ReservedMicro         int64    `json:"reservedMicro,omitempty"`
+	ReleasedMicro         int64    `json:"releasedMicro,omitempty"`
 }
 type Project struct {
 	SourceChecksum       string                   `json:"sourceChecksum,omitempty"`

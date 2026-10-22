@@ -143,9 +143,15 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, e)
 			return
 		}
-		for i := range assets {
-			assets[i].URL = s.Blobs.URL(m.Team.ID, assets[i].ID)
+		visibleAssets := assets[:0]
+		for _, asset := range assets {
+			if asset.Internal {
+				continue
+			}
+			asset.URL = s.Blobs.URL(m.Team.ID, asset.ID)
+			visibleAssets = append(visibleAssets, asset)
 		}
+		assets = visibleAssets
 		all, e := s.Repo.All(ctx)
 		if e != nil {
 			internalError(c, deps, e)
@@ -420,7 +426,15 @@ func publicMediaModels(models []media.Model) []gin.H {
 		}
 		durations := append([]int{}, m.Durations...)
 		// 用户消耗用于客户端展示；供应商成本与内部价格版本只用于服务端计费及 root 控制台。
-		out = append(out, gin.H{"id": m.ID, "name": m.Name, "kind": m.Kind, "resolutions": resolutions, "maxReferenceImages": media.MaxReferenceImages(m), "durations": durations, "generateAudio": m.GenerateAudio, "priceMicro": m.PriceMicro})
+		model := gin.H{"id": m.ID, "name": m.Name, "kind": m.Kind, "resolutions": resolutions, "maxReferenceImages": media.MaxReferenceImages(m), "durations": durations, "generateAudio": m.GenerateAudio, "priceMicro": m.PriceMicro}
+		if m.VideoReference != nil {
+			model["videoReference"] = gin.H{
+				"maxDurationSeconds": m.VideoReference.MaxDurationSeconds,
+				"maxImages":          m.VideoReference.MaxImages,
+				"priceMicro":         m.VideoReference.PriceMicro,
+			}
+		}
+		out = append(out, model)
 	}
 	return out
 }

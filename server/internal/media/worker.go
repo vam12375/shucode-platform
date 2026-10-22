@@ -123,6 +123,22 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	if e != nil {
 		return e
 	}
+	var referenceVideoURL string
+	if videoReferenceRequested(p) {
+		videoModelID := p.Brief.VideoModel
+		if p.Canvas != nil {
+			videoModelID = p.Canvas.ModelID
+		}
+		videoModel, findErr := FindModel(p.Models, videoModelID, "video")
+		if findErr != nil || videoModel.VideoReference == nil {
+			return s.failVideoReference(ctx, p, index, shot, "video_reference_unsupported")
+		}
+		clip, clipErr := s.ensureVideoReferenceClip(ctx, p, shot, videoModel.VideoReference.MaxDurationSeconds)
+		if clipErr != nil {
+			return s.failVideoReference(ctx, p, index, shot, clipErr.Error())
+		}
+		referenceVideoURL = clip.URL
+	}
 	if shot.Status == "image_saved" || shot.Status == "video_saved" {
 		if e = s.Repo.Store.SettleReservation(ctx, shot.ReservationID, s.usage(p, shot, m)); e != nil {
 			return e
@@ -217,6 +233,13 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	amount := m.PriceMicro
 	if kind == "video" {
 		amount *= int64(shot.Plan.Duration)
+		if videoReferenceRequested(p) {
+			videoModel, findErr := FindModel(p.Models, modelID, "video")
+			if findErr != nil || videoModel.VideoReference == nil {
+				return s.failVideoReference(ctx, p, index, shot, "video_reference_unsupported")
+			}
+			amount = videoModel.VideoReference.PriceMicro * int64(shot.Plan.Duration)
+		}
 	}
 	if shot.ReservationID == "" {
 		shot.ReservationID = uuid.NewString()
@@ -311,9 +334,13 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		for _, id := range p.Canvas.AssetIDs {
 			images = append(images, s.Blobs.URL(p.TeamID, id))
 		}
-		id, e = provider.CanvasVideo(ctx, m, *p.Canvas, images)
+		if referenceVideoURL != "" {
+			id, e = provider.CanvasVideo(ctx, m, *p.Canvas, images, referenceVideoURL)
+		} else {
+			id, e = provider.CanvasVideo(ctx, m, *p.Canvas, images)
+		}
 	} else {
-		id, e = provider.Submit(ctx, m, p.Brief, shot.Plan, image)
+		id, e = provider.SubmitWithReference(ctx, m, p.Brief, shot.Plan, image, referenceVideoURL)
 	}
 	if e != nil {
 		return s.submissionFailure(ctx, p, index, shot, e)
@@ -322,6 +349,26 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		return ErrConflict
 	}
 	return nil
+}
+
+func videoReferenceRequested(p *Project) bool {
+	return (p.Canvas != nil && len(p.Canvas.VideoReferences) > 0) || p.Brief.GenerationMode == "video_reference"
+}
+
+func (s *Service) failVideoReference(ctx context.Context, p *Project, index int, shot Shot, reason string) error {
+	if shot.ReservationID != "" {
+		if err := s.Repo.Store.ReleaseReservationByID(ctx, shot.ReservationID, time.Now()); err != nil {
+			return err
+		}
+	}
+	_, err := s.workerUpdate(ctx, p, func(v *Project) {
+		v.Status = "failed"
+		v.Error = reason
+		v.Shots[index].Status = "failed"
+		v.Shots[index].Error = reason
+		v.Shots[index].clearPending()
+	})
+	return err
 }
 func (s *Service) unknown(ctx context.Context, p *Project, i int) error {
 	_, e := s.workerUpdate(ctx, p, func(v *Project) {

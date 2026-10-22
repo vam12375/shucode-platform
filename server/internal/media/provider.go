@@ -68,8 +68,19 @@ func (p Provider) Image(ctx context.Context, m Model, prompt, image string) (str
 	}
 	return out.Data[0].URL, nil
 }
-func videoSubmitBody(m Model, b Brief, s ShotPlan, image string) map[string]any {
-	body := map[string]any{"model": m.UpstreamModel, "content": []any{map[string]any{"type": "text", "text": s.Prompt}, map[string]any{"type": "image_url", "image_url": map[string]string{"url": image}, "role": "first_frame"}}, "resolution": b.Resolution, "ratio": b.AspectRatio, "duration": s.Duration, "watermark": true}
+func videoSubmitBody(m Model, b Brief, s ShotPlan, image string, referenceVideo ...string) map[string]any {
+	imageRole := "first_frame"
+	content := []any{map[string]any{"type": "text", "text": s.Prompt}}
+	if len(referenceVideo) > 0 && referenceVideo[0] != "" {
+		imageRole = "reference_image"
+		content = append(content,
+			map[string]any{"type": "image_url", "image_url": map[string]string{"url": image}, "role": imageRole},
+			map[string]any{"type": "video_url", "video_url": map[string]string{"url": referenceVideo[0]}, "role": "reference_video"},
+		)
+	} else {
+		content = append(content, map[string]any{"type": "image_url", "image_url": map[string]string{"url": image}, "role": imageRole})
+	}
+	body := map[string]any{"model": m.UpstreamModel, "content": content, "resolution": b.Resolution, "ratio": b.AspectRatio, "duration": s.Duration, "watermark": true}
 	// 只在模型显式开启时下发；Seedance 1.0 等不支持该参数的模型保持原请求不变。
 	if m.GenerateAudio {
 		body["generate_audio"] = true
@@ -78,15 +89,27 @@ func videoSubmitBody(m Model, b Brief, s ShotPlan, image string) map[string]any 
 }
 
 func (p Provider) Submit(ctx context.Context, m Model, b Brief, s ShotPlan, image string) (string, error) {
+	return p.SubmitWithReference(ctx, m, b, s, image, "")
+}
+
+func (p Provider) SubmitWithReference(ctx context.Context, m Model, b Brief, s ShotPlan, image, referenceVideo string) (string, error) {
 	if image == "" {
 		return "", fmt.Errorf("first_frame_required")
+	}
+	if referenceVideo != "" && m.VideoReference == nil {
+		return "", fmt.Errorf("video_reference_unsupported")
 	}
 	var out struct {
 		ID string `json:"id"`
 	}
-	e := p.request(ctx, "POST", "/contents/generations/tasks", videoSubmitBody(m, b, s, image), &out)
-	if e != nil {
-		return "", e
+	var err error
+	if referenceVideo == "" {
+		err = p.request(ctx, "POST", "/contents/generations/tasks", videoSubmitBody(m, b, s, image), &out)
+	} else {
+		err = p.request(ctx, "POST", "/contents/generations/tasks", videoSubmitBody(m, b, s, image, referenceVideo), &out)
+	}
+	if err != nil {
+		return "", err
 	}
 	if out.ID == "" {
 		return "", fmt.Errorf("provider_task_missing")
@@ -131,14 +154,24 @@ func (p Provider) CanvasImage(ctx context.Context, m Model, r CanvasRequest, ima
 	}
 	return out.Data[0].URL, nil
 }
-func (p Provider) CanvasVideo(ctx context.Context, m Model, r CanvasRequest, images []string) (string, error) {
+func (p Provider) CanvasVideo(ctx context.Context, m Model, r CanvasRequest, images []string, referenceVideos ...string) (string, error) {
 	content := []any{map[string]any{"type": "text", "text": r.Prompt}}
-	for i, image := range images {
-		role := "first_frame"
-		if i == 1 {
-			role = "last_frame"
+	if len(referenceVideos) > 0 && referenceVideos[0] != "" {
+		if m.VideoReference == nil || len(images) == 0 || len(images) > m.VideoReference.MaxImages {
+			return "", fmt.Errorf("video_reference_unsupported")
 		}
-		content = append(content, map[string]any{"type": "image_url", "image_url": map[string]string{"url": image}, "role": role})
+		for _, image := range images {
+			content = append(content, map[string]any{"type": "image_url", "image_url": map[string]string{"url": image}, "role": "reference_image"})
+		}
+		content = append(content, map[string]any{"type": "video_url", "video_url": map[string]string{"url": referenceVideos[0]}, "role": "reference_video"})
+	} else {
+		for i, image := range images {
+			role := "first_frame"
+			if i == 1 {
+				role = "last_frame"
+			}
+			content = append(content, map[string]any{"type": "image_url", "image_url": map[string]string{"url": image}, "role": role})
+		}
 	}
 	body := map[string]any{"model": m.UpstreamModel, "content": content, "resolution": r.Resolution, "ratio": r.AspectRatio, "duration": r.Duration, "watermark": true}
 	if m.GenerateAudio {

@@ -13,20 +13,28 @@ import (
 )
 
 type CanvasRequest struct {
-	Kind               string   `json:"kind"`
-	ModelID            string   `json:"modelId"`
-	Prompt             string   `json:"prompt"`
-	AssetIDs           []string `json:"assetIds"`
-	Resolution         string   `json:"resolution"`
-	AspectRatio        string   `json:"aspectRatio"`
-	Duration           int      `json:"duration"`
-	Count              int      `json:"count"`
-	ExpectedQuoteMicro int64    `json:"expectedQuoteMicro"`
-	BoardID            string   `json:"boardId"`
-	NodeID             string   `json:"nodeId"`
-	WorkspacePath      string   `json:"workspacePath"`
-	WorkspaceIdentity  string   `json:"workspaceIdentity,omitempty"`
-	RemoteSessionID    string   `json:"remoteSessionId,omitempty"`
+	Kind               string                 `json:"kind"`
+	ModelID            string                 `json:"modelId"`
+	Prompt             string                 `json:"prompt"`
+	AssetIDs           []string               `json:"assetIds"`
+	VideoReferences    []CanvasVideoReference `json:"videoReferences,omitempty"`
+	Resolution         string                 `json:"resolution"`
+	AspectRatio        string                 `json:"aspectRatio"`
+	Duration           int                    `json:"duration"`
+	Count              int                    `json:"count"`
+	ExpectedQuoteMicro int64                  `json:"expectedQuoteMicro"`
+	BoardID            string                 `json:"boardId"`
+	NodeID             string                 `json:"nodeId"`
+	WorkspacePath      string                 `json:"workspacePath"`
+	WorkspaceIdentity  string                 `json:"workspaceIdentity,omitempty"`
+	RemoteSessionID    string                 `json:"remoteSessionId,omitempty"`
+}
+
+type CanvasVideoReference struct {
+	AssetID              string   `json:"assetId"`
+	StartSeconds         *float64 `json:"startSeconds,omitempty"`
+	EndSeconds           *float64 `json:"endSeconds,omitempty"`
+	ReferenceClipAssetID string   `json:"referenceClipAssetId,omitempty"`
 }
 
 func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id string, r CanvasRequest) (*Project, error) {
@@ -36,12 +44,17 @@ func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id strin
 	if r.AssetIDs == nil {
 		r.AssetIDs = []string{}
 	}
+	requestForProject := r
+	requestForProject.VideoReferences = slices.Clone(r.VideoReferences)
+	for i := range requestForProject.VideoReferences {
+		requestForProject.VideoReferences[i].ReferenceClipAssetID = ""
+	}
 	existing, err := s.Repo.Get(ctx, team, id)
 	if err != nil {
 		return nil, err
 	}
 	if existing != nil {
-		if existing.UserID != user || !reflect.DeepEqual(existing.Canvas, &r) {
+		if existing.UserID != user || !reflect.DeepEqual(existing.Canvas, &requestForProject) {
 			return nil, ErrConflict
 		}
 		return existing, nil
@@ -58,11 +71,38 @@ func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id strin
 		return nil, ErrInvalid
 	}
 	if r.Kind == "image" {
-		if r.Duration != 0 || !slices.Contains(ImageResolutions(m), r.Resolution) || !slices.Contains(imageRatios, r.AspectRatio) || len(r.AssetIDs) > MaxReferenceImages(m) {
+		if len(r.VideoReferences) > 0 || r.Duration != 0 || !slices.Contains(ImageResolutions(m), r.Resolution) || !slices.Contains(imageRatios, r.AspectRatio) || len(r.AssetIDs) > MaxReferenceImages(m) {
 			return nil, ErrInvalid
 		}
-	} else if r.Kind != "video" || !slices.Contains(videoRatios, r.AspectRatio) || !slices.Contains(m.Durations, r.Duration) || !slices.Contains(m.Resolutions, r.Resolution) || len(r.AssetIDs) > 2 {
+	} else if r.Kind != "video" || !slices.Contains(videoRatios, r.AspectRatio) || !slices.Contains(m.Durations, r.Duration) || !slices.Contains(m.Resolutions, r.Resolution) {
 		return nil, ErrInvalid
+	} else if len(r.VideoReferences) == 0 {
+		if len(r.AssetIDs) > 2 {
+			return nil, ErrInvalid
+		}
+	} else {
+		if m.VideoReference == nil || len(r.VideoReferences) != 1 || len(r.AssetIDs) == 0 || len(r.AssetIDs) > m.VideoReference.MaxImages {
+			return nil, fmt.Errorf("video_reference_unsupported")
+		}
+		ref := r.VideoReferences[0]
+		if ref.AssetID == "" || ref.ReferenceClipAssetID == "" || (ref.StartSeconds == nil) != (ref.EndSeconds == nil) {
+			return nil, ErrInvalid
+		}
+	}
+	var videoReference *videoReferenceSource
+	if len(r.VideoReferences) > 0 {
+		ref := r.VideoReferences[0]
+		if ref.ReferenceClipAssetID == "" {
+			return nil, fmt.Errorf("video_reference_clip_required")
+		}
+		resolved, err := s.resolveVideoReference(ctx, team, ref.AssetID, ref.StartSeconds, ref.EndSeconds, m.VideoReference.MaxDurationSeconds)
+		if err != nil {
+			return nil, err
+		}
+		if _, err = s.validateUploadedReferenceClip(ctx, team, resolved, ref.ReferenceClipAssetID); err != nil {
+			return nil, err
+		}
+		videoReference = &resolved
 	}
 	policy, err := s.Repo.Store.GetTeamPolicy(ctx, team)
 	if err != nil {
@@ -81,12 +121,15 @@ func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id strin
 			return nil, ErrInvalid
 		}
 		seen[id] = true
-		if !slices.ContainsFunc(assets, func(a Asset) bool { return a.ID == id && a.Kind == "image" }) {
+		if !slices.ContainsFunc(assets, func(a Asset) bool { return a.ID == id && a.Kind == "image" && !a.Internal }) {
 			return nil, ErrInvalid
 		}
 	}
 	unit := m.PriceMicro
 	if r.Kind == "video" {
+		if videoReference != nil {
+			unit = m.VideoReference.PriceMicro
+		}
 		unit *= int64(r.Duration)
 	}
 	total := unit * int64(r.Count)
@@ -95,10 +138,16 @@ func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id strin
 	}
 	shots := make([]Shot, r.Count)
 	for i := range shots {
-		shots[i] = Shot{Status: "pending", Attempt: 1, Plan: ShotPlan{Prompt: r.Prompt, ImagePrompt: r.Prompt, Duration: r.Duration}, QuoteMicro: unit}
+		plan := ShotPlan{Prompt: r.Prompt, ImagePrompt: r.Prompt, Duration: r.Duration}
+		if videoReference != nil {
+			plan.SourceStart = videoReference.StartSeconds
+			plan.SourceEnd = videoReference.EndSeconds
+			plan.ReferenceVideoAssetID = r.VideoReferences[0].ReferenceClipAssetID
+		}
+		shots[i] = Shot{Status: "pending", Attempt: 1, Plan: plan, ReferenceVideoAssetID: plan.ReferenceVideoAssetID, QuoteMicro: unit}
 	}
 	now := time.Now().UTC()
-	p := &Project{ID: id, TeamID: team, UserID: user, DeviceID: device, Version: 1, Status: "queued", Canvas: &r, Models: []Model{m}, Shots: shots, QuoteMicro: total, CreatedAt: now, UpdatedAt: now}
+	p := &Project{ID: id, TeamID: team, UserID: user, DeviceID: device, Version: 1, Status: "queued", Canvas: &requestForProject, Models: []Model{m}, Shots: shots, QuoteMicro: total, CreatedAt: now, UpdatedAt: now}
 	if err = s.Repo.Index(ctx, ProjectKey(team, id)); err != nil {
 		return nil, err
 	}

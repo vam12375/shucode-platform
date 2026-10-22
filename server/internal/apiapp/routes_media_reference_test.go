@@ -3,8 +3,13 @@ package apiapp
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"mime/multipart"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -44,5 +49,92 @@ func TestReferenceRoutesAuthenticateLimitUploadsAndHideConfiguration(t *testing.
 	w := request("POST", "/api/v1/media/references/upload", body, true, writer.FormDataContentType())
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"durationSeconds":1.3`) || !strings.Contains(w.Body.String(), `"checksum"`) {
 		t.Fatal(w.Code, w.Body.String())
+	}
+}
+
+func TestReferenceClipUploadIsTeamScopedAndIdempotent(t *testing.T) {
+	f, token, teamID := newUserConfigPolicyFixture(t)
+	f.deps.Media.Blobs.Root = t.TempDir()
+	f.deps.Media.ReferenceProbe = func(_ context.Context, path string) (media.ReferenceMetadata, error) {
+		if strings.Contains(path, ".reference-clip-upload-") {
+			return media.ReferenceMetadata{DurationSeconds: 2, Width: 160, Height: 90}, nil
+		}
+		return media.ReferenceMetadata{DurationSeconds: 5, Width: 160, Height: 90}, nil
+	}
+	video, err := os.ReadFile(filepath.Join("..", "media", "testdata", "blue.mp4"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID, size, err := f.deps.Media.Blobs.Put(teamID, bytes.NewReader(video), media.MaxVideo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceHash := sha256.Sum256(video)
+	sourceChecksum := hex.EncodeToString(sourceHash[:])
+	if err = f.deps.Media.Repo.AddAsset(context.Background(), teamID, media.Asset{ID: sourceID, Name: "source.mp4", Kind: "video", Mime: "video/mp4", Size: size, DurationSeconds: 5, Checksum: sourceChecksum}); err != nil {
+		t.Fatal(err)
+	}
+	request := func(body *bytes.Buffer, contentType string, auth bool) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "/api/v1/media/reference-clips", body)
+		if auth {
+			r.Header.Set("Authorization", "Bearer "+token)
+		}
+		r.Header.Set("Content-Type", contentType)
+		w := httptest.NewRecorder()
+		f.engine.ServeHTTP(w, r)
+		return w
+	}
+	makeBody := func(clip []byte, checksum string) (*bytes.Buffer, string) {
+		body := new(bytes.Buffer)
+		writer := multipart.NewWriter(body)
+		_ = writer.WriteField("sourceAssetId", sourceID)
+		_ = writer.WriteField("sourceChecksum", checksum)
+		_ = writer.WriteField("startSeconds", "1")
+		_ = writer.WriteField("endSeconds", "3")
+		part, _ := writer.CreateFormFile("file", "clip.mp4")
+		_, _ = part.Write(clip)
+		_ = writer.Close()
+		return body, writer.FormDataContentType()
+	}
+	body, contentType := makeBody(video, sourceChecksum)
+	if w := request(body, contentType, false); w.Code != 401 {
+		t.Fatalf("unauthenticated upload status=%d body=%s", w.Code, w.Body.String())
+	}
+	body, contentType = makeBody(video, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+	if w := request(body, contentType, true); w.Code != 422 {
+		t.Fatalf("wrong source checksum status=%d body=%s", w.Code, w.Body.String())
+	}
+	body, contentType = makeBody(video, sourceChecksum)
+	w := request(body, contentType, true)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"internal":true`) || !strings.Contains(w.Body.String(), `"url":"http://localhost`) {
+		t.Fatalf("valid upload status=%d body=%s", w.Code, w.Body.String())
+	}
+	var first struct {
+		Data media.Asset `json:"data"`
+	}
+	if err = json.NewDecoder(w.Body).Decode(&first); err != nil {
+		t.Fatal(err)
+	}
+	body, contentType = makeBody(video, sourceChecksum)
+	w = request(body, contentType, true)
+	var replay struct {
+		Data media.Asset `json:"data"`
+	}
+	decodeErr := json.NewDecoder(w.Body).Decode(&replay)
+	if w.Code != 200 || decodeErr != nil || replay.Data.ID != first.Data.ID {
+		t.Fatalf("upload replay status=%d body=%s asset=%+v", w.Code, w.Body.String(), replay.Data)
+	}
+	assets, err := f.deps.Media.Repo.Assets(context.Background(), teamID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	internal := 0
+	for _, asset := range assets {
+		if asset.Internal {
+			internal++
+		}
+	}
+	if internal != 1 {
+		t.Fatalf("replay created duplicate internal assets: %d", internal)
 	}
 }

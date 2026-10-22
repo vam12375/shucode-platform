@@ -150,3 +150,25 @@ func (r Repository) AddAsset(ctx context.Context, team string, a Asset) error {
 		return nil
 	})
 }
+
+func (r Repository) UpsertInternalAsset(ctx context.Context, team string, asset Asset) error {
+	if !asset.Internal || asset.ID == "" || asset.Kind != "video" {
+		return ErrInvalid
+	}
+	return updateJSON(ctx, r.Store, assetKey(team), []Asset{}, func(assets *[]Asset) error {
+		for i := range *assets {
+			if (*assets)[i].ID == asset.ID {
+				if !(*assets)[i].Internal {
+					return ErrConflict
+				}
+				(*assets)[i] = asset
+				return nil
+			}
+		}
+		if len(*assets) >= 10000 {
+			return fmt.Errorf("asset_limit")
+		}
+		*assets = append(*assets, asset)
+		return nil
+	})
+}

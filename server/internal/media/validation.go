@@ -31,6 +31,12 @@ func ValidateModels(models []Model) error {
 		if m.Kind != "image" && m.Kind != "video" {
 			return ErrInvalid
 		}
+		if m.VideoReference != nil {
+			c := m.VideoReference
+			if m.Kind != "video" || c.MaxDurationSeconds < 1 || c.MaxDurationSeconds > MaxReferenceSeconds || c.MaxImages < 1 || c.MaxImages > 8 || c.PriceMicro <= 0 || c.PriceMicro > 100_000_000 || c.CostMicro < 0 || c.CostMicro > 100_000_000 {
+				return ErrInvalid
+			}
+		}
 		if m.Kind == "image" && m.GenerateAudio {
 			return ErrInvalid
 		}
@@ -52,7 +58,7 @@ func ValidateModels(models []Model) error {
 }
 func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	replica := b.ReferenceAssetID != ""
-	if b.Mode != "auto" && b.Mode != "replicate" {
+	if (b.Mode != "auto" && b.Mode != "replicate") || (b.GenerationMode != "" && b.GenerationMode != "storyboard" && b.GenerationMode != "video_reference") {
 		return ErrInvalid
 	}
 	if strings.TrimSpace(b.Product) == "" || utf8.RuneCountInString(b.Product) > 200 || utf8.RuneCountInString(b.SellingPoints) > 4000 || (!replica && len(b.AssetIDs) == 0) || len(b.AssetIDs) > 20 || len(b.ReferenceURLs) > 10 || b.MaxCreditsMicro <= 0 || b.MaxCreditsMicro > 1_000_000_000 || (!replica && b.Duration < 5) || b.Duration < 1 || b.Duration > 120 || utf8.RuneCountInString(b.ReplacementInstructions) > 4000 {
@@ -92,6 +98,17 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	if e != nil {
 		return e
 	}
+	if b.GenerationMode == "video_reference" {
+		if !replica || !b.ReviewPlan {
+			return ErrInvalid
+		}
+		if m.VideoReference == nil {
+			return fmt.Errorf("video_reference_unsupported")
+		}
+		if len(b.AssetIDs) > m.VideoReference.MaxImages {
+			return fmt.Errorf("video_reference_image_limit")
+		}
+	}
 	if !slices.Contains(m.Resolutions, b.Resolution) {
 		return ErrInvalid
 	}
@@ -115,7 +132,7 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	for _, id := range b.AssetIDs {
 		found := false
 		for _, a := range assets {
-			if a.ID == id && a.Kind == "image" {
+			if a.ID == id && a.Kind == "image" && !a.Internal {
 				found = true
 			}
 		}
@@ -166,7 +183,17 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 			}
 			sourceEnd = p.SourceEnd
 		}
-		q := v.PriceMicro * int64(p.Duration)
+		unitPrice := v.PriceMicro
+		if b.GenerationMode == "video_reference" {
+			if v.VideoReference == nil {
+				return nil, 0, fmt.Errorf("video_reference_unsupported")
+			}
+			if p.SourceEnd-p.SourceStart > float64(v.VideoReference.MaxDurationSeconds)+.001 {
+				return nil, 0, fmt.Errorf("video_reference_duration_unsupported")
+			}
+			unitPrice = v.VideoReference.PriceMicro
+		}
+		q := unitPrice * int64(p.Duration)
 		if p.ImagePrompt != "" {
 			im, e := FindModel(models, b.ImageModel, "image")
 			if e != nil {

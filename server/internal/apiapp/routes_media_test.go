@@ -107,11 +107,14 @@ func TestMediaAuthUploadTeamIsolationAndAdminBoundary(t *testing.T) {
 		t.Fatal("device cannot reconcile")
 	}
 	models := []media.Model{
-		{ID: "v", Name: "video", Kind: "video", CostMicro: 123_000, PriceMicro: 456_000, PriceVersion: "secret-version"},
+		{ID: "v", Name: "video", Kind: "video", CostMicro: 123_000, PriceMicro: 456_000, PriceVersion: "secret-version", VideoReference: &media.VideoReferenceCapability{MaxDurationSeconds: 20, MaxImages: 3, PriceMicro: 654_000, CostMicro: 321_000}},
 		{ID: "other", Name: "other", Kind: "video", CostMicro: 789_000, PriceMicro: 987_000, PriceVersion: "secret-version"},
 	}
 	data, _ := json.Marshal(models)
 	f.store.SetConfigValue(context.Background(), media.ConfigKey, data)
+	if err := f.deps.Media.Repo.UpsertInternalAsset(context.Background(), team, media.Asset{ID: "internal-reference-clip", Name: "reference.mp4", Kind: "video", Mime: "video/mp4", Internal: true, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
 	f.store.SaveTeamPolicy(context.Background(), store.TeamPolicyRecord{TeamID: team, AllowedModelIDs: []string{"v"}})
 	admissionID := uuid.NewString()
 	if result, err := f.store.AdmitUsage(context.Background(), store.ReserveQuotaInput{
@@ -129,9 +132,13 @@ func TestMediaAuthUploadTeamIsolationAndAdminBoundary(t *testing.T) {
 	if !strings.Contains(w.Body.String(), `"priceMicro":456000`) {
 		t.Fatalf("媒体概览需要下发用户消耗: %s", w.Body.String())
 	}
+	if !strings.Contains(w.Body.String(), `"videoReference":{"maxDurationSeconds":20,"maxImages":3,"priceMicro":654000}`) || strings.Contains(w.Body.String(), "internal-reference-clip") {
+		t.Fatalf("媒体概览应公开视频参考能力与售价，并隐藏内部切片: %s", w.Body.String())
+	}
 	var overview struct {
 		Data struct {
 			Models []media.Model `json:"models"`
+			Assets []media.Asset `json:"assets"`
 			Team   struct {
 				AvailableMicro int64 `json:"availableMicro"`
 				ReservedMicro  int64 `json:"reservedMicro"`
@@ -141,6 +148,14 @@ func TestMediaAuthUploadTeamIsolationAndAdminBoundary(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &overview)
 	if w.Code != 200 || len(overview.Data.Models) != 1 || overview.Data.Models[0].ID != "v" {
 		t.Fatal(w.Body.String())
+	}
+	if overview.Data.Models[0].VideoReference == nil || overview.Data.Models[0].VideoReference.CostMicro != 0 || strings.Contains(w.Body.String(), `"costMicro"`) {
+		t.Fatalf("参考能力公开数据泄露成本: %s", w.Body.String())
+	}
+	for _, asset := range overview.Data.Assets {
+		if asset.ID == "internal-reference-clip" || asset.Internal {
+			t.Fatalf("内部参考切片出现在 overview: %+v", asset)
+		}
 	}
 	if overview.Data.Team.AvailableMicro != 100_000_000 || overview.Data.Team.ReservedMicro != 0 {
 		t.Fatalf("媒体准入不得改变概览余额: %+v", overview.Data.Team)

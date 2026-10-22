@@ -453,7 +453,7 @@ func TestFrozenDesktopWireContract(t *testing.T) {
 	if e = json.Unmarshal(raw, &wire); e != nil {
 		t.Fatal(e)
 	}
-	if e = ValidateBrief(wire.Brief, wire.Models, []Asset{{ID: "asset-fixture", Kind: "image"}}); e != nil {
+	if e = ValidateBrief(wire.Brief, wire.Models, []Asset{{ID: "asset-fixture", Kind: "image"}, {ID: "source-fixture", Kind: "video", DurationSeconds: 10}}); e != nil {
 		t.Fatal(e)
 	}
 	_, quote, e := BuildShots(wire.Brief, wire.Plan, wire.Models)

@@ -134,6 +134,35 @@ func (s *Service) Revise(ctx context.Context, team, id string, version int64, pl
 		if err != nil {
 			return err
 		}
+		if p.Brief.GenerationMode == "video_reference" {
+			model, findErr := FindModel(p.Models, p.Brief.VideoModel, "video")
+			if findErr != nil || model.VideoReference == nil {
+				return fmt.Errorf("video_reference_unsupported")
+			}
+			for i := range shots {
+				if shots[i].Plan.ReferenceVideoAssetID == "" {
+					return fmt.Errorf("video_reference_clip_required")
+				}
+				start, end := shots[i].Plan.SourceStart, shots[i].Plan.SourceEnd
+				source, resolveErr := s.resolveVideoReference(ctx, team, p.Brief.ReferenceAssetID, &start, &end, model.VideoReference.MaxDurationSeconds)
+				if resolveErr != nil {
+					return resolveErr
+				}
+				if source.Checksum != p.SourceChecksum {
+					return fmt.Errorf("video_source_changed")
+				}
+				if _, resolveErr = s.validateUploadedReferenceClip(ctx, team, source, shots[i].Plan.ReferenceVideoAssetID); resolveErr != nil {
+					return resolveErr
+				}
+				shots[i].ReferenceVideoAssetID = shots[i].Plan.ReferenceVideoAssetID
+			}
+		} else {
+			for _, shot := range shots {
+				if shot.Plan.ReferenceVideoAssetID != "" {
+					return ErrInvalid
+				}
+			}
+		}
 		p.Plan, p.Shots, p.QuoteMicro = &plan, shots, total
 		return nil
 	})

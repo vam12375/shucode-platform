@@ -93,7 +93,7 @@ func (s *Service) CreateReferenceAnalysis(ctx context.Context, team, user, devic
 			break
 		}
 	}
-	if source == nil || source.Kind != "video" || !finitePositive(source.DurationSeconds) || source.DurationSeconds > MaxReferenceSeconds || !validSourceChecksum(source.Checksum) {
+	if source == nil || source.Internal || source.Kind != "video" || !finitePositive(source.DurationSeconds) || source.DurationSeconds > MaxReferenceSeconds || !validSourceChecksum(source.Checksum) {
 		return nil, fmt.Errorf("reference_asset_not_found")
 	}
 	name := strings.TrimSpace(source.Name)
@@ -199,6 +199,9 @@ func (s *Service) ConfigureReference(ctx context.Context, team, id string, versi
 	}
 	if brief.SourceOnly || brief.ReferenceAssetID != current.Brief.ReferenceAssetID || math.Abs(brief.ReferenceDurationSeconds-current.Brief.ReferenceDurationSeconds) > .001 {
 		return nil, ErrInvalid
+	}
+	if brief.GenerationMode == "video_reference" && current.SourceAnalysis == nil {
+		return nil, fmt.Errorf("video_reference_source_analysis_required")
 	}
 	brief.ReviewPlan = true
 	brief.ReferenceDurationSeconds = current.Brief.ReferenceDurationSeconds

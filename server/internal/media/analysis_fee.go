@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"time"
 
@@ -124,6 +125,9 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 		}
 		if v.Brief.SourceOnly || (v.SourceAnalysis != nil && v.Analysis.Kind != "adaptation") {
 			return ErrConflict
+		}
+		if v.Brief.GenerationMode == "video_reference" && (v.SourceAnalysis == nil || v.Analysis.Kind != "adaptation") {
+			return fmt.Errorf("video_reference_source_analysis_required")
 		}
 		if err := validateSourceBoundaries(v, plan); err != nil {
 			return err
