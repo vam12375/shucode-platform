@@ -50,6 +50,16 @@ type Env struct {
 	ConsoleAllowedHosts []string
 	// SetupAllowedHosts:非空时首次初始化接口只在这些 Host 可达（建议专用初始化域名 + Access/VPN）。
 	SetupAllowedHosts []string
+	// HSTSMaxAgeSeconds:Strict-Transport-Security 的 max-age；0 表示不下发该头。
+	// 只有配置了 https 公开地址时才生效（明文部署下发 HSTS 没有意义且有害）。
+	HSTSMaxAgeSeconds int
+	// HSTSIncludeSubdomains:是否覆盖子域。打开前该域下每个子域都必须提供有效 HTTPS，
+	// 否则浏览器会把子域强制升级到 HTTPS 后撞证书错误且无法点击绕过（一年锁死）。
+	HSTSIncludeSubdomains bool
+	// HSTSPreload:仅用于 hstspreload.org 提交前的准备，提交后无法快速撤回。
+	HSTSPreload bool
+	// SecurityContact:security.txt 的上报渠道（mailto 或 https URL）。
+	SecurityContact string
 	// TurnstileSiteKey/TurnstileSecretKey:登录页人机验证；两者必须同时配置。
 	TurnstileSiteKey   string
 	TurnstileSecretKey string
@@ -119,6 +129,10 @@ func LoadPlatformEnv() (*Env, error) {
 			setupAllowedHosts = append(setupAllowedHosts, host)
 		}
 	}
+	hstsMaxAge, err := strconv.Atoi(platformenv.EnvOr("HSTS_MAX_AGE", "31536000"))
+	if err != nil || hstsMaxAge < 0 {
+		return nil, fmt.Errorf("HSTS_MAX_AGE 非法")
+	}
 	deviceTokenTTLDays, err := strconv.Atoi(platformenv.EnvOr("DEVICE_TOKEN_TTL_DAYS", "0"))
 	if err != nil || deviceTokenTTLDays < 0 {
 		return nil, fmt.Errorf("DEVICE_TOKEN_TTL_DAYS 非法")
@@ -158,6 +172,10 @@ func LoadPlatformEnv() (*Env, error) {
 		ConsoleAllowedHosts:    consoleAllowedHosts,
 		SetupAllowedHosts:      setupAllowedHosts,
 		DeviceTokenTTL:         time.Duration(deviceTokenTTLDays) * 24 * time.Hour,
+		HSTSMaxAgeSeconds:      hstsMaxAge,
+		HSTSIncludeSubdomains:  platformenv.Truthy(os.Getenv("HSTS_INCLUDE_SUBDOMAINS")),
+		HSTSPreload:            platformenv.Truthy(os.Getenv("HSTS_PRELOAD")),
+		SecurityContact:        strings.TrimSpace(os.Getenv("SECURITY_CONTACT")),
 		TurnstileSiteKey:       turnstileSiteKey,
 		TurnstileSecretKey:     turnstileSecretKey,
 		TurnstileVerifyURL:     platformenv.EnvOr("TURNSTILE_VERIFY_URL", turnstile.DefaultEndpoint),

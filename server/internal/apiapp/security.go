@@ -3,6 +3,7 @@ package apiapp
 import (
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -18,6 +19,18 @@ func securityHeaders(deps *Deps) gin.HandlerFunc {
 		parsed, err := url.Parse(strings.TrimSpace(origin))
 		if err == nil && parsed.Scheme == "https" && parsed.Host != "" {
 			httpsOrigins[strings.ToLower(parsed.Host)] = "https://" + parsed.Host
+		}
+	}
+	// HSTS 值在启动时算死：includeSubDomains / preload 必须与 nginx 的
+	// shucode-hsts.conf 完全一致，否则 nginx 与应用会下发两个不同的 HSTS 头。
+	hstsValue := ""
+	if deps.Env.HSTSMaxAgeSeconds > 0 && len(httpsOrigins) > 0 {
+		hstsValue = "max-age=" + strconv.Itoa(deps.Env.HSTSMaxAgeSeconds)
+		if deps.Env.HSTSIncludeSubdomains {
+			hstsValue += "; includeSubDomains"
+		}
+		if deps.Env.HSTSPreload {
+			hstsValue += "; preload"
 		}
 	}
 	return func(c *gin.Context) {
@@ -46,17 +59,21 @@ func securityHeaders(deps *Deps) gin.HandlerFunc {
 		if deps.Env.TurnstileSiteKey != "" {
 			turnstileHosts = " https://challenges.cloudflare.com"
 		}
+		// 设备授权页不再内联任何 JS/事件处理器（改用 /app/redirect.js + data 属性），
+		// 因此 script-src 不需要 'unsafe-inline'——内联脚本里只要有用户可控字符串
+		// 就是存储型 XSS，这里直接把它从策略里拿掉。
 		scriptSrc := "'self'" + turnstileHosts
-		if strings.HasPrefix(c.Request.URL.Path, "/app/") {
-			scriptSrc += " 'unsafe-inline'"
-		}
 		csp := "default-src 'self'; script-src " + scriptSrc + "; style-src 'self' 'unsafe-inline'; " +
 			"img-src 'self' data:; font-src 'self'; connect-src 'self'" + turnstileHosts + "; " +
 			"frame-src 'self'" + turnstileHosts + "; " +
-			"frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-		c.Header("Content-Security-Policy", csp)
+			"object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		// 有 https 公开地址才要求升级混合内容；纯 http 本地开发加了会打断 vite。
 		if len(httpsOrigins) > 0 {
-			c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+			csp += "; upgrade-insecure-requests"
+		}
+		c.Header("Content-Security-Policy", csp)
+		if hstsValue != "" {
+			c.Header("Strict-Transport-Security", hstsValue)
 		}
 		if strings.HasPrefix(c.Request.URL.Path, "/console/api/auth") ||
 			strings.HasPrefix(c.Request.URL.Path, "/console/api/setup") ||
@@ -119,8 +136,16 @@ func netutilHost(hostPort string) string {
 	return hostPort
 }
 
-// csrfOriginGuard:对带 cookie 的写操作校验 Origin / Sec-Fetch-Site。
-// 缺失 Origin 的非浏览器请求（curl、服务间调用、测试）不受影响。
+// csrfOriginGuard:带会话 Cookie 的写操作必须证明来源。
+//
+// 旧实现「没有 Origin 就放行」，把安全完全押在 SameSite=Lax 上。但 SameSite 是
+// **site** 作用域：api / gw / console 同属一个注册域，任一子域被拿下或被错误接管，
+// 攻击者就能构造出「同站」请求，而服务端构造的请求连 Sec-Fetch-Site 都没有。
+// 收紧规则：
+//   - 用 Bearer / x-api-key 认证的调用方自带凭据，不存在环境凭据，CSRF 不适用；
+//   - 没有会话 Cookie 的请求没有可被借用的凭据（登录/初始化靠口令校验）；
+//   - 有会话 Cookie 的写操作：Sec-Fetch-Site 必须为 same-origin，或 Origin 命中白名单；
+//     其余（含两个头都缺失）一律拒绝。
 func csrfOriginGuard(deps *Deps) gin.HandlerFunc {
 	allowed := map[string]struct{}{}
 	for _, origin := range []string{deps.Env.PublicAPIOrigin, deps.Env.PublicAppOrigin, deps.Env.PublicConsoleOrigin} {
@@ -139,22 +164,35 @@ func csrfOriginGuard(deps *Deps) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		if c.GetHeader("Sec-Fetch-Site") == "cross-site" || c.GetHeader("Sec-Fetch-Site") == "same-site" {
+		if readBearerToken(c) != "" {
+			c.Next()
+			return
+		}
+		// 浏览器自动附加的 Sec-Fetch-Site 最可信，优先判它：
+		//   cross-site / same-site —— 无论有没有 Cookie 一律拒绝（same-site 也要拒，
+		//   子域互打正是这一层要挡的场景）；
+		//   same-origin —— 浏览器已确认同源，放行（含 Vite dev 代理，
+		//   此时 Origin 是 :5173 而不在白名单里）。
+		switch strings.ToLower(strings.TrimSpace(c.GetHeader("Sec-Fetch-Site"))) {
+		case "cross-site", "same-site":
+			c.AbortWithStatusJSON(403, fail(403, "请求来源不合法"))
+			return
+		case "same-origin":
+			c.Next()
+			return
+		}
+		if origin := c.GetHeader("Origin"); origin != "" {
+			if _, ok := allowed[origin]; ok {
+				c.Next()
+				return
+			}
+			// 有 Origin 但不在白名单：可能是浏览器伪造尝试，直接拒。
 			c.AbortWithStatusJSON(403, fail(403, "请求来源不合法"))
 			return
 		}
-		origin := c.GetHeader("Origin")
-		if origin == "" {
-			c.Next()
-			return
-		}
-		if _, ok := allowed[origin]; ok {
-			c.Next()
-			return
-		}
-		// 同源请求（含 Vite dev 代理）由浏览器标记 same-origin；不再要求 Origin 与
-		// 公开配置完全一致，避免本地开发被误伤。跨站请求在上面的分支已拒绝。
-		if c.GetHeader("Sec-Fetch-Site") == "same-origin" {
+		// 两个头都没有：非浏览器客户端。没有会话 Cookie 就没有可被借用的环境凭据，
+		// 放行（登录/初始化接口本身靠口令校验）；带 Cookie 的必须证明来源。
+		if getCookieValue(c, sessionCookieName) == "" {
 			c.Next()
 			return
 		}

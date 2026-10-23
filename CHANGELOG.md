@@ -9,6 +9,69 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.46.3] - 2026-10-23
+
+### 安全(边缘与响应头)
+
+- 入口跳转不再由 nginx `return 302/308` 出：`return` 会短路 `proxy_pass`，`securityHeaders`
+  中间件不执行，跳转响应丢掉全部安全头（线上实测 `/` 与 `/console` 为 0 个，`/console/` 为 3 个）。
+  `/` 与 `/console` 改由应用统一跳转，响应天然带全套头，出口唯一。
+- 新增 `deploy/nginx/security-headers.conf`（给 nginx 自身生成的响应补 nosniff / X-Frame-Options /
+  Referrer-Policy / Permissions-Policy / 基线 CSP，`always` 覆盖 3xx/4xx）与
+  `deploy/nginx/hsts.conf`（只在 443 块下发 HSTS）。两者接入三个 443 server 与 80 跳转块。
+
+### 安全(HSTS)
+
+- HSTS 改为 env 驱动：`HSTS_MAX_AGE`（0 = 关闭）、`HSTS_INCLUDE_SUBDOMAINS`、`HSTS_PRELOAD`。
+- `includeSubDomains` 默认关闭。apex / www 解析到未绑定证书的 CDN 时，该指令会让浏览器把
+  这两个域名强制升级到 HTTPS 后撞证书错误且无法点击绕过，并持续一年；修好 DNS 后再显式打开。
+
+### 安全(出站边界)
+
+- `netguard` 补 NAT64 解包（`64:ff9b::/96`、`64:ff9b:1::/48`）：`Unmap()` 只剥 `::ffff:`，
+  此前 `https://[64:ff9b::a9fe:a9fe]` 可绕过 v4 黑名单直达云元数据。
+- 补保留段与文档段：`240.0.0.0/4`、`192.0.2.0/24`、`198.51.100.0/24`、`203.0.113.0/24`、`2001:db8::/32`。
+- 导出 `netguard.ErrBlockedTarget`，`DialContext` 的 `Control` 与 `blockedAddress` 共用同一套判定。
+- 供应商连通测试与模型探测新增 `kind=blocked` 分类：出站被边界拒绝是配置问题（改 `baseUrl`），
+  与真实网络故障、超时区分开，重试策略不再把它当成可重试失败。
+
+### 安全(CSRF)
+
+- `csrfOriginGuard` 收紧：带会话 Cookie 的写操作必须有 `Sec-Fetch-Site: same-origin`
+  或命中白名单的 `Origin`；`same-site` 与 `cross-site` 一律 403；两个头都缺失且带 Cookie 也拒绝。
+  此前「没有 Origin 就放行」完全依赖 `SameSite=Lax`，而它是 site 粒度，挡不住子域互打。
+- Bearer / `x-api-key` 调用与无 Cookie 的非浏览器调用保持放行。
+
+### 安全(CSP)
+
+- 设备授权页移除全部内联 `<script>` 与 `onclick`：跳转改由外部 `/app/redirect.js` 读取
+  `body[data-redirect]`，按钮改为 `<a class="btn">`。`/app/` 的 `script-src` 因此不再需要
+  `'unsafe-inline'`。
+- CSP 补 `object-src 'none'`；配置了 https 公开地址时追加 `upgrade-insecure-requests`。
+- nginx 基线 CSP 与应用的 `script`/`style`/`img`/`connect`/`frame` 许可保持一致（含 Turnstile 域名与
+  `'unsafe-inline'` 样式），避免两个 CSP 取交集时误伤控制台 inline style 与登录组件。
+
+### 新增
+
+- `/.well-known/security.txt`（RFC 9116），内容由 `SECURITY_CONTACT` 驱动；未配置时返回 404 而不是
+  编造收不到的地址。
+- `scripts/audit/security-selfcheck.sh`：9 项回归自查，覆盖跳转响应头、CSP、HSTS、证书域名匹配、
+  未认证访问、CSRF 三分支、setup 幂等、source map、security.txt。
+
+### 优化(静态资源)
+
+- 控制台静态文件改用 `http.ServeContent` 流式输出：此前每次请求把文件整体 `ReadFile` 进内存
+  （900 KB bundle × 并发会顶到容器 512 MB 上限），且没有 `Range` / `If-Modified-Since`。
+- `index.html` 在中间件初始化时读一次，SPA 兜底不再每次落盘读。
+
+### 验证
+
+- `make -C server lint test`（`go test -race ./...` 全绿，含新增 NAT64/CSRF/HSTS/security.txt 用例）
+- `nginx -t`（配置语法与 include 路径）
+- 本地实例端到端：`/` 与 `/console` 从 0 个安全头变为 5 个；`Range` 请求返回 206；
+  私网/回环/元数据/NAT64 目标探测均 `kind=blocked` 且 latency 0–5 ms。
+- `scripts/audit/security-selfcheck.sh` 全部通过。
+
 ## [0.46.2] - 2026-10-23
 
 ### 修复(构建工具链)

@@ -114,6 +114,40 @@ func newAPIFixtureWithSeed(t *testing.T, demoSeed bool) *apiFixture {
 	return f
 }
 
+// asBrowser 复刻真实浏览器在写请求上携带的来源证明。
+// csrfOriginGuard 现在要求带会话 Cookie 的写操作必须有 Origin 或
+// Sec-Fetch-Site: same-origin；不给这两个头的客户端本来就不该能改状态。
+func (f *apiFixture) asBrowser(req *http.Request) {
+	origin := "http://localhost:8787"
+	if f.deps != nil && f.deps.Env != nil && f.deps.Env.PublicAPIOrigin != "" {
+		origin = f.deps.Env.PublicAPIOrigin
+	}
+	req.Header.Set("origin", origin)
+	req.Header.Set("sec-fetch-site", "same-origin")
+}
+
+// doForge 刻意不带来源证明，用于验证 CSRF 守卫的拒绝路径。
+func (f *apiFixture) doForge(method, path, cookie, body string, headers map[string]string) *httptest.ResponseRecorder {
+	f.t.Helper()
+	var reader io.Reader
+	if body != "" {
+		reader = strings.NewReader(body)
+	}
+	req := httptest.NewRequest(method, path, reader)
+	if body != "" {
+		req.Header.Set("content-type", "application/json")
+	}
+	if cookie != "" {
+		req.Header.Set("cookie", cookie)
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+	rec := httptest.NewRecorder()
+	f.engine.ServeHTTP(rec, req)
+	return rec
+}
+
 func (f *apiFixture) do(method, path, cookie string, body string) *httptest.ResponseRecorder {
 	f.t.Helper()
 	var reader io.Reader
@@ -127,6 +161,7 @@ func (f *apiFixture) do(method, path, cookie string, body string) *httptest.Resp
 	if cookie != "" {
 		req.Header.Set("cookie", cookie)
 	}
+	f.asBrowser(req)
 	rec := httptest.NewRecorder()
 	f.engine.ServeHTTP(rec, req)
 	return rec
@@ -143,6 +178,7 @@ func (f *apiFixture) form(path, cookie string, values map[string]string) *httpte
 	if cookie != "" {
 		req.Header.Set("cookie", cookie)
 	}
+	f.asBrowser(req)
 	rec := httptest.NewRecorder()
 	f.engine.ServeHTTP(rec, req)
 	return rec

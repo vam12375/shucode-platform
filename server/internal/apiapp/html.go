@@ -1,7 +1,6 @@
 package apiapp
 
 import (
-	"encoding/json"
 	"strings"
 )
 
@@ -35,6 +34,12 @@ const pageStyle = `
   button:hover { background: #26302a; }
   button.secondary { background: transparent; color: #2f3a31; border-color: #cfc9bb; }
   button.secondary:hover { background: #efece2; }
+  a.btn {
+    display: block; height: 42px; line-height: 42px; margin-top: 18px; text-align: center;
+    border: 1px solid transparent; border-radius: 10px; background: #2f3a31;
+    color: #fff; font-size: 14px; font-weight: 500; text-decoration: none;
+  }
+  a.btn:hover { background: #26302a; }
   .device {
     display: flex; align-items: center; gap: 10px; border: 1px solid #e3ded1; border-radius: 12px;
     padding: 12px 14px; margin: 16px 0; background: #faf7ef;
@@ -61,10 +66,19 @@ func escapeHTML(value string) string {
 	).Replace(value)
 }
 
-func htmlLayout(title, body, script string) string {
+// htmlLayout:redirectURL 非空时，由外部脚本 /app/redirect.js 读取 body 上的
+// data-redirect 并在短暂停留后跳转。
+//
+// 页面里不出现任何内联 <script> 或 on* 事件处理器，因此 CSP 可以保持
+// script-src 'self'，不需要 'unsafe-inline'——这是把 XSS 面从「字符串拼接是否
+// 转义正确」降低到「有没有外部脚本注入」的关键一步。
+func htmlLayout(title, body, redirectURL string) string {
+	bodyAttr := ""
 	scriptTag := ""
-	if script != "" {
-		scriptTag = "<script>" + script + "</script>"
+	if redirectURL != "" {
+		bodyAttr = ` data-redirect="` + escapeHTML(redirectURL) + `"`
+		scriptTag = `<script src="/app/redirect.js" defer></script>
+`
 	}
 	return `<!doctype html>
 <html lang="zh-CN">
@@ -75,12 +89,11 @@ func htmlLayout(title, body, script string) string {
 <title>` + escapeHTML(title) + `</title>
 <style>` + pageStyle + `</style>
 </head>
-<body>
+<body` + bodyAttr + `>
 <main class="card">
 ` + body + `
 </main>
-` + scriptTag + `
-</body>
+` + scriptTag + `</body>
 </html>`
 }
 
@@ -162,24 +175,13 @@ func renderAuthorizePage(options authorizePageOptions) string {
 }
 
 func renderAuthorizedPage(flowID, deepLink string) string {
-	quoted := jsStringLiteral(deepLink)
 	body := `
 <p class="brand">Mendao</p>
 <h1>授权成功</h1>
 <p>正在返回门道。如果没有自动跳转，请点击下方按钮。</p>
-<button type="button" onclick="window.location.href=` + quoted + `">返回门道</button>
+<a class="btn" href="` + escapeHTML(deepLink) + `">返回门道</a>
 <p class="hint">本页面可以关闭。</p>`
-	script := `setTimeout(function () { window.location.href = ` + quoted + `; }, 300);`
-	return htmlLayout("授权成功 - Mendao", body, script)
-}
-
-// jsStringLiteral:等价 JSON.stringify 的 JS 字符串字面量(含引号)。
-func jsStringLiteral(value string) string {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return `""`
-	}
-	return string(raw)
+	return htmlLayout("授权成功 - Mendao", body, deepLink)
 }
 
 type messagePageOptions struct {

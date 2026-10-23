@@ -233,9 +233,40 @@ sudo install -d -m 755 /etc/nginx/snippets
 sudo install -m 644 /opt/shucode-platform/deploy/nginx/proxy-common.conf /etc/nginx/snippets/shucode-proxy-common.conf
 sudo install -m 644 /opt/shucode-platform/deploy/nginx/gzip.conf /etc/nginx/snippets/shucode-gzip.conf
 sudo install -m 644 /opt/shucode-platform/deploy/nginx/cloudflare-realip.conf /etc/nginx/snippets/shucode-cloudflare-realip.conf
+sudo install -m 644 /opt/shucode-platform/deploy/nginx/security-headers.conf /etc/nginx/snippets/shucode-security-headers.conf
+sudo install -m 644 /opt/shucode-platform/deploy/nginx/hsts.conf /etc/nginx/snippets/shucode-hsts.conf
 sudo install -m 644 /opt/shucode-platform/deploy/nginx/faction168.online.conf /etc/nginx/sites-available/faction168.online
 sudo nginx -t
 sudo systemctl reload nginx
+```
+
+#### 为什么需要 `security-headers.conf` / `hsts.conf`
+
+`return 302` / `return 308` / `return 444` 会**短路 `proxy_pass`**：请求根本到不了 Go，
+`securityHeaders` 中间件不会执行，这些响应此前一个安全头都不带（线上实测 `/` 与
+`/console` 的跳转响应为 0 个安全头，而 `/console/` 有 3 个）。因此：
+
+- `security-headers.conf`：给 **nginx 自己生成的**响应（明文 308、ACME 503、错误页、
+  默认站点的 444）补齐 `nosniff` / `X-Frame-Options` / `Referrer-Policy` /
+  `Permissions-Policy` / 基线 CSP。每个对外 server 块都要 include，80 块也要。
+- `hsts.conf`：**只在 443 块** include。80 块绝不能下发 HSTS。
+
+同时，入口跳转（`/` 与 `/console` → `/console/`）已从 nginx 的 `location` 中移除，
+改由应用自己出 3xx，这样响应天然带全套安全头，且只有一个出口、不会两边规则漂移。
+
+> ⚠️ `hsts.conf` 默认**不带** `includeSubDomains`。启用前必须确认该域下每个子域都有
+> 有效证书：一旦下发 `includeSubDomains`，证书错配的子域会变成无法点击绕过的错误页，
+> 并持续一年。改完 nginx 之后，务必同步应用侧 `HSTS_INCLUDE_SUBDOMAINS`，
+> 否则 nginx 与应用会下发两个不同的 HSTS 头。
+
+验证：
+
+```bash
+# 跳转响应必须 ≥2 个安全头（此前为 0）
+curl -sD- -o /dev/null https://console.example.com/        | grep -icE 'strict-transport|content-security|x-frame'
+curl -sD- -o /dev/null https://console.example.com/console | grep -icE 'strict-transport|content-security|x-frame'
+# 80 端口跳转不应带 HSTS
+curl -sD- -o /dev/null http://console.example.com/         | grep -i strict-transport && echo '错误：80 不应下发 HSTS'
 ```
 
 `proxy-common.conf` 不再全局关闭 gzip：console/api 的 server 块 include `shucode-gzip.conf`，gw 的 server 块显式 `gzip off`，避免压缩流式响应。三个 443 server 均启用 `http2 on;`。如果宿主机仍启用 Ubuntu 默认站点，`default_server` 会与本站点的默认拒绝块冲突；先停用默认站点（可回退的软链操作），再安装本站点配置。

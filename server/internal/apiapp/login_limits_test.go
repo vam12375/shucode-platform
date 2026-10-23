@@ -135,10 +135,13 @@ func TestSetupHostGuard(t *testing.T) {
 	}
 }
 
-func TestHSTSIncludesSubDomains(t *testing.T) {
+// HSTS 只在 https 公开地址下下发；includeSubDomains 改为显式 opt-in
+// （apex/www 证书错配时它会锁死用户，见 security.go / env.go 的注释）。
+func TestHSTSEmittedForHTTPSOrigin(t *testing.T) {
 	f := newAPIFixture(t)
 	f.deps.Env.PublicAPIOrigin = "https://console.example.test"
 	f.deps.Env.PublicAppOrigin = "https://console.example.test"
+	f.deps.Env.HSTSMaxAgeSeconds = 31536000
 	f.engine = New(f.deps)
 
 	rec := httptest.NewRecorder()
@@ -146,7 +149,21 @@ func TestHSTSIncludesSubDomains(t *testing.T) {
 	req.Host = "console.example.test"
 	req.Header.Set("x-forwarded-proto", "https")
 	f.engine.ServeHTTP(rec, req)
-	if got := rec.Header().Get("Strict-Transport-Security"); got != "max-age=31536000; includeSubDomains" {
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "max-age=31536000" {
 		t.Fatalf("HSTS 头不符: %q", got)
+	}
+}
+
+// 明文本地开发不应收到 HSTS：否则浏览器会记住回环地址的升级要求。
+func TestHSTSNotEmittedWithoutHTTPSOrigin(t *testing.T) {
+	f := newAPIFixture(t)
+	f.deps.Env.HSTSMaxAgeSeconds = 31536000
+	f.engine = New(f.deps)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	req.Host = "localhost:8787"
+	f.engine.ServeHTTP(rec, req)
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Fatalf("明文部署不应下发 HSTS，实际 %q", got)
 	}
 }

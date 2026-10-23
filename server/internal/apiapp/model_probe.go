@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/vam12375/shucode-platform/server/internal/netguard"
 	"github.com/vam12375/shucode-platform/server/internal/store"
 	"github.com/vam12375/shucode-platform/server/internal/upstreamurl"
 )
@@ -187,8 +188,14 @@ func attemptModelProbe(ctx context.Context, deps *Deps, target modelProbeTarget,
 	started := time.Now()
 	resp, err := deps.HTTPClient.Do(req)
 	if err != nil {
+		// 三分类而不是笼统的 network：出站被边界策略拒绝是「baseUrl 配错了」，
+		// 属于配置问题，重试不会好转；超时和真实网络故障才可以重试。
+		// 只回类别，不回具体 IP/网段，避免把内网拓扑写进管理面响应。
 		kind := "network"
-		if requestCtx.Err() == context.DeadlineExceeded || isTimeoutError(err) {
+		switch {
+		case errors.Is(err, netguard.ErrBlockedTarget):
+			kind = "blocked"
+		case requestCtx.Err() == context.DeadlineExceeded || isTimeoutError(err):
 			kind = "timeout"
 		}
 		result.Kind = kind

@@ -17,6 +17,7 @@ import (
 
 	"github.com/vam12375/shucode-platform/server/internal/contracts"
 	"github.com/vam12375/shucode-platform/server/internal/events"
+	"github.com/vam12375/shucode-platform/server/internal/netguard"
 	"github.com/vam12375/shucode-platform/server/internal/pricing"
 	"github.com/vam12375/shucode-platform/server/internal/store"
 	"github.com/vam12375/shucode-platform/server/internal/upstreamurl"
@@ -562,8 +563,13 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		resp, err := deps.HTTPClient.Do(req)
 		latencyMs := deps.Now().Sub(startedAt).Milliseconds()
 		if err != nil {
+			// blocked = 出站边界拒绝了该目标（私网/回环/云元数据/NAT64 内嵌私网）。
+			// 这类失败重试不会好转，运维要改的是 baseUrl，所以必须与真实网络故障区分开。
 			kind := "network"
-			if requestCtx.Err() == context.DeadlineExceeded {
+			switch {
+			case errors.Is(err, netguard.ErrBlockedTarget):
+				kind = "blocked"
+			case requestCtx.Err() == context.DeadlineExceeded:
 				kind = "timeout"
 			}
 			outcome := store.ProviderTestOutcome{OK: false, Kind: kind, LatencyMs: latencyMs, Model: probeModel}
