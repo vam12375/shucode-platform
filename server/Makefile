@@ -1,7 +1,7 @@
 # 全部走 Docker 工具链:服务器部署与 CI 构建以容器为准,本机无需安装 Go。
 # CI(check job)用 setup-go 跑同口径校验;生产镜像由 Dockerfile 的 go-builder 阶段构建。
 
-GO_IMAGE     ?= golang:1.26
+GO_IMAGE     ?= golang:1.26.10
 SQLC_IMAGE   ?= sqlc/sqlc:latest   # 预留:新增查询可接 sqlc codegen
 # 本地网络 proxy.golang.org 不可达,默认走 goproxy.cn(公网 Go 模块镜像);
 # 哈希由 go.sum 锁定、CI 以官方源二次校验,供应链不受影响。CI runner 可覆盖为官方直连。

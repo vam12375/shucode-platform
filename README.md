@@ -54,7 +54,7 @@ pnpm dev              # 一条命令：Postgres/Redis → 迁移 → 种子 → 
 1. 读取根目录 `.env`；缺失时从 `.env.example` 生成并填入随机 `PLATFORM_SECRET_KEY`
 2. `DATABASE_URL` 指向本机且端口未监听时 `docker compose up -d postgres redis`
 3. 应用迁移（`make -C server migrate`）、载入种子（内置配置 + 默认模型目录）
-4. 启动 api / gateway / console。api 与 gateway 在 `golang:1.26` 容器内 `go run`（端口映射回宿主，DSN 自动改写 `host.docker.internal`）；console 由 vite 在宿主机跑。首次编译约数十秒，命中构建缓存卷后数秒
+4. 启动 api / gateway / console。api 与 gateway 在 `golang:1.26.10` 容器内 `go run`（端口映射回宿主，DSN 自动改写 `host.docker.internal`）；console 由 vite 在宿主机跑。首次编译约数十秒，命中构建缓存卷后数秒
 
 结束时打印访问地址：控制台 `http://localhost:5177/console/`、控制面 `http://localhost:8787`、网关 `http://localhost:8788`。
 首次打开控制台会进入超级管理员初始化页：root 全库唯一，账号与口令只以 scrypt 哈希写入数据库，不读 `.env`；存量部署升级时最早创建的可用管理员会自动提升为 root（沿用原密码）。
@@ -173,7 +173,7 @@ Go 的 Postgres/Redis 套件需要显式环境变量才启用（默认跳过，C
 ```bash
 docker run --rm -e TEST_DATABASE_URL=postgres://mendao:mendao@host.docker.internal:5432/mendao \
   -e TEST_REDIS_URL=redis://host.docker.internal:6379/0 -e TEST_MIGRATIONS_DIR=/repo/server/migrations \
-  -v "$PWD":/repo -w /repo/server golang:1.26 go test -race ./...
+  -v "$PWD":/repo -w /repo/server golang:1.26.10 go test -race ./...
 ```
 
 ## 已知边界（MVP 内）

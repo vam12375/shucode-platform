@@ -5,7 +5,7 @@
  *   pnpm dev          # 读取根目录 .env（缺失时从 .env.example 生成并填好 PLATFORM_SECRET_KEY）
  *   pnpm dev:memory   # 进程内存储，跳过 Postgres / 迁移 / 种子
  *
- * 后端(api/gateway/迁移/种子)通过 make -C server 在 golang:1.26 容器内 go run，
+ * 后端(api/gateway/迁移/种子)通过 make -C server 在 golang:1.26.10 容器内 go run，
  * 与服务器/CI 的构建口径一致;本机无需安装 Go。容器内访问宿主机 Postgres/Redis 时
  * DSN 会改写为 host.docker.internal。console 仍由 vite 在宿主机跑。
  * Ctrl-C 停止全部子进程（含 docker run / vite）。

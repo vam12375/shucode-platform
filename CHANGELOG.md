@@ -9,6 +9,22 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.46.2] - 2026-10-23
+
+### 修复(构建工具链)
+
+- CI 的 `setup-go` 由浮动 `1.26` 改为显式 `1.26.10`：浮动版本会优先命中 runner 工具缓存停在 1.26.9，导致 `govulncheck` 因标准库 `crypto/x509` 的 GO-2026-6809 失败。
+- 生产镜像的 go-builder 升级到 `golang:1.26.10-alpine` 并更新摘要，发布二进制同步包含该安全修复。
+- 本地 `server/Makefile` 的 `GO_IMAGE` 与 README、AGENTS.md、开发脚本的版本说明同步到 1.26.10。
+
+### 验证
+
+- `make -C server vuln`（升级后无可达漏洞）
+- `make -C server lint test`
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`
+
 ## [0.46.1] - 2026-10-23
 
 ### 优化(控制台)

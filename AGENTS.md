@@ -21,7 +21,7 @@
 
 ## 命令
 
-Node 版本以 `mise.toml` 为准（Node 24 / pnpm 10）；Go 版本 1.26，本机不需要安装——`server/Makefile` 的所有目标都在 `golang:1.26` 容器里执行（默认 GOPROXY 走 goproxy.cn，可用环境变量覆盖）。从仓库根目录执行：
+Node 版本以 `mise.toml` 为准（Node 24 / pnpm 10）；Go 版本 1.26（补丁钉 1.26.10），本机不需要安装——`server/Makefile` 的所有目标都在 `golang:1.26.10` 容器里执行（默认 GOPROXY 走 goproxy.cn，可用环境变量覆盖）。从仓库根目录执行：
 
 | 用途 | 命令 |
 | --- | --- |
