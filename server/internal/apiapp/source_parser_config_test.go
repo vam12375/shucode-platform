@@ -32,7 +32,7 @@ func assertSourceParserState(t *testing.T, rec *httptest.ResponseRecorder, sourc
 	for key, want := range map[string]any{
 		"configured": source != "none", "provider": "snapany", "source": source,
 		"environmentConfigured": environmentConfigured, "canConfigure": canConfigure,
-		"maxBytes": float64(31457280), "maxSeconds": float64(90),
+		"maxBytes": float64(209715200), "maxSeconds": float64(90),
 	} {
 		if data[key] != want {
 			t.Fatalf("status %s = %v, want %v", key, data[key], want)

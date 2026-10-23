@@ -28,7 +28,7 @@ import (
 )
 
 const SnapAnyExtractURL = "https://api.snapany.com/openapi/v1/extract/post"
-const MaxReferenceBytes int64 = 30 << 20
+const MaxReferenceBytes int64 = 200 << 20
 const MaxReferenceSeconds = 90
 const maxReferenceProbeOutput = 256 << 10
 
