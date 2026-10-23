@@ -228,6 +228,48 @@ func TestAnalysisScopeGatewayZeroSaleRetainsUsageCostAndNormalChatPrice(t *testi
 	}
 }
 
+func TestAnalysisScopeStreamingZeroSaleRetainsFrozenCost(t *testing.T) {
+	f, _, _, _, ticket, calls := gatewayAnalysisFixture(t)
+	entry := snapshotCostEntry("deepseek-fixture", "CNY")
+	doc, err := f.store.SaveModelPricing(context.Background(), []store.PricingEntry{entry}, pricing.EmptyVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.setHandler(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.Header.Get(media.AnalysisScopeHeader) != "" {
+			t.Error("analysis scope leaked upstream")
+		}
+		// SSE 在完成后才写用量，仍须沿用请求发出前冻结的采购价，而不是最新目录价。
+		entry.OutputCostPerMillion = "999"
+		if _, err := f.store.SaveModelPricing(context.Background(), []store.PricingEntry{entry}, doc.Version); err != nil {
+			t.Error(err)
+		}
+		w.Header().Set("content-type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":100,\"prompt_tokens_details\":{\"cached_tokens\":5}}}\n\ndata: [DONE]\n\n"))
+	})
+	response := requestAnalysisScope(f, "POST", "/v1/chat/completions", f.token, ticket,
+		`{"model":"claude-sonnet-4-5","max_tokens":100,"stream":true,"reasoning_effort":"high"}`)
+	if response.Code != 200 || calls.Load() != 1 {
+		t.Fatalf("scoped stream: %d calls=%d %s", response.Code, calls.Load(), response.Body.String())
+	}
+	rows := f.usageRecords()
+	if len(rows) != 1 {
+		t.Fatalf("stream should settle exactly one usage: %+v", rows)
+	}
+	row := rows[0]
+	if row.CreditsMicro != 0 || row.InputTokens != 15 || row.OutputTokens != 100 || row.CacheReadTokens != 5 ||
+		row.PriceSnapshot == nil || row.PriceSnapshot.Sale.OutputPerMtok != "0" || row.PriceSnapshot.Cost.Status != "estimated" ||
+		row.PriceSnapshot.Cost.ModelID != "deepseek-fixture" || row.PriceSnapshot.Cost.PricingVersion != doc.Version ||
+		row.PriceSnapshot.Cost.Rates == nil || row.PriceSnapshot.Cost.Rates.OutputPerMtok != "2" ||
+		row.PriceSnapshot.Cost.EstimatedMicro == nil || *row.PriceSnapshot.Cost.EstimatedMicro != 216 {
+		t.Fatalf("scoped stream must preserve frozen actual-token cost independently from zero sale: %+v", row)
+	}
+	if team := f.team(); team.UsedCredits != "0.000000" || team.ReservedCredits != "0.000000" {
+		t.Fatalf("scoped stream changed user balance: %+v", team)
+	}
+}
+
 func TestAnalysisScopeGatewayRejectsInvalidAuthorizationAndTeamBudgetBeforeUpstream(t *testing.T) {
 	for _, kind := range []string{"forged", "empty", "expired", "ended", "stale-input", "released-fee", "wrong-model", "wrong-device", "wrong-user", "missing-auth", "team-budget"} {
 		t.Run(kind, func(t *testing.T) {

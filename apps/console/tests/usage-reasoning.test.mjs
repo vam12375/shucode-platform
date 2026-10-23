@@ -7,6 +7,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 import * as reasoning from "../src/usage-reasoning.ts";
+import * as costs from "../src/usage-costs.ts";
 import * as time from "../src/time.ts";
 
 const require = createRequire(import.meta.url);
@@ -73,7 +74,7 @@ test("legacy model requests and media fees have distinct missing-value semantics
 });
 
 const usageSource = await readFile(new URL("../src/pages/Usage.tsx", import.meta.url), "utf8");
-async function mountUsage(records) {
+async function mountUsage(records, isRoot = true) {
   const slots = [];
   const effects = [];
   let cursor = 0;
@@ -105,7 +106,8 @@ async function mountUsage(records) {
         throw new Error(`Unexpected API ${path}`);
       },
     },
-    "../auth.js": { useAuth: () => ({ isRoot: true, canManageTeam: true, user: { id: "user" } }) },
+    "../auth.js": { useAuth: () => ({ isRoot, canManageTeam: isRoot, user: { id: "user" } }) },
+    "../usage-costs.js": costs,
     "../usage-reasoning.js": reasoning,
     "../components/UsageModel.js": { UsageModel },
     "../components/charts.js": { ComposedTrendChart: "chart", ModelDonutChart: "donut" },
@@ -149,4 +151,77 @@ test("usage list and request details consume each response's recorded effort and
   const detailRows = elements(dialog, undefined).filter((item) => item.props?.k);
   assert.equal(detailRows.find((item) => item.props.k === "思考强度").props.children, "max");
   assert.equal(detailRows.find((item) => item.props.k === "思考预算").props.children, "8,192 tokens");
+});
+
+function nodeText(tree) {
+  if (tree === null || tree === undefined) return "";
+  if (Array.isArray(tree)) return tree.map(nodeText).join("");
+  return typeof tree === "object" ? nodeText(tree.props?.children) : String(tree);
+}
+
+function costRecord(overrides = {}) {
+  return {
+    id: "usage-cost", requestId: "request-cost", model: "deepseek-flash", upstreamModel: "deepseek-flash",
+    reasoningEffort: "high", userId: "user", teamId: "team", status: "ok", providerId: null,
+    inputTokens: 100, outputTokens: 20, cacheReadTokens: 5, cacheCreationTokens: 0,
+    creditsMicro: 0, createdAt: "2026-10-23T00:00:00Z", latencyMs: null,
+    priceSnapshot: {
+      schemaVersion: 1, capturedAt: "2026-10-22T14:06:00Z", sale: { currency: "CNY" },
+      cost: {
+        status: "estimated", estimatedMicro: 1, pricingVersion: "frozen-v1", modelId: "recorded-upstream-model",
+        rates: { currency: "CNY", inputPerMtok: "0.15", outputPerMtok: "0.6", cacheReadPerMtok: "0.003", cacheWritePerMtok: "0", multiplier: "0.5" },
+      },
+    },
+    ...overrides,
+  };
+}
+
+test("root usage keeps zero user charges beside a nonzero frozen supplier cost and independent fixed fee", async () => {
+  const ui = await mountUsage([
+    costRecord(),
+    costRecord({ id: "fixed", requestId: "fixed-fee", model: "media:reference-analysis", creditsMicro: 1_000_000, priceSnapshot: null }),
+    costRecord({ id: "unknown", requestId: "unknown", priceSnapshot: { cost: { status: "unknown", reason: "model_not_configured" } } }),
+  ]);
+  const tree = ui.render();
+  const headers = elements(tree, "th").map(nodeText);
+  assert.ok(headers.includes("用户实扣（credit）"));
+  assert.ok(headers.includes("供应商成本（估算）"));
+  const requestRows = elements(tree, "tr").filter((row) => elements(row, "button").some((button) => button.props["aria-label"]?.startsWith("查看请求详情")));
+  assert.equal(nodeText(elements(requestRows[0], "td")[6]), "0");
+  assert.equal(nodeText(elements(requestRows[0], "td")[7]), "CNY 0.000001");
+  assert.match(nodeText(requestRows[1]), /原片分镜分析（固定费）/);
+  assert.equal(nodeText(elements(requestRows[1], "td")[6]), "1");
+  assert.match(nodeText(requestRows[1]), /无历史快照/);
+  assert.match(nodeText(requestRows[2]), /成本未知/);
+  assert.match(nodeText(tree), /模型请求的用户实扣为 0/);
+  assert.match(nodeText(tree), /成功后另有一笔固定分析费/);
+});
+
+test("root request detail exposes frozen procurement metadata and a future-pricing configuration link", async () => {
+  const ui = await mountUsage([costRecord()]);
+  elements(ui.render(), "button").find((button) => button.props["aria-label"] === "查看请求详情 request-cost").props.onClick();
+  const dialog = elements(ui.render(), "div").find((node) => node.props.role === "dialog");
+  const rows = new Map(elements(dialog).filter((node) => node.props?.k).map((node) => [node.props.k, nodeText(node)]));
+  assert.equal(rows.get("用户实扣（credit）"), "0 credit");
+  assert.equal(rows.get("供应商成本（估算）"), "CNY 0.000001");
+  assert.equal(rows.get("成本价格版本"), "frozen-v1");
+  assert.equal(rows.get("成本匹配模型"), "recorded-upstream-model");
+  assert.equal(rows.get("成本快照时间（上海）"), "2026-10-22 22:06:00");
+  assert.equal(rows.get("采购价 · 输入"), "CNY 0.15 / 百万 Token");
+  assert.equal(rows.get("采购价 · 输出"), "CNY 0.6 / 百万 Token");
+  assert.equal(rows.get("采购价 · 缓存读"), "CNY 0.003 / 百万 Token");
+  assert.equal(rows.get("采购价 · 缓存写"), "CNY 0 / 百万 Token");
+  assert.equal(rows.get("冻结采购价倍率"), "0.5");
+  assert.ok(elements(dialog, "a").some((link) => link.props.href === "#/pricing"));
+  assert.match(nodeText(dialog), /修改.*仅影响未来请求/);
+});
+
+test("non-root usage never renders procurement data even if an unexpected fixture contains it", async () => {
+  const ui = await mountUsage([costRecord()], false);
+  assert.ok(elements(ui.render(), "th").map(nodeText).includes("用户实扣（credit）"));
+  assert.doesNotMatch(nodeText(ui.render()), /供应商成本|CNY 0.000001|frozen-v1/);
+  elements(ui.render(), "button").find((button) => button.props["aria-label"] === "查看请求详情 request-cost").props.onClick();
+  const dialog = elements(ui.render(), "div").find((node) => node.props.role === "dialog");
+  assert.doesNotMatch(nodeText(dialog), /采购价|frozen-v1|recorded-upstream-model/);
+  assert.equal(elements(dialog, "a").length, 0);
 });

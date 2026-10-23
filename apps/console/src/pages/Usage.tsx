@@ -11,7 +11,12 @@ import {
 } from "react";
 import { api, apiUrl } from "../api.js";
 import { useAuth } from "../auth.js";
-import { type PriceSnapshot } from "../usage-costs.js";
+import {
+  frozenCostRateText,
+  historicalCostDisplay,
+  usageModelName,
+  type PriceSnapshot,
+} from "../usage-costs.js";
 import {
   reasoningBudgetText,
   reasoningEffortText,
@@ -1140,7 +1145,7 @@ export function UsagePage() {
                   row.cacheCreationTokens;
                 return (
                   <tr key={row.model}>
-                    <td>{row.model}</td>
+                    <td>{usageModelName(row.model)}</td>
                     <td className="num">
                       {row.requests.toLocaleString("en-US")}
                     </td>
@@ -1348,8 +1353,14 @@ export function UsagePage() {
           <h2>最近请求</h2>
           <span className="readout">每页 100 条 · 筛选联动</span>
         </div>
+        <div className="pane-b">
+          <p className="readout m0">
+            原片分析期间，模型请求的用户实扣为 0；成功后另有一笔固定分析费，已包含本次分析的模型调用。
+            {isRoot ? "供应商成本按请求时的采购价快照估算，与用户实扣分别展示，不代表供应商最终账单。" : null}
+          </p>
+        </div>
         <div className="pane-b flush table-scroll vscroll">
-          <table className="table">
+          <table className="table" style={{ whiteSpace: "nowrap", minWidth: isRoot ? 1140 : 900 }}>
             <thead>
               <tr>
                 <th scope="col">时间</th>
@@ -1361,14 +1372,16 @@ export function UsagePage() {
                   Token（入 / 出）
                 </th>
                 <th scope="col" className="num">
-                  积分
+                  用户实扣（credit）
                 </th>
+                {isRoot ? <th scope="col" className="num">供应商成本（估算）</th> : null}
                 <th scope="col" aria-label="操作" />
               </tr>
             </thead>
             <tbody>
               {records.map((record) => {
                 const status = statusChip(record.status);
+                const cost = isRoot ? historicalCostDisplay(record.priceSnapshot) : null;
                 return (
                   <tr key={record.id}>
                     <td className="num">
@@ -1379,7 +1392,11 @@ export function UsagePage() {
                         record.userId.slice(0, 8)}
                     </td>
                     {isRoot ? <td>{record.clientIp ?? "—"}</td> : null}
-                    <td><UsageModel record={record} /></td>
+                    <td>
+                      {record.model === "media:reference-analysis" ? (
+                        <span title={record.model}>{usageModelName(record.model)}</span>
+                      ) : <UsageModel record={record} />}
+                    </td>
                     <td>
                       <Chip tone={status.tone}>{status.label}</Chip>
                     </td>
@@ -1388,6 +1405,11 @@ export function UsagePage() {
                       {record.outputTokens.toLocaleString("en-US")}
                     </td>
                     <td className="num">{credits(record.creditsMicro)}</td>
+                    {cost ? (
+                      <td className="num" title={cost.reason}>
+                        {cost.text}
+                      </td>
+                    ) : null}
                     <td>
                       <button
                         className="btn btn-ghost btn-sm"
@@ -1403,7 +1425,7 @@ export function UsagePage() {
               })}
               {records.length === 0 ? (
                 <tr>
-                  <td colSpan={isRoot ? 8 : 7} className="readout">
+                  <td colSpan={isRoot ? 9 : 7} className="readout">
                     暂无请求记录。
                   </td>
                 </tr>
@@ -1438,12 +1460,14 @@ export function UsagePage() {
             role="dialog"
             aria-modal="true"
             aria-label="请求详情"
+            style={{ maxHeight: "calc(100dvh - 32px)", overflowY: "auto" }}
             onClick={(event) => event.stopPropagation()}
           >
             <p className="readout dialog-k">计量 / 请求详情</p>
-            <h3 className="dialog-title">{detail.model}</h3>
+            <h3 className="dialog-title">{usageModelName(detail.model)}</h3>
             {(() => {
               const status = statusChip(detail.status);
+              const cost = isRoot ? historicalCostDisplay(detail.priceSnapshot) : null;
               // providerId 为 null 表示请求未绑定供应商、走了网关 env 默认上游。
               const provider = detail.providerId
                 ? (providers.find((item) => item.id === detail.providerId)
@@ -1493,9 +1517,48 @@ export function UsagePage() {
                     {detail.cacheReadTokens.toLocaleString("en-US")} /{" "}
                     {detail.cacheCreationTokens.toLocaleString("en-US")}
                   </DetailRow>
-                  <DetailRow k="积分">
+                  <DetailRow k="用户实扣（credit）">
                     {credits(detail.creditsMicro)} credit
                   </DetailRow>
+                  {cost ? (
+                    <>
+                      <DetailRow k="供应商成本（估算）">
+                        {cost.text}
+                      </DetailRow>
+                      <DetailRow k="成本说明">
+                        {cost.reason}
+                      </DetailRow>
+                      <DetailRow k="成本价格版本">
+                        {detail.priceSnapshot?.cost.pricingVersion || "未记录"}
+                      </DetailRow>
+                      <DetailRow k="成本匹配模型">
+                        {detail.priceSnapshot?.cost.modelId || "未记录"}
+                      </DetailRow>
+                      <DetailRow k="成本快照时间（上海）">
+                        {detail.priceSnapshot?.capturedAt
+                          ? formatShanghaiTime(detail.priceSnapshot.capturedAt)
+                          : "未记录"}
+                      </DetailRow>
+                      <DetailRow k="采购价 · 输入">
+                        {frozenCostRateText(detail.priceSnapshot?.cost.rates, "inputPerMtok")}
+                      </DetailRow>
+                      <DetailRow k="采购价 · 输出">
+                        {frozenCostRateText(detail.priceSnapshot?.cost.rates, "outputPerMtok")}
+                      </DetailRow>
+                      <DetailRow k="采购价 · 缓存读">
+                        {frozenCostRateText(detail.priceSnapshot?.cost.rates, "cacheReadPerMtok")}
+                      </DetailRow>
+                      <DetailRow k="采购价 · 缓存写">
+                        {frozenCostRateText(detail.priceSnapshot?.cost.rates, "cacheWritePerMtok")}
+                      </DetailRow>
+                      <DetailRow k="冻结采购价倍率">
+                        {detail.priceSnapshot?.cost.rates?.multiplier || "未记录"}
+                      </DetailRow>
+                      <p className="readout">
+                        <a href="#/pricing">查看模型定价库</a>；修改采购价仅影响未来请求，不改变此历史快照。
+                      </p>
+                    </>
+                  ) : null}
                   <DetailRow k="延迟">
                     {detail.latencyMs === null ? "—" : `${detail.latencyMs} ms`}
                   </DetailRow>

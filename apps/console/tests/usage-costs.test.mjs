@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { summarizeHistoricalCosts } from "../src/usage-costs.ts";
+import * as costs from "../src/usage-costs.ts";
+const { summarizeHistoricalCosts } = costs;
 
 function record(currency, estimatedMicro, creditsMicro = 20_000_000) {
   return {
@@ -61,4 +62,68 @@ test("invalid estimated values do not poison cost totals", () => {
   ]);
   assert.equal(result.missingCount, 4);
   assert.deepEqual(result.totals, []);
+});
+
+test("request costs retain micro precision and explicit independent currencies", () => {
+  assert.equal(costs.historicalCostDisplay(record("CNY", 1, 0).priceSnapshot).text, "CNY 0.000001");
+  assert.equal(costs.historicalCostDisplay(record("USD", 1_234_567, 0).priceSnapshot).text, "USD 1.234567");
+  assert.equal(costs.historicalCostDisplay(record("CNY", Number.MAX_SAFE_INTEGER).priceSnapshot).text, "CNY 9,007,199,254.740991");
+});
+
+test("known zero cost, unknown cost and legacy missing snapshot stay distinct", () => {
+  const zero = costs.historicalCostDisplay(record("CNY", 0).priceSnapshot);
+  assert.equal(zero.kind, "estimated");
+  assert.equal(zero.text, "CNY 0");
+  const unknown = costs.historicalCostDisplay({ cost: { status: "unknown", reason: "model_not_configured" } });
+  assert.equal(unknown.kind, "unknown");
+  assert.equal(unknown.text, "成本未知");
+  assert.match(unknown.reason, /未配置.*模型/);
+  for (const snapshot of [null, undefined]) {
+    const missing = costs.historicalCostDisplay(snapshot);
+    assert.equal(missing.kind, "missing");
+    assert.equal(missing.text, "无历史快照");
+  }
+});
+
+test("invalid frozen costs are never displayed as zero or a valid supplier amount", () => {
+  for (const snapshot of [
+    record("CNY", -1).priceSnapshot,
+    record("CNY", NaN).priceSnapshot,
+    record("CNY", 1.5).priceSnapshot,
+    record("CNY", Number.MAX_SAFE_INTEGER + 1).priceSnapshot,
+    record("", 1).priceSnapshot,
+    record("CNY", undefined).priceSnapshot,
+  ]) {
+    const display = costs.historicalCostDisplay(snapshot);
+    assert.equal(display.kind, "unknown");
+    assert.equal(display.text, "成本未知");
+  }
+});
+
+test("supplier cost reasons explain missing data without inventing a price", () => {
+  for (const [reason, expected] of [
+    ["not_configured", /未配置.*成本价/],
+    ["model_not_configured", /未配置.*模型/],
+    ["pricing_unavailable", /成本价库.*读取失败/],
+    ["usage_unavailable", /缺少.*用量/],
+    ["unsupported_currency", /币种/],
+    ["invalid_price", /采购价.*无效/],
+    ["invalid_usage", /用量.*无效/],
+    ["future_reason", /原因未记录/],
+  ]) {
+    assert.match(costs.historicalCostDisplay({ cost: { status: "unknown", reason } }).reason, expected);
+  }
+});
+
+test("detail procurement rates use frozen strings and never current model prices", () => {
+  const rates = { currency: "CNY", inputPerMtok: "0.0000003", outputPerMtok: "0", cacheReadPerMtok: "0.003", cacheWritePerMtok: "0", multiplier: "0.5" };
+  assert.equal(costs.frozenCostRateText(rates, "inputPerMtok"), "CNY 0.0000003 / 百万 Token");
+  assert.equal(costs.frozenCostRateText(rates, "outputPerMtok"), "CNY 0 / 百万 Token");
+  assert.equal(costs.frozenCostRateText(undefined, "inputPerMtok"), "未记录");
+});
+
+test("fixed analysis fees have a readable label without classifying ordinary zero-sale requests", () => {
+  assert.equal(costs.usageModelName("media:reference-analysis"), "原片分镜分析（固定费）");
+  assert.equal(costs.usageModelName("deepseek-flash"), "deepseek-flash");
+  assert.equal(costs.usageModelName("media:seedance"), "media:seedance");
 });
