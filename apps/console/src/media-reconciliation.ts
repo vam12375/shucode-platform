@@ -1,9 +1,17 @@
 import type { SelectOption } from "./components/Select.js";
 
-export type ReconciliationOutcome = "video_task" | "image_result" | "not_accepted";
+export type ReconciliationOutcome =
+  | "video_task"
+  | "video_usage"
+  | "image_result"
+  | "not_accepted";
 
 const IMAGE_OUTCOMES: ReconciliationOutcome[] = ["image_result", "not_accepted"];
-const VIDEO_OUTCOMES: ReconciliationOutcome[] = ["video_task", "not_accepted"];
+const VIDEO_OUTCOMES: ReconciliationOutcome[] = [
+  "video_task",
+  "video_usage",
+  "not_accepted",
+];
 
 const OUTCOME_OPTIONS: Record<"image" | "video", SelectOption[]> = {
   image: [
@@ -12,6 +20,7 @@ const OUTCOME_OPTIONS: Record<"image" | "video", SelectOption[]> = {
   ],
   video: [
     { value: "video_task", label: "视频已受理，补录 task ID" },
+    { value: "video_usage", label: "视频已完成但缺 usage，补录 token" },
     { value: "not_accepted", label: "确认未受理，零扣关闭" },
   ],
 };
@@ -41,6 +50,7 @@ export function reconciliationValueLabel(
   outcome: ReconciliationOutcome | "",
 ): string {
   if (outcome === "video_task") return "视频 Task ID";
+  if (outcome === "video_usage") return "Ark completion_tokens";
   if (outcome === "image_result") return "图片结果 URL";
   return "";
 }
@@ -49,6 +59,7 @@ export function reconciliationValuePlaceholder(
   outcome: ReconciliationOutcome | "",
 ): string {
   if (outcome === "video_task") return "供应商返回的视频任务 ID";
+  if (outcome === "video_usage") return "例如 108900";
   if (outcome === "image_result") return "可直接下载的图片结果地址";
   return "";
 }

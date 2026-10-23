@@ -12,6 +12,7 @@ type Reconciliation struct {
 	Shot    int    `json:"shot"`
 	Outcome string `json:"outcome"`
 	Value   string `json:"value"`
+	Tokens  int64  `json:"tokens,omitempty"`
 	Reason  string `json:"reason"`
 }
 
@@ -31,7 +32,11 @@ func (s *Service) Reconcile(ctx context.Context, team, id string, r Reconciliati
 		switch r.Outcome {
 		case "not_accepted":
 		case "video_task":
-			if shot.Stage != "video" || r.Value == "" || len(r.Value) > 300 || strings.ContainsAny(r.Value, "/?#") {
+			if shot.Stage != "video" || r.Value == "" || len(r.Value) > 300 || strings.ContainsAny(r.Value, "/?#") || r.Tokens < 0 {
+				return ErrInvalid
+			}
+		case "video_usage":
+			if shot.Stage != "video" || shot.VideoTaskID == "" || r.Tokens <= 0 {
 				return ErrInvalid
 			}
 		case "image_result":
@@ -67,6 +72,13 @@ func (s *Service) Reconcile(ctx context.Context, team, id string, r Reconciliati
 			}
 		case "video_task":
 			ss.VideoTaskID = r.Value
+			if r.Tokens > 0 {
+				ss.ProviderUsageTokens = r.Tokens
+			}
+			ss.Status = "video_running"
+			v.Status = "queued"
+		case "video_usage":
+			ss.ProviderUsageTokens = r.Tokens
 			ss.Status = "video_running"
 			v.Status = "queued"
 		case "image_result":

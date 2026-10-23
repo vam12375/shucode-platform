@@ -96,6 +96,7 @@ function ReconcileDrawer({
     defaultReconciliationOutcome(row.shot.stage),
   );
   const [value, setValue] = useState("");
+  const [tokens, setTokens] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -117,6 +118,11 @@ function ReconcileDrawer({
       setError("任务阶段缺失或核对结果与阶段不匹配，无法提交。");
       return;
     }
+    const tokenCount = outcome === "video_usage" ? Number(tokens) : 0;
+    if (outcome === "video_usage" && (!Number.isSafeInteger(tokenCount) || tokenCount <= 0)) {
+      setError("请填写 Ark 返回的大于 0 的 completion_tokens。");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -126,7 +132,8 @@ function ReconcileDrawer({
           version: project.version,
           shot: row.index,
           outcome,
-          value,
+          value: outcome === "video_usage" ? "" : value,
+          tokens: tokenCount,
           reason,
         }),
       });
@@ -217,6 +224,22 @@ function ReconcileDrawer({
               <Notice tone="stop">
                 确认未受理会零扣关闭本镜头的请求身份。请确保供应商后台确实没有对应的受理记录。
               </Notice>
+            ) : outcome === "video_usage" ? (
+              <label className="field">
+                <span className="field-label">Ark completion_tokens</span>
+                <input
+                  className="input num"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  step={1}
+                  required
+                  autoFocus
+                  value={tokens}
+                  placeholder={reconciliationValuePlaceholder(outcome)}
+                  onChange={(event) => setTokens(event.target.value)}
+                />
+              </label>
             ) : outcome ? (
               <label className="field">
                 <span className="field-label">{reconciliationValueLabel(outcome)}</span>

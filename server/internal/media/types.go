@@ -26,6 +26,10 @@ type VideoReferenceCapability struct {
 	MaxImages          int   `json:"maxImages"`
 	PriceMicro         int64 `json:"priceMicro"`
 	CostMicro          int64 `json:"costMicro"`
+	// Token* 为「输入包含视频」的每百万视频 token 费率（micro-credit）。
+	// 非零时优先按 Ark completion_tokens 结算；旧按秒价格仅作兼容回退。
+	TokenPriceMicroPerMillion int64 `json:"tokenPriceMicroPerMillion,omitempty"`
+	TokenCostMicroPerMillion  int64 `json:"tokenCostMicroPerMillion,omitempty"`
 }
 
 type Asset struct {
@@ -120,6 +124,11 @@ type Shot struct {
 	PendingChargeMicro    int64    `json:"pendingChargeMicro,omitempty"`
 	ReservedMicro         int64    `json:"reservedMicro,omitempty"`
 	ReleasedMicro         int64    `json:"releasedMicro,omitempty"`
+	// Token 结算：成功后先落实际 token 与费用，下载/重试/结算都复用同一份事实。
+	ProviderUsageTokens      int64 `json:"providerUsageTokens,omitempty"`
+	TokenChargeMicro         int64 `json:"tokenChargeMicro,omitempty"`
+	TokenRateMicroPerMillion int64 `json:"tokenRateMicroPerMillion,omitempty"`
+	TokenCostMicroPerMillion int64 `json:"tokenCostMicroPerMillion,omitempty"`
 }
 type Project struct {
 	SourceChecksum       string                   `json:"sourceChecksum,omitempty"`
@@ -210,4 +219,8 @@ func (s *Shot) clearPending() {
 	s.ReservedMicro = 0
 	s.ReleasedMicro = 0
 	s.Stage = ""
+	s.ProviderUsageTokens = 0
+	s.TokenChargeMicro = 0
+	s.TokenRateMicroPerMillion = 0
+	s.TokenCostMicroPerMillion = 0
 }

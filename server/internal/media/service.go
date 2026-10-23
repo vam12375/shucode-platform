@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/vam12375/shucode-platform/server/internal/store"
 	"reflect"
+	"strconv"
 	"time"
 )
 
@@ -353,6 +354,55 @@ func (s *Service) storeOutput(ctx context.Context, team, rawURL string, kind str
 	e = s.Repo.AddAsset(ctx, team, a)
 	return a, e
 }
+func tokenRateString(microPerMillion int64) string {
+	return strconv.FormatFloat(float64(microPerMillion)/1_000_000, 'f', 6, 64)
+}
+
 func (s *Service) usage(p *Project, shot Shot, m Model) store.UsageRecord {
-	return store.UsageRecord{ID: shot.ReservationID, RequestID: "media:" + shot.ReservationID, UserID: p.UserID, TeamID: p.TeamID, DeviceTokenID: p.DeviceID, Model: "media:" + m.ID, UpstreamModel: m.UpstreamModel, ProviderID: m.ProviderID, CreditsMicro: shot.pendingCharge(), Status: store.UsageStatusOk, CreatedAt: time.Now().UTC()}
+	record := store.UsageRecord{ID: shot.ReservationID, RequestID: "media:" + shot.ReservationID, UserID: p.UserID, TeamID: p.TeamID, DeviceTokenID: p.DeviceID, Model: "media:" + m.ID, UpstreamModel: m.UpstreamModel, ProviderID: m.ProviderID, CreditsMicro: shot.pendingCharge(), Status: store.UsageStatusOk, CreatedAt: time.Now().UTC()}
+	if m.Kind != "video" || !videoReferenceRequested(p) || m.VideoReference == nil || shot.ProviderUsageTokens <= 0 {
+		return record
+	}
+	rate := shot.TokenRateMicroPerMillion
+	if rate <= 0 {
+		rate = m.VideoReference.TokenPriceMicroPerMillion
+	}
+	if rate <= 0 {
+		return record
+	}
+	costRate := shot.TokenCostMicroPerMillion
+	if costRate <= 0 {
+		costRate = m.VideoReference.TokenCostMicroPerMillion
+	}
+	record.OutputTokens = shot.ProviderUsageTokens
+	record.CreditsMicro = shot.TokenChargeMicro
+	if record.CreditsMicro <= 0 {
+		record.CreditsMicro = videoTokenChargeMicro(shot.ProviderUsageTokens, rate)
+	}
+	sale := store.UsagePriceSnapshot{
+		InputPerMtok:      "0.000000",
+		OutputPerMtok:     tokenRateString(rate),
+		CacheReadPerMtok:  "0.000000",
+		CacheWritePerMtok: "0.000000",
+		Multiplier:        "1.000000",
+		Currency:          "CNY",
+	}
+	costStatus := "priced"
+	if costRate <= 0 {
+		costStatus = "unknown"
+	}
+	cost := sale
+	cost.OutputPerMtok = tokenRateString(costRate)
+	record.PriceSnapshot = &store.UsagePricingSnapshot{
+		SchemaVersion: 1,
+		CapturedAt:    time.Now().UTC(),
+		Sale:          sale,
+		Cost: store.UsageCostSnapshot{
+			Status:         costStatus,
+			PricingVersion: m.PriceVersion,
+			ModelID:        m.ID,
+			Rates:          &cost,
+		},
+	}
+	return record
 }

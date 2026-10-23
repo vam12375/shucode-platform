@@ -140,12 +140,13 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		referenceVideoURL = clip.URL
 	}
 	if shot.Status == "image_saved" || shot.Status == "video_saved" {
-		if e = s.Repo.Store.SettleReservation(ctx, shot.ReservationID, s.usage(p, shot, m)); e != nil {
+		usage := s.usage(p, shot, m)
+		if e = s.Repo.Store.SettleReservation(ctx, shot.ReservationID, usage); e != nil {
 			return e
 		}
 		_, e = s.workerUpdate(ctx, p, func(v *Project) {
 			ss := &v.Shots[index]
-			charge := ss.pendingCharge()
+			charge := usage.CreditsMicro
 			ss.ChargedMicro += charge
 			v.ChargedMicro += charge
 			ss.clearPending()
@@ -216,7 +217,42 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			}
 			return nil
 		case "succeeded":
-			if update(func(v *Shot) { v.ResultURL = result.Content.VideoURL; v.Status = "video_ready" }) == nil {
+			tokenBilling := videoReferenceRequested(p) && m.Kind == "video" && m.VideoReference != nil && m.VideoReference.TokenPriceMicroPerMillion > 0
+			tokens := result.Usage.CompletionTokens
+			if tokens <= 0 {
+				tokens = result.Usage.TotalTokens
+			}
+			if tokens <= 0 {
+				tokens = shot.ProviderUsageTokens
+			}
+			if tokenBilling && tokens <= 0 {
+				// 成功但供应商未返回 usage：不估算扣费，保留任务等待 root 补录 token。
+				if _, err := s.workerUpdate(ctx, p, func(v *Project) {
+					v.Status = "reconciliation_required"
+					v.Error = "provider_usage_missing"
+					v.Shots[index].ResultURL = result.Content.VideoURL
+					v.Shots[index].Status = "reconciliation_required"
+					v.Shots[index].Error = "provider_usage_missing"
+				}); err != nil {
+					return err
+				}
+				return nil
+			}
+			charge, rate, costRate := int64(0), int64(0), int64(0)
+			if tokenBilling {
+				rate = m.VideoReference.TokenPriceMicroPerMillion
+				costRate = m.VideoReference.TokenCostMicroPerMillion
+				charge = videoTokenChargeMicro(tokens, rate)
+			}
+			if update(func(v *Shot) {
+				v.ResultURL = result.Content.VideoURL
+				v.ProviderUsageTokens = tokens
+				v.TokenChargeMicro = charge
+				v.TokenRateMicroPerMillion = rate
+				v.TokenCostMicroPerMillion = costRate
+				v.Status = "video_ready"
+				v.Error = ""
+			}) == nil {
 				return ErrConflict
 			}
 			return downloadVideo(result.Content.VideoURL)
@@ -238,7 +274,11 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			if findErr != nil || videoModel.VideoReference == nil {
 				return s.failVideoReference(ctx, p, index, shot, "video_reference_unsupported")
 			}
-			amount = videoModel.VideoReference.PriceMicro * int64(shot.Plan.Duration)
+			resolution, aspectRatio := p.Brief.Resolution, p.Brief.AspectRatio
+			if p.Canvas != nil {
+				resolution, aspectRatio = p.Canvas.Resolution, p.Canvas.AspectRatio
+			}
+			amount = videoReferenceQuoteMicro(videoModel.VideoReference, resolution, aspectRatio, shot.Plan.Duration)
 		}
 	}
 	if shot.ReservationID == "" {

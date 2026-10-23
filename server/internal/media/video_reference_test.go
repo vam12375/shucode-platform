@@ -33,14 +33,26 @@ func TestValidateModelsVideoReferenceCapability(t *testing.T) {
 	if err := ValidateModels([]Model{zeroCost}); err != nil {
 		t.Fatalf("zero capability cost rejected: %v", err)
 	}
+	tokenOnly := model
+	tokenCapability := *model.VideoReference
+	tokenCapability.PriceMicro = 0
+	tokenCapability.TokenPriceMicroPerMillion = 40_000_000
+	tokenCapability.TokenCostMicroPerMillion = 28_000_000
+	tokenOnly.VideoReference = &tokenCapability
+	if err := ValidateModels([]Model{tokenOnly}); err != nil {
+		t.Fatalf("token-only capability rejected: %v", err)
+	}
 	for name, mutate := range map[string]func(*VideoReferenceCapability){
-		"duration-zero": func(c *VideoReferenceCapability) { c.MaxDurationSeconds = 0 },
-		"duration-over": func(c *VideoReferenceCapability) { c.MaxDurationSeconds = 91 },
-		"images-zero":   func(c *VideoReferenceCapability) { c.MaxImages = 0 },
-		"images-over":   func(c *VideoReferenceCapability) { c.MaxImages = 9 },
-		"price-zero":    func(c *VideoReferenceCapability) { c.PriceMicro = 0 },
-		"cost-negative": func(c *VideoReferenceCapability) { c.CostMicro = -1 },
-		"cost-overflow": func(c *VideoReferenceCapability) { c.CostMicro = 100_000_001 },
+		"duration-zero":        func(c *VideoReferenceCapability) { c.MaxDurationSeconds = 0 },
+		"duration-over":        func(c *VideoReferenceCapability) { c.MaxDurationSeconds = 91 },
+		"images-zero":          func(c *VideoReferenceCapability) { c.MaxImages = 0 },
+		"images-over":          func(c *VideoReferenceCapability) { c.MaxImages = 9 },
+		"price-zero":           func(c *VideoReferenceCapability) { c.PriceMicro = 0 },
+		"cost-negative":        func(c *VideoReferenceCapability) { c.CostMicro = -1 },
+		"cost-overflow":        func(c *VideoReferenceCapability) { c.CostMicro = 100_000_001 },
+		"token-price-negative": func(c *VideoReferenceCapability) { c.TokenPriceMicroPerMillion = -1 },
+		"token-cost-negative":  func(c *VideoReferenceCapability) { c.TokenCostMicroPerMillion = -1 },
+		"token-price-overflow": func(c *VideoReferenceCapability) { c.TokenPriceMicroPerMillion = 1_000_000_001 },
 	} {
 		t.Run(name, func(t *testing.T) {
 			invalid := model
@@ -313,7 +325,7 @@ func TestReplicaReviseRequiresUploadedClipBoundToFrozenSourceRange(t *testing.T)
 	f := setup(t)
 	ctx := context.Background()
 	f.s.ReferenceProbe = func(context.Context, string) (ReferenceMetadata, error) {
-		return ReferenceMetadata{DurationSeconds: 1.3, Width: 160, Height: 90}, nil
+		return ReferenceMetadata{DurationSeconds: 2, Width: 160, Height: 90}, nil
 	}
 	video, err := os.ReadFile("testdata/blue.mp4")
 	if err != nil {
@@ -331,7 +343,7 @@ func TestReplicaReviseRequiresUploadedClipBoundToFrozenSourceRange(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = f.s.Repo.AddAsset(ctx, f.team, Asset{ID: sourceID, Name: "source.mp4", Kind: "video", Mime: "video/mp4", Size: int64(len(video)), DurationSeconds: 1.3, Checksum: sourceChecksum}); err != nil {
+	if err = f.s.Repo.AddAsset(ctx, f.team, Asset{ID: sourceID, Name: "source.mp4", Kind: "video", Mime: "video/mp4", Size: int64(len(video)), DurationSeconds: 2, Checksum: sourceChecksum}); err != nil {
 		t.Fatal(err)
 	}
 	videoModel := fixtureVideoModel()
@@ -347,7 +359,7 @@ func TestReplicaReviseRequiresUploadedClipBoundToFrozenSourceRange(t *testing.T)
 		t.Fatal(err)
 	}
 	ref := Reference{URL: "", Title: "原片", CapturedAt: time.Now(), Evidence: "确认动作范围", SelectionReason: "用户导入"}
-	report := SourceAnalysis{SourceChecksum: sourceChecksum, Summary: "舞蹈原片", References: []Reference{ref}, Shots: []SourceShot{{SourceURL: "", SourceStart: 0, SourceEnd: 1.3, Framing: "全景", Camera: "跟拍", Action: "舞蹈", Purpose: "展示"}}}
+	report := SourceAnalysis{SourceChecksum: sourceChecksum, Summary: "舞蹈原片", References: []Reference{ref}, Shots: []SourceShot{{SourceURL: "", SourceStart: 0, SourceEnd: 2, Framing: "全景", Camera: "跟拍", Action: "舞蹈", Purpose: "展示"}}}
 	p, err = f.s.Bind(ctx, f.team, p.ID, p.Version, Analysis{Kind: "source", TaskID: "source-task", InputID: "source-input", WorkspacePath: "/fixture"})
 	if err != nil {
 		t.Fatal(err)
@@ -373,7 +385,7 @@ func TestReplicaReviseRequiresUploadedClipBoundToFrozenSourceRange(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := Plan{References: []Reference{ref}, Shots: []ShotPlan{{SourceURL: "", SourceStart: 0, SourceEnd: 1.3, Duration: 4, Framing: "全景", Camera: "跟拍", Action: "替换主体舞蹈", Purpose: "展示", Prompt: "保留动作并替换人物", ImagePrompt: "生成人物首帧", AssetID: "a"}}}
+	plan := Plan{References: []Reference{ref}, Shots: []ShotPlan{{SourceURL: "", SourceStart: 0, SourceEnd: 2, Duration: 4, Framing: "全景", Camera: "跟拍", Action: "替换主体舞蹈", Purpose: "展示", Prompt: "保留动作并替换人物", ImagePrompt: "生成人物首帧", AssetID: "a"}}}
 	p, err = f.s.SetPlan(ctx, f.team, p.ID, p.Version, "adapt-input", plan)
 	if err != nil {
 		t.Fatal(err)
@@ -381,7 +393,7 @@ func TestReplicaReviseRequiresUploadedClipBoundToFrozenSourceRange(t *testing.T)
 	if _, err = f.s.Revise(ctx, f.team, p.ID, p.Version, plan); err == nil || err.Error() != "video_reference_clip_required" {
 		t.Fatalf("revision without uploaded clip should fail before generation: %v", err)
 	}
-	clip, err := f.s.UploadReferenceClip(ctx, f.team, sourceID, sourceChecksum, 0, 1.3, bytes.NewReader(video))
+	clip, err := f.s.UploadReferenceClip(ctx, f.team, sourceID, sourceChecksum, 0, 2, bytes.NewReader(video))
 	if err != nil {
 		t.Fatal(err)
 	}

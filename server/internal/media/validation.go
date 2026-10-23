@@ -33,7 +33,7 @@ func ValidateModels(models []Model) error {
 		}
 		if m.VideoReference != nil {
 			c := m.VideoReference
-			if m.Kind != "video" || c.MaxDurationSeconds < 1 || c.MaxDurationSeconds > MaxReferenceSeconds || c.MaxImages < 1 || c.MaxImages > 8 || c.PriceMicro <= 0 || c.PriceMicro > 100_000_000 || c.CostMicro < 0 || c.CostMicro > 100_000_000 {
+			if m.Kind != "video" || c.MaxDurationSeconds < 1 || c.MaxDurationSeconds > MaxReferenceSeconds || c.MaxImages < 1 || c.MaxImages > 8 || c.PriceMicro < 0 || c.PriceMicro > 100_000_000 || c.CostMicro < 0 || c.CostMicro > 100_000_000 || c.TokenPriceMicroPerMillion < 0 || c.TokenPriceMicroPerMillion > 1_000_000_000 || c.TokenCostMicroPerMillion < 0 || c.TokenCostMicroPerMillion > 1_000_000_000 || (c.PriceMicro == 0 && c.TokenPriceMicroPerMillion == 0) {
 				return ErrInvalid
 			}
 		}
@@ -183,17 +183,18 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 			}
 			sourceEnd = p.SourceEnd
 		}
-		unitPrice := v.PriceMicro
+		var q int64
 		if b.GenerationMode == "video_reference" {
 			if v.VideoReference == nil {
 				return nil, 0, fmt.Errorf("video_reference_unsupported")
 			}
-			if p.SourceEnd-p.SourceStart > float64(v.VideoReference.MaxDurationSeconds)+.001 {
+			if p.SourceEnd-p.SourceStart < float64(MinReferenceClipSeconds)-.001 || p.SourceEnd-p.SourceStart > float64(v.VideoReference.MaxDurationSeconds)+.001 {
 				return nil, 0, fmt.Errorf("video_reference_duration_unsupported")
 			}
-			unitPrice = v.VideoReference.PriceMicro
+			q = videoReferenceQuoteMicro(v.VideoReference, b.Resolution, b.AspectRatio, p.Duration)
+		} else {
+			q = v.PriceMicro * int64(p.Duration)
 		}
-		q := unitPrice * int64(p.Duration)
 		if p.ImagePrompt != "" {
 			im, e := FindModel(models, b.ImageModel, "image")
 			if e != nil {

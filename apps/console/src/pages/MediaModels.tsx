@@ -19,113 +19,86 @@ const RESOLUTIONS = ["480p", "720p", "1080p", "4k"];
 const DURATIONS = [4, 5, 10, 15, 20, 30];
 
 const SEEDANCE_DURATIONS = [4, 5, 10, 15];
-// 2026-10-20 官方价（输入不含视频）各时长档的单秒最高成本，向上取整到 0.001 credit；
-// 售价按约 30% 毛利率预填（售价 = 成本 ÷ 0.7）。平台每个媒体模型只有一个按秒售价，
-// 不同分辨率成本不同，因此拆成独立目录条目。
+// 模型/上游/分辨率是结构默认值，只用于补齐目录条目；价格只从数据库/控制台读取，
+// 不在前端硬编码。不同分辨率拆成独立条目，由管理员分别填写成本和售价。
 const SEEDANCE_MODELS = [
   {
     id: "seedance-2.0-mini-480p",
     name: "Seedance 2.0 mini 480p",
     upstreamModel: "doubao-seedance-2-0-mini-260615",
     resolution: "480p",
-    costCredits: "0.232",
-    priceCredits: "0.332",
   },
   {
     id: "seedance-2.0-mini-720p",
     name: "Seedance 2.0 mini 720p",
     upstreamModel: "doubao-seedance-2-0-mini-260615",
     resolution: "720p",
-    costCredits: "0.498",
-    priceCredits: "0.711",
   },
   {
     id: "seedance-2.0-fast-480p",
     name: "Seedance 2.0 fast 480p",
     upstreamModel: "doubao-seedance-2-0-fast-260128",
     resolution: "480p",
-    costCredits: "0.373",
-    priceCredits: "0.533",
   },
   {
     id: "seedance-2.0-fast-720p",
     name: "Seedance 2.0 fast 720p",
     upstreamModel: "doubao-seedance-2-0-fast-260128",
     resolution: "720p",
-    costCredits: "0.8",
-    priceCredits: "1.143",
   },
   {
     id: "seedance-2.0-480p",
     name: "Seedance 2.0 480p",
     upstreamModel: "doubao-seedance-2-0-260128",
     resolution: "480p",
-    costCredits: "0.4625",
-    priceCredits: "0.661",
   },
   {
     id: "seedance-2.0-720p",
     name: "Seedance 2.0 720p",
     upstreamModel: "doubao-seedance-2-0-260128",
     resolution: "720p",
-    costCredits: "0.994",
-    priceCredits: "1.42",
   },
   {
     id: "seedance-2.0-1080p",
     name: "Seedance 2.0 1080p",
     upstreamModel: "doubao-seedance-2-0-260128",
     resolution: "1080p",
-    costCredits: "2.479",
-    priceCredits: "3.542",
   },
   {
     id: "seedance-2.0-4k",
     name: "Seedance 2.0 4k",
     upstreamModel: "doubao-seedance-2-0-260128",
     resolution: "4k",
-    costCredits: "5.055",
-    priceCredits: "7.222",
   },
 ] as const;
 
 // Seedream 图片模型：平台固定单输入图、2K 输出、单张生成。
-// pro 走「单图生成 >261 万像素」0.60 元/张；输入首张免费，其余模型按官方固定价。
+// 价格只从数据库/控制台读取，不在前端硬编码。
 const SEEDREAM_MODELS = [
   {
     id: "seedream-5.0-pro",
     name: "Seedream 5.0 Pro",
     upstreamModel: "doubao-seedream-5-0-pro-260628",
-    costCredits: "0.6",
-    priceCredits: "0.858",
   },
   {
     id: "seedream-5.0-flash",
     name: "Seedream 5.0 Flash",
     upstreamModel: "doubao-seedream-5-0-flash-260915",
-    costCredits: "0.12",
-    priceCredits: "0.172",
   },
   {
     id: "seedream-5.0-lite",
     name: "Seedream 5.0 Lite",
     upstreamModel: "doubao-seedream-5-0-lite-260128",
-    costCredits: "0.22",
-    priceCredits: "0.315",
   },
   {
     id: "seedream-4.5",
     name: "Seedream 4.5",
     upstreamModel: "doubao-seedream-4-5-251128",
-    costCredits: "0.25",
-    priceCredits: "0.358",
   },
   {
     id: "seedream-4.0",
     name: "Seedream 4.0",
     upstreamModel: "doubao-seedream-4-0-250828",
-    costCredits: "0.2",
-    priceCredits: "0.286",
   },
 ] as const;
 
@@ -147,6 +120,8 @@ interface MediaModel {
     maxImages: number;
     costMicro: number;
     priceMicro: number;
+    tokenCostMicroPerMillion: number;
+    tokenPriceMicroPerMillion: number;
   };
 }
 
@@ -175,6 +150,8 @@ interface MediaModelDraft {
     maxImages: string;
     costCredits: string;
     priceCredits: string;
+    tokenCostCredits: string;
+    tokenPriceCredits: string;
   };
 }
 
@@ -210,6 +187,8 @@ export function toDraft(model: MediaModel): MediaModelDraft {
             maxImages: String(model.videoReference.maxImages),
             costCredits: priceInputValue(model.videoReference.costMicro),
             priceCredits: priceInputValue(model.videoReference.priceMicro),
+            tokenCostCredits: priceInputValue(model.videoReference.tokenCostMicroPerMillion ?? 0),
+            tokenPriceCredits: priceInputValue(model.videoReference.tokenPriceMicroPerMillion ?? 0),
           },
         }
       : {}),
@@ -239,6 +218,8 @@ export function toApiModel(draft: MediaModelDraft): MediaModel {
             maxImages: Number(draft.videoReference.maxImages),
             costMicro: parseCreditsToMicro(draft.videoReference.costCredits),
             priceMicro: parseCreditsToMicro(draft.videoReference.priceCredits),
+            tokenCostMicroPerMillion: parseCreditsToMicro(draft.videoReference.tokenCostCredits ?? "0"),
+            tokenPriceMicroPerMillion: parseCreditsToMicro(draft.videoReference.tokenPriceCredits ?? "0"),
           },
         }
       : {}),
@@ -298,17 +279,27 @@ export function validateDrafts(
       if (!Number.isSafeInteger(maxImages) || maxImages < 1 || maxImages > 8) {
         return `「${label}」视频参考图上限必须为 1–8 张的整数。`;
       }
-      for (const [field, value, allowZero] of [
-        ["成本价", draft.videoReference.costCredits, true],
-        ["售价", draft.videoReference.priceCredits, false],
-      ] as const) {
+      const rates = [
+        ["成本价", draft.videoReference.costCredits ?? "0", 100_000_000],
+        ["售价", draft.videoReference.priceCredits ?? "0", 100_000_000],
+        ["token 成本", draft.videoReference.tokenCostCredits ?? "0", 1_000_000_000],
+        ["token 售价", draft.videoReference.tokenPriceCredits ?? "0", 1_000_000_000],
+      ] as const;
+      let perSecondPrice = 0;
+      let tokenPrice = 0;
+      for (const [field, value, maxMicro] of rates) {
         if (!/^\d+(\.\d{1,6})?$/.test(value.trim())) {
           return `「${label}」视频参考${field}格式不正确（credit，最多 6 位小数）。`;
         }
         const micro = parseCreditsToMicro(value);
-        if (micro < (allowZero ? 0 : 1) || micro > 100_000_000) {
-          return `「${label}」视频参考${field}需在 ${allowZero ? "0" : "0.000001"}–100 credit 之间。`;
+        if (micro < 0 || micro > maxMicro) {
+          return `「${label}」视频参考${field}超出允许范围。`;
         }
+        if (field === "售价") perSecondPrice = micro;
+        if (field === "token 售价") tokenPrice = micro;
+      }
+      if (perSecondPrice === 0 && tokenPrice === 0) {
+        return `「${label}」视频参考至少配置参考售价或 token 售价。`;
       }
     }
   }
@@ -372,15 +363,19 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
         throw new Error(`第 ${index + 1} 项的视频参考配置必须是对象。`);
       }
       const capability = record.videoReference as Record<string, unknown>;
+      const priceMicro = Number(capability.priceMicro ?? 0);
+      const costMicro = Number(capability.costMicro ?? 0);
+      const tokenPrice = Number(capability.tokenPriceMicroPerMillion ?? 0);
+      const tokenCost = Number(capability.tokenCostMicroPerMillion ?? 0);
       if (
         typeof capability.maxDurationSeconds !== "number" ||
         typeof capability.maxImages !== "number" ||
-        typeof capability.priceMicro !== "number" ||
-        typeof capability.costMicro !== "number" ||
         !Number.isSafeInteger(capability.maxDurationSeconds) ||
         !Number.isSafeInteger(capability.maxImages) ||
-        !Number.isSafeInteger(capability.priceMicro) ||
-        !Number.isSafeInteger(capability.costMicro)
+        !Number.isSafeInteger(priceMicro) ||
+        !Number.isSafeInteger(costMicro) ||
+        !Number.isSafeInteger(tokenPrice) ||
+        !Number.isSafeInteger(tokenCost)
       ) {
         throw new Error(`第 ${index + 1} 项的视频参考配置字段不完整。`);
       }
@@ -388,8 +383,10 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
         enabled: true,
         maxDurationSeconds: String(capability.maxDurationSeconds),
         maxImages: String(capability.maxImages),
-        costCredits: priceInputValue(capability.costMicro),
-        priceCredits: priceInputValue(capability.priceMicro),
+        costCredits: priceInputValue(costMicro),
+        priceCredits: priceInputValue(priceMicro),
+        tokenCostCredits: priceInputValue(tokenCost),
+        tokenPriceCredits: priceInputValue(tokenPrice),
       };
     }
     return {
@@ -543,16 +540,16 @@ export function MediaModelsPage() {
         upstreamModel: preset.upstreamModel,
         resolutions: [preset.resolution],
         durations: [...SEEDANCE_DURATIONS],
-        costCredits: preset.costCredits,
+        costCredits: "0",
         generateAudio: true,
-        priceCredits: preset.priceCredits,
-        priceVersion: "ark-2026-10-20-margin30",
+        priceCredits: "",
+        priceVersion: "v1",
       })),
     ]);
     setDirty(true);
     setError("");
     toastOk(
-      `已加入 ${additions.length} 个条目，请确认供应商；成本按官方价、售价按约 30% 毛利预填`,
+      `已加入 ${additions.length} 个条目，请确认供应商并填写成本和售价`,
       "已加入 Seedance 2.0 系列",
     );
     requestAnimationFrame(() => {
@@ -589,16 +586,16 @@ export function MediaModelsPage() {
         upstreamModel: preset.upstreamModel,
         resolutions: [],
         durations: [],
-        costCredits: preset.costCredits,
+        costCredits: "0",
         generateAudio: false,
-        priceCredits: preset.priceCredits,
-        priceVersion: "ark-2026-10-20-margin30",
+        priceCredits: "",
+        priceVersion: "v1",
       })),
     ]);
     setDirty(true);
     setError("");
     toastOk(
-      `已加入 ${additions.length} 个图片模型，成本按官方价、售价按约 30% 毛利预填`,
+      `已加入 ${additions.length} 个图片模型，请填写成本和售价`,
       "已加入 Seedream",
     );
     requestAnimationFrame(() => {
@@ -933,6 +930,8 @@ export function MediaModelsPage() {
                                       maxImages: "",
                                       costCredits: "0",
                                       priceCredits: "",
+                                      tokenCostCredits: "0",
+                                      tokenPriceCredits: "",
                                     }
                                   : undefined,
                               })
@@ -978,7 +977,7 @@ export function MediaModelsPage() {
                             />
                           </label>
                           <label className="field" style={{ flex: "0.9 1 150px" }}>
-                            <span className="field-label">参考成本（credit / 输出秒）</span>
+                            <span className="field-label">旧按秒成本（兼容）</span>
                             <input
                               className="input num"
                               inputMode="decimal"
@@ -991,7 +990,7 @@ export function MediaModelsPage() {
                             />
                           </label>
                           <label className="field" style={{ flex: "0.9 1 150px" }}>
-                            <span className="field-label">参考售价（credit / 输出秒）</span>
+                            <span className="field-label">旧按秒售价（兼容）</span>
                             <input
                               className="input num"
                               inputMode="decimal"
@@ -1000,6 +999,32 @@ export function MediaModelsPage() {
                               disabled={busy}
                               onChange={(event) => update(index, {
                                 videoReference: { ...draft.videoReference!, priceCredits: event.target.value },
+                              })}
+                            />
+                          </label>
+                          <label className="field" style={{ flex: "1.1 1 170px" }}>
+                            <span className="field-label">token 成本（credit / 百万 token）</span>
+                            <input
+                              className="input num"
+                              inputMode="decimal"
+                              aria-label={`模型 ${index + 1} 视频参考 token 成本`}
+                              value={draft.videoReference.tokenCostCredits}
+                              disabled={busy}
+                              onChange={(event) => update(index, {
+                                videoReference: { ...draft.videoReference!, tokenCostCredits: event.target.value },
+                              })}
+                            />
+                          </label>
+                          <label className="field" style={{ flex: "1.1 1 170px" }}>
+                            <span className="field-label">token 售价（credit / 百万 token）</span>
+                            <input
+                              className="input num"
+                              inputMode="decimal"
+                              aria-label={`模型 ${index + 1} 视频参考 token 售价`}
+                              value={draft.videoReference.tokenPriceCredits}
+                              disabled={busy}
+                              onChange={(event) => update(index, {
+                                videoReference: { ...draft.videoReference!, tokenPriceCredits: event.target.value },
                               })}
                             />
                           </label>

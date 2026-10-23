@@ -20,8 +20,13 @@ test("image stage defaults to image recovery and never offers a video task ID", 
 test("video stage defaults to video recovery and never offers an image result URL", () => {
   const options = reconciliationOptionsForStage("video");
   assert.equal(defaultReconciliationOutcome("video"), "video_task");
-  assert.deepEqual(options.map(({ value }) => value), ["video_task", "not_accepted"]);
+  assert.deepEqual(options.map(({ value }) => value), [
+    "video_task",
+    "video_usage",
+    "not_accepted",
+  ]);
   assert.equal(isReconciliationOutcomeForStage("video", "video_task"), true);
+  assert.equal(isReconciliationOutcomeForStage("video", "video_usage"), true);
   assert.equal(isReconciliationOutcomeForStage("video", "image_result"), false);
 });
 

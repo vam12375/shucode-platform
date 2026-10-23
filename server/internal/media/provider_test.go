@@ -47,6 +47,25 @@ func TestVideoSubmitRequiresFirstFrameBeforeRequest(t *testing.T) {
 	}
 }
 
+func TestProviderQueryParsesUsage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"status":  "succeeded",
+			"content": map[string]string{"video_url": "https://example.test/result.mp4"},
+			"usage":   map[string]int64{"completion_tokens": 108900, "total_tokens": 108900},
+		})
+	}))
+	defer server.Close()
+	p := Provider{BaseURL: server.URL, Client: server.Client()}
+	result, err := p.Query(context.Background(), "task-fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "succeeded" || result.Usage.CompletionTokens != 108900 || result.Usage.TotalTokens != 108900 {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
 func TestVideoSubmitBodyGenerateAudio(t *testing.T) {
 	m := Model{UpstreamModel: "doubao-seedance-2-0-mini-260615", GenerateAudio: true}
 	b := Brief{Resolution: "720p", AspectRatio: "16:9"}

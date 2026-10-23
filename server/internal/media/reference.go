@@ -30,6 +30,9 @@ import (
 const SnapAnyExtractURL = "https://api.snapany.com/openapi/v1/extract/post"
 const MaxReferenceBytes int64 = 200 << 20
 const MaxReferenceSeconds = 90
+
+// Ark Seedance 参考视频单片段时长下限；上限由模型能力 VideoReference.MaxDurationSeconds 控制。
+const MinReferenceClipSeconds = 2
 const maxReferenceProbeOutput = 256 << 10
 
 type boundedReferenceOutput struct {

@@ -122,6 +122,10 @@ type ProviderResult struct {
 	Content struct {
 		VideoURL string `json:"video_url"`
 	} `json:"content"`
+	Usage struct {
+		CompletionTokens int64 `json:"completion_tokens"`
+		TotalTokens      int64 `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 func (p Provider) Query(ctx context.Context, id string) (ProviderResult, error) {

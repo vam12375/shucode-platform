@@ -51,6 +51,8 @@ const capability = {
   maxImages: 3,
   costMicro: 125_000,
   priceMicro: 250_000,
+  tokenCostMicroPerMillion: 0,
+  tokenPriceMicroPerMillion: 0,
 };
 const validDraft = () => ({
   ...output.toDraft({ ...model, videoReference: capability }),
@@ -60,6 +62,8 @@ const validDraft = () => ({
     maxImages: "3",
     costCredits: "0.125",
     priceCredits: "0.25",
+    tokenCostCredits: "0",
+    tokenPriceCredits: "0",
   },
 });
 
@@ -74,6 +78,8 @@ test("video reference settings round-trip through JSON and keep independent cred
     maxImages: "3",
     costCredits: "0.125",
     priceCredits: "0.25",
+    tokenCostCredits: "0",
+    tokenPriceCredits: "0",
   });
 });
 

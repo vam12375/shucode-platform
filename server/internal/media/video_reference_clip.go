@@ -75,7 +75,7 @@ func (s *Service) resolveVideoReference(ctx context.Context, team, assetID strin
 	if math.IsNaN(clipStart) || math.IsInf(clipStart, 0) || math.IsNaN(clipEnd) || math.IsInf(clipEnd, 0) || clipStart < 0 || clipEnd <= clipStart || clipEnd > metadata.DurationSeconds+.001 {
 		return videoReferenceSource{}, ErrInvalid
 	}
-	if maxDuration < 1 || clipEnd-clipStart > float64(maxDuration)+.001 {
+	if maxDuration < MinReferenceClipSeconds || clipEnd-clipStart < float64(MinReferenceClipSeconds)-.001 || clipEnd-clipStart > float64(maxDuration)+.001 {
 		return videoReferenceSource{}, fmt.Errorf("video_reference_duration_unsupported")
 	}
 	source.DurationSeconds = metadata.DurationSeconds

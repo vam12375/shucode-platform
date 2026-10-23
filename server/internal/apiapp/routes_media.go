@@ -428,11 +428,16 @@ func publicMediaModels(models []media.Model) []gin.H {
 		// 用户消耗用于客户端展示；供应商成本与内部价格版本只用于服务端计费及 root 控制台。
 		model := gin.H{"id": m.ID, "name": m.Name, "kind": m.Kind, "resolutions": resolutions, "maxReferenceImages": media.MaxReferenceImages(m), "durations": durations, "generateAudio": m.GenerateAudio, "priceMicro": m.PriceMicro}
 		if m.VideoReference != nil {
-			model["videoReference"] = gin.H{
+			reference := gin.H{
 				"maxDurationSeconds": m.VideoReference.MaxDurationSeconds,
 				"maxImages":          m.VideoReference.MaxImages,
 				"priceMicro":         m.VideoReference.PriceMicro,
 			}
+			// 旧目录没有 token 费率时不下发零值，保持 wire 兼容。
+			if m.VideoReference.TokenPriceMicroPerMillion > 0 {
+				reference["tokenPriceMicroPerMillion"] = m.VideoReference.TokenPriceMicroPerMillion
+			}
+			model["videoReference"] = reference
 		}
 		out = append(out, model)
 	}
