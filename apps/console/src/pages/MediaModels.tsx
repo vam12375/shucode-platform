@@ -166,6 +166,11 @@ function priceInputValue(micro: number): string {
     .replace(/\.?0+$/, "");
 }
 
+/** 空输入按 0 处理；token-only 配置允许旧按秒价格留空。 */
+function priceDraftValue(value: string | undefined): string {
+  return (value ?? "").trim() || "0";
+}
+
 export function toDraft(model: MediaModel): MediaModelDraft {
   return {
     id: model.id,
@@ -216,10 +221,10 @@ export function toApiModel(draft: MediaModelDraft): MediaModel {
           videoReference: {
             maxDurationSeconds: Number(draft.videoReference.maxDurationSeconds),
             maxImages: Number(draft.videoReference.maxImages),
-            costMicro: parseCreditsToMicro(draft.videoReference.costCredits),
-            priceMicro: parseCreditsToMicro(draft.videoReference.priceCredits),
-            tokenCostMicroPerMillion: parseCreditsToMicro(draft.videoReference.tokenCostCredits ?? "0"),
-            tokenPriceMicroPerMillion: parseCreditsToMicro(draft.videoReference.tokenPriceCredits ?? "0"),
+            costMicro: parseCreditsToMicro(priceDraftValue(draft.videoReference.costCredits)),
+            priceMicro: parseCreditsToMicro(priceDraftValue(draft.videoReference.priceCredits)),
+            tokenCostMicroPerMillion: parseCreditsToMicro(priceDraftValue(draft.videoReference.tokenCostCredits)),
+            tokenPriceMicroPerMillion: parseCreditsToMicro(priceDraftValue(draft.videoReference.tokenPriceCredits)),
           },
         }
       : {}),
@@ -280,10 +285,10 @@ export function validateDrafts(
         return `「${label}」视频参考图上限必须为 1–8 张的整数。`;
       }
       const rates = [
-        ["成本价", draft.videoReference.costCredits ?? "0", 100_000_000],
-        ["售价", draft.videoReference.priceCredits ?? "0", 100_000_000],
-        ["token 成本", draft.videoReference.tokenCostCredits ?? "0", 1_000_000_000],
-        ["token 售价", draft.videoReference.tokenPriceCredits ?? "0", 1_000_000_000],
+        ["成本价", priceDraftValue(draft.videoReference.costCredits), 100_000_000],
+        ["售价", priceDraftValue(draft.videoReference.priceCredits), 100_000_000],
+        ["token 成本", priceDraftValue(draft.videoReference.tokenCostCredits), 1_000_000_000],
+        ["token 售价", priceDraftValue(draft.videoReference.tokenPriceCredits), 1_000_000_000],
       ] as const;
       let perSecondPrice = 0;
       let tokenPrice = 0;
@@ -911,128 +916,6 @@ export function MediaModelsPage() {
                     </label>
                   </div>
 
-                  {draft.kind === "video" ? (
-                    <div className="model-card-row">
-                      <label className="field" style={{ flex: "1 1 180px" }}>
-                        <span className="field-label">视频参考输入</span>
-                        <span className="choice-row">
-                          <input
-                            type="checkbox"
-                            aria-label={`模型 ${index + 1} 启用视频参考`}
-                            checked={draft.videoReference?.enabled === true}
-                            disabled={busy}
-                            onChange={(event) =>
-                              update(index, {
-                                videoReference: event.target.checked
-                                  ? draft.videoReference ?? {
-                                      enabled: true,
-                                      maxDurationSeconds: "",
-                                      maxImages: "",
-                                      costCredits: "0",
-                                      priceCredits: "",
-                                      tokenCostCredits: "0",
-                                      tokenPriceCredits: "",
-                                    }
-                                  : undefined,
-                              })
-                            }
-                          />
-                          <span>允许原片段与替换图共同输入</span>
-                        </span>
-                      </label>
-                      {draft.videoReference?.enabled ? (
-                        <>
-                          <label className="field" style={{ flex: "0.7 1 120px" }}>
-                            <span className="field-label">参考片段上限（秒）</span>
-                            <input
-                              className="input num"
-                              type="number"
-                              inputMode="numeric"
-                              min={1}
-                              max={90}
-                              step={1}
-                              aria-label={`模型 ${index + 1} 视频参考时长上限`}
-                              value={draft.videoReference.maxDurationSeconds}
-                              disabled={busy}
-                              onChange={(event) => update(index, {
-                                videoReference: { ...draft.videoReference!, maxDurationSeconds: event.target.value },
-                              })}
-                            />
-                          </label>
-                          <label className="field" style={{ flex: "0.7 1 120px" }}>
-                            <span className="field-label">替换参考图上限</span>
-                            <input
-                              className="input num"
-                              type="number"
-                              inputMode="numeric"
-                              min={1}
-                              max={8}
-                              step={1}
-                              aria-label={`模型 ${index + 1} 视频参考图上限`}
-                              value={draft.videoReference.maxImages}
-                              disabled={busy}
-                              onChange={(event) => update(index, {
-                                videoReference: { ...draft.videoReference!, maxImages: event.target.value },
-                              })}
-                            />
-                          </label>
-                          <label className="field" style={{ flex: "0.9 1 150px" }}>
-                            <span className="field-label">旧按秒成本（兼容）</span>
-                            <input
-                              className="input num"
-                              inputMode="decimal"
-                              aria-label={`模型 ${index + 1} 视频参考成本价`}
-                              value={draft.videoReference.costCredits}
-                              disabled={busy}
-                              onChange={(event) => update(index, {
-                                videoReference: { ...draft.videoReference!, costCredits: event.target.value },
-                              })}
-                            />
-                          </label>
-                          <label className="field" style={{ flex: "0.9 1 150px" }}>
-                            <span className="field-label">旧按秒售价（兼容）</span>
-                            <input
-                              className="input num"
-                              inputMode="decimal"
-                              aria-label={`模型 ${index + 1} 视频参考售价`}
-                              value={draft.videoReference.priceCredits}
-                              disabled={busy}
-                              onChange={(event) => update(index, {
-                                videoReference: { ...draft.videoReference!, priceCredits: event.target.value },
-                              })}
-                            />
-                          </label>
-                          <label className="field" style={{ flex: "1.1 1 170px" }}>
-                            <span className="field-label">token 成本（credit / 百万 token）</span>
-                            <input
-                              className="input num"
-                              inputMode="decimal"
-                              aria-label={`模型 ${index + 1} 视频参考 token 成本`}
-                              value={draft.videoReference.tokenCostCredits}
-                              disabled={busy}
-                              onChange={(event) => update(index, {
-                                videoReference: { ...draft.videoReference!, tokenCostCredits: event.target.value },
-                              })}
-                            />
-                          </label>
-                          <label className="field" style={{ flex: "1.1 1 170px" }}>
-                            <span className="field-label">token 售价（credit / 百万 token）</span>
-                            <input
-                              className="input num"
-                              inputMode="decimal"
-                              aria-label={`模型 ${index + 1} 视频参考 token 售价`}
-                              value={draft.videoReference.tokenPriceCredits}
-                              disabled={busy}
-                              onChange={(event) => update(index, {
-                                videoReference: { ...draft.videoReference!, tokenPriceCredits: event.target.value },
-                              })}
-                            />
-                          </label>
-                        </>
-                      ) : null}
-                    </div>
-                  ) : null}
-
                   <div className="model-card-row">
                     <label className="field" style={{ flex: "1.2 1 170px" }}>
                       <span className="field-label">上游供应商</span>
@@ -1214,6 +1097,129 @@ export function MediaModelsPage() {
                       </>
                     ) : null}
                   </div>
+                  {draft.kind === "video" ? (
+                    <div className="video-reference-panel">
+                      <label className="video-reference-toggle">
+                        <input
+                          type="checkbox"
+                          aria-label={`模型 ${index + 1} 启用视频参考`}
+                          checked={draft.videoReference?.enabled === true}
+                          disabled={busy}
+                          onChange={(event) =>
+                            update(index, {
+                              videoReference: event.target.checked
+                                ? draft.videoReference ?? {
+                                    enabled: true,
+                                    maxDurationSeconds: "15",
+                                    maxImages: "4",
+                                    costCredits: "0",
+                                    priceCredits: "",
+                                    tokenCostCredits: "0",
+                                    tokenPriceCredits: "",
+                                  }
+                                : undefined,
+                            })
+                          }
+                        />
+                        <span>
+                          <strong>启用视频参考</strong>
+                          <span className="video-reference-note">
+                            {" "}原片段 + 替换图；片段 2~15 秒；Token 费率按每百万 token
+                          </span>
+                        </span>
+                      </label>
+                      {draft.videoReference?.enabled ? (
+                        <div className="video-reference-grid">
+                          <label className="field">
+                            <span className="field-label">片段上限（秒）</span>
+                            <input
+                              className="input num"
+                              type="number"
+                              inputMode="numeric"
+                              min={2}
+                              max={90}
+                              step={1}
+                              aria-label={`模型 ${index + 1} 视频参考时长上限`}
+                              value={draft.videoReference.maxDurationSeconds}
+                              disabled={busy}
+                              onChange={(event) => update(index, {
+                                videoReference: { ...draft.videoReference!, maxDurationSeconds: event.target.value },
+                              })}
+                            />
+                          </label>
+                          <label className="field">
+                            <span className="field-label">替换图上限</span>
+                            <input
+                              className="input num"
+                              type="number"
+                              inputMode="numeric"
+                              min={1}
+                              max={8}
+                              step={1}
+                              aria-label={`模型 ${index + 1} 视频参考图上限`}
+                              value={draft.videoReference.maxImages}
+                              disabled={busy}
+                              onChange={(event) => update(index, {
+                                videoReference: { ...draft.videoReference!, maxImages: event.target.value },
+                              })}
+                            />
+                          </label>
+                          <label className="field">
+                            <span className="field-label">旧按秒成本</span>
+                            <input
+                              className="input num"
+                              inputMode="decimal"
+                              aria-label={`模型 ${index + 1} 视频参考成本价`}
+                              value={draft.videoReference.costCredits}
+                              disabled={busy}
+                              onChange={(event) => update(index, {
+                                videoReference: { ...draft.videoReference!, costCredits: event.target.value },
+                              })}
+                            />
+                          </label>
+                          <label className="field">
+                            <span className="field-label">旧按秒售价</span>
+                            <input
+                              className="input num"
+                              inputMode="decimal"
+                              aria-label={`模型 ${index + 1} 视频参考售价`}
+                              value={draft.videoReference.priceCredits}
+                              disabled={busy}
+                              onChange={(event) => update(index, {
+                                videoReference: { ...draft.videoReference!, priceCredits: event.target.value },
+                              })}
+                            />
+                          </label>
+                          <label className="field">
+                            <span className="field-label">Token 成本（credit/M）</span>
+                            <input
+                              className="input num"
+                              inputMode="decimal"
+                              aria-label={`模型 ${index + 1} 视频参考 token 成本`}
+                              value={draft.videoReference.tokenCostCredits}
+                              disabled={busy}
+                              onChange={(event) => update(index, {
+                                videoReference: { ...draft.videoReference!, tokenCostCredits: event.target.value },
+                              })}
+                            />
+                          </label>
+                          <label className="field">
+                            <span className="field-label">Token 售价（credit/M）</span>
+                            <input
+                              className="input num"
+                              inputMode="decimal"
+                              aria-label={`模型 ${index + 1} 视频参考 token 售价`}
+                              value={draft.videoReference.tokenPriceCredits}
+                              disabled={busy}
+                              onChange={(event) => update(index, {
+                                videoReference: { ...draft.videoReference!, tokenPriceCredits: event.target.value },
+                              })}
+                            />
+                          </label>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </article>
               ))}
             </div>

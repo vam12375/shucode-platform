@@ -1646,7 +1646,46 @@ textarea {
 
 .model-card-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
+}
+
+.video-reference-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px dashed var(--line-soft);
+  padding-top: 10px;
+}
+
+.video-reference-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.video-reference-toggle input {
+  flex: none;
+  margin-top: 2px;
+}
+
+.video-reference-toggle strong {
+  font-weight: 600;
+}
+
+.video-reference-note {
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.video-reference-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px 10px;
 }
 
 .field {
