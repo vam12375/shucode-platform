@@ -1,24 +1,71 @@
 package media
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 const ConfigKey = "media:catalog:v1"
 const IndexKey = "media:projects:v1"
 
 type Model struct {
-	ID             string                    `json:"id"`
-	Name           string                    `json:"name"`
-	Kind           string                    `json:"kind"`
-	ProviderID     string                    `json:"providerId"`
-	UpstreamModel  string                    `json:"upstreamModel"`
-	Adapter        string                    `json:"adapter"`
-	Resolutions    []string                  `json:"resolutions"`
-	Durations      []int                     `json:"durations"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Kind          string   `json:"kind"`
+	ProviderID    string   `json:"providerId"`
+	UpstreamModel string   `json:"upstreamModel"`
+	Adapter       string   `json:"adapter"`
+	Resolutions   []string `json:"resolutions"`
+	// Durations 是旧版枚举时长；MinDuration/MaxDuration 是连续区间（秒）。
+	// 区间一旦配置即优先，Durations 仅作缺省时的兼容回退。
+	Durations      []int                     `json:"durations,omitempty"`
+	MinDuration    int                       `json:"minDuration,omitempty"`
+	MaxDuration    int                       `json:"maxDuration,omitempty"`
 	CostMicro      int64                     `json:"costMicro"`
 	GenerateAudio  bool                      `json:"generateAudio"`
 	PriceMicro     int64                     `json:"priceMicro"`
 	PriceVersion   string                    `json:"priceVersion"`
 	VideoReference *VideoReferenceCapability `json:"videoReference,omitempty"`
+}
+
+// DurationSupported 判断单个镜头秒数是否可用：区间优先，旧枚举兜底。
+func (m Model) DurationSupported(d int) bool {
+	if m.MinDuration > 0 && m.MaxDuration >= m.MinDuration {
+		return d >= m.MinDuration && d <= m.MaxDuration
+	}
+	return slices.Contains(m.Durations, d)
+}
+
+// DurationRange 返回对外暴露的镜头时长上下界；旧枚举按最小/最大推导。
+func (m Model) DurationRange() (int, int, bool) {
+	if m.MinDuration > 0 && m.MaxDuration >= m.MinDuration {
+		return m.MinDuration, m.MaxDuration, true
+	}
+	if len(m.Durations) == 0 {
+		return 0, 0, false
+	}
+	minDuration, maxDuration := m.Durations[0], m.Durations[0]
+	for _, d := range m.Durations[1:] {
+		if d < minDuration {
+			minDuration = d
+		}
+		if d > maxDuration {
+			maxDuration = d
+		}
+	}
+	return minDuration, maxDuration, true
+}
+
+// AllowedDurations 返回可用于组合总时长的单镜头秒数；区间展开为逐秒。
+func (m Model) AllowedDurations() []int {
+	if m.MinDuration > 0 && m.MaxDuration >= m.MinDuration {
+		out := make([]int, 0, m.MaxDuration-m.MinDuration+1)
+		for d := m.MinDuration; d <= m.MaxDuration; d++ {
+			out = append(out, d)
+		}
+		return out
+	}
+	return m.Durations
 }
 
 type VideoReferenceCapability struct {

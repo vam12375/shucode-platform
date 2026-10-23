@@ -74,7 +74,7 @@ func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id strin
 		if len(r.VideoReferences) > 0 || r.Duration != 0 || !slices.Contains(ImageResolutions(m), r.Resolution) || !slices.Contains(imageRatios, r.AspectRatio) || len(r.AssetIDs) > MaxReferenceImages(m) {
 			return nil, ErrInvalid
 		}
-	} else if r.Kind != "video" || !slices.Contains(videoRatios, r.AspectRatio) || !slices.Contains(m.Durations, r.Duration) || !slices.Contains(m.Resolutions, r.Resolution) {
+	} else if r.Kind != "video" || !slices.Contains(videoRatios, r.AspectRatio) || !m.DurationSupported(r.Duration) || !slices.Contains(m.Resolutions, r.Resolution) {
 		return nil, ErrInvalid
 	} else if len(r.VideoReferences) == 0 {
 		if len(r.AssetIDs) > 2 {

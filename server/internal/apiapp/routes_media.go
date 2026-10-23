@@ -425,8 +425,17 @@ func publicMediaModels(models []media.Model) []gin.H {
 			resolutions = media.ImageResolutions(m)
 		}
 		durations := append([]int{}, m.Durations...)
+		// 区间目录向旧客户端展开为枚举，避免它们拿到空 durations 而无法提交；
+		// 新客户端优先读取 minDuration/maxDuration。
+		if m.MinDuration > 0 && m.MaxDuration >= m.MinDuration {
+			durations = m.AllowedDurations()
+		}
 		// 用户消耗用于客户端展示；供应商成本与内部价格版本只用于服务端计费及 root 控制台。
 		model := gin.H{"id": m.ID, "name": m.Name, "kind": m.Kind, "resolutions": resolutions, "maxReferenceImages": media.MaxReferenceImages(m), "durations": durations, "generateAudio": m.GenerateAudio, "priceMicro": m.PriceMicro}
+		if m.MinDuration > 0 && m.MaxDuration >= m.MinDuration {
+			model["minDuration"] = m.MinDuration
+			model["maxDuration"] = m.MaxDuration
+		}
 		if m.VideoReference != nil {
 			reference := gin.H{
 				"maxDurationSeconds": m.VideoReference.MaxDurationSeconds,

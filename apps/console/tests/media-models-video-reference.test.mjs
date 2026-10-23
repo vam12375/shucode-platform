@@ -18,7 +18,7 @@ runInNewContext(compiled, {
   exports: output,
   require(name) {
     if (name === "@shucode-platform/contracts/credits") return credits;
-    if (name === "react") return { useCallback() {}, useEffect() {}, useRef() {}, useState() {} };
+    if (name === "react") return { useCallback() {}, useEffect() {}, useState() {} };
     if (name === "react/jsx-runtime") return { jsx() {}, jsxs() {} };
     if (name === "../api.js") return { api() {} };
     if (name === "../components/Feedback.js") return { toastErr() {}, toastOk() {} };
@@ -33,8 +33,8 @@ runInNewContext(compiled, {
 
 const provider = { id: "ark", name: "Ark", baseUrl: "https://ark.example", enabled: true };
 const model = {
-  id: "video-model",
-  name: "Video model",
+  id: "video-model-720p",
+  name: "Video model 720p",
   kind: "video",
   providerId: provider.id,
   upstreamModel: "upstream-video-model",
@@ -51,49 +51,66 @@ const capability = {
   maxImages: 3,
   costMicro: 125_000,
   priceMicro: 250_000,
-  tokenCostMicroPerMillion: 0,
-  tokenPriceMicroPerMillion: 0,
+  tokenCostMicroPerMillion: 14_000_000,
+  tokenPriceMicroPerMillion: 20_000_000,
 };
 const validDraft = () => ({
   ...output.toDraft({ ...model, videoReference: capability }),
+  familyId: "family-test",
   videoReference: {
     enabled: true,
     maxDurationSeconds: "15",
     maxImages: "3",
-    costCredits: "0.125",
-    priceCredits: "0.25",
-    tokenCostCredits: "0",
-    tokenPriceCredits: "0",
+    tokenCostCredits: "14",
+    tokenPriceCredits: "20",
   },
 });
 
-test("video reference settings round-trip through JSON and keep independent credit prices", () => {
-  const imported = output.draftsFromJson(JSON.stringify([{ ...model, videoReference: capability }]))[0];
-  assert.deepEqual(JSON.parse(JSON.stringify(output.toApiModel(imported))), { ...model, videoReference: capability });
+test("legacy duration lists become a continuous range on load", () => {
+  const draft = output.toDraft(model);
+  assert.equal(draft.minDuration, "4");
+  assert.equal(draft.maxDuration, "5");
+
+  const ranged = output.toDraft({ ...model, minDuration: 4, maxDuration: 15 });
+  assert.equal(ranged.minDuration, "4");
+  assert.equal(ranged.maxDuration, "15");
+});
+
+test("video reference keeps shared token rates and mirrors legacy per-second prices", () => {
+  const imported = output.draftsFromJson(
+    JSON.stringify([{ ...model, videoReference: capability }]),
+  )[0];
+  const saved = output.toApiModel(imported);
+  assert.equal(saved.minDuration, 4);
+  assert.equal(saved.maxDuration, 5);
+  assert.equal(saved.durations, undefined);
+  assert.deepEqual(JSON.parse(JSON.stringify(saved.videoReference)), {
+    maxDurationSeconds: 15,
+    maxImages: 3,
+    // 旧按秒口径跟随档位主价格，不再单独维护。
+    costMicro: 200_000,
+    priceMicro: 300_000,
+    tokenCostMicroPerMillion: 14_000_000,
+    tokenPriceMicroPerMillion: 20_000_000,
+  });
 
   const draft = output.toDraft({ ...model, videoReference: capability });
   assert.deepEqual(JSON.parse(JSON.stringify(draft.videoReference)), {
     enabled: true,
     maxDurationSeconds: "15",
     maxImages: "3",
-    costCredits: "0.125",
-    priceCredits: "0.25",
-    tokenCostCredits: "0",
-    tokenPriceCredits: "0",
+    tokenCostCredits: "14",
+    tokenPriceCredits: "20",
   });
 });
 
-test("legacy models and disabled reference capability remain absent from catalog JSON", () => {
+test("models without reference capability stay absent from catalog JSON", () => {
   const draft = output.toDraft(model);
   assert.equal(draft.videoReference, undefined);
   assert.equal("videoReference" in output.toApiModel(draft), false);
-
-  const imported = output.draftsFromJson(JSON.stringify([model]))[0];
-  assert.equal(imported.videoReference, undefined);
-  assert.equal("videoReference" in output.toApiModel(imported), false);
 });
 
-test("capability bounds and separate reference prices are validated before save", () => {
+test("duration range and token rates are validated before save", () => {
   assert.equal(output.validateDrafts([validDraft()], [provider]), null);
 
   for (const [patch, message] of [
@@ -103,28 +120,74 @@ test("capability bounds and separate reference prices are validated before save"
     [{ maxImages: "0" }, /1–8 张/],
     [{ maxImages: "9" }, /1–8 张/],
     [{ maxImages: "2.5" }, /1–8 张/],
-    [{ costCredits: "100.000001" }, /参考成本价/],
-    [{ priceCredits: "0" }, /参考售价/],
-    [{ priceCredits: "1.0000001" }, /参考售价格式/],
+    [{ tokenCostCredits: "1.0000001" }, /token 成本 格式/],
+    [{ tokenPriceCredits: "-1" }, /token 售价/],
   ]) {
     const draft = validDraft();
     draft.videoReference = { ...draft.videoReference, ...patch };
     assert.match(output.validateDrafts([draft], [provider]), message);
   }
+
+  for (const [patch, message] of [
+    [{ minDuration: "1" }, /2–30 秒/],
+    [{ maxDuration: "31" }, /2–30 秒/],
+    [{ minDuration: "10", maxDuration: "9" }, /起始不大于结束/],
+    [{ minDuration: "4.5" }, /整数秒/],
+  ]) {
+    const draft = validDraft();
+    Object.assign(draft, patch);
+    assert.match(output.validateDrafts([draft], [provider]), message);
+  }
 });
 
-test("JSON rejects incomplete or non-integral capability records and image models cannot enable it", () => {
+test("JSON rejects incomplete capability records and image models cannot enable it", () => {
   assert.throws(
-    () => output.draftsFromJson(JSON.stringify([{ ...model, videoReference: { maxDurationSeconds: 15 } }])),
+    () =>
+      output.draftsFromJson(
+        JSON.stringify([{ ...model, videoReference: { maxDurationSeconds: 15 } }]),
+      ),
     /字段不完整/,
   );
   assert.throws(
-    () => output.draftsFromJson(JSON.stringify([{ ...model, videoReference: { ...capability, maxImages: 1.5 } }])),
+    () =>
+      output.draftsFromJson(
+        JSON.stringify([{ ...model, videoReference: { ...capability, maxImages: 1.5 } }]),
+      ),
     /字段不完整/,
   );
-  const image = {
-    ...validDraft(),
-    kind: "image",
-  };
+  const image = { ...validDraft(), kind: "image", resolutions: [] };
   assert.match(output.validateDrafts([image], [provider]), /只有视频模型/);
+});
+
+test("one card groups all tiers of the same upstream model", () => {
+  const drafts = [
+    { ...validDraft(), familyId: "" },
+    {
+      ...validDraft(),
+      familyId: "",
+      id: "video-model-480p",
+      name: "Video model 480p",
+      resolutions: ["480p"],
+      priceVersion: "v1",
+    },
+  ];
+  const grouped = output.assignFamilyIds(drafts);
+  assert.equal(grouped[0].familyId, grouped[1].familyId);
+  const families = output.groupFamilies(grouped);
+  assert.equal(families.length, 1);
+  assert.deepEqual([...families[0].indexes], [0, 1]);
+  assert.equal(output.familyNameOf(grouped[0]), "Video model");
+
+  const other = output.assignFamilyIds([
+    { ...validDraft(), familyId: "", upstreamModel: "another-upstream" },
+  ]);
+  assert.notEqual(other[0].familyId, grouped[0].familyId);
+});
+
+test("shared configuration must stay identical across tiers of one card", () => {
+  const drafts = [
+    { ...validDraft(), familyId: "same", id: "a" },
+    { ...validDraft(), familyId: "same", id: "b", priceVersion: "v2" },
+  ];
+  assert.match(output.validateDrafts(drafts, [provider]), /共享配置不一致/);
 });

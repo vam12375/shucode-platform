@@ -40,8 +40,17 @@ func ValidateModels(models []Model) error {
 		if m.Kind == "image" && m.GenerateAudio {
 			return ErrInvalid
 		}
-		if m.Kind == "video" && (len(m.Durations) == 0 || len(m.Resolutions) == 0) {
-			return ErrInvalid
+		if m.Kind == "video" {
+			if len(m.Resolutions) == 0 {
+				return ErrInvalid
+			}
+			if m.MinDuration > 0 || m.MaxDuration > 0 {
+				if m.MinDuration < 2 || m.MaxDuration > 30 || m.MinDuration > m.MaxDuration {
+					return ErrInvalid
+				}
+			} else if len(m.Durations) == 0 {
+				return ErrInvalid
+			}
 		}
 		for _, d := range m.Durations {
 			if d < 2 || d > 30 {
@@ -114,8 +123,9 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	}
 	possible := make([]bool, b.Duration+1)
 	possible[0] = true
+	allowed := m.AllowedDurations()
 	for i := 1; i <= b.Duration; i++ {
-		for _, d := range m.Durations {
+		for _, d := range allowed {
 			if d <= i && possible[i-d] {
 				possible[i] = true
 			}
@@ -171,7 +181,7 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 			return nil, 0, ErrInvalid
 		}
 		validShotSource := refs[p.SourceURL] || (replica && p.SourceURL == "" && len(b.ReferenceURLs) == 0 && refs[""])
-		if !validShotSource || math.IsNaN(p.SourceStart) || math.IsInf(p.SourceStart, 0) || !finitePositive(p.SourceEnd) || p.SourceStart < 0 || p.SourceEnd <= p.SourceStart || !slices.Contains(v.Durations, p.Duration) || ((!replica || p.AssetID != "") && !slices.Contains(b.AssetIDs, p.AssetID)) || p.Prompt == "" || len(p.Prompt) > 12000 || len(p.Subtitle) > 900 || p.Framing == "" || p.Camera == "" || p.Action == "" || p.Purpose == "" {
+		if !validShotSource || math.IsNaN(p.SourceStart) || math.IsInf(p.SourceStart, 0) || !finitePositive(p.SourceEnd) || p.SourceStart < 0 || p.SourceEnd <= p.SourceStart || !v.DurationSupported(p.Duration) || ((!replica || p.AssetID != "") && !slices.Contains(b.AssetIDs, p.AssetID)) || p.Prompt == "" || len(p.Prompt) > 12000 || len(p.Subtitle) > 900 || p.Framing == "" || p.Camera == "" || p.Action == "" || p.Purpose == "" {
 			return nil, 0, ErrInvalid
 		}
 		if replica {
