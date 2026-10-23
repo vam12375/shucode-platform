@@ -206,8 +206,25 @@ func TestSourceFirstScopeSharesFeeIdentityAndRequiresCorrectSettlementPhase(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "deepseek-fixture", now, "medium"); err != nil {
-		t.Fatalf("adaptation must preserve its legal initialized reasoning: %v", err)
+	if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "deepseek-fixture", now, "medium"); !errors.Is(err, ErrAnalysisScopeInvalid) {
+		t.Fatalf("adaptation must reject other reasoning levels: %v", err)
+	}
+	plain, err := box.Decrypt(ticket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacy analysisScope
+	if err = json.Unmarshal([]byte(plain), &legacy); err != nil {
+		t.Fatal(err)
+	}
+	legacy.RequiredReasoning = ""
+	rawLegacy, _ := json.Marshal(legacy)
+	oldTicket, err := box.Encrypt(string(rawLegacy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = ValidateAnalysisScope(ctx, f.s.Repo, box, oldTicket, p.TeamID, p.UserID, p.DeviceID, "deepseek-fixture", now, "high"); !errors.Is(err, ErrAnalysisScopeInvalid) {
+		t.Fatalf("legacy unbounded adaptation scope was accepted: %v", err)
 	}
 	budgetKey := "media:analysis-scope-budget:" + p.TeamID + ":" + p.AnalysisFee.ID
 	if err = f.s.Repo.Store.SetConfigValue(ctx, budgetKey, []byte(`{"requests":128,"tokens":1000000}`)); err != nil {

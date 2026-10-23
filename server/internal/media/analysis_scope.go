@@ -54,11 +54,8 @@ func analysisScopeCurrent(ctx context.Context, repo Repository, scope analysisSc
 	} else if p.Brief.SourceOnly || p.SourceAnalysis != nil {
 		return ErrAnalysisScopeInvalid
 	}
-	expectedReasoning := "high"
-	if p.Analysis.Kind == "adaptation" {
-		expectedReasoning = ""
-	}
-	if scope.RequiredReasoning != expectedReasoning {
+	// 旧改编票没有档位约束，必须失效，避免在新策略下继续以 max 免费派发。
+	if scope.RequiredReasoning != "high" {
 		return ErrAnalysisScopeInvalid
 	}
 	if identity == nil || !identity.Postpaid || identity.Status != expectedStatus || identity.TeamID != scope.TeamID || identity.UserID != scope.UserID || identity.RequestID != p.AnalysisFee.RequestID {
@@ -75,9 +72,7 @@ func IssueAnalysisScope(ctx context.Context, repo Repository, box *crypto.Secret
 		return "", ErrAnalysisScopeInvalid
 	}
 	scope := analysisScope{Purpose: "media:reference-analysis:v1", TeamID: p.TeamID, UserID: p.UserID, DeviceID: p.DeviceID, ProjectID: p.ID, InputID: p.Analysis.InputID, FeeID: p.AnalysisFee.ID, ModelID: model, IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix()}
-	if p.Analysis.Kind != "adaptation" {
-		scope.RequiredReasoning = "high"
-	}
+	scope.RequiredReasoning = "high"
 	if err := analysisScopeCurrent(ctx, repo, scope); err != nil {
 		return "", err
 	}
@@ -107,8 +102,8 @@ func ValidateAnalysisScope(ctx context.Context, repo Repository, box *crypto.Sec
 	if err = analysisScopeCurrent(ctx, repo, scope); err != nil {
 		return err
 	}
-	// 原片固定 high 是签名准入规则，不能只依赖客户端信封或由思考预算推断。
-	if scope.RequiredReasoning != "" && actualReasoning != scope.RequiredReasoning {
+	// 两阶段固定 high 是签名准入规则，不能只依赖客户端信封或由思考预算推断。
+	if actualReasoning != scope.RequiredReasoning {
 		return ErrAnalysisScopeInvalid
 	}
 	// scope 只证明本次分析授权。旧版累计请求/token预算会把全量视觉

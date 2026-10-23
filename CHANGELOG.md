@@ -9,6 +9,25 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.48.1] - 2026-10-23
+
+### 修复(媒体分析策略)
+
+- 参考原片与复刻改编两个分析阶段统一强制最终上游属于 DeepSeek Flash 家族且公开支持 `high`：
+  两阶段预检、scoped 信封和网关签名 scope 共同校验；旧改编票（未绑定 high）失效，
+  不能继承 max/xhigh 或静默降档。
+- `IsDeepSeekAnalysisModel` 改为精确匹配 Flash 家族（容忍版本/日期分隔），不再放行
+  `deepseek-pro`、显示名冒充或混合路由池。
+- 新增策略回归：no-high、Pro、混合路由、三协议 high/xhigh/budget-only 等。
+- AGENTS.md 同步跨端约束说明。
+
+### 验证
+
+- `make -C server lint test`
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`（47 项）
+
 ## [0.48.0] - 2026-10-23
 
 ### 新增(整片视频参考)

@@ -22,7 +22,7 @@ func gatewayAnalysisFixture(t *testing.T) (*gatewayFixture, media.Repository, *m
 	t.Helper()
 	f := newGatewayFixture(t, nil)
 	ctx := context.Background()
-	if _, err := f.store.UpsertModel(ctx, store.UpsertModelInput{ModelID: "claude-sonnet-4-5", DisplayName: "fixture-alias", ProvideUpstreamModel: true, UpstreamModel: "deepseek-fixture", InputPricePerMtok: "3", OutputPricePerMtok: "15"}); err != nil {
+	if _, err := f.store.UpsertModel(ctx, store.UpsertModelInput{ModelID: "claude-sonnet-4-5", DisplayName: "fixture-alias", ProvideUpstreamModel: true, UpstreamModel: "deepseek-flash", InputPricePerMtok: "3", OutputPricePerMtok: "15"}); err != nil {
 		t.Fatal(err)
 	}
 	device, err := f.store.FindDeviceTokenByHash(ctx, crypto.HashToken(f.token))
@@ -230,7 +230,7 @@ func TestAnalysisScopeGatewayZeroSaleRetainsUsageCostAndNormalChatPrice(t *testi
 
 func TestAnalysisScopeStreamingZeroSaleRetainsFrozenCost(t *testing.T) {
 	f, _, _, _, ticket, calls := gatewayAnalysisFixture(t)
-	entry := snapshotCostEntry("deepseek-fixture", "CNY")
+	entry := snapshotCostEntry("deepseek-flash", "CNY")
 	doc, err := f.store.SaveModelPricing(context.Background(), []store.PricingEntry{entry}, pricing.EmptyVersion)
 	if err != nil {
 		t.Fatal(err)
@@ -260,7 +260,7 @@ func TestAnalysisScopeStreamingZeroSaleRetainsFrozenCost(t *testing.T) {
 	row := rows[0]
 	if row.CreditsMicro != 0 || row.InputTokens != 15 || row.OutputTokens != 100 || row.CacheReadTokens != 5 ||
 		row.PriceSnapshot == nil || row.PriceSnapshot.Sale.OutputPerMtok != "0" || row.PriceSnapshot.Cost.Status != "estimated" ||
-		row.PriceSnapshot.Cost.ModelID != "deepseek-fixture" || row.PriceSnapshot.Cost.PricingVersion != doc.Version ||
+		row.PriceSnapshot.Cost.ModelID != "deepseek-flash" || row.PriceSnapshot.Cost.PricingVersion != doc.Version ||
 		row.PriceSnapshot.Cost.Rates == nil || row.PriceSnapshot.Cost.Rates.OutputPerMtok != "2" ||
 		row.PriceSnapshot.Cost.EstimatedMicro == nil || *row.PriceSnapshot.Cost.EstimatedMicro != 216 {
 		t.Fatalf("scoped stream must preserve frozen actual-token cost independently from zero sale: %+v", row)
@@ -330,28 +330,77 @@ func TestAnalysisScopeGatewayRejectsInvalidAuthorizationAndTeamBudgetBeforeUpstr
 	}
 }
 
-func TestSourceAnalysisScopeRequiresActualHighBeforeUpstream(t *testing.T) {
-	for _, test := range []struct {
-		name, route, fragment string
-		allowed               bool
-	}{
-		{"missing", "/v1/chat/completions", `"messages":[]`, false},
-		{"max", "/v1/chat/completions", `"reasoning_effort":"max"`, false},
-		{"budget-only", "/v1/chat/completions", `"thinking":{"type":"enabled","budget_tokens":32768}`, false},
-		{"disabled", "/v1/chat/completions", `"reasoning_effort":"high","thinking":{"type":"disabled"}`, false},
-		{"high", "/v1/chat/completions", `"reasoning_effort":"high","thinking":{"type":"enabled"}`, true},
-		{"responses-high", "/v1/responses", `"reasoning":{"effort":"high"},"thinking":{"type":"disabled"}`, true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			f, _, _, _, ticket, calls := gatewayAnalysisFixture(t)
-			body := `{"model":"claude-sonnet-4-5","max_tokens":100,` + test.fragment + `}`
-			response := requestAnalysisScope(f, "POST", test.route, f.token, ticket, body)
-			if test.allowed {
-				if response.Code != 200 || calls.Load() != 1 || f.usageRecords()[0].ReasoningEffort != "high" {
-					t.Fatalf("explicit high should be retained: %d %s", response.Code, response.Body.String())
-				}
-			} else if response.Code != 403 || calls.Load() != 0 || len(f.usageRecords()) != 0 {
-				t.Fatalf("source high requirement was bypassed: %d calls=%d %s", response.Code, calls.Load(), response.Body.String())
+func TestReferenceAnalysisScopesRequireActualHighBeforeUpstream(t *testing.T) {
+	for _, stage := range []string{"source", "adaptation"} {
+		t.Run(stage, func(t *testing.T) {
+			for _, test := range []struct {
+				name, route, fragment string
+				allowed               bool
+			}{
+				{"missing", "/v1/chat/completions", `"messages":[]`, false},
+				{"max", "/v1/chat/completions", `"reasoning_effort":"max"`, false},
+				{"xhigh", "/v1/chat/completions", `"reasoning_effort":"xhigh"`, false},
+				{"budget-only", "/v1/chat/completions", `"thinking":{"type":"enabled","budget_tokens":32768}`, false},
+				{"disabled", "/v1/chat/completions", `"reasoning_effort":"high","thinking":{"type":"disabled"}`, false},
+				{"enable-thinking-false", "/v1/chat/completions", `"reasoning_effort":"high","enable_thinking":false`, false},
+				{"high", "/v1/chat/completions", `"reasoning_effort":"high","thinking":{"type":"enabled"}`, true},
+				{"responses-missing", "/v1/responses", `"input":[]`, false},
+				{"responses-max", "/v1/responses", `"reasoning":{"effort":"max"}`, false},
+				{"responses-xhigh", "/v1/responses", `"reasoning":{"effort":"xhigh"}`, false},
+				{"responses-budget-only", "/v1/responses", `"thinking":{"type":"enabled","budget_tokens":32768}`, false},
+				{"responses-high", "/v1/responses", `"reasoning":{"effort":"high"},"thinking":{"type":"disabled"}`, true},
+				{"anthropic-missing", "/v1/messages", `"messages":[]`, false},
+				{"anthropic-max", "/v1/messages", `"output_config":{"effort":"max"}`, false},
+				{"anthropic-xhigh", "/v1/messages", `"output_config":{"effort":"xhigh"}`, false},
+				{"anthropic-budget-only", "/v1/messages", `"thinking":{"type":"enabled","budget_tokens":32768}`, false},
+				{"anthropic-disabled", "/v1/messages", `"output_config":{"effort":"high"},"thinking":{"type":"disabled"}`, false},
+				{"anthropic-high", "/v1/messages", `"output_config":{"effort":"high"},"thinking":{"type":"adaptive"}`, true},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					f, repo, p, box, _, calls := gatewayAnalysisFixture(t)
+					ctx := context.Background()
+					next := *p
+					analysis := *p.Analysis
+					analysis.Kind = stage
+					next.Analysis = &analysis
+					next.Brief.SourceOnly = stage == "source"
+					if stage == "adaptation" {
+						next.SourceChecksum = strings.Repeat("a", 64)
+						next.SourceAnalysis = &media.SourceAnalysis{SourceChecksum: next.SourceChecksum}
+						if err := f.store.SettleReservation(ctx, p.AnalysisFee.ID, store.UsageRecord{ID: uuid.NewString(), RequestID: p.AnalysisFee.RequestID, TeamID: p.TeamID, UserID: p.UserID, DeviceTokenID: p.DeviceID, Model: p.AnalysisFee.Model, CreditsMicro: p.AnalysisFee.Micro, Status: store.UsageStatusOk, CreatedAt: time.Now()}); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if err := repo.Save(ctx, &next, p); err != nil {
+						t.Fatal(err)
+					}
+					ticket, err := media.IssueAnalysisScope(ctx, repo, box, &next, "claude-sonnet-4-5", time.Now())
+					if err != nil {
+						t.Fatal(err)
+					}
+					previousUsageCount := len(f.usageRecords())
+					f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+						calls.Add(1)
+						w.Header().Set("content-type", "application/json")
+						_, _ = w.Write([]byte(`{"usage":{"prompt_tokens":1,"completion_tokens":1,"input_tokens":1,"output_tokens":1}}`))
+					})
+					body := `{"model":"claude-sonnet-4-5","max_tokens":100,` + test.fragment + `}`
+					response := requestAnalysisScope(f, "POST", test.route, f.token, ticket, body)
+					if test.allowed {
+						rows := f.usageRecords()
+						highRows := 0
+						for _, row := range rows {
+							if row.ReasoningEffort == "high" {
+								highRows++
+							}
+						}
+						if response.Code != 200 || calls.Load() != 1 || len(rows) != previousUsageCount+1 || highRows != 1 {
+							t.Fatalf("explicit high should be retained: %d %s", response.Code, response.Body.String())
+						}
+					} else if response.Code != 403 || calls.Load() != 0 || len(f.usageRecords()) != previousUsageCount {
+						t.Fatalf("reference high requirement was bypassed: %d calls=%d %s", response.Code, calls.Load(), response.Body.String())
+					}
+				})
 			}
 		})
 	}
@@ -381,7 +430,7 @@ func TestAnalysisScopeGatewayRejectsBackgroundAndIgnoresLegacyBudget(t *testing.
 
 func TestAnalysisScopeRejectsUpstreamModelChangedAfterIssue(t *testing.T) {
 	f, _, _, _, ticket, calls := gatewayAnalysisFixture(t)
-	if _, err := f.store.UpsertModel(context.Background(), store.UpsertModelInput{ModelID: "claude-sonnet-4-5", DisplayName: "fixture-alias", ProvideUpstreamModel: true, UpstreamModel: "other-fixture", InputPricePerMtok: "3", OutputPricePerMtok: "15"}); err != nil {
+	if _, err := f.store.UpsertModel(context.Background(), store.UpsertModelInput{ModelID: "claude-sonnet-4-5", DisplayName: "DeepSeek Flash", ProvideUpstreamModel: true, UpstreamModel: "deepseek-v4-pro", InputPricePerMtok: "3", OutputPricePerMtok: "15"}); err != nil {
 		t.Fatal(err)
 	}
 	response := requestAnalysisScope(f, "POST", "/v1/chat/completions", f.token, ticket, `{"model":"claude-sonnet-4-5","max_tokens":100,"reasoning_effort":"high"}`)

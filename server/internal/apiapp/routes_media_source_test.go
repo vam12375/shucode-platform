@@ -71,7 +71,7 @@ func TestAnalysisModelUsesExistingAllowedDeepSeekCapabilities(t *testing.T) {
 	enabled := true
 	for i, id := range []string{"deepseek-text", "deepseek-vision"} {
 		cfg, _ := json.Marshal(map[string]any{"properties": map[string]any{"contextWindow": 128000, "inputFormat": map[string]any{"supportsText": true, "supportsImage": i == 1}, "outputFormat": map[string]any{"supportsText": true}}, "optionSpecs": map[string]any{"reasoningLevel": map[string]any{"values": []string{"low", "high"}, "map": "({ reasoning_effort: reasoningLevel })"}, "maxOutputTokens": map[string]any{"max": 32000}}})
-		if _, err = f.store.UpsertModel(ctx, store.UpsertModelInput{ModelID: id, DisplayName: "DeepSeek V4.1 Flash", UpstreamProviderID: provider.ID, UpstreamModel: id, InputPricePerMtok: "1", OutputPricePerMtok: "1", ProvideUpstreamProviderID: true, ProvideUpstreamModel: true, Enabled: &enabled, SortOrder: int64Pointer(int64(i))}); err != nil {
+		if _, err = f.store.UpsertModel(ctx, store.UpsertModelInput{ModelID: id, DisplayName: "DeepSeek V4.1 Flash", UpstreamProviderID: provider.ID, UpstreamModel: "deepseek-v4.1-flash", InputPricePerMtok: "1", OutputPricePerMtok: "1", ProvideUpstreamProviderID: true, ProvideUpstreamModel: true, Enabled: &enabled, SortOrder: int64Pointer(int64(i))}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err = f.store.SetModelConfig(ctx, id, "manual", cfg); err != nil {
@@ -97,6 +97,11 @@ func TestAnalysisModelUsesExistingAllowedDeepSeekCapabilities(t *testing.T) {
 	response = sourceRequest(f, token, "GET", "/api/v1/media/analysis-model?vision=0", nil)
 	if response.Code != 200 || dataOf(t, response)["envelope"].(map[string]any)["personalConfig"].(map[string]any)["defaultModelSelection"].(map[string]any)["modelId"] != "deepseek-text" {
 		t.Fatalf("text DeepSeek: %d %s", response.Code, response.Body.String())
+	}
+	textSelection := dataOf(t, response)["envelope"].(map[string]any)["personalConfig"].(map[string]any)["defaultModelSelection"].(map[string]any)
+	textOptions, _ := textSelection["options"].(map[string]any)
+	if textOptions["reasoningLevel"] != "high" {
+		t.Fatalf("adaptation preflight must explicitly select high: %s", response.Body.String())
 	}
 	if _, err = f.store.SaveTeamPolicy(ctx, store.TeamPolicyRecord{TeamID: team, AllowedModelIDs: []string{"model-a"}}); err != nil {
 		t.Fatal(err)
@@ -298,7 +303,7 @@ func installAnalysisModel(t *testing.T, f *apiFixture, id string, vision bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.store.UpsertModel(ctx, store.UpsertModelInput{ModelID: id, DisplayName: id, UpstreamProviderID: provider.ID, UpstreamModel: "deepseek-fixture", ProvideUpstreamProviderID: true, ProvideUpstreamModel: true, InputPricePerMtok: "1", OutputPricePerMtok: "1", Enabled: boolPointer(true)}); err != nil {
+	if _, err = f.store.UpsertModel(ctx, store.UpsertModelInput{ModelID: id, DisplayName: id, UpstreamProviderID: provider.ID, UpstreamModel: "deepseek-flash", ProvideUpstreamProviderID: true, ProvideUpstreamModel: true, InputPricePerMtok: "1", OutputPricePerMtok: "1", Enabled: boolPointer(true)}); err != nil {
 		t.Fatal(err)
 	}
 	cfg, _ := json.Marshal(map[string]any{"properties": map[string]any{"contextWindow": 128000, "inputFormat": map[string]any{"supportsText": true, "supportsImage": vision}, "outputFormat": map[string]any{"supportsText": true}}, "optionSpecs": map[string]any{"reasoningLevel": map[string]any{"values": []string{"low", "high"}, "map": "({ reasoning_effort: reasoningLevel })"}, "maxOutputTokens": map[string]any{"max": 32000}}})
@@ -361,6 +366,11 @@ func TestSourceFirstAPIPreservesReportAndChargesAdaptationOnce(t *testing.T) {
 	if scoped.Code != 200 {
 		t.Fatalf("settled fee must support current adaptation: %d %s", scoped.Code, scoped.Body.String())
 	}
+	adaptSelection := dataOf(t, scoped)["envelope"].(map[string]any)["personalConfig"].(map[string]any)["defaultModelSelection"].(map[string]any)
+	adaptOptions, _ := adaptSelection["options"].(map[string]any)
+	if adaptOptions["reasoningLevel"] != "high" {
+		t.Fatalf("adaptation scope must explicitly select high: %s", scoped.Body.String())
+	}
 	response = sourceRequest(f, token, "POST", prefix+"/configure", map[string]any{"version": configuredVersion, "brief": brief})
 	if response.Code != 200 || dataOf(t, response)["analysis"].(map[string]any)["inputId"] != "adapt-input" {
 		t.Fatal("configuration replay reset active input", response.Body.String())
@@ -380,7 +390,7 @@ func TestSourceFirstAPIPreservesReportAndChargesAdaptationOnce(t *testing.T) {
 }
 
 func TestAnalysisConfigRejectsNonDeepSeekAndMissingVision(t *testing.T) {
-	for _, kind := range []string{"non-deepseek", "no-vision", "no-high", "mixed-routes", "disabled-provider"} {
+	for _, kind := range []string{"non-deepseek", "pro-display-flash", "no-vision", "no-high", "mixed-routes", "disabled-provider"} {
 		t.Run(kind, func(t *testing.T) {
 			f, token, p := analysisConfigFixture(t)
 			ctx := context.Background()
@@ -391,6 +401,8 @@ func TestAnalysisConfigRejectsNonDeepSeekAndMissingVision(t *testing.T) {
 			switch kind {
 			case "non-deepseek":
 				_, err = f.store.UpsertModel(ctx, store.UpsertModelInput{ModelID: model.ModelID, DisplayName: "fixture", ProvideUpstreamModel: true, UpstreamModel: "other-model", InputPricePerMtok: "1", OutputPricePerMtok: "1"})
+			case "pro-display-flash":
+				_, err = f.store.UpsertModel(ctx, store.UpsertModelInput{ModelID: model.ModelID, DisplayName: "DeepSeek Flash", ProvideUpstreamModel: true, UpstreamModel: "deepseek-v4-pro", InputPricePerMtok: "1", OutputPricePerMtok: "1"})
 			case "no-vision":
 				cfg := map[string]any{"properties": map[string]any{"contextWindow": 128000, "inputFormat": map[string]any{"supportsText": true, "supportsImage": false}, "outputFormat": map[string]any{"supportsText": true}}, "optionSpecs": map[string]any{"maxOutputTokens": map[string]any{"max": 32000}}}
 				raw, _ := json.Marshal(cfg)
@@ -400,7 +412,7 @@ func TestAnalysisConfigRejectsNonDeepSeekAndMissingVision(t *testing.T) {
 				raw, _ := json.Marshal(cfg)
 				_, err = f.store.SetModelConfig(ctx, model.ModelID, "manual", raw)
 			case "mixed-routes":
-				_, err = f.store.CreateUpstreamRoute(ctx, store.CreateUpstreamRouteInput{ModelID: model.ModelID, ProviderID: model.UpstreamProviderID, UpstreamModel: "deepseek-fixture", Enabled: true, Weight: 1})
+				_, err = f.store.CreateUpstreamRoute(ctx, store.CreateUpstreamRouteInput{ModelID: model.ModelID, ProviderID: model.UpstreamProviderID, UpstreamModel: "deepseek-flash", Enabled: true, Weight: 1})
 				if err == nil {
 					var ciphertext string
 					ciphertext, err = f.deps.SecretBox.Encrypt("fixture-key")

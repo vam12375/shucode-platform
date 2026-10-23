@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -288,7 +289,9 @@ func equalSourceAnalysis(left, right SourceAnalysis) bool {
 	return err == nil && string(a) == string(b)
 }
 
-// DeepSeek 身份按既有路由最终上游模型校验，不能由客户端展示名或供应商名称冒充。
+var deepSeekFlashIdentity = regexp.MustCompile(`^deepseek(?:[-_./:]v?[0-9]+(?:\.[0-9]+)*)*[-_./:]flash(?:[-_./:][0-9]+(?:\.[0-9]+)*)*$`)
+
+// Flash 身份按最终上游校验；分隔后的版本/日期可变，但 Pro 和子串冒充不能放行。
 func IsDeepSeekAnalysisModel(value string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(value)), "deepseek")
+	return deepSeekFlashIdentity.MatchString(strings.ToLower(strings.TrimSpace(value)))
 }

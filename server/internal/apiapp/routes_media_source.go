@@ -64,9 +64,7 @@ func registerMediaSourceRoutes(router *gin.Engine, deps *Deps) {
 				continue
 			}
 			envelope := buildUserConfigEnvelope(BuildUserConfigInput{UserID: auth.User.ID, TeamID: membership.Team.ID, DeviceTokenID: auth.Device.ID, GatewayBaseURL: deps.Env.GatewayBaseURL, GatewayAPI: gatewayAPI{Type: deps.Env.GatewayAPIType, BaseURL: deps.Env.GatewayAPIBaseURL}, Models: []userConfigModel{{ModelID: model.ModelID, DisplayName: model.DisplayName, ConfigMode: model.ConfigMode, Config: canonicalModelConfig(model.ModelConfig)}}, DefaultModelID: model.ModelID, ProviderName: "Mendao Video Analysis"})
-			if rawVision == "1" {
-				setSourceAnalysisReasoning(envelope)
-			}
+			setSourceAnalysisReasoning(envelope)
 			c.JSON(200, okData(gin.H{"envelope": withPlatformAccessToken(envelope, auth.PlaintextToken)}))
 			return
 		}
@@ -82,22 +80,20 @@ func analysisModelAvailable(ctx context.Context, deps *Deps, model store.Platfor
 	if config == nil || config.Properties.ContextWindow <= 0 || config.OptionSpecs.MaxOutputTokens.Max <= 0 || !config.Properties.InputFormat.SupportsText || !config.Properties.OutputFormat.SupportsText || (vision && !config.Properties.InputFormat.SupportsImage) {
 		return false, nil
 	}
-	if vision {
-		// 原片分析已固定 high；不能把能力缺失或不支持伪装成可降档的默认选择。
-		reasoning := config.OptionSpecs.ReasoningLevel
-		if reasoning == nil || strings.TrimSpace(reasoning.Map) == "" {
-			return false, nil
+	// 两阶段分析均固定 high；能力缺失时拒绝，不能让改编阶段继承历史 max。
+	reasoning := config.OptionSpecs.ReasoningLevel
+	if reasoning == nil || strings.TrimSpace(reasoning.Map) == "" {
+		return false, nil
+	}
+	high := false
+	for _, value := range reasoning.Values {
+		if value == "high" {
+			high = true
+			break
 		}
-		high := false
-		for _, value := range reasoning.Values {
-			if value == "high" {
-				high = true
-				break
-			}
-		}
-		if !high {
-			return false, nil
-		}
+	}
+	if !high {
+		return false, nil
 	}
 	routes, err := deps.Store.ListUpstreamRoutes(ctx, model.ModelID, true)
 	if err != nil {
@@ -122,7 +118,7 @@ func analysisModelAvailable(ctx context.Context, deps *Deps, model store.Platfor
 		if strings.TrimSpace(upstream) == "" {
 			upstream = model.ModelID
 		}
-		// 混合路由池仍可能被网关调度到其它模型，不能仅凭其中一个 DeepSeek 路由放行。
+		// 混合路由池仍可能被调度到 Pro，不能仅凭其中一个 Flash 路由放行。
 		if !media.IsDeepSeekAnalysisModel(upstream) {
 			return false, nil
 		}
