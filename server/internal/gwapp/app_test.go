@@ -1144,3 +1144,35 @@ func TestStreamingIdleFailureCountsTowardFuse(t *testing.T) {
 		t.Fatalf("连续流式空闲失败应触发熔断: %+v", got)
 	}
 }
+
+// 网关只返回 JSON：必须有 nosniff / XFO / Referrer / Permissions，
+// 且不得下发 CSP（重复 CSP 会与同源控制台策略求交，拦掉 Turnstile）。
+func TestGatewaySecurityHeaders(t *testing.T) {
+	f := newGatewayFixture(t, nil)
+	engine := f.engine
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	req.Header.Set("x-forwarded-proto", "https")
+	engine.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("X-Content-Type-Options=%q", got)
+	}
+	if got := rec.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Fatalf("X-Frame-Options=%q", got)
+	}
+	if rec.Header().Get("Content-Security-Policy") != "" {
+		t.Fatal("网关不应下发 CSP")
+	}
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "max-age=31536000" {
+		t.Fatalf("HTTPS 反代下应有 HSTS，实际 %q", got)
+	}
+
+	// 明文直连不应下发 HSTS。
+	rec = httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest("GET", "/healthz", nil))
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Fatalf("明文不应下发 HSTS，实际 %q", got)
+	}
+}

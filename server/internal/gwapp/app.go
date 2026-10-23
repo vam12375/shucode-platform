@@ -280,6 +280,9 @@ func New(deps Deps) *gin.Engine {
 		}()
 		c.Next()
 	})
+	// 网关只返回 JSON，不需要 CSP；但 nosniff / XFO / Referrer / Permissions 与 HSTS
+	// 必须自带——nginx 的 443 块不再给代理响应补头（重复的 CSP 会与应用策略求交）。
+	app.Use(gatewaySecurityHeaders())
 	app.GET("/healthz", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
 	app.GET("/v1/models", func(c *gin.Context) { handleModelsRequest(c, deps) })
 	app.GET("/v1/responses/:responseID", func(c *gin.Context) { handleBackgroundResponseProxy(c, deps, http.MethodGet, false) })
@@ -1318,4 +1321,22 @@ func retryableUpstreamStatus(status int) bool {
 	return status == http.StatusRequestTimeout || status == http.StatusTooManyRequests ||
 		status == http.StatusUnauthorized || status == http.StatusForbidden ||
 		status >= 500
+}
+
+// gatewaySecurityHeaders:网关响应的最小安全头集合。
+// 不下发 CSP：这里只有 application/json，CSP 对非文档响应没有作用，
+// 而一旦下发就会与同源控制台页面的策略求交（重复 CSP 是"都生效"而非覆盖）。
+// HSTS 依据 X-Forwarded-Proto 判断：网关固定由宿主 nginx 以 TLS 反代，
+// 直连 8788 的明文请求即使伪造该头，浏览器也会忽略明文响应上的 HSTS。
+func gatewaySecurityHeaders() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("Referrer-Policy", "no-referrer")
+		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		if strings.EqualFold(c.GetHeader("x-forwarded-proto"), "https") || c.Request.TLS != nil {
+			c.Header("Strict-Transport-Security", "max-age=31536000")
+		}
+		c.Next()
+	}
 }

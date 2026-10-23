@@ -9,6 +9,32 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.47.1] - 2026-10-23
+
+### 修复(安全头重复)
+
+- 0.46.3 引入的回归：`security-headers.conf` 在 443 server 块被 include，`add_header` 继承到
+  `proxy_pass` 的响应上，导致线上每个响应出现**两套**安全头（实测 10 个）。
+  重复的 CSP 是**求交**而非覆盖——nginx 侧 `default-src 'self'` 回落到 `script-src 'self'`，
+  会拦掉应用策略放行的 `https://challenges.cloudflare.com`，即 **Turnstile 无法加载**。
+  当前 `turnstileEnabled=false` 尚未暴露，一旦启用即表现为登录页验证码永远出不来。
+- `security-headers.conf` 删除 CSP 行：nginx 生成的响应都不是文档，CSP 无意义却会求交。
+- 三个 443 代理 server 块移除 `security-headers.conf` 与 `hsts.conf` 的 include，
+  响应头改由应用独占，每个响应只有一套。80 跳转块保留 include。
+
+### 新增(网关安全头)
+
+- `gwapp` 补 `gatewaySecurityHeaders`：此前网关响应完全依赖 nginx 补头，移除 nginx include 后会裸奔。
+  新中间件下发 nosniff / X-Frame-Options / Referrer-Policy / Permissions-Policy，
+  并在 `X-Forwarded-Proto: https` 或直接 TLS 时下发 HSTS；网关只返回 JSON，**不下发 CSP**。
+
+### 验证
+
+- `make -C server lint test`（新增 `TestGatewaySecurityHeaders`）
+- `nginx -t`；`nginx -T` 校验 443 块内不再有 security-headers include
+- 本地 nginx + 真实 api 镜像联调：80 端口 308 携带 4 个头且无 CSP
+- 线上第二轮扫描见 `docs/security-hardening-2026-10-23.md` §6
+
 ## [0.47.0] - 2026-10-23
 
 ### 新增(媒体模型档位与时长区间)
