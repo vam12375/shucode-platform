@@ -213,6 +213,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			if update(func(v *Shot) {
 				v.Status = "failed"
 				v.Error = "provider_" + result.Status
+				v.ProviderError = sanitizeProviderError(result.Error.Code)
 				v.clearPending()
 			}) == nil {
 				return ErrConflict
@@ -471,6 +472,7 @@ func (s *Service) submissionFailure(ctx context.Context, p *Project, index int, 
 			ss := &v.Shots[index]
 			ss.Status = "failed"
 			ss.Error = "provider_rejected"
+			ss.ProviderError = providerErrorFrom(cause)
 			ss.clearPending()
 		})
 		return e

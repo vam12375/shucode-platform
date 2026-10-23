@@ -231,6 +231,7 @@ func (s *Service) action(ctx context.Context, team, id string, version int64, ac
 					}
 					shot.Status = "pending"
 					shot.Error = ""
+					shot.ProviderError = nil
 					shot.Attempt++
 					shot.ReservationID = ""
 					shot.VideoTaskID = ""

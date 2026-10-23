@@ -41,7 +41,11 @@ func (p Provider) request(ctx context.Context, method, path string, body any, ou
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("provider_http_%d", resp.StatusCode)
+		var failure struct {
+			Error providerErrorResponse `json:"error"`
+		}
+		_ = json.Unmarshal(raw, &failure)
+		return &providerHTTPError{status: resp.StatusCode, detail: sanitizeProviderError(failure.Error.Code)}
 	}
 	if err = json.Unmarshal(raw, out); err != nil {
 		return fmt.Errorf("provider_invalid_response: %w", err)
@@ -136,7 +140,8 @@ func (p Provider) SubmitWithReferenceImages(ctx context.Context, m Model, b Brie
 }
 
 type ProviderResult struct {
-	Status  string `json:"status"`
+	Status  string                `json:"status"`
+	Error   providerErrorResponse `json:"error"`
 	Content struct {
 		VideoURL string `json:"video_url"`
 	} `json:"content"`

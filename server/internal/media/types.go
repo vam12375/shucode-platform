@@ -155,22 +155,23 @@ type Analysis struct {
 	WorkspaceIdentity string `json:"workspaceIdentity,omitempty"`
 }
 type Shot struct {
-	Plan                  ShotPlan `json:"plan"`
-	Status                string   `json:"status"`
-	Attempt               int      `json:"attempt"`
-	VideoTaskID           string   `json:"videoTaskId,omitempty"`
-	ReferenceVideoAssetID string   `json:"referenceVideoAssetId,omitempty"`
-	ResultURL             string   `json:"resultUrl,omitempty"`
-	ImageAssetID          string   `json:"imageAssetId,omitempty"`
-	OutputAssetID         string   `json:"outputAssetId,omitempty"`
-	Error                 string   `json:"error,omitempty"`
-	ChargedMicro          int64    `json:"chargedMicro"`
-	QuoteMicro            int64    `json:"quoteMicro"`
-	ReservationID         string   `json:"reservationId,omitempty"`
-	Stage                 string   `json:"stage,omitempty"`
-	PendingChargeMicro    int64    `json:"pendingChargeMicro,omitempty"`
-	ReservedMicro         int64    `json:"reservedMicro,omitempty"`
-	ReleasedMicro         int64    `json:"releasedMicro,omitempty"`
+	Plan                  ShotPlan       `json:"plan"`
+	Status                string         `json:"status"`
+	Attempt               int            `json:"attempt"`
+	VideoTaskID           string         `json:"videoTaskId,omitempty"`
+	ReferenceVideoAssetID string         `json:"referenceVideoAssetId,omitempty"`
+	ResultURL             string         `json:"resultUrl,omitempty"`
+	ImageAssetID          string         `json:"imageAssetId,omitempty"`
+	OutputAssetID         string         `json:"outputAssetId,omitempty"`
+	Error                 string         `json:"error,omitempty"`
+	ProviderError         *ProviderError `json:"providerError,omitempty"`
+	ChargedMicro          int64          `json:"chargedMicro"`
+	QuoteMicro            int64          `json:"quoteMicro"`
+	ReservationID         string         `json:"reservationId,omitempty"`
+	Stage                 string         `json:"stage,omitempty"`
+	PendingChargeMicro    int64          `json:"pendingChargeMicro,omitempty"`
+	ReservedMicro         int64          `json:"reservedMicro,omitempty"`
+	ReleasedMicro         int64          `json:"releasedMicro,omitempty"`
 	// Token 结算：成功后先落实际 token 与费用，下载/重试/结算都复用同一份事实。
 	ProviderUsageTokens      int64 `json:"providerUsageTokens,omitempty"`
 	TokenChargeMicro         int64 `json:"tokenChargeMicro,omitempty"`
@@ -206,7 +207,7 @@ type Project struct {
 	LeaseUntil           time.Time                `json:"leaseUntil"`
 }
 
-// 用户投影不携带供应商路由、请求身份、锁定售价或 worker lease；这些字段只由平台状态机写入。
+// 用户投影不携带供应商路由、准入身份、锁定售价或 worker lease；opaque task ID 仅用于受理证据与排查。
 type ProjectView struct {
 	SourceAnalysis       *SourceAnalysis          `json:"sourceAnalysis,omitempty"`
 	AnalysisChargedMicro int64                    `json:"analysisChargedMicro"`
@@ -230,20 +231,26 @@ type ProjectView struct {
 	CancelRequested      bool                     `json:"cancelRequested"`
 }
 type ShotView struct {
-	Plan          ShotPlan `json:"plan"`
-	Status        string   `json:"status"`
-	Attempt       int      `json:"attempt"`
-	ImageAssetID  string   `json:"imageAssetId,omitempty"`
-	OutputAssetID string   `json:"outputAssetId,omitempty"`
-	Error         string   `json:"error,omitempty"`
-	ChargedMicro  int64    `json:"chargedMicro"`
-	QuoteMicro    int64    `json:"quoteMicro"`
+	Plan          ShotPlan       `json:"plan"`
+	Status        string         `json:"status"`
+	Attempt       int            `json:"attempt"`
+	VideoTaskID   string         `json:"videoTaskId,omitempty"`
+	ImageAssetID  string         `json:"imageAssetId,omitempty"`
+	OutputAssetID string         `json:"outputAssetId,omitempty"`
+	Error         string         `json:"error,omitempty"`
+	ProviderError *ProviderError `json:"providerError,omitempty"`
+	ChargedMicro  int64          `json:"chargedMicro"`
+	QuoteMicro    int64          `json:"quoteMicro"`
 }
 
 func (p Project) View() ProjectView {
 	shots := make([]ShotView, 0, len(p.Shots))
 	for _, s := range p.Shots {
-		shots = append(shots, ShotView{Plan: s.Plan, Status: s.Status, Attempt: s.Attempt, ImageAssetID: s.ImageAssetID, OutputAssetID: s.OutputAssetID, Error: s.Error, ChargedMicro: s.ChargedMicro, QuoteMicro: s.QuoteMicro})
+		var diagnostic *ProviderError
+		if s.ProviderError != nil {
+			diagnostic = sanitizeProviderError(s.ProviderError.Code)
+		}
+		shots = append(shots, ShotView{Plan: s.Plan, Status: s.Status, Attempt: s.Attempt, VideoTaskID: publicVideoTaskID(s.VideoTaskID), ImageAssetID: s.ImageAssetID, OutputAssetID: s.OutputAssetID, Error: s.Error, ProviderError: diagnostic, ChargedMicro: s.ChargedMicro, QuoteMicro: s.QuoteMicro})
 	}
 	var archives []CanvasTeamAssetArchive
 	if p.Canvas != nil {

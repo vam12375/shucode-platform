@@ -28,7 +28,7 @@ func wholeReferenceFixture() (Brief, []Model, Plan) {
 }
 
 func TestExplicitLegacyReviewSaveDropsOnlyUnstartedPerShotClipBindings(t *testing.T) {
-	for _, kind := range []string{"pending", "queued", "submitted", "image", "admission", "charged", "attempt", "cancelled"} {
+	for _, kind := range []string{"pending", "queued", "submitted", "diagnostic", "image", "admission", "charged", "attempt", "cancelled"} {
 		t.Run(kind, func(t *testing.T) {
 			f := setup(t)
 			brief, models, plan := wholeReferenceFixture()
@@ -45,6 +45,8 @@ func TestExplicitLegacyReviewSaveDropsOnlyUnstartedPerShotClipBindings(t *testin
 				p.Status = "queued"
 			case "submitted":
 				p.Shots[0].VideoTaskID = "already-submitted"
+			case "diagnostic":
+				p.Shots[0].ProviderError = &ProviderError{Code: "InvalidParameter", Category: "invalid_input"}
 			case "image":
 				p.Shots[0].ImageAssetID = "generated-image"
 			case "admission":

@@ -15,7 +15,7 @@ func referenceReviewPlan(project *Project, plan Plan) (Plan, error) {
 		return Plan{}, ErrConflict
 	}
 	for _, shot := range project.Shots {
-		if shot.Status != "pending" || shot.Attempt > 1 || shot.VideoTaskID != "" || shot.ImageAssetID != "" || shot.OutputAssetID != "" || shot.ResultURL != "" || shot.ReservationID != "" || shot.Stage != "" || shot.ChargedMicro != 0 || shot.PendingChargeMicro != 0 || shot.ReservedMicro != 0 || shot.ReleasedMicro != 0 || shot.ProviderUsageTokens != 0 || shot.TokenChargeMicro != 0 {
+		if shot.Status != "pending" || shot.Attempt > 1 || shot.VideoTaskID != "" || shot.ProviderError != nil || shot.ImageAssetID != "" || shot.OutputAssetID != "" || shot.ResultURL != "" || shot.ReservationID != "" || shot.Stage != "" || shot.ChargedMicro != 0 || shot.PendingChargeMicro != 0 || shot.ReservedMicro != 0 || shot.ReleasedMicro != 0 || shot.ProviderUsageTokens != 0 || shot.TokenChargeMicro != 0 {
 			return Plan{}, ErrConflict
 		}
 	}
