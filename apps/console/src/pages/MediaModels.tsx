@@ -72,7 +72,7 @@ interface MediaModel {
   resolutions: string[];
   minDuration?: number;
   maxDuration?: number;
-  // 旧目录的枚举时长；读取时换算成 min/max，保存后不再下发。
+  // 旧目录的枚举时长；仅显式转换后才改为连续区间。
   durations?: number[];
   costMicro: number;
   generateAudio: boolean;
@@ -106,6 +106,7 @@ export interface MediaModelDraft {
   resolutions: string[];
   minDuration: string;
   maxDuration: string;
+  legacyDurations?: number[];
   costCredits: string;
   generateAudio: boolean;
   priceCredits: string;
@@ -221,6 +222,9 @@ function durationBounds(model: MediaModel): { min: number; max: number } {
 
 export function toDraft(model: MediaModel): MediaModelDraft {
   const bounds = durationBounds(model);
+  const hasRange = Boolean(
+    model.minDuration && model.maxDuration && model.maxDuration >= model.minDuration,
+  );
   return {
     familyId: "",
     id: model.id,
@@ -231,6 +235,10 @@ export function toDraft(model: MediaModel): MediaModelDraft {
     resolutions: [...(model.resolutions ?? [])],
     minDuration: String(bounds.min),
     maxDuration: String(bounds.max),
+    // min/max 只是转换建议，不能把旧稀疏枚举在加载或修改价格时静默扩大为连续能力。
+    ...(model.kind === "video" && !hasRange && model.durations?.length
+      ? { legacyDurations: [...model.durations] }
+      : {}),
     costCredits: priceInputValue(model.costMicro ?? 0),
     generateAudio: model.generateAudio === true,
     priceCredits: priceInputValue(model.priceMicro),
@@ -264,10 +272,12 @@ export function toApiModel(draft: MediaModelDraft): MediaModel {
     adapter: "ark",
     resolutions: isVideo ? draft.resolutions : [],
     ...(isVideo
-      ? {
-          minDuration: Number(draft.minDuration),
-          maxDuration: Number(draft.maxDuration),
-        }
+      ? draft.legacyDurations !== undefined
+        ? { durations: [...draft.legacyDurations] }
+        : {
+            minDuration: Number(draft.minDuration),
+            maxDuration: Number(draft.maxDuration),
+          }
       : {}),
     costMicro,
     generateAudio: isVideo ? draft.generateAudio : false,
@@ -301,7 +311,9 @@ function sharedSignature(draft: MediaModelDraft): string {
     draft.upstreamModel.trim(),
     draft.priceVersion.trim(),
     draft.kind === "video" ? draft.generateAudio : false,
-    draft.kind === "video" ? [draft.minDuration.trim(), draft.maxDuration.trim()] : null,
+    draft.kind === "video"
+      ? [draft.minDuration.trim(), draft.maxDuration.trim(), draft.legacyDurations ?? null]
+      : null,
     vr
       ? [
           vr.maxDurationSeconds.trim(),
@@ -348,6 +360,13 @@ export function validateDrafts(
     }
     if (draft.kind === "video") {
       if (draft.resolutions.length === 0) return `「${label}」至少选择一个分辨率。`;
+      if (
+        draft.legacyDurations !== undefined &&
+        (draft.legacyDurations.length === 0 ||
+          draft.legacyDurations.some(
+            (duration) => !Number.isInteger(duration) || duration < 2 || duration > 30,
+          ))
+      ) return `「${label}」旧枚举时长必须为 2–30 秒的整数。`;
       const min = draft.minDuration.trim();
       const max = draft.maxDuration.trim();
       if (!/^\d+$/.test(min) || !/^\d+$/.test(max)) {
@@ -490,6 +509,10 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
         : legacyDurations.length
           ? Math.max(...legacyDurations)
           : DEFAULT_MAX_DURATION;
+    const hasRange =
+      Number.isInteger(Number(record.minDuration)) && Number(record.minDuration) > 0 &&
+      Number.isInteger(Number(record.maxDuration)) &&
+      Number(record.maxDuration) >= Number(record.minDuration);
     let videoReference: MediaModelDraft["videoReference"];
     if (record.videoReference !== undefined) {
       if (!record.videoReference || typeof record.videoReference !== "object" || Array.isArray(record.videoReference)) {
@@ -531,6 +554,7 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
         : [],
       minDuration: String(minDuration),
       maxDuration: String(maxDuration),
+      ...(kind === "video" && !hasRange && legacyDurations.length ? { legacyDurations } : {}),
       costCredits:
         Number.isFinite(costMicro) && costMicro >= 0
           ? priceInputValue(costMicro)
@@ -636,6 +660,7 @@ export function MediaModelsPage() {
                   name: familyNameOf(draft),
                   resolutions: [],
                   generateAudio: false,
+                  legacyDurations: undefined,
                   videoReference: undefined,
                 }
               : draft,
@@ -1206,7 +1231,11 @@ function MediaFamilyCard({
     minDuration,
     Math.min(30, Number.parseInt(lead.maxDuration, 10) || DEFAULT_MAX_DURATION),
   );
-  const duration = Math.min(maxDuration, Math.max(minDuration, previewDuration));
+  const legacyTiers = tiers.filter((draft) => draft.legacyDurations !== undefined);
+  const legacyDurations = preview.legacyDurations;
+  const duration = legacyDurations?.length
+    ? (legacyDurations.includes(previewDuration) ? previewDuration : legacyDurations[0])
+    : Math.min(maxDuration, Math.max(minDuration, previewDuration));
   const saleMicro = previewMicro(preview.priceCredits);
   const total = saleMicro > 0 ? trimNumber((saleMicro * duration) / MICRO_CREDITS_PER_CREDIT) : "—";
   const reference = lead.videoReference?.enabled ? lead.videoReference : null;
@@ -1470,42 +1499,85 @@ function MediaFamilyCard({
         </div>
       ) : null}
 
+      {isVideo && legacyTiers.length ? (
+        <Notice k="旧枚举时长">
+          <div>
+            {legacyTiers.map((tier) => (
+              <div key={tier.id}>
+                {tier.resolutions.join(" / ")}：{tier.legacyDurations!.join("、")} 秒
+              </div>
+            ))}
+            <p>当前仅支持上述档位。转换后需点击「保存配置」才会生效。</p>
+            <button
+              className="btn btn-ghost btn-sm"
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                onUpdateFamily(indexes, {
+                  legacyDurations: undefined,
+                  minDuration: lead.minDuration,
+                  maxDuration: lead.maxDuration,
+                })
+              }
+            >
+              转换为连续区间 {lead.minDuration}–{lead.maxDuration} 秒
+            </button>
+          </div>
+        </Notice>
+      ) : null}
+
       {isVideo ? (
         <div className="media-trial">
-          <div className="media-trial-config">
-            <span className="media-trial-label">镜头时长</span>
-            <input
-              className="input num media-duration-input"
-              inputMode="numeric"
-              aria-label={`模型 ${name} 最小时长`}
-              value={lead.minDuration}
-              onChange={(event) =>
-                onUpdateFamily(indexes, { minDuration: event.target.value })
-              }
-            />
-            <span className="media-range-dash">–</span>
-            <input
-              className="input num media-duration-input"
-              inputMode="numeric"
-              aria-label={`模型 ${name} 最大时长`}
-              value={lead.maxDuration}
-              onChange={(event) =>
-                onUpdateFamily(indexes, { maxDuration: event.target.value })
-              }
-            />
-            <span className="media-trial-unit">秒</span>
-          </div>
+          {legacyTiers.length ? (
+            <Chip tone="hot">旧枚举时长试算</Chip>
+          ) : (
+            <div className="media-trial-config">
+              <span className="media-trial-label">镜头时长</span>
+              <input
+                className="input num media-duration-input"
+                inputMode="numeric"
+                aria-label={`模型 ${name} 最小时长`}
+                value={lead.minDuration}
+                onChange={(event) =>
+                  onUpdateFamily(indexes, { minDuration: event.target.value })
+                }
+              />
+              <span className="media-range-dash">–</span>
+              <input
+                className="input num media-duration-input"
+                inputMode="numeric"
+                aria-label={`模型 ${name} 最大时长`}
+                value={lead.maxDuration}
+                onChange={(event) =>
+                  onUpdateFamily(indexes, { maxDuration: event.target.value })
+                }
+              />
+              <span className="media-trial-unit">秒</span>
+            </div>
+          )}
           <div className="media-trial-slider">
-            <input
-              className="media-duration-range"
-              type="range"
-              min={minDuration}
-              max={maxDuration}
-              step={1}
-              aria-label={`模型 ${name} 试算时长`}
-              value={duration}
-              onChange={(event) => setPreviewDuration(Number(event.target.value))}
-            />
+            {legacyDurations?.length ? (
+              <Select
+                ariaLabel={`模型 ${name} 试算时长`}
+                value={String(duration)}
+                onChange={(value) => setPreviewDuration(Number(value))}
+                options={legacyDurations.map((value) => ({
+                  value: String(value),
+                  label: `${value} 秒`,
+                }))}
+              />
+            ) : (
+              <input
+                className="media-duration-range"
+                type="range"
+                min={minDuration}
+                max={maxDuration}
+                step={1}
+                aria-label={`模型 ${name} 试算时长`}
+                value={duration}
+                onChange={(event) => setPreviewDuration(Number(event.target.value))}
+              />
+            )}
             <span className="media-duration-value num">{duration}s</span>
           </div>
           <div className="media-trial-total">
