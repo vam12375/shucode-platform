@@ -12,11 +12,11 @@ import (
 )
 
 func equalAnalysisPlan(left, right Plan) bool {
-	a, err := json.Marshal(left)
+	a, err := json.Marshal(withoutReferenceClipBindings(left))
 	if err != nil {
 		return false
 	}
-	b, err := json.Marshal(right)
+	b, err := json.Marshal(withoutReferenceClipBindings(right))
 	return err == nil && bytes.Equal(a, b)
 }
 
@@ -103,6 +103,8 @@ func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int
 }
 
 func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, version int64, input string, plan Plan) (*Project, error) {
+	// 模型只拥有分析脚本；片段必须由 Host 上传并经 revise 校验，不能把原片 ID 当作上传事实。
+	plan = withoutReferenceClipBindings(plan)
 	current, err := s.Repo.Get(ctx, team, id)
 	if err != nil {
 		return nil, err

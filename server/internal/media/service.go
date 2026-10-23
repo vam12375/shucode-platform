@@ -163,6 +163,7 @@ func (s *Service) Revise(ctx context.Context, team, id string, version int64, pl
 				}
 				shots[i].ReferenceVideoAssetID = shots[i].Plan.ReferenceVideoAssetID
 			}
+			preserveReferencePreparationAttempt(p, plan, shots, total)
 		} else {
 			for _, shot := range shots {
 				if shot.Plan.ReferenceVideoAssetID != "" {
@@ -221,6 +222,9 @@ func (s *Service) action(ctx context.Context, team, id string, version int64, ac
 			}
 			if p.CancelRequested {
 				return ErrConflict
+			}
+			if referencePreparationFailure(p.Error) {
+				return s.retryReferencePreparation(ctx, p)
 			}
 			var remaining int64
 			for i := range p.Shots {
