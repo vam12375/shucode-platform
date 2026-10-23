@@ -24,7 +24,7 @@ COPY --chown=node:node . .
 RUN pnpm --filter @shucode-platform/console build
 
 # Go 后端：静态编译四个二进制（linux/amd64，生产镜像无 CGO 依赖）。
-FROM golang:1.26.10-alpine@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba AS go-builder
+FROM golang:1.27.2-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d AS go-builder
 WORKDIR /src
 ENV CGO_ENABLED=0
 COPY server/go.mod server/go.sum ./
