@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/vam12375/shucode-platform/server/internal/store"
+	"math"
 	"time"
 )
 
@@ -91,7 +92,8 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	}
 	kind := "video"
 	modelID := p.Brief.VideoModel
-	if shot.Status == "pending" && shot.Plan.ImagePrompt != "" && shot.ImageAssetID == "" {
+	// 首帧文本本身不是生图授权；历史方案也必须显式选择 imageModel 才能开启新的生图阶段。
+	if shot.Status == "pending" && p.Brief.ImageModel != "" && shot.Plan.ImagePrompt != "" && shot.ImageAssetID == "" {
 		kind = "image"
 		modelID = p.Brief.ImageModel
 	}
@@ -266,6 +268,13 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	if shot.Status != "pending" && shot.Status != "image_ready" {
 		return fmt.Errorf("invalid_shot_state")
 	}
+	var replacementImageIDs []string
+	if kind == "video" && isWholeVideoReferenceExecution(p) {
+		replacementImageIDs = wholeReferenceImageIDs(p, shot)
+		if len(replacementImageIDs) == 0 || len(replacementImageIDs) > m.VideoReference.MaxImages {
+			return s.failVideoReference(ctx, p, index, shot, "video_reference_unsupported")
+		}
+	}
 	amount := m.PriceMicro
 	if kind == "video" {
 		amount *= int64(shot.Plan.Duration)
@@ -379,6 +388,12 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		} else {
 			id, e = provider.CanvasVideo(ctx, m, *p.Canvas, images)
 		}
+	} else if replacementImageIDs != nil {
+		images := make([]string, 0, len(replacementImageIDs))
+		for _, assetID := range replacementImageIDs {
+			images = append(images, s.Blobs.URL(p.TeamID, assetID))
+		}
+		id, e = provider.SubmitWithReferenceImages(ctx, m, p.Brief, shot.Plan, images, referenceVideoURL)
 	} else {
 		id, e = provider.SubmitWithReference(ctx, m, p.Brief, shot.Plan, image, referenceVideoURL)
 	}
@@ -393,6 +408,32 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 
 func videoReferenceRequested(p *Project) bool {
 	return (p.Canvas != nil && len(p.Canvas.VideoReferences) > 0) || p.Brief.GenerationMode == "video_reference"
+}
+
+func isWholeVideoReferenceExecution(p *Project) bool {
+	return p.Canvas == nil && p.Brief.Mode == "replicate" && p.Brief.GenerationMode == "video_reference" &&
+		len(p.Shots) == 1 && p.Brief.ReferenceDurationSeconds > 0 &&
+		math.Abs(p.Shots[0].Plan.SourceStart) <= .001 &&
+		math.Abs(p.Shots[0].Plan.SourceEnd-p.Brief.ReferenceDurationSeconds) <= .001
+}
+
+func wholeReferenceImageIDs(p *Project, shot Shot) []string {
+	if shot.ImageAssetID != "" {
+		return []string{shot.ImageAssetID}
+	}
+	// 整段执行镜头只存首张替换图；其余身份参考仍由已审阅方案按首次出现顺序提供。
+	// 旧逐镜执行不走此分支，避免恢复排队任务时改变已冻结的供应商输入。
+	images := []string{}
+	seen := map[string]bool{}
+	if p.Plan != nil {
+		for _, plan := range p.Plan.Shots {
+			if plan.AssetID != "" && !seen[plan.AssetID] {
+				seen[plan.AssetID] = true
+				images = append(images, plan.AssetID)
+			}
+		}
+	}
+	return images
 }
 
 func (s *Service) failVideoReference(ctx context.Context, p *Project, index int, shot Shot, reason string) error {

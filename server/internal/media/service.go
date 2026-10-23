@@ -131,6 +131,11 @@ func (s *Service) Revise(ctx context.Context, team, id string, version int64, pl
 		if err := validateSourceBoundaries(p, plan); err != nil {
 			return err
 		}
+		var err error
+		plan, err = referenceReviewPlan(p, plan)
+		if err != nil {
+			return err
+		}
 		shots, total, err := BuildShots(p.Brief, plan, p.Models)
 		if err != nil {
 			return err
@@ -142,7 +147,8 @@ func (s *Service) Revise(ctx context.Context, team, id string, version int64, pl
 			}
 			for i := range shots {
 				if shots[i].Plan.ReferenceVideoAssetID == "" {
-					return fmt.Errorf("video_reference_clip_required")
+					// 保存审阅脚本只重新派生执行与报价；真实完整片段由显式生成动作准备。
+					continue
 				}
 				start, end := shots[i].Plan.SourceStart, shots[i].Plan.SourceEnd
 				source, resolveErr := s.resolveVideoReference(ctx, team, p.Brief.ReferenceAssetID, &start, &end, model.VideoReference.MaxDurationSeconds)
@@ -178,7 +184,7 @@ func (s *Service) FailAnalysis(ctx context.Context, team, id string, version int
 		return nil, ErrInvalid
 	}
 	switch code {
-	case "analysis_failed", "video_analysis_scope_invalid", "video_analysis_scope_budget_exhausted", "video_analysis_scope_unavailable", "source_timeline_invalid", "source_url_mismatch":
+	case "analysis_failed", "video_analysis_scope_invalid", "video_analysis_scope_budget_exhausted", "video_analysis_scope_unavailable", "source_timeline_invalid", "source_url_mismatch", "source_report_invalid", "video_reference_duration_unsupported", "model_not_configured", "duration_or_budget_exceeded", "video_reference_plan_invalid", "video_reference_prompt_limit", "video_reference_unsupported", "video_reference_image_limit", "first_frame_required", "video_source_changed":
 	default:
 		return nil, ErrInvalid
 	}
@@ -203,7 +209,8 @@ func (s *Service) action(ctx context.Context, team, id string, version int64, ac
 			}
 		case "analysis-failed":
 			// 版本与输入在同一 CAS 路径检查，旧会话终态不能结束后来绑定的新输入。
-			if p.Status != "analyzing" || (input != "" && (p.Analysis == nil || p.Analysis.InputID != input)) {
+			sameFailedAdaptation := p.Status == "analysis_failed" && input != "" && p.Analysis != nil && p.Analysis.Kind == "adaptation" && p.Analysis.InputID == input && p.SourceAnalysis != nil && p.Plan == nil && len(p.Shots) == 0 && !p.CancelRequested
+			if (p.Status != "analyzing" && !sameFailedAdaptation) || (input != "" && (p.Analysis == nil || p.Analysis.InputID != input)) {
 				return ErrConflict
 			}
 			p.Status = "analysis_failed"

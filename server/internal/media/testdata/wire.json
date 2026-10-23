@@ -65,11 +65,11 @@
       "providerId": "fixture",
       "upstreamModel": "fixture",
       "resolutions": ["720p"],
-      "durations": [5],
+      "durations": [5, 10],
       "priceMicro": 100000,
       "priceVersion": "v1",
       "videoReference": {
-        "maxDurationSeconds": 5,
+        "maxDurationSeconds": 10,
         "maxImages": 3,
         "priceMicro": 250000,
         "costMicro": 0

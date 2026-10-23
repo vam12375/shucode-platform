@@ -47,6 +47,66 @@ func TestVideoSubmitRequiresFirstFrameBeforeRequest(t *testing.T) {
 	}
 }
 
+func TestProviderSubmitsMultipleReferenceImagesAndOneVideo(t *testing.T) {
+	var body map[string]any
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		json.NewEncoder(w).Encode(map[string]string{"id": "task-reference"})
+	}))
+	defer server.Close()
+	p := Provider{BaseURL: server.URL, Client: server.Client()}
+	m := Model{UpstreamModel: "video-model", VideoReference: &VideoReferenceCapability{MaxDurationSeconds: 15, MaxImages: 3}}
+	images := []string{"https://example.test/first.png", "https://example.test/second.png", "https://example.test/third.png"}
+	id, err := p.SubmitWithReferenceImages(context.Background(), m, Brief{Resolution: "480p", AspectRatio: "16:9"}, ShotPlan{Prompt: "整片保留动作并替换角色", Duration: 9}, images, "https://example.test/full.mp4")
+	if err != nil || id != "task-reference" || requests != 1 {
+		t.Fatalf("id=%s requests=%d err=%v", id, requests, err)
+	}
+	content := body["content"].([]any)
+	if len(content) != 5 || body["duration"] != float64(9) {
+		t.Fatalf("unexpected whole-reference request: %#v", body)
+	}
+	for i, want := range images {
+		item := content[i+1].(map[string]any)
+		if item["role"] != "reference_image" || item["image_url"].(map[string]any)["url"] != want {
+			t.Fatalf("reference image %d = %#v", i, item)
+		}
+	}
+	video := content[4].(map[string]any)
+	if video["role"] != "reference_video" || video["video_url"].(map[string]any)["url"] != "https://example.test/full.mp4" {
+		t.Fatalf("reference video = %#v", video)
+	}
+}
+
+func TestProviderRejectsReferenceImagesOutsideCapabilityBeforeRequest(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		json.NewEncoder(w).Encode(map[string]string{"id": "unexpected"})
+	}))
+	defer server.Close()
+	p := Provider{BaseURL: server.URL, Client: server.Client()}
+	for name, tc := range map[string]struct {
+		images []string
+		cap    *VideoReferenceCapability
+	}{
+		"missing":     {images: nil, cap: &VideoReferenceCapability{MaxImages: 2}},
+		"empty":       {images: []string{""}, cap: &VideoReferenceCapability{MaxImages: 2}},
+		"unsupported": {images: []string{"https://example.test/a.png"}},
+		"over-limit":  {images: []string{"https://example.test/a.png", "https://example.test/b.png"}, cap: &VideoReferenceCapability{MaxImages: 1}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := p.SubmitWithReferenceImages(context.Background(), Model{VideoReference: tc.cap}, Brief{}, ShotPlan{}, tc.images, "https://example.test/full.mp4")
+			if err == nil || requests != 0 {
+				t.Fatalf("err=%v requests=%d", err, requests)
+			}
+		})
+	}
+}
+
 func TestProviderQueryParsesUsage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{

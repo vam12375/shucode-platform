@@ -69,19 +69,25 @@ func TestSourceFirstAnalysisConfiguresAdaptationAndChargesOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if configured.Status != "draft" || configured.SourceAnalysis == nil || configured.Analysis != nil || configured.Brief.SourceOnly {
+	if configured.Status != "draft" || configured.SourceAnalysis == nil || configured.Analysis == nil || *configured.Analysis != *p.Analysis || configured.Brief.SourceOnly {
 		t.Fatalf("configuration lost source report: %+v", configured)
+	}
+	if _, err = f.s.SetSourceAnalysis(ctx, f.team, p.ID, configured.Version, "source-input", report); !errors.Is(err, ErrConflict) {
+		t.Fatalf("draft reused a completed source result: %v", err)
 	}
 	replay, err = f.s.ConfigureReference(ctx, f.team, p.ID, oldVersion, brief)
 	if err != nil || replay.Version != configured.Version {
 		t.Fatalf("configure replay must not reset binding: %+v %v", replay, err)
 	}
-	adapted, err := f.s.Bind(ctx, f.team, p.ID, configured.Version, Analysis{Kind: "adaptation", TaskID: "adapt-task", InputID: "adapt-input", WorkspacePath: "/fixture"})
+	adapted, err := f.s.Bind(ctx, f.team, p.ID, configured.Version, Analysis{Kind: "adaptation", TaskID: configured.Analysis.TaskID, InputID: "adapt-input", WorkspacePath: configured.Analysis.WorkspacePath, WorkspaceIdentity: configured.Analysis.WorkspaceIdentity})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if adapted.AnalysisFee.ID != feeID {
+	if adapted.AnalysisFee.ID != feeID || adapted.Analysis.TaskID != p.Analysis.TaskID || adapted.Analysis.InputID == p.Analysis.InputID {
 		t.Fatal("adaptation created second billing identity")
+	}
+	if _, err = f.s.SetSourceAnalysis(ctx, f.team, p.ID, adapted.Version, "source-input", report); !errors.Is(err, ErrConflict) {
+		t.Fatalf("old source result overwrote the same-chat adaptation: %v", err)
 	}
 	replay, err = f.s.ConfigureReference(ctx, f.team, p.ID, oldVersion, brief)
 	if err != nil || replay.Analysis == nil || replay.Analysis.InputID != "adapt-input" {

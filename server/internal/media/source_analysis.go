@@ -239,7 +239,7 @@ func (s *Service) ConfigureReference(ctx context.Context, team, id string, versi
 		}
 		v.Brief = brief
 		v.Models = models
-		v.Analysis = nil
+		// 原片与改编属于同一聊天；配置期保留定位，下一阶段仍须以新 input/kind 经 CAS 原子替换。
 		v.Status = "draft"
 		v.Error = ""
 		return nil

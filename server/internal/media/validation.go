@@ -114,9 +114,7 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 		if m.VideoReference == nil {
 			return fmt.Errorf("video_reference_unsupported")
 		}
-		if len(b.AssetIDs) > m.VideoReference.MaxImages {
-			return fmt.Errorf("video_reference_image_limit")
-		}
+		// 设置中的图片是候选池；实际供应商输入由审阅方案去重，或由显式生图阶段产出一张。
 	}
 	if !slices.Contains(m.Resolutions, b.Resolution) {
 		return ErrInvalid
@@ -154,6 +152,7 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 }
 func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 	replica := b.ReferenceAssetID != ""
+	wholeReference := replica && b.GenerationMode == "video_reference"
 	if len(plan.Shots) == 0 || len(plan.Shots) > 30 || len(plan.References) == 0 || len(plan.References) > 20 {
 		return nil, 0, ErrInvalid
 	}
@@ -181,17 +180,21 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 			return nil, 0, ErrInvalid
 		}
 		validShotSource := refs[p.SourceURL] || (replica && p.SourceURL == "" && len(b.ReferenceURLs) == 0 && refs[""])
-		if !validShotSource || math.IsNaN(p.SourceStart) || math.IsInf(p.SourceStart, 0) || !finitePositive(p.SourceEnd) || p.SourceStart < 0 || p.SourceEnd <= p.SourceStart || !v.DurationSupported(p.Duration) || ((!replica || p.AssetID != "") && !slices.Contains(b.AssetIDs, p.AssetID)) || p.Prompt == "" || len(p.Prompt) > 12000 || len(p.Subtitle) > 900 || p.Framing == "" || p.Camera == "" || p.Action == "" || p.Purpose == "" {
+		if !validShotSource || math.IsNaN(p.SourceStart) || math.IsInf(p.SourceStart, 0) || !finitePositive(p.SourceEnd) || p.SourceStart < 0 || p.SourceEnd <= p.SourceStart || (!wholeReference && !v.DurationSupported(p.Duration)) || (wholeReference && (p.Duration < 2 || p.Duration > 30)) || ((!replica || p.AssetID != "") && !slices.Contains(b.AssetIDs, p.AssetID)) || p.Prompt == "" || len(p.Prompt) > 12000 || len(p.Subtitle) > 900 || p.Framing == "" || p.Camera == "" || p.Action == "" || p.Purpose == "" {
 			return nil, 0, ErrInvalid
 		}
 		if replica {
-			if math.Abs(p.SourceStart-sourceEnd) > .001 || p.SourceEnd > b.ReferenceDurationSeconds+.001 || p.SourceEnd-p.SourceStart < 1.0/30 || p.SourceEnd-p.SourceStart > float64(p.Duration)+.001 || (p.AssetID == "" && (b.ImageModel == "" || p.ImagePrompt == "")) || (p.Transition != "" && p.Transition != "cut" && p.Transition != "fade") || utf8.RuneCountInString(p.TransitionDescription) > 1000 || utf8.RuneCountInString(p.Subject) > 1000 || utf8.RuneCountInString(p.Scene) > 1000 || utf8.RuneCountInString(p.Sound) > 1000 {
+			if math.Abs(p.SourceStart-sourceEnd) > .001 || p.SourceEnd > b.ReferenceDurationSeconds+.001 || p.SourceEnd-p.SourceStart < 1.0/30 || (!wholeReference && p.SourceEnd-p.SourceStart > float64(p.Duration)+.001) || (!wholeReference && p.AssetID == "" && (b.ImageModel == "" || p.ImagePrompt == "")) || (p.Transition != "" && p.Transition != "cut" && p.Transition != "fade") || utf8.RuneCountInString(p.TransitionDescription) > 1000 || utf8.RuneCountInString(p.Subject) > 1000 || utf8.RuneCountInString(p.Scene) > 1000 || utf8.RuneCountInString(p.Sound) > 1000 {
 				return nil, 0, ErrInvalid
 			}
 			if p.SourceURL != "" && len(b.ReferenceURLs) > 0 && !slices.Contains(b.ReferenceURLs, p.SourceURL) {
 				return nil, 0, ErrInvalid
 			}
 			sourceEnd = p.SourceEnd
+		}
+		if wholeReference {
+			// 亚秒镜头属于审阅事实，供应商的输入限制只约束下方派生的完整原片。
+			continue
 		}
 		var q int64
 		if b.GenerationMode == "video_reference" {
@@ -205,7 +208,7 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 		} else {
 			q = v.PriceMicro * int64(p.Duration)
 		}
-		if p.ImagePrompt != "" {
+		if p.ImagePrompt != "" && b.ImageModel != "" {
 			im, e := FindModel(models, b.ImageModel, "image")
 			if e != nil {
 				return nil, 0, e
@@ -215,6 +218,12 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 		total += q
 		duration += p.Duration
 		out = append(out, Shot{Plan: p, Status: "pending", Attempt: 1, QuoteMicro: q})
+	}
+	if wholeReference {
+		if math.Abs(sourceEnd-b.ReferenceDurationSeconds) > .001 {
+			return nil, 0, fmt.Errorf("video_reference_plan_invalid")
+		}
+		return buildWholeReferenceExecution(b, plan, v, models)
 	}
 	if (!replica && duration != b.Duration) || (replica && math.Abs(sourceEnd-b.ReferenceDurationSeconds) > .001) || total > b.MaxCreditsMicro {
 		return nil, 0, fmt.Errorf("duration_or_budget_exceeded")

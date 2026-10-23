@@ -1,6 +1,7 @@
 package media
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -152,6 +154,230 @@ func TestScriptOnlyFirstFrameIsGeneratedBeforeVideoAndSettledOnce(t *testing.T) 
 	if team.UsedCredits != "0.700000" || team.ReservedCredits != "0.000000" {
 		t.Fatalf("double or missing settlement: %+v", team)
 	}
+}
+
+func TestHistoricalImagePromptWithoutImageModelUsesSelectedAsset(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	p := f.project(t)
+	_, err := f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
+		v.Shots[0].Plan.ImagePrompt = "历史方案中的首帧描述，不代表已选择生图"
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.s.Tick(ctx)
+	p = current(t, f, p)
+	if p.Shots[0].Status != "video_running" || p.Shots[0].Stage != "video" || f.submits.Load() != 1 {
+		t.Fatalf("historical text started an image stage: shot=%+v submits=%d", p.Shots[0], f.submits.Load())
+	}
+	f.requestMu.Lock()
+	defer f.requestMu.Unlock()
+	content := f.requestBodies[0]["content"].([]any)
+	image := content[1].(map[string]any)
+	if image["role"] != "first_frame" || submittedAssetID(t, image, "image_url") != "a" {
+		t.Fatalf("selected asset not used as first frame: %#v", image)
+	}
+}
+
+func TestWholeReferenceWorkerSubmitsOrderedUniqueReplacementImages(t *testing.T) {
+	f := setup(t)
+	p, clipID := wholeReferenceWorkerProject(t, f)
+	f.s.Tick(context.Background())
+	p = current(t, f, p)
+	if p.Shots[0].Status != "video_running" || f.submits.Load() != 1 {
+		t.Fatalf("whole source not submitted once: %+v submits=%d", p.Shots[0], f.submits.Load())
+	}
+	f.requestMu.Lock()
+	defer f.requestMu.Unlock()
+	content := f.requestBodies[0]["content"].([]any)
+	if len(content) != 5 {
+		t.Fatalf("expected text, three unique images and one video: %#v", content)
+	}
+	for i, want := range []string{"b", "a", "c"} {
+		image := content[i+1].(map[string]any)
+		if image["role"] != "reference_image" || submittedAssetID(t, image, "image_url") != want {
+			t.Fatalf("replacement %d = %#v, want %s", i, image, want)
+		}
+	}
+	video := content[4].(map[string]any)
+	if video["role"] != "reference_video" || submittedAssetID(t, video, "video_url") != clipID {
+		t.Fatalf("whole reference not used: %#v", video)
+	}
+}
+
+func TestWholeReferenceWorkerGeneratesOnlyOneReplacementImage(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	p, clipID := wholeReferenceWorkerProject(t, f)
+	_, err := f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
+		v.Brief.ImageModel = "i"
+		v.Models = append(v.Models, Model{ID: "i", Kind: "image", PriceMicro: 200_000, ProviderID: "fixture", UpstreamModel: "image-model", Adapter: "ark", PriceVersion: "v1"})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 5 {
+		f.s.Tick(ctx)
+	}
+	p = current(t, f, p)
+	if p.Shots[0].Status != "video_running" || p.Shots[0].ImageAssetID == "" || f.submits.Load() != 2 || p.ChargedMicro != 200_000 {
+		t.Fatalf("expected one image generation and one video submission: %+v submits=%d", p.Shots[0], f.submits.Load())
+	}
+	f.requestMu.Lock()
+	defer f.requestMu.Unlock()
+	content := f.requestBodies[1]["content"].([]any)
+	if len(content) != 3 {
+		t.Fatalf("generated replacement should be the only image: %#v", content)
+	}
+	image := content[1].(map[string]any)
+	video := content[2].(map[string]any)
+	if image["role"] != "reference_image" || submittedAssetID(t, image, "image_url") != p.Shots[0].ImageAssetID || submittedAssetID(t, video, "video_url") != clipID {
+		t.Fatalf("wrong generated reference inputs: %#v", content)
+	}
+}
+
+func TestWholeReferenceWorkerRejectsImageOverflowBeforeAdmission(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	p, _ := wholeReferenceWorkerProject(t, f)
+	_, err := f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
+		v.Models[0].VideoReference.MaxImages = 2
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.s.Tick(ctx)
+	p = current(t, f, p)
+	if p.Status != "failed" || p.Error != "video_reference_unsupported" || p.Shots[0].ReservationID != "" || f.submits.Load() != 0 {
+		t.Fatalf("too many images reached admission: %+v submits=%d", p.Shots[0], f.submits.Load())
+	}
+}
+
+func TestLegacyMultipleReferenceExecutionsKeepPerShotImage(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	p, _ := wholeReferenceWorkerProject(t, f)
+	_, err := f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
+		v.Shots = append(v.Shots, v.Shots[0])
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.s.Tick(ctx)
+	p = current(t, f, p)
+	if p.Shots[0].Status != "video_running" || p.Shots[1].Status != "pending" || f.submits.Load() != 1 {
+		t.Fatalf("legacy queue changed: shots=%+v submits=%d", p.Shots, f.submits.Load())
+	}
+	f.requestMu.Lock()
+	defer f.requestMu.Unlock()
+	content := f.requestBodies[0]["content"].([]any)
+	if len(content) != 3 || submittedAssetID(t, content[1].(map[string]any), "image_url") != "b" {
+		t.Fatalf("legacy execution used another shot's reference: %#v", content)
+	}
+}
+
+func TestRestoredImageStageRetainsRecordedStage(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	p := f.project(t)
+	_, err := f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
+		v.Models = append(v.Models, Model{ID: "i", Kind: "image", PriceMicro: 200_000, ProviderID: "fixture", UpstreamModel: "image-model", Adapter: "ark", PriceVersion: "v1"})
+		v.Brief.ImageModel = "i"
+		v.Shots[0].Plan.ImagePrompt = ""
+		v.Shots[0].Stage = "image"
+		v.Shots[0].ReservationID = uuid.NewString()
+		v.Shots[0].PendingChargeMicro = 200_000
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.s.Tick(ctx)
+	p = current(t, f, p)
+	if p.Shots[0].Status != "image_generated" || p.Shots[0].Stage != "image" || f.submits.Load() != 1 {
+		t.Fatalf("restored image stage was replaced: %+v submits=%d", p.Shots[0], f.submits.Load())
+	}
+	f.requestMu.Lock()
+	defer f.requestMu.Unlock()
+	if f.requestBodies[0]["model"] != "image-model" {
+		t.Fatalf("restored stage used video model: %#v", f.requestBodies[0])
+	}
+}
+
+func submittedAssetID(t *testing.T, item map[string]any, kind string) string {
+	t.Helper()
+	rawURL := item[kind].(map[string]any)["url"].(string)
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Base(u.Path)
+}
+
+func wholeReferenceWorkerProject(t *testing.T, f *fixture) (*Project, string) {
+	t.Helper()
+	ctx := context.Background()
+	p := f.project(t)
+	video, err := os.ReadFile("testdata/blue.mp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.s.ReferenceProbe = func(context.Context, string) (ReferenceMetadata, error) {
+		return ReferenceMetadata{DurationSeconds: 5, Width: 160, Height: 90}, nil
+	}
+	sourceID := uuid.NewString()
+	sourcePath := f.s.Blobs.Path(f.team, sourceID)
+	if err = os.MkdirAll(filepath.Dir(sourcePath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(sourcePath, video, 0600); err != nil {
+		t.Fatal(err)
+	}
+	checksum, err := checksumFile(sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, asset := range []Asset{
+		{ID: sourceID, Name: "source.mp4", Kind: "video", Mime: "video/mp4", Size: int64(len(video)), DurationSeconds: 5, Checksum: checksum},
+		{ID: "b", Name: "second.png", Kind: "image"},
+		{ID: "c", Name: "third.png", Kind: "image"},
+	} {
+		if err = f.s.Repo.AddAsset(ctx, f.team, asset); err != nil {
+			t.Fatal(err)
+		}
+	}
+	clip, err := f.s.UploadReferenceClip(ctx, f.team, sourceID, checksum, 0, 5, bytes.NewReader(video))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err = f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
+		v.Brief.Mode = "replicate"
+		v.Brief.GenerationMode = "video_reference"
+		v.Brief.ReferenceAssetID = sourceID
+		v.Brief.ReferenceDurationSeconds = 5
+		v.Brief.Duration = 5
+		v.Brief.AssetIDs = []string{"a", "b", "c"}
+		v.SourceChecksum = checksum
+		v.SourceAnalysis = &SourceAnalysis{SourceChecksum: checksum}
+		v.Models[0].VideoReference = &VideoReferenceCapability{MaxDurationSeconds: 5, MaxImages: 3, PriceMicro: 100_000}
+		shot := v.Shots[0]
+		shot.Plan.SourceStart, shot.Plan.SourceEnd = 0, 5
+		shot.Plan.AssetID = "b"
+		shot.Plan.ImagePrompt = "首个执行首帧提示"
+		shot.ReferenceVideoAssetID = clip.ID
+		v.Shots = []Shot{shot}
+		v.Plan.Shots = []ShotPlan{{AssetID: "b"}, {AssetID: "a"}, {AssetID: "b"}, {AssetID: "c"}, {AssetID: "a"}}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p, clip.ID
 }
 
 func TestRestoredShotWithoutFirstFrameFailsBeforeAdmission(t *testing.T) {

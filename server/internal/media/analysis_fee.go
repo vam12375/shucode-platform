@@ -119,8 +119,19 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 			return current, nil
 		}
 	}
+	recovering := current.Status == "analysis_failed" && !current.CancelRequested && !current.Brief.SourceOnly && current.Analysis != nil && current.Analysis.Kind == "adaptation" && current.Analysis.InputID == input && current.AnalysisFee != nil && current.SourceAnalysis != nil && current.SourceAnalysis.SourceChecksum == current.SourceChecksum && current.Plan == nil && len(current.Shots) == 0 && current.ChargedMicro == 0 && current.OutputAssetID == ""
+	if recovering {
+		// 模型成功后的接收失败不能强迫用户重跑；仅同一已结算原片身份、未生成的输入允许恢复。
+		identity, readErr := s.Repo.Store.GetQuotaReservation(ctx, current.AnalysisFee.ID)
+		if readErr != nil {
+			return nil, readErr
+		}
+		if identity == nil || !identity.Postpaid || identity.Status != store.ReservationSettled || identity.TeamID != team || identity.UserID != current.UserID || identity.RequestID != current.AnalysisFee.RequestID {
+			return nil, ErrConflict
+		}
+	}
 	p, err := s.Mutate(ctx, team, id, version, func(v *Project) error {
-		if v.Status != "analyzing" || v.Analysis == nil || v.Analysis.InputID != input {
+		if (v.Status != "analyzing" && !(recovering && v.Status == "analysis_failed")) || v.CancelRequested || v.Analysis == nil || v.Analysis.InputID != input {
 			return ErrConflict
 		}
 		if v.Brief.SourceOnly || (v.SourceAnalysis != nil && v.Analysis.Kind != "adaptation") {
@@ -139,6 +150,7 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 		v.Plan = &plan
 		v.Shots = shots
 		v.QuoteMicro = total
+		v.Error = ""
 		v.Status = "review"
 		if !v.Brief.ReviewPlan {
 			v.Status = "queued"

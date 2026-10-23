@@ -324,15 +324,19 @@ func TestReferenceClipIdentityIncludesBytesAndConcurrentReplay(t *testing.T) {
 func TestReplicaReviseRequiresUploadedClipBoundToFrozenSourceRange(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
-	f.s.ReferenceProbe = func(context.Context, string) (ReferenceMetadata, error) {
-		return ReferenceMetadata{DurationSeconds: 2, Width: 160, Height: 90}, nil
+	sourceID := uuid.NewString()
+	sourcePath := f.s.Blobs.Path(f.team, sourceID)
+	clipDuration := 2.0
+	f.s.ReferenceProbe = func(_ context.Context, path string) (ReferenceMetadata, error) {
+		if path == sourcePath {
+			return ReferenceMetadata{DurationSeconds: 5, Width: 160, Height: 90}, nil
+		}
+		return ReferenceMetadata{DurationSeconds: clipDuration, Width: 160, Height: 90}, nil
 	}
 	video, err := os.ReadFile("testdata/blue.mp4")
 	if err != nil {
 		t.Fatal(err)
 	}
-	sourceID := uuid.NewString()
-	sourcePath := f.s.Blobs.Path(f.team, sourceID)
 	if err = os.MkdirAll(filepath.Dir(sourcePath), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +347,7 @@ func TestReplicaReviseRequiresUploadedClipBoundToFrozenSourceRange(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = f.s.Repo.AddAsset(ctx, f.team, Asset{ID: sourceID, Name: "source.mp4", Kind: "video", Mime: "video/mp4", Size: int64(len(video)), DurationSeconds: 2, Checksum: sourceChecksum}); err != nil {
+	if err = f.s.Repo.AddAsset(ctx, f.team, Asset{ID: sourceID, Name: "source.mp4", Kind: "video", Mime: "video/mp4", Size: int64(len(video)), DurationSeconds: 5, Checksum: sourceChecksum}); err != nil {
 		t.Fatal(err)
 	}
 	videoModel := fixtureVideoModel()
@@ -359,7 +363,10 @@ func TestReplicaReviseRequiresUploadedClipBoundToFrozenSourceRange(t *testing.T)
 		t.Fatal(err)
 	}
 	ref := Reference{URL: "", Title: "原片", CapturedAt: time.Now(), Evidence: "确认动作范围", SelectionReason: "用户导入"}
-	report := SourceAnalysis{SourceChecksum: sourceChecksum, Summary: "舞蹈原片", References: []Reference{ref}, Shots: []SourceShot{{SourceURL: "", SourceStart: 0, SourceEnd: 2, Framing: "全景", Camera: "跟拍", Action: "舞蹈", Purpose: "展示"}}}
+	report := SourceAnalysis{SourceChecksum: sourceChecksum, Summary: "舞蹈原片", References: []Reference{ref}, Shots: []SourceShot{
+		{SourceURL: "", SourceStart: 0, SourceEnd: .083, Framing: "全景", Camera: "跟拍", Action: "闪切", Purpose: "展示"},
+		{SourceURL: "", SourceStart: .083, SourceEnd: 5, Framing: "全景", Camera: "跟拍", Action: "舞蹈", Purpose: "展示"},
+	}}
 	p, err = f.s.Bind(ctx, f.team, p.ID, p.Version, Analysis{Kind: "source", TaskID: "source-task", InputID: "source-input", WorkspacePath: "/fixture"})
 	if err != nil {
 		t.Fatal(err)
@@ -385,21 +392,42 @@ func TestReplicaReviseRequiresUploadedClipBoundToFrozenSourceRange(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := Plan{References: []Reference{ref}, Shots: []ShotPlan{{SourceURL: "", SourceStart: 0, SourceEnd: 2, Duration: 4, Framing: "全景", Camera: "跟拍", Action: "替换主体舞蹈", Purpose: "展示", Prompt: "保留动作并替换人物", ImagePrompt: "生成人物首帧", AssetID: "a"}}}
+	plan := Plan{References: []Reference{ref}, Shots: []ShotPlan{
+		{SourceURL: "", SourceStart: 0, SourceEnd: .083, Duration: 4, Framing: "全景", Camera: "跟拍", Action: "替换主体闪切", Purpose: "展示", Prompt: "保留闪切并替换人物", ImagePrompt: "生成人物首帧", AssetID: "a"},
+		{SourceURL: "", SourceStart: .083, SourceEnd: 5, Duration: 5, Framing: "全景", Camera: "跟拍", Action: "替换主体舞蹈", Purpose: "展示", Prompt: "保留动作并替换人物", ImagePrompt: "生成人物首帧", AssetID: "a"},
+	}}
 	p, err = f.s.SetPlan(ctx, f.team, p.ID, p.Version, "adapt-input", plan)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.s.Revise(ctx, f.team, p.ID, p.Version, plan); err == nil || err.Error() != "video_reference_clip_required" {
-		t.Fatalf("revision without uploaded clip should fail before generation: %v", err)
+	plan.Shots[1].Prompt = "更新已审阅的动作脚本"
+	p, err = f.s.Revise(ctx, f.team, p.ID, p.Version, plan)
+	if err != nil || len(p.Shots) != 1 || !strings.Contains(p.Shots[0].Plan.Prompt, plan.Shots[1].Prompt) {
+		t.Fatalf("saving a review must not require preparing paid generation: %v", err)
 	}
-	clip, err := f.s.UploadReferenceClip(ctx, f.team, sourceID, sourceChecksum, 0, 2, bytes.NewReader(video))
+	partial, err := f.s.UploadReferenceClip(ctx, f.team, sourceID, sourceChecksum, 0, 2, bytes.NewReader(video))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range plan.Shots {
+		plan.Shots[i].ReferenceVideoAssetID = partial.ID
+	}
+	if _, err = f.s.Revise(ctx, f.team, p.ID, p.Version, plan); err == nil || err.Error() != "video_reference_clip_invalid" {
+		t.Fatalf("a partial reference must not replace the full video: %v", err)
+	}
+	clipDuration = 5
+	clip, err := f.s.UploadReferenceClip(ctx, f.team, sourceID, sourceChecksum, 0, 5, bytes.NewReader(video))
 	if err != nil {
 		t.Fatal(err)
 	}
 	plan.Shots[0].ReferenceVideoAssetID = clip.ID
+	plan.Shots[1].ReferenceVideoAssetID = "different-clip"
+	if _, err = f.s.Revise(ctx, f.team, p.ID, p.Version, plan); err == nil || err.Error() != "video_reference_plan_invalid" {
+		t.Fatalf("different clips must not become one reference: %v", err)
+	}
+	plan.Shots[1].ReferenceVideoAssetID = clip.ID
 	p, err = f.s.Revise(ctx, f.team, p.ID, p.Version, plan)
-	if err != nil || p.Shots[0].ReferenceVideoAssetID != clip.ID {
+	if err != nil || len(p.Shots) != 1 || len(p.Plan.Shots) != 2 || p.Shots[0].Plan.SourceStart != 0 || p.Shots[0].Plan.SourceEnd != 5 || p.Shots[0].ReferenceVideoAssetID != clip.ID {
 		t.Fatalf("valid clip was not bound to replica shot: %+v %v", p, err)
 	}
 }
