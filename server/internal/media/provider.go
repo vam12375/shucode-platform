@@ -58,7 +58,8 @@ func (p Provider) Image(ctx context.Context, m Model, prompt, image string) (str
 			URL string `json:"url"`
 		} `json:"data"`
 	}
-	body := map[string]any{"model": m.UpstreamModel, "prompt": prompt, "response_format": "url", "size": "2K", "watermark": true}
+	// 原请求显式开启了供应商的可见 AI 水印；首帧图片也需关闭，避免标记进入后续视频参考。
+	body := map[string]any{"model": m.UpstreamModel, "prompt": prompt, "response_format": "url", "size": "2K", "watermark": false}
 	// 无参考图时按脚本生成首帧；空 image 并非供应商合法的文生图参数。
 	if image != "" {
 		body["image"] = image
@@ -98,7 +99,8 @@ func videoContent(prompt string, images []string, referenceVideo string) []any {
 }
 
 func videoSubmitBodyWithImages(m Model, b Brief, s ShotPlan, images []string, referenceVideo string) map[string]any {
-	body := map[string]any{"model": m.UpstreamModel, "content": videoContent(s.Prompt, images, referenceVideo), "resolution": b.Resolution, "ratio": b.AspectRatio, "duration": s.Duration, "watermark": true}
+	// 原 true 会启用供应商可见水印；制作视频统一显式关闭，保留原首帧和视频参考语义。
+	body := map[string]any{"model": m.UpstreamModel, "content": videoContent(s.Prompt, images, referenceVideo), "resolution": b.Resolution, "ratio": b.AspectRatio, "duration": s.Duration, "watermark": false}
 	// 只在模型显式开启时下发；Seedance 1.0 等不支持该参数的模型保持原请求不变。
 	if m.GenerateAudio {
 		body["generate_audio"] = true
@@ -167,7 +169,8 @@ func (p Provider) CanvasImage(ctx context.Context, m Model, r CanvasRequest, ima
 		} `json:"data"`
 	}
 	size, prompt := canvasImageParameters(m, r)
-	body := map[string]any{"model": m.UpstreamModel, "prompt": prompt, "size": size, "response_format": "url", "watermark": true}
+	// 原请求的 true 会把“AI生成”直接烘焙进图片；显式关闭，不能仅省略并依赖上游默认值。
+	body := map[string]any{"model": m.UpstreamModel, "prompt": prompt, "size": size, "response_format": "url", "watermark": false}
 	if len(images) == 1 {
 		body["image"] = images[0]
 	} else if len(images) > 1 {
@@ -189,7 +192,8 @@ func (p Provider) CanvasVideo(ctx context.Context, m Model, r CanvasRequest, ima
 		}
 		video = referenceVideos[0]
 	}
-	body := map[string]any{"model": m.UpstreamModel, "content": videoContent(r.Prompt, images, video), "resolution": r.Resolution, "ratio": r.AspectRatio, "duration": r.Duration, "watermark": true}
+	// 原 true 会把供应商水印写入视频；画布各生成模式也需显式关闭，不能依赖默认值。
+	body := map[string]any{"model": m.UpstreamModel, "content": videoContent(r.Prompt, images, video), "resolution": r.Resolution, "ratio": r.AspectRatio, "duration": r.Duration, "watermark": false}
 	if m.GenerateAudio {
 		body["generate_audio"] = true
 	}
