@@ -353,3 +353,72 @@ test("failed duration conversion save remains dirty and can be discarded", async
   assert.match(nodeText(tree), /旧枚举/);
   assert.equal(nodes(tree, (node) => node.props?.type === "range").length, 0);
 });
+
+test("mixed shared fields are named and explicitly repaired without changing tier identities or prices", async () => {
+  const f = await mountModels([
+    { ...model, durations: undefined, minDuration: 4, maxDuration: 15 },
+    { ...model, id: "video-model-480p", name: "Video model 480p", resolutions: ["480p"], durations: undefined, minDuration: 4, maxDuration: 15, priceVersion: "v2", generateAudio: true, costMicro: 400_000, priceMicro: 600_000 },
+  ]);
+  let tree = f.render();
+  assert.match(nodeText(tree), /共享配置冲突/);
+  assert.match(nodeText(tree), /价格版本、原生音频/);
+  nodes(tree, (node) => node.props?.["aria-label"] === "模型 Video model 最小时长")[0].props.onChange({ target: { value: "4" } });
+  tree = f.render();
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "保存配置")[0].props.onClick();
+  tree = await f.settle();
+  assert.equal(f.calls.filter((call) => call.options).length, 0);
+  assert.match(nodeText(tree), /价格版本、原生音频/);
+
+  const repair = nodes(tree, (node) => node.type === "button" && nodeText(node) === "将当前卡片配置应用到所有档位")[0];
+  assert.ok(repair);
+  repair.props.onClick();
+  tree = f.render();
+  assert.doesNotMatch(nodeText(tree), /共享配置冲突/);
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "保存配置")[0].props.onClick();
+  await f.settle();
+  const payload = JSON.parse(f.calls.find((call) => call.options).options.body);
+  assert.deepEqual(payload.map((tier) => [tier.id, tier.resolutions, tier.costMicro, tier.priceMicro]), [
+    ["video-model-720p", ["720p"], 200_000, 300_000],
+    ["video-model-480p", ["480p"], 400_000, 600_000],
+  ]);
+  assert.ok(payload.every((tier) => tier.priceVersion === "v1" && tier.generateAudio === false && tier.minDuration === 4 && tier.maxDuration === 15));
+});
+
+test("repair identifies duration semantics and video reference conflicts", () => {
+  const first = validDraft();
+  const second = { ...first, id: "other", legacyDurations: [4, 5], videoReference: { ...first.videoReference, maxImages: "5", tokenPriceCredits: "25" } };
+  const problem = output.validateDrafts([first, second], [provider]);
+  assert.match(problem, /时长能力/);
+  assert.match(problem, /视频参考图上限/);
+  assert.match(problem, /视频参考 token 售价/);
+});
+
+test("adding preset tiers inherits the existing family shared configuration", async () => {
+  const f = await mountModels([{
+    ...model,
+    id: "seedance-2.0-mini-480p",
+    name: "Seedance 2.0 mini 480p",
+    upstreamModel: "doubao-seedance-2-0-mini-260615",
+    resolutions: ["480p"],
+    durations: [4, 5, 10, 15],
+    priceVersion: "custom-version",
+    videoReference: capability,
+  }]);
+  let tree = f.render();
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "Seedance 2.0 系列")[0].props.onClick();
+  tree = f.render();
+  for (const input of nodes(tree, (node) => (node.props?.["aria-label"] ?? "").endsWith("售价") && node.props.value === "")) {
+    input.props.onChange({ target: { value: "0.5" } });
+  }
+  tree = f.render();
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "JSON 批量编辑")[0].props.onClick();
+  tree = f.render();
+  const text = nodes(tree, (node) => node.type === "textarea" && node.props["aria-label"] === "媒体模型 JSON")[0].props.value;
+  const added = JSON.parse(text).find((tier) => tier.id === "seedance-2.0-mini-720p");
+  assert.equal(added.priceVersion, "custom-version");
+  assert.equal(added.generateAudio, false);
+  assert.deepEqual(added.durations, [4, 5, 10, 15]);
+  assert.equal(added.minDuration, undefined);
+  assert.equal(added.videoReference.maxImages, capability.maxImages);
+  assert.equal(added.videoReference.tokenPriceMicroPerMillion, capability.tokenPriceMicroPerMillion);
+});

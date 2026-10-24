@@ -303,26 +303,48 @@ export function toApiModel(draft: MediaModelDraft): MediaModel {
   };
 }
 
-function sharedSignature(draft: MediaModelDraft): string {
+// 共享字段只有卡片一个编辑入口；逐档副本仅用于兼容现有目录 API 和保留导入冲突证据。
+function sharedConfiguration(draft: MediaModelDraft): Partial<MediaModelDraft> {
+  return {
+    kind: draft.kind,
+    providerId: draft.providerId,
+    upstreamModel: draft.upstreamModel,
+    priceVersion: draft.priceVersion,
+    generateAudio: draft.generateAudio,
+    minDuration: draft.minDuration,
+    maxDuration: draft.maxDuration,
+    legacyDurations: draft.legacyDurations ? [...draft.legacyDurations] : undefined,
+    videoReference: draft.videoReference ? { ...draft.videoReference } : undefined,
+  };
+}
+
+function sharedFields(draft: MediaModelDraft): Record<string, unknown> {
   const vr = draft.videoReference?.enabled ? draft.videoReference : null;
-  return JSON.stringify([
-    draft.kind,
-    draft.providerId,
-    draft.upstreamModel.trim(),
-    draft.priceVersion.trim(),
-    draft.kind === "video" ? draft.generateAudio : false,
-    draft.kind === "video"
+  return {
+    类型: draft.kind,
+    上游供应商: draft.providerId,
+    上游模型: draft.upstreamModel.trim(),
+    价格版本: draft.priceVersion.trim(),
+    原生音频: draft.kind === "video" ? draft.generateAudio : false,
+    时长能力: draft.kind === "video"
       ? [draft.minDuration.trim(), draft.maxDuration.trim(), draft.legacyDurations ?? null]
       : null,
-    vr
-      ? [
-          vr.maxDurationSeconds.trim(),
-          vr.maxImages.trim(),
-          vr.tokenCostCredits.trim(),
-          vr.tokenPriceCredits.trim(),
-        ]
-      : null,
-  ]);
+    视频参考开关: vr !== null,
+    视频参考时长上限: vr?.maxDurationSeconds.trim() ?? null,
+    视频参考图上限: vr?.maxImages.trim() ?? null,
+    "视频参考 token 成本": vr?.tokenCostCredits.trim() ?? null,
+    "视频参考 token 售价": vr?.tokenPriceCredits.trim() ?? null,
+  };
+}
+
+function sharedConflicts(drafts: MediaModelDraft[]): string[] {
+  const lead = drafts[0];
+  if (!lead) return [];
+  const fields = sharedFields(lead);
+  const others = drafts.slice(1).map(sharedFields);
+  return Object.keys(fields).filter((field) =>
+    others.some((other) => JSON.stringify(other[field]) !== JSON.stringify(fields[field])),
+  );
 }
 
 export function validateDrafts(
@@ -413,15 +435,13 @@ export function validateDrafts(
       }
     }
   }
-  // 共享配置只写一次，同一张卡的条目必须完全一致（JSON 导入可能破坏）。
-  const signatures = new Map<string, string>();
-  for (const draft of drafts) {
-    const signature = sharedSignature(draft);
-    const previous = signatures.get(draft.familyId);
-    if (previous !== undefined && previous !== signature) {
-      return `「${familyNameOf(draft)}」同一上游模型的共享配置不一致，请统一后再保存。`;
+  // 旧配置或 JSON 导入会保留逐档差异；指出真实冲突，避免把合法时长误报为无法保存。
+  for (const family of groupFamilies(drafts)) {
+    const tiers = family.indexes.map((index) => drafts[index]);
+    const conflicts = sharedConflicts(tiers);
+    if (conflicts.length) {
+      return `「${familyNameOf(tiers[0])}」共享配置不一致：${conflicts.join("、")}。请在卡片中统一后再保存。`;
     }
-    signatures.set(draft.familyId, signature);
   }
   return null;
 }
@@ -767,13 +787,13 @@ export function MediaModelsPage() {
     setDrafts((previous) => {
       const next = [...previous];
       for (const preset of SEEDANCE_PRESETS) {
-        const familyId =
-          next.find(
-            (draft) =>
-              draft.kind === "video" &&
-              draft.providerId === providerId &&
-              draft.upstreamModel.trim() === preset.upstreamModel,
-          )?.familyId ?? nextFamilyId();
+        const existingFamily = next.find(
+          (draft) =>
+            draft.kind === "video" &&
+            draft.providerId === providerId &&
+            draft.upstreamModel.trim() === preset.upstreamModel,
+        );
+        const familyId = existingFamily?.familyId ?? nextFamilyId();
         for (const tier of preset.tiers) {
           if (existing.has(tier.id)) continue;
           next.push({
@@ -790,6 +810,8 @@ export function MediaModelsPage() {
             generateAudio: true,
             priceCredits: "",
             priceVersion: "v1",
+            // 补档必须继承卡片共享配置；默认值会与旧枚举、音频或价格版本冲突并阻塞保存。
+            ...(existingFamily ? sharedConfiguration(existingFamily) : {}),
           });
           added += 1;
         }
@@ -1232,6 +1254,7 @@ function MediaFamilyCard({
     Math.min(30, Number.parseInt(lead.maxDuration, 10) || DEFAULT_MAX_DURATION),
   );
   const legacyTiers = tiers.filter((draft) => draft.legacyDurations !== undefined);
+  const conflicts = sharedConflicts(tiers);
   const legacyDurations = preview.legacyDurations;
   const duration = legacyDurations?.length
     ? (legacyDurations.includes(previewDuration) ? previewDuration : legacyDurations[0])
@@ -1369,6 +1392,20 @@ function MediaFamilyCard({
           </div>
         ) : null}
       </div>
+
+      {conflicts.length > 0 ? (
+        <Notice k="共享配置冲突">
+          <p>以下字段在档位间不同：{conflicts.join("、")}。当前卡片展示的是首档配置。</p>
+          <button
+            className="btn btn-ghost btn-sm"
+            type="button"
+            disabled={busy}
+            onClick={() => onUpdateFamily(indexes, sharedConfiguration(lead))}
+          >
+            将当前卡片配置应用到所有档位
+          </button>
+        </Notice>
+      ) : null}
 
       <div className="table-scroll">
         <table className="table media-tier-table">
