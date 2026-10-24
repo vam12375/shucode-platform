@@ -368,7 +368,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			}
 			url, e = provider.CanvasImage(ctx, m, *p.Canvas, images)
 		} else {
-			url, e = provider.Image(ctx, m, shot.Plan.ImagePrompt, image)
+			url, e = provider.Image(ctx, m, shot.Plan.ImagePrompt, image, p.Brief.AspectRatio)
 		}
 		if e != nil {
 			return s.submissionFailure(ctx, p, index, shot, e)

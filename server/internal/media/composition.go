@@ -66,24 +66,12 @@ func subtitleMetrics(w, h int) (fontSize, marginLR, marginV int) {
 	return max(24, short*48/720), max(20, short*40/720), max(40, short*80/720)
 }
 
-// outputSize 按竖屏基准换算合成画布；16:9 交换长短边，1:1 取正方形。
+// 固定画幅使用同一官方尺寸表；未知比例与 auto 不能静默降为竖屏。
 func outputSize(resolution, ratio string) (int, int) {
-	w, h := 720, 1280
-	switch resolution {
-	case "480p":
-		w, h = 480, 854
-	case "1080p":
-		w, h = 1080, 1920
-	case "4k":
-		w, h = 2160, 3840
+	if ratio == "auto" {
+		return 0, 0
 	}
-	if ratio == "16:9" {
-		w, h = h, w
-	}
-	if ratio == "1:1" {
-		h = w
-	}
-	return w, h
+	return videoTokenSize(resolution, ratio)
 }
 
 type compositionSegment struct {
@@ -155,6 +143,9 @@ func (s *Service) compose(ctx context.Context, p *Project) error {
 	runCtx, cancel := context.WithTimeout(ctx, composeTimeout(p.Brief.Resolution))
 	defer cancel()
 	w, h := outputSize(p.Brief.Resolution, p.Brief.AspectRatio)
+	if w <= 0 || h <= 0 {
+		return fmt.Errorf("unsupported_composition_aspect_ratio")
+	}
 	list := []string{}
 	fontSize, marginLR, marginV := subtitleMetrics(w, h)
 	ass := fmt.Sprintf("[Script Info]\nScriptType: v4.00+\nPlayResX: %d\nPlayResY: %d\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Noto Sans CJK SC,%d,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,1,2,%d,%d,%d,1\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n", w, h, fontSize, marginLR, marginLR, marginV)

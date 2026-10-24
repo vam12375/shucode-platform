@@ -70,6 +70,7 @@ interface MediaModel {
   upstreamModel: string;
   adapter: string;
   resolutions: string[];
+  aspectRatios?: string[];
   minDuration?: number;
   maxDuration?: number;
   // 旧目录的枚举时长；仅显式转换后才改为连续区间。
@@ -104,6 +105,8 @@ export interface MediaModelDraft {
   providerId: string;
   upstreamModel: string;
   resolutions: string[];
+  // 平台按 adapter/upstream 派生的只读能力，不回写目录配置。
+  supportedAspectRatios?: string[];
   minDuration: string;
   maxDuration: string;
   legacyDurations?: number[];
@@ -233,6 +236,7 @@ export function toDraft(model: MediaModel): MediaModelDraft {
     providerId: model.providerId,
     upstreamModel: model.upstreamModel,
     resolutions: [...(model.resolutions ?? [])],
+    ...(model.aspectRatios?.length ? { supportedAspectRatios: [...model.aspectRatios] } : {}),
     minDuration: String(bounds.min),
     maxDuration: String(bounds.max),
     // min/max 只是转换建议，不能把旧稀疏枚举在加载或修改价格时静默扩大为连续能力。
@@ -681,6 +685,7 @@ export function MediaModelsPage() {
                   resolutions: [],
                   generateAudio: false,
                   legacyDurations: undefined,
+                  supportedAspectRatios: undefined,
                   videoReference: undefined,
                 }
               : draft,
@@ -694,6 +699,7 @@ export function MediaModelsPage() {
               kind,
               resolutions:
                 draft.resolutions.length > 0 ? draft.resolutions : ["720p"],
+              supportedAspectRatios: undefined,
             }
           : draft,
       );
@@ -881,6 +887,7 @@ export function MediaModelsPage() {
         return {
           ...draft,
           upstreamModel: value,
+          supportedAspectRatios: undefined,
           ...(mirrorID ? { id: value } : {}),
         };
       }),
@@ -1391,6 +1398,14 @@ function MediaFamilyCard({
             </div>
           </div>
         ) : null}
+        <div className="field">
+          <span className="field-label">平台支持比例</span>
+          <span className="readout" aria-label={`模型 ${name} 平台支持比例`}>
+            {lead.supportedAspectRatios?.length
+              ? lead.supportedAspectRatios.map((ratio) => ratio === "auto" ? "智能" : ratio).join(" / ")
+              : "保存后由平台同步支持比例"}
+          </span>
+        </div>
       </div>
 
       {conflicts.length > 0 ? (

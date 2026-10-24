@@ -95,7 +95,7 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 			return ErrInvalid
 		}
 	}
-	if !slices.Contains([]string{"9:16", "16:9", "1:1"}, b.AspectRatio) || (!replica && len(b.Platforms) == 0) {
+	if !replica && len(b.Platforms) == 0 {
 		return ErrInvalid
 	}
 	for _, p := range b.Platforms {
@@ -106,6 +106,10 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	m, e := FindModel(models, b.VideoModel, "video")
 	if e != nil {
 		return e
+	}
+	// 多镜头合成必须有固定画幅；auto 仅允许画布直接输出，不得落入默认竖屏分支。
+	if b.AspectRatio == "auto" || !slices.Contains(ModelAspectRatios(m), b.AspectRatio) {
+		return ErrInvalid
 	}
 	if b.GenerationMode == "video_reference" {
 		if !replica || !b.ReviewPlan {

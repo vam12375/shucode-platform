@@ -1,6 +1,7 @@
 package apiapp
 
 import (
+	"encoding/json"
 	"github.com/vam12375/shucode-platform/server/internal/media"
 	"reflect"
 	"strings"
@@ -12,13 +13,39 @@ func TestPublicCanvasCapabilities(t *testing.T) {
 	if len(models) != 1 || !reflect.DeepEqual(models[0]["resolutions"], []string{"2K", "3K", "4K"}) || models[0]["maxReferenceImages"] != 8 {
 		t.Fatalf("public capabilities: %+v", models)
 	}
-	if !reflect.DeepEqual(models[0]["aspectRatios"], media.CanvasAspectRatios("image")) {
+	if !reflect.DeepEqual(models[0]["aspectRatios"], media.ModelAspectRatios(media.Model{Kind: "image"})) {
 		t.Fatalf("image ratios differ from admission capabilities")
 	}
 	for _, key := range []string{"upstreamModel", "costMicro", "providerId", "priceVersion"} {
 		if _, exists := models[0][key]; exists {
 			t.Fatalf("internal field %s exposed", key)
 		}
+	}
+}
+
+func TestPublicAndConsoleRatiosShareVerifiedModelOwner(t *testing.T) {
+	models := []media.Model{
+		{ID: "video", Kind: "video", Adapter: "ark", UpstreamModel: "doubao-seedance-2-0-mini-260615"},
+		{ID: "old", Kind: "video", Adapter: "ark", UpstreamModel: "doubao-seedance-1-0-pro-250528"},
+		{ID: "unknown", Kind: "video", Adapter: "ark", UpstreamModel: "unknown"},
+	}
+	public, console := publicMediaModels(models), consoleMediaModels(models)
+	for i, model := range models {
+		want := media.ModelAspectRatios(model)
+		if !reflect.DeepEqual(public[i]["aspectRatios"], want) || !reflect.DeepEqual(console[i].AspectRatios, want) {
+			t.Fatalf("capability owners differ for %s", model.ID)
+		}
+	}
+	if len(console[0].AspectRatios) != 7 || len(console[1].AspectRatios) != 6 || len(console[2].AspectRatios) != 3 {
+		t.Fatal("unverified models received expanded ratios")
+	}
+	raw, err := json.Marshal(console[0])
+	if err != nil || !strings.Contains(string(raw), `"aspectRatios":["auto","16:9","4:3","1:1","3:4","9:16","21:9"]`) {
+		t.Fatalf("console derived projection missing ratios: %s %v", raw, err)
+	}
+	raw, _ = json.Marshal(models[0])
+	if strings.Contains(string(raw), "aspectRatios") {
+		t.Fatal("derived capabilities leaked into persisted model")
 	}
 }
 

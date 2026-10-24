@@ -1,22 +1,76 @@
 package media
 
 import (
+	"fmt"
+	"math"
 	"slices"
 	"strings"
 )
 
 var imageRatios = []string{"auto", "1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3", "21:9"}
-var videoRatios = []string{"16:9", "9:16", "1:1"}
+var fixedVideoRatios = []string{"16:9", "4:3", "1:1", "3:4", "9:16", "21:9"}
 
-// 目录与准入共用比例能力，避免客户端展示一个服务端实际拒绝的比例。
-func CanvasAspectRatios(kind string) []string {
-	if kind == "image" {
+// 官方 ratio 能力依赖真实模型，原 kind 三项常量遗漏了 Seedance 的固定比例与 adaptive。
+// 目录、控制台和准入共用此入口；未知型号保持历史集合，不能凭名称相似推测开放新任务能力。
+func ModelAspectRatios(m Model) []string {
+	if m.Kind == "image" {
 		return slices.Clone(imageRatios)
 	}
-	if kind == "video" {
-		return slices.Clone(videoRatios)
+	if m.Kind == "video" {
+		upstream := strings.TrimSpace(m.UpstreamModel)
+		if m.Adapter == "ark" {
+			if seedance20Model(upstream) {
+				return append([]string{"auto"}, fixedVideoRatios...)
+			}
+			if datedModelFamily(upstream, []string{"doubao-seedance-1-0-pro-fast-", "doubao-seedance-1-0-pro-"}) {
+				return slices.Clone(fixedVideoRatios)
+			}
+		}
+		return []string{"16:9", "9:16", "1:1"}
 	}
 	return []string{}
+}
+
+func seedance20Model(upstream string) bool {
+	return datedModelFamily(upstream, []string{"doubao-seedance-2-0-mini-", "doubao-seedance-2-0-fast-", "doubao-seedance-2-0-"})
+}
+
+func datedModelFamily(upstream string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if suffix, ok := strings.CutPrefix(upstream, prefix); ok && len(suffix) == 6 {
+			valid := true
+			for _, digit := range suffix {
+				valid = valid && digit >= '0' && digit <= '9'
+			}
+			if valid {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func providerVideoRatio(ratio string) string {
+	if ratio == "auto" {
+		return "adaptive"
+	}
+	return ratio
+}
+
+func nearestFixedVideoRatio(width, height int) string {
+	if width <= 0 || height <= 0 {
+		return "9:16"
+	}
+	best, distance := "9:16", math.Inf(1)
+	for _, ratio := range fixedVideoRatios {
+		var w, h float64
+		_, _ = fmt.Sscanf(ratio, "%f:%f", &w, &h)
+		next := math.Abs(math.Log((float64(width) / float64(height)) / (w / h)))
+		if next < distance {
+			best, distance = ratio, next
+		}
+	}
+	return best
 }
 
 // 图片能力在平台归一化，公开目录、准入与 adapter 共用，避免客户端选择上游拒绝的档位。

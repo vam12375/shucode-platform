@@ -422,3 +422,25 @@ test("adding preset tiers inherits the existing family shared configuration", as
   assert.equal(added.videoReference.maxImages, capability.maxImages);
   assert.equal(added.videoReference.tokenPriceMicroPerMillion, capability.tokenPriceMicroPerMillion);
 });
+
+test("platform aspect ratios are shown as read-only capabilities and never saved as configuration", async () => {
+  const ratios = ["auto", "16:9", "4:3", "1:1", "3:4", "9:16", "21:9"];
+  const f = await mountModels([{ ...model, aspectRatios: ratios }]);
+  let tree = f.render();
+  const readout = nodes(tree, (node) => node.props?.["aria-label"] === "模型 Video model 平台支持比例")[0];
+  assert.equal(nodeText(readout), "智能 / 16:9 / 4:3 / 1:1 / 3:4 / 9:16 / 21:9");
+  nodes(tree, (node) => (node.props?.["aria-label"] ?? "").endsWith("售价"))[0].props.onChange({ target: { value: "0.5" } });
+  tree = f.render();
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "保存配置")[0].props.onClick();
+  await f.settle();
+  const payload = JSON.parse(f.calls.find((call) => call.options).options.body)[0];
+  assert.equal(payload.aspectRatios, undefined);
+  assert.equal(payload.supportedAspectRatios, undefined);
+
+  const changed = await mountModels([{ ...model, aspectRatios: ratios }]);
+  tree = changed.render();
+  nodes(tree, (node) => node.props?.["aria-label"] === "模型 Video model 上游模型")[0].props.onChange({ target: { value: "unknown" } });
+  tree = changed.render();
+  assert.match(nodeText(tree), /保存后由平台同步支持比例/);
+  assert.doesNotMatch(nodeText(nodes(tree, (node) => node.props?.["aria-label"] === "模型 Video model 平台支持比例")[0]), /21:9/);
+});

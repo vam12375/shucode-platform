@@ -147,8 +147,12 @@ func TestScriptOnlyFirstFrameIsGeneratedBeforeVideoAndSettledOnce(t *testing.T) 
 	}
 	content := f.requestBodies[1]["content"].([]any)
 	frame := content[1].(map[string]any)["image_url"].(map[string]any)["url"]
-	if frame != f.s.Blobs.URL(f.team, p.Shots[0].ImageAssetID) {
-		t.Fatalf("video did not use generated first frame: %v", frame)
+	// URL 每次签发的 expires 都来自当前秒；比较整串会在跨秒时误报素材身份变化。
+	frameURL, ok := frame.(string)
+	parsed, parseErr := url.Parse(frameURL)
+	wantPath := "/api/v1/media/blobs/" + f.team + "/" + p.Shots[0].ImageAssetID
+	if !ok || parseErr != nil || parsed.Scheme+"://"+parsed.Host != f.s.Blobs.Origin || parsed.Path != wantPath || !f.s.Blobs.Verify(f.team, p.Shots[0].ImageAssetID, parsed.Query().Get("expires"), parsed.Query().Get("signature")) {
+		t.Fatal("video did not use a valid signed URL for the generated first frame")
 	}
 	team, _ := f.s.Repo.Store.GetTeam(ctx, f.team)
 	if team.UsedCredits != "0.700000" || team.ReservedCredits != "0.000000" {

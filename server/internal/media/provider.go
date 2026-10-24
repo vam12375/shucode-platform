@@ -52,14 +52,19 @@ func (p Provider) request(ctx context.Context, method, path string, body any, ou
 	}
 	return nil
 }
-func (p Provider) Image(ctx context.Context, m Model, prompt, image string) (string, error) {
+func (p Provider) Image(ctx context.Context, m Model, prompt, image string, aspectRatios ...string) (string, error) {
 	var out struct {
 		Data []struct {
 			URL string `json:"url"`
 		} `json:"data"`
 	}
 	// 原请求显式开启了供应商的可见 AI 水印；首帧图片也需关闭，避免标记进入后续视频参考。
-	body := map[string]any{"model": m.UpstreamModel, "prompt": prompt, "response_format": "url", "size": "2K", "watermark": false}
+	size := "2K"
+	if len(aspectRatios) > 0 && aspectRatios[0] != "" {
+		// 原首帧忽略 Brief 比例；复用画布图片参数归一，避免新增视频比例与首帧形状脱节。
+		size, prompt = canvasImageParameters(m, CanvasRequest{Prompt: prompt, Resolution: "2K", AspectRatio: aspectRatios[0]})
+	}
+	body := map[string]any{"model": m.UpstreamModel, "prompt": prompt, "response_format": "url", "size": size, "watermark": false}
 	// 无参考图时按脚本生成首帧；空 image 并非供应商合法的文生图参数。
 	if image != "" {
 		body["image"] = image
@@ -100,7 +105,7 @@ func videoContent(prompt string, images []string, referenceVideo string) []any {
 
 func videoSubmitBodyWithImages(m Model, b Brief, s ShotPlan, images []string, referenceVideo string) map[string]any {
 	// 原 true 会启用供应商可见水印；制作视频统一显式关闭，保留原首帧和视频参考语义。
-	body := map[string]any{"model": m.UpstreamModel, "content": videoContent(s.Prompt, images, referenceVideo), "resolution": b.Resolution, "ratio": b.AspectRatio, "duration": s.Duration, "watermark": false}
+	body := map[string]any{"model": m.UpstreamModel, "content": videoContent(s.Prompt, images, referenceVideo), "resolution": b.Resolution, "ratio": providerVideoRatio(b.AspectRatio), "duration": s.Duration, "watermark": false}
 	// 只在模型显式开启时下发；Seedance 1.0 等不支持该参数的模型保持原请求不变。
 	if m.GenerateAudio {
 		body["generate_audio"] = true
@@ -193,7 +198,7 @@ func (p Provider) CanvasVideo(ctx context.Context, m Model, r CanvasRequest, ima
 		video = referenceVideos[0]
 	}
 	// 原 true 会把供应商水印写入视频；画布各生成模式也需显式关闭，不能依赖默认值。
-	body := map[string]any{"model": m.UpstreamModel, "content": videoContent(r.Prompt, images, video), "resolution": r.Resolution, "ratio": r.AspectRatio, "duration": r.Duration, "watermark": false}
+	body := map[string]any{"model": m.UpstreamModel, "content": videoContent(r.Prompt, images, video), "resolution": r.Resolution, "ratio": providerVideoRatio(r.AspectRatio), "duration": r.Duration, "watermark": false}
 	if m.GenerateAudio {
 		body["generate_audio"] = true
 	}

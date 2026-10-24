@@ -331,7 +331,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, e)
 			return
 		}
-		c.JSON(200, okData(models))
+		c.JSON(200, okData(consoleMediaModels(models)))
 	})
 	router.PUT("/console/api/media/models", func(c *gin.Context) {
 		actor, ok := requireRoot(c.Request.Context(), deps, c)
@@ -365,7 +365,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		writeAudit(c.Request.Context(), deps, actor, "media.models.update", "media_catalog", media.ConfigKey, gin.H{"modelCount": len(models)})
-		c.JSON(200, okData(models))
+		c.JSON(200, okData(consoleMediaModels(models)))
 	})
 	router.GET("/console/api/media/projects", func(c *gin.Context) {
 		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
@@ -443,7 +443,7 @@ func publicMediaModels(models []media.Model) []gin.H {
 		groupID := publicMediaModelGroupID(m)
 		model["groupId"] = groupID
 		model["groupName"] = groupNames[groupID]
-		model["aspectRatios"] = media.CanvasAspectRatios(m.Kind)
+		model["aspectRatios"] = media.ModelAspectRatios(m)
 		if m.MinDuration > 0 && m.MaxDuration >= m.MinDuration {
 			model["minDuration"] = m.MinDuration
 			model["maxDuration"] = m.MaxDuration
