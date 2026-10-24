@@ -16,11 +16,16 @@ func TestProviderErrorOnlyAcceptsBoundedCodesAndKnownCategories(t *testing.T) {
 		{"InputImageSensitiveContentDetected", "content_policy"},
 		{"InvalidParameter", "invalid_input"},
 		{"AuthenticationError", "authentication"},
+		{"ModelNotOpen", "authentication"},
 		{"QuotaExceeded", "quota"},
 		{"RateLimitExceeded", "rate_limit"},
 		{"ServiceUnavailable", "service_unavailable"},
 		{"FutureProviderError.V2", ""},
 		{"NotReallySensitiveContentDetected", ""},
+		{"ModelNotOpen.Future", ""},
+		{"modelnotopen", ""},
+		{"InvalidEndpointOrModel.NotFound", ""},
+		{"InvalidEndpointOrModel.ModelIDAccessDisabled", ""},
 	} {
 		t.Run(tc.code, func(t *testing.T) {
 			got := sanitizeProviderError(tc.code)
@@ -145,15 +150,23 @@ func TestProjectViewOmitsUnsafeTaskIDsAndRechecksProviderDiagnostic(t *testing.T
 }
 
 func TestProviderSubmissionDiagnosticDoesNotChangeUnknownAdmission(t *testing.T) {
-	for _, status := range []int{http.StatusUnprocessableEntity, http.StatusBadGateway} {
-		t.Run(http.StatusText(status), func(t *testing.T) {
+	for _, tc := range []struct {
+		status         int
+		code, category string
+	}{
+		{http.StatusUnprocessableEntity, "InvalidParameter", "invalid_input"},
+		{http.StatusNotFound, "ModelNotOpen", "authentication"},
+		{http.StatusBadGateway, "InvalidParameter", ""},
+		{http.StatusBadGateway, "ModelNotOpen", ""},
+	} {
+		t.Run(http.StatusText(tc.status)+"/"+tc.code, func(t *testing.T) {
 			f := setup(t)
 			ctx := context.Background()
 			requests := 0
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests++
-				w.WriteHeader(status)
-				_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": "InvalidParameter", "message": "secret"}})
+				w.WriteHeader(tc.status)
+				_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": tc.code, "message": "secret"}})
 			}))
 			defer upstream.Close()
 			f.s.Provider = func(context.Context, Model) (Provider, error) {
@@ -168,14 +181,26 @@ func TestProviderSubmissionDiagnosticDoesNotChangeUnknownAdmission(t *testing.T)
 			if requests != 1 || p.ChargedMicro != 0 {
 				t.Fatalf("failed submit repeated or charged: %+v requests=%d", shot, requests)
 			}
-			if status == http.StatusUnprocessableEntity {
-				if p.Status != "failed" || shot.Error != "provider_rejected" || shot.ProviderError == nil || shot.ProviderError.Code != "InvalidParameter" || shot.ReservationID != "" {
+			if tc.status != http.StatusBadGateway {
+				if p.Status != "failed" || shot.Error != "provider_rejected" || shot.ProviderError == nil || shot.ProviderError.Code != tc.code || shot.ProviderError.Category != tc.category || shot.ReservationID != "" || shot.VideoTaskID != "" {
 					t.Fatalf("rejected = %+v", shot)
 				}
 			} else if p.Status != "reconciliation_required" || shot.ReservationID == "" || shot.ProviderError != nil {
 				t.Fatalf("unknown submission was closed: %+v", shot)
 			}
+			team, err := f.s.Repo.Store.GetTeam(ctx, f.team)
+			if err != nil || team.UsedCredits != "0.000000" || team.ReservedCredits != "0.000000" {
+				t.Fatalf("submission diagnostic changed balance: %+v err=%v", team, err)
+			}
 		})
+	}
+}
+
+func TestProjectViewClassifiesLegacyModelNotOpenWithoutMutatingStoredFact(t *testing.T) {
+	p := Project{Shots: []Shot{{ProviderError: &ProviderError{Code: "ModelNotOpen"}}}}
+	view := p.View()
+	if view.Shots[0].ProviderError == nil || view.Shots[0].ProviderError.Code != "ModelNotOpen" || view.Shots[0].ProviderError.Category != "authentication" || p.Shots[0].ProviderError.Category != "" {
+		t.Fatalf("legacy model activation diagnostic lost classification or changed persisted fact: %+v", view.Shots[0].ProviderError)
 	}
 }
 

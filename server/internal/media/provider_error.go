@@ -47,6 +47,9 @@ func sanitizeProviderError(code string) *ProviderError {
 		category = "invalid_input"
 	case "AuthenticationError", "InvalidAccessKey", "AccessDenied":
 		category = "authentication"
+	case "ModelNotOpen":
+		// 火山官方错误码指明上游账号未开通模型；复用授权分类，避免新增枚举破坏旧客户端严格校验。
+		category = "authentication"
 	case "QuotaExceeded", "AccountOverdue":
 		category = "quota"
 	case "RateLimitExceeded":
