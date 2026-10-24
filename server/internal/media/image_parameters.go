@@ -8,6 +8,17 @@ import (
 var imageRatios = []string{"auto", "1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3", "21:9"}
 var videoRatios = []string{"16:9", "9:16", "1:1"}
 
+// 目录与准入共用比例能力，避免客户端展示一个服务端实际拒绝的比例。
+func CanvasAspectRatios(kind string) []string {
+	if kind == "image" {
+		return slices.Clone(imageRatios)
+	}
+	if kind == "video" {
+		return slices.Clone(videoRatios)
+	}
+	return []string{}
+}
+
 // 图片能力在平台归一化，公开目录、准入与 adapter 共用，避免客户端选择上游拒绝的档位。
 func imageTiers(m Model) []string {
 	switch {

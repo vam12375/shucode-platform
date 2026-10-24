@@ -419,6 +419,14 @@ func mediaBody(c *gin.Context, out any) bool {
 
 func publicMediaModels(models []media.Model) []gin.H {
 	out := make([]gin.H, 0, len(models))
+	groupNames := map[string]string{}
+	for _, m := range models {
+		id, name := publicMediaModelGroupID(m), publicMediaModelGroupName(m)
+		// 名称不是身份；历史条目名称不一致时按稳定顺序选取一个公开组名。
+		if previous, exists := groupNames[id]; !exists || name < previous {
+			groupNames[id] = name
+		}
+	}
 	for _, m := range models {
 		resolutions := append([]string{}, m.Resolutions...)
 		if m.Kind == "image" {
@@ -432,6 +440,10 @@ func publicMediaModels(models []media.Model) []gin.H {
 		}
 		// 用户消耗用于客户端展示；供应商成本与内部价格版本只用于服务端计费及 root 控制台。
 		model := gin.H{"id": m.ID, "name": m.Name, "kind": m.Kind, "resolutions": resolutions, "maxReferenceImages": media.MaxReferenceImages(m), "durations": durations, "generateAudio": m.GenerateAudio, "priceMicro": m.PriceMicro}
+		groupID := publicMediaModelGroupID(m)
+		model["groupId"] = groupID
+		model["groupName"] = groupNames[groupID]
+		model["aspectRatios"] = media.CanvasAspectRatios(m.Kind)
 		if m.MinDuration > 0 && m.MaxDuration >= m.MinDuration {
 			model["minDuration"] = m.MinDuration
 			model["maxDuration"] = m.MaxDuration
