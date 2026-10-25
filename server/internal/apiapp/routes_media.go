@@ -50,7 +50,7 @@ func NewMediaService(deps *Deps) *media.Service {
 		if e != nil {
 			return media.Provider{}, e
 		}
-		return media.Provider{BaseURL: p.BaseURL, Key: key, Client: client}, nil
+		return media.Provider{BaseURL: p.BaseURL, Key: key, Adapter: m.Adapter, Client: client}, nil
 	}
 	return s
 }

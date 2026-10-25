@@ -362,6 +362,25 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
 			return
 		}
+		modelTypes := c.QueryArray("type")
+		modelType := c.Query("type")
+		if len(modelTypes) > 0 {
+			switch modelType {
+			case "text", "image", "video", "audio", "all":
+			default:
+				c.JSON(400, fail(400, "模型类型不合法"))
+				return
+			}
+			if len(modelTypes) != 1 {
+				c.JSON(400, fail(400, "模型类型不合法"))
+				return
+			}
+		}
+		adapter := c.Query("adapter")
+		if adapters := c.QueryArray("adapter"); len(adapters) > 0 && (len(adapters) != 1 || adapter != "toapis") {
+			c.JSON(400, fail(400, "媒体适配器不合法"))
+			return
+		}
 		ctx := c.Request.Context()
 		provider, err := deps.Store.GetUpstreamProvider(ctx, c.Param("id"))
 		if err != nil {
@@ -377,7 +396,8 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		headers := map[string]string{}
-		if provider.Protocol == store.ProtocolAnthropicMessages {
+		// 媒体认证由显式 adapter 决定；供应商的文字协议不能把 ToAPIs 的 Bearer 改为 x-api-key。
+		if provider.Protocol == store.ProtocolAnthropicMessages && adapter != "toapis" {
 			if apiKey != "" {
 				headers["x-api-key"] = apiKey
 			}
@@ -391,7 +411,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		}
 		urls := []string{upstreamurl.Join(provider.BaseURL, "/v1/models")}
 		// 保留媒体页对无版本前缀的显式支持；版本化前缀已由共用规则处理，不能重复探测。
-		if c.Query("base") == "prefix" {
+		if c.Query("base") == "prefix" && adapter != "toapis" {
 			directURL := strings.TrimRight(provider.BaseURL, "/") + "/models"
 			if directURL != urls[0] {
 				urls = append([]string{directURL}, urls...)
@@ -404,6 +424,10 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 			networkErr error
 		)
 		for _, upstreamURL := range urls {
+			// ToAPIs 默认仅返回文字模型；媒体发现显式带类型，不能把空视频目录当作账号未授权。
+			if modelType != "" {
+				upstreamURL += "?" + url.Values{"type": []string{modelType}}.Encode()
+			}
 			requestCtx, cancel := context.WithTimeout(ctx, upstreamModelListTimeout*time.Millisecond)
 			req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, upstreamURL, nil)
 			if err != nil {

@@ -70,6 +70,15 @@ func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id strin
 	if strings.TrimSpace(r.Prompt) == "" || utf8.RuneCountInString(r.Prompt) > 4000 || r.Count < 1 || r.Count > 4 || r.BoardID == "" || len(r.BoardID) > 200 || r.NodeID == "" || len(r.NodeID) > 200 || r.WorkspacePath == "" || len(r.WorkspacePath) > 4096 || len(r.WorkspaceIdentity) > 4096 || len(r.RemoteSessionID) > 200 {
 		return nil, ErrInvalid
 	}
+	if m.Adapter == "toapis" {
+		if r.Kind == "image" {
+			if validateToAPIsImageInput(m, r, len(r.AssetIDs)) != nil {
+				return nil, ErrInvalid
+			}
+		} else if validateToAPIsInput(m, r.Resolution, r.AspectRatio, r.Duration, len(r.AssetIDs), len(r.VideoReferences) > 0) != nil {
+			return nil, ErrInvalid
+		}
+	}
 	if r.Kind == "image" {
 		if len(r.VideoReferences) > 0 || r.Duration != 0 || !slices.Contains(ImageResolutions(m), r.Resolution) || !slices.Contains(ModelAspectRatios(m), r.AspectRatio) || len(r.AssetIDs) > MaxReferenceImages(m) {
 			return nil, ErrInvalid

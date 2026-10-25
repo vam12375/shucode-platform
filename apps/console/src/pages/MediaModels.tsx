@@ -15,6 +15,10 @@ const KIND_OPTIONS = [
   { value: "video", label: "视频" },
   { value: "image", label: "图片" },
 ];
+const ADAPTER_OPTIONS = [
+  { value: "ark", label: "Ark" },
+  { value: "toapis", label: "ToAPIs" },
+];
 const RESOLUTIONS = ["480p", "720p", "1080p", "4k"];
 const DEFAULT_MIN_DURATION = 4;
 const DEFAULT_MAX_DURATION = 15;
@@ -53,6 +57,37 @@ const SEEDANCE_PRESETS = [
     ],
   },
 ] as const;
+
+const TOAPIS_SEEDANCE_PRESETS = SEEDANCE_PRESETS.map((preset) => ({
+  ...preset,
+  name: `ToAPIs ${preset.name}`,
+  upstreamModel: preset.key === "seedance-base" ? "seedance-2" : `seedance-2-${preset.key.slice("seedance-".length)}`,
+  tiers: preset.tiers.map((tier) => ({ ...tier, id: `toapis-${tier.id}` })),
+}));
+
+const TOAPIS_MINIMAX_CAPABILITIES: Record<string, { resolutions: readonly string[]; minDuration: number; videoReference: boolean }> = {
+  "MiniMax-H3": { resolutions: ["768p", "2K"], minDuration: 4, videoReference: true },
+  "MiniMax-H3-Max": { resolutions: ["480p", "768p"], minDuration: 5, videoReference: true },
+  "MiniMax-H3-Max-Turbo": { resolutions: ["480p", "768p"], minDuration: 5, videoReference: false },
+};
+const TOAPIS_MINIMAX_PRESETS = Object.entries(TOAPIS_MINIMAX_CAPABILITIES).map(([upstreamModel, capability]) => ({
+  name: `ToAPIs ${upstreamModel.replace("MiniMax-", "MiniMax ")}`,
+  upstreamModel,
+  tiers: capability.resolutions.map((resolution) => ({ id: `toapis-${upstreamModel.toLowerCase()}-${resolution}`, resolution })),
+}));
+
+const TOAPIS_IMAGE_RESOLUTIONS = ["1K", "2K", "4K"];
+const TOAPIS_GPT_IMAGE_PRESETS = [
+  { upstreamModel: "gpt-image-2", name: "ToAPIs GPT Image 2" },
+  { upstreamModel: "gpt-image-2.5-flare", name: "ToAPIs GPT Image 2.5 Flare" },
+  { upstreamModel: "gpt-image-2.5-sunburst", name: "ToAPIs GPT Image 2.5 Sunburst" },
+];
+
+function minimaxCapability(upstreamModel: string) {
+  return Object.hasOwn(TOAPIS_MINIMAX_CAPABILITIES, upstreamModel)
+    ? TOAPIS_MINIMAX_CAPABILITIES[upstreamModel]
+    : undefined;
+}
 
 const SEEDREAM_PRESETS = [
   { id: "seedream-5.0-pro", name: "Seedream 5.0 Pro", upstreamModel: "doubao-seedream-5-0-pro-260628" },
@@ -104,6 +139,7 @@ export interface MediaModelDraft {
   kind: "image" | "video";
   providerId: string;
   upstreamModel: string;
+  adapter?: string;
   resolutions: string[];
   // 平台按 adapter/upstream 派生的只读能力，不回写目录配置。
   supportedAspectRatios?: string[];
@@ -158,9 +194,29 @@ function nextFamilyId(): string {
 }
 
 function familyKey(
-  draft: Pick<MediaModelDraft, "kind" | "providerId" | "upstreamModel">,
+  draft: Pick<MediaModelDraft, "kind" | "providerId" | "upstreamModel" | "adapter">,
 ): string {
-  return `${draft.kind}\u0000${draft.providerId}\u0000${draft.upstreamModel.trim()}`;
+  return `${draft.kind}\u0000${draft.adapter ?? "ark"}\u0000${draft.providerId}\u0000${draft.upstreamModel.trim()}`;
+}
+
+function isToapisGptImage(draft: Pick<MediaModelDraft, "adapter" | "kind" | "upstreamModel">): boolean {
+  return draft.adapter === "toapis" && draft.kind === "image" &&
+    TOAPIS_GPT_IMAGE_PRESETS.some((preset) => preset.upstreamModel === draft.upstreamModel.trim());
+}
+
+function hasResolutionTiers(draft: MediaModelDraft): boolean {
+  return draft.kind === "video" || isToapisGptImage(draft);
+}
+
+function modelResolutions(draft: MediaModelDraft): readonly string[] {
+  if (isToapisGptImage(draft)) return TOAPIS_IMAGE_RESOLUTIONS;
+  if (draft.adapter === "toapis") {
+    const minimax = minimaxCapability(draft.upstreamModel.trim());
+    if (minimax) return minimax.resolutions;
+  }
+  return draft.adapter === "toapis" && (draft.upstreamModel.trim() === "seedance-2-mini" || draft.upstreamModel.trim() === "seedance-2-fast")
+    ? ["480p", "720p"]
+    : RESOLUTIONS;
 }
 
 /** 给导入/加载的条目补充分组标识；同一上游模型归入同一张卡。 */
@@ -188,7 +244,7 @@ export function groupFamilies(drafts: MediaModelDraft[]): MediaFamilyGroup[] {
 }
 
 function tierLabel(draft: MediaModelDraft): string {
-  return draft.kind === "video" ? (draft.resolutions[0] ?? "") : "";
+  return hasResolutionTiers(draft) ? (draft.resolutions[0] ?? "") : "";
 }
 
 /** 卡片展示名 = 去掉档位后缀的条目名（不含兜底，供输入框直接编辑）。 */
@@ -235,6 +291,7 @@ export function toDraft(model: MediaModel): MediaModelDraft {
     kind: model.kind,
     providerId: model.providerId,
     upstreamModel: model.upstreamModel,
+    adapter: model.adapter ?? "ark",
     resolutions: [...(model.resolutions ?? [])],
     ...(model.aspectRatios?.length ? { supportedAspectRatios: [...model.aspectRatios] } : {}),
     minDuration: String(bounds.min),
@@ -273,8 +330,9 @@ export function toApiModel(draft: MediaModelDraft): MediaModel {
     kind: draft.kind,
     providerId: draft.providerId,
     upstreamModel,
-    adapter: "ark",
-    resolutions: isVideo ? draft.resolutions : [],
+    adapter: draft.adapter ?? "ark",
+    // GPT 图片按分辨率独立锁价，丢弃档位会把三个 SKU 都回退为默认清晰度。
+    resolutions: hasResolutionTiers(draft) ? draft.resolutions : [],
     ...(isVideo
       ? draft.legacyDurations !== undefined
         ? { durations: [...draft.legacyDurations] }
@@ -313,6 +371,7 @@ function sharedConfiguration(draft: MediaModelDraft): Partial<MediaModelDraft> {
     kind: draft.kind,
     providerId: draft.providerId,
     upstreamModel: draft.upstreamModel,
+    adapter: draft.adapter ?? "ark",
     priceVersion: draft.priceVersion,
     generateAudio: draft.generateAudio,
     minDuration: draft.minDuration,
@@ -328,6 +387,7 @@ function sharedFields(draft: MediaModelDraft): Record<string, unknown> {
     类型: draft.kind,
     上游供应商: draft.providerId,
     上游模型: draft.upstreamModel.trim(),
+    适配器: draft.adapter ?? "ark",
     价格版本: draft.priceVersion.trim(),
     原生音频: draft.kind === "video" ? draft.generateAudio : false,
     时长能力: draft.kind === "video"
@@ -369,6 +429,36 @@ export function validateDrafts(
       return `「${label}」引用的上游供应商已不存在，请重新选择。`;
     }
     if (!upstreamModel) return `「${label}」缺少上游模型 ID。`;
+    const adapter = draft.adapter ?? "ark";
+    if (adapter !== "ark" && adapter !== "toapis") return `「${label}」适配器不受支持。`;
+    if (adapter === "toapis") {
+      if (draft.kind === "image") {
+        if (!isToapisGptImage(draft)) return `「${label}」ToAPIs 仅支持已接入的 GPT Image 2 / 2.5 图片模型。`;
+        if (draft.resolutions.length !== 1 || !TOAPIS_IMAGE_RESOLUTIONS.includes(draft.resolutions[0])) {
+          return `「${label}」GPT Image 每个档位必须配置一个 1K、2K 或 4K 分辨率。`;
+        }
+        if (draft.generateAudio) return `「${label}」图片模型不支持生成音频。`;
+      } else {
+        const minimax = minimaxCapability(upstreamModel);
+        if (!minimax && !TOAPIS_SEEDANCE_PRESETS.some((preset) => preset.upstreamModel === upstreamModel)) {
+          return `「${label}」ToAPIs 仅支持已接入的 Seedance 2.0 和 MiniMax H3 系列视频模型。`;
+        }
+        if (draft.resolutions.some((resolution) => !modelResolutions(draft).includes(resolution))) {
+          return `「${label}」分辨率不受该 ToAPIs 模型支持。`;
+        }
+        const minDuration = minimax?.minDuration ?? 4;
+        if (Number(draft.minDuration) < minDuration || Number(draft.maxDuration) > 15 || draft.legacyDurations?.some((duration) => duration < minDuration || duration > 15)) {
+          return `「${label}」该 ToAPIs 模型镜头时长需在 ${minDuration}–15 秒内。`;
+        }
+        if (minimax && draft.generateAudio) return `「${label}」MiniMax H3 音频由模型决定，不支持生成音频开关。`;
+        if (minimax && !minimax.videoReference && draft.videoReference?.enabled) return `「${label}」MiniMax H3 Max Turbo 不支持视频参考。`;
+        if (draft.videoReference?.enabled && (
+          Number(draft.videoReference.maxDurationSeconds) > 15 ||
+          Number(draft.videoReference.tokenCostCredits || "0") !== 0 ||
+          Number(draft.videoReference.tokenPriceCredits || "0") !== 0
+        )) return `「${label}」ToAPIs 视频参考上限为 15 秒，按输出秒数计费，不能配置 token 费率。`;
+      }
+    }
     if (!draft.priceVersion.trim()) return `「${label}」缺少价格版本。`;
     if (!/^\d+(\.\d{1,6})?$/.test(draft.costCredits.trim())) {
       return `「${label}」成本价格式不正确（credit，最多 6 位小数）。`;
@@ -571,6 +661,7 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
       providerId: typeof record.providerId === "string" ? record.providerId : "",
       upstreamModel:
         typeof record.upstreamModel === "string" ? record.upstreamModel : "",
+      adapter: typeof record.adapter === "string" ? record.adapter : "ark",
       resolutions: Array.isArray(record.resolutions)
         ? record.resolutions.filter(
             (item): item is string => typeof item === "string",
@@ -674,15 +765,18 @@ export function MediaModelsPage() {
     const target = new Set(indexes);
     setDrafts((previous) => {
       if (kind === "image") {
-        // 图片模型没有档位：保留第一行，清空分辨率、音频与视频参考。
+        const lead = previous[indexes[0]];
+        const keepImageTiers = lead && isToapisGptImage({ ...lead, kind });
+        if (keepImageTiers && lead.kind === "image") return previous;
+        // 旧 Ark 图片保持单行空档位；GPT 图片从 1K 开始配置独立 SKU。
         return previous
           .map((draft, index) =>
             index === indexes[0]
               ? {
                   ...draft,
                   kind,
-                  name: familyNameOf(draft),
-                  resolutions: [],
+                  name: keepImageTiers ? `${familyNameOf(draft)} 1K` : familyNameOf(draft),
+                  resolutions: keepImageTiers ? ["1K"] : [],
                   generateAudio: false,
                   legacyDurations: undefined,
                   supportedAspectRatios: undefined,
@@ -715,7 +809,7 @@ export function MediaModelsPage() {
       const lead = previous[leadIndex];
       if (!lead) return previous;
       // 默认 ID 沿用既有档位 ID 的前缀（如 seedance-2.0-mini-480p → seedance-2.0-mini-1080p）。
-      const idBase = lead.id.trim().replace(/-(480p|720p|1080p|4k)$/i, "");
+      const idBase = lead.id.trim().replace(/-(480p|720p|768p|1080p|1k|2k|4k)$/i, "");
       const next: MediaModelDraft = {
         ...lead,
         id: idBase ? `${idBase}-${resolution}` : "",
@@ -780,10 +874,20 @@ export function MediaModelsPage() {
     return ark?.id ?? providers.find((provider) => provider.enabled)?.id ?? providers[0]?.id ?? "";
   };
 
-  const addSeedanceModels = (): void => {
-    const providerId = preferredProvider();
+  const addVideoPresets = (adapter: "ark" | "toapis", family: "seedance" | "minimax" = "seedance"): void => {
+    const familyName = family === "minimax" ? "MiniMax H3" : "Seedance 2.0";
+    const toapisProvider = providers.find((provider) => {
+      try {
+        return provider.enabled && ["toapis.com", "toapis.cn"].includes(new URL(provider.baseUrl).hostname);
+      } catch {
+        return false;
+      }
+    });
+    const providerId = adapter === "ark" ? preferredProvider() : toapisProvider?.id;
     if (!providerId) {
-      toastErr("请先在「上游供应商」创建并配置 Ark API 前缀", "缺少供应商");
+      toastErr(adapter === "ark"
+        ? "请先在「上游供应商」创建并配置 Ark API 前缀"
+        : "请先在「上游供应商」新增 ToAPIs，填写 https://toapis.com/v1 或 https://toapis.cn/v1 与密钥；自定义代理可通过新增模型选择 ToAPIs 适配器。", "缺少供应商");
       return;
     }
     const existing = new Set(
@@ -792,10 +896,11 @@ export function MediaModelsPage() {
     let added = 0;
     setDrafts((previous) => {
       const next = [...previous];
-      for (const preset of SEEDANCE_PRESETS) {
+      for (const preset of family === "minimax" ? TOAPIS_MINIMAX_PRESETS : adapter === "toapis" ? TOAPIS_SEEDANCE_PRESETS : SEEDANCE_PRESETS) {
         const existingFamily = next.find(
           (draft) =>
             draft.kind === "video" &&
+            (draft.adapter ?? "ark") === adapter &&
             draft.providerId === providerId &&
             draft.upstreamModel.trim() === preset.upstreamModel,
         );
@@ -809,11 +914,12 @@ export function MediaModelsPage() {
             kind: "video",
             providerId,
             upstreamModel: preset.upstreamModel,
+            adapter,
             resolutions: [tier.resolution],
-            minDuration: String(DEFAULT_MIN_DURATION),
+            minDuration: String(family === "minimax" ? TOAPIS_MINIMAX_CAPABILITIES[preset.upstreamModel]!.minDuration : DEFAULT_MIN_DURATION),
             maxDuration: String(DEFAULT_MAX_DURATION),
             costCredits: "0",
-            generateAudio: true,
+            generateAudio: family !== "minimax",
             priceCredits: "",
             priceVersion: "v1",
             // 补档必须继承卡片共享配置；默认值会与旧枚举、音频或价格版本冲突并阻塞保存。
@@ -825,14 +931,14 @@ export function MediaModelsPage() {
       return next;
     });
     if (added === 0) {
-      toastErr("Seedance 2.0 条目都已在目录中，请直接编辑现有条目", "无需重复添加");
+      toastErr(`${adapter === "toapis" ? "ToAPIs " : ""}${familyName} 条目都已在目录中，请直接编辑现有条目`, "无需重复添加");
       return;
     }
     setDirty(true);
     setError("");
     toastOk(
       `已加入 ${added} 个档位条目，请确认供应商并填写成本和售价`,
-      "已加入 Seedance 2.0 系列",
+      `已加入 ${adapter === "toapis" ? "ToAPIs " : ""}${familyName} 系列`,
     );
   };
 
@@ -876,6 +982,46 @@ export function MediaModelsPage() {
     );
   };
 
+  const addGptImageModels = (): void => {
+    const providerId = providers.find((provider) => {
+      try {
+        return provider.enabled && ["toapis.com", "toapis.cn", "api.toapis.com", "api.toapis.cn"].includes(new URL(provider.baseUrl).hostname);
+      } catch {
+        return false;
+      }
+    })?.id;
+    if (!providerId) {
+      toastErr("请先新增 ToAPIs 供应商并填写账号支持的 API 地址与密钥；自定义代理可通过新增模型选择 ToAPIs 适配器。", "缺少供应商");
+      return;
+    }
+    const existing = new Set(drafts.map((draft) => draft.id.trim() || draft.upstreamModel.trim()));
+    const additions: MediaModelDraft[] = [];
+    for (const preset of TOAPIS_GPT_IMAGE_PRESETS) {
+      const existingFamily = drafts.find((draft) => isToapisGptImage(draft) && draft.providerId === providerId && draft.upstreamModel.trim() === preset.upstreamModel);
+      const familyId = existingFamily?.familyId ?? nextFamilyId();
+      for (const resolution of TOAPIS_IMAGE_RESOLUTIONS) {
+        const id = `toapis-${preset.upstreamModel}-${resolution.toLowerCase()}`;
+        if (existing.has(id)) continue;
+        additions.push({
+          familyId, id, name: `${preset.name} ${resolution}`, kind: "image",
+          providerId, upstreamModel: preset.upstreamModel, adapter: "toapis",
+          resolutions: [resolution], minDuration: String(DEFAULT_MIN_DURATION),
+          maxDuration: String(DEFAULT_MAX_DURATION), costCredits: "0", generateAudio: false,
+          priceCredits: "", priceVersion: "v1",
+          ...(existingFamily ? sharedConfiguration(existingFamily) : {}),
+        });
+      }
+    }
+    if (!additions.length) {
+      toastErr("GPT Image 条目都已在目录中，请直接编辑现有档位", "无需重复添加");
+      return;
+    }
+    setDrafts((previous) => [...previous, ...additions]);
+    setDirty(true);
+    setError("");
+    toastOk(`已加入 ${additions.length} 个图片档位，请确认供应商地址并填写每张成本和售价`, "已加入 ToAPIs GPT Image");
+  };
+
   // 平台模型 ID 默认跟随上游模型；用户手动改过 ID 后不再覆盖。
   const updateUpstreamModel = (indexes: number[], value: string): void => {
     const target = new Set(indexes);
@@ -901,15 +1047,18 @@ export function MediaModelsPage() {
       toastErr("请先为模型选择上游供应商", "无法获取模型");
       return;
     }
-    setFetchingProvider(providerId);
+    const adapter = drafts[indexes[0]]?.adapter ?? "ark";
+    const kind = drafts[indexes[0]]?.kind ?? "video";
+    const cacheKey = `${adapter}:${kind}:${providerId}`;
+    setFetchingProvider(cacheKey);
     try {
-      // 媒体供应商的 baseUrl 是完整 API 前缀，先按 <prefix>/models 拉取。
+      // ToAPIs 文档只保证 /v1/models，不能先请求可能返回站点 HTML 的根 /models。
       const data = await api<{ models: string[] }>(
-        `/providers/${encodeURIComponent(providerId)}/models?base=prefix`,
+        `/providers/${encodeURIComponent(providerId)}/models?${adapter === "toapis" ? `type=${kind}&adapter=toapis` : "base=prefix"}`,
       );
       setProviderModels((previous) => ({
         ...previous,
-        [providerId]: data.models,
+        [cacheKey]: data.models,
       }));
       const current = drafts[indexes[0]]?.upstreamModel.trim() ?? "";
       if (data.models.length === 1 && !current) {
@@ -1013,14 +1162,14 @@ export function MediaModelsPage() {
         </Notice>
       ) : null}
       <Notice k="计费口径">
-        一个上游模型一张卡：分辨率档位是卡内的价格行，镜头时长按区间（如 4–15 秒）配置，共享配置只填一次。保存后仍按每档一条模型下发，视频按镜头秒、图片按张计价，1 credit = ¥1。视频参考按 token 费率（Credit/1M token）结算，旧按秒价格跟随档位主价格保留兼容。
+        一个上游模型一张卡：分辨率档位是卡内的价格行，镜头时长按区间（如 4–15 秒）配置，共享配置只填一次。保存后仍按每档一条模型下发，视频按镜头秒、图片按张计价，1 credit = ¥1。Ark 视频参考可按 token 费率（Credit/1M token）结算；ToAPIs 视频参考按输出秒数、使用档位售价结算。
       </Notice>
       {!loading && providers.length === 0 ? (
         <Notice
           k="缺少上游供应商"
           action={{ href: "#/providers", label: "去配置" }}
         >
-          媒体模型需要先绑定一个上游供应商，请先在「上游供应商」中创建并填入 Ark API 前缀。
+          媒体模型需要先绑定一个上游供应商，请先在「上游供应商」中创建并填入对应的完整 API 前缀与密钥。
         </Notice>
       ) : null}
 
@@ -1031,7 +1180,7 @@ export function MediaModelsPage() {
             <button
               className="btn btn-ghost btn-sm"
               type="button"
-              onClick={addSeedanceModels}
+              onClick={() => addVideoPresets("ark")}
               disabled={loading || busy || providers.length === 0}
               title={
                 providers.length === 0
@@ -1040,6 +1189,33 @@ export function MediaModelsPage() {
               }
             >
               Seedance 2.0 系列
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              type="button"
+              onClick={() => addVideoPresets("toapis")}
+              disabled={loading || busy || providers.length === 0}
+              title="加入 ToAPIs 的 mini / fast / 标准版八档，请确认供应商并填写价格"
+            >
+              ToAPIs Seedance 2.0
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              type="button"
+              onClick={() => addVideoPresets("toapis", "minimax")}
+              disabled={loading || busy || providers.length === 0}
+              title="加入 MiniMax H3 / Max / Max Turbo 三款六档，请确认供应商并填写价格"
+            >
+              ToAPIs MiniMax H3
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              type="button"
+              onClick={addGptImageModels}
+              disabled={loading || busy || providers.length === 0}
+              title="加入 GPT Image 2 / 2.5 Flare / Sunburst 三款九档，请确认供应商地址并填写每张价格"
+            >
+              ToAPIs GPT Image
             </button>
             <button
               className="btn btn-ghost btn-sm"
@@ -1247,10 +1423,14 @@ function MediaFamilyCard({
   if (!lead) return null;
 
   const isVideo = lead.kind === "video";
+  const hasTiers = hasResolutionTiers(lead);
+  const isToapis = lead.adapter === "toapis";
+  const minimax = isToapis ? minimaxCapability(lead.upstreamModel.trim()) : undefined;
+  const resolutions = modelResolutions(lead);
   const name = familyNameOf(lead);
   const tiers = indexes.map((index) => drafts[index]);
   const preview =
-    tiers.find((draft) => (draft.kind === "video" ? draft.resolutions[0] ?? "" : "") === previewTier) ??
+    tiers.find((draft) => tierLabel(draft) === previewTier) ??
     lead;
   const minDuration = Math.max(
     2,
@@ -1275,14 +1455,16 @@ function MediaFamilyCard({
     referencePrice > 0
       ? `${(((referencePrice - referenceCost) / referencePrice) * 100).toFixed(1)}%`
       : "—";
-  const unusedResolutions = RESOLUTIONS.filter(
+  const unusedResolutions = resolutions.filter(
     (resolution) => !tiers.some((draft) => draft.resolutions.includes(resolution)),
   );
-  const fetchedModels = lead.providerId ? providerModels[lead.providerId] : undefined;
+  const providerCacheKey = `${lead.adapter ?? "ark"}:${lead.kind}:${lead.providerId}`;
+  const fetchedModels = lead.providerId ? providerModels[providerCacheKey] : undefined;
 
   return (
     <article className="model-card media-family-card">
-      <div className="model-card-head">
+      {/* 卡头的名称与操作都有最小宽度，窄屏需换行，避免整页被操作按钮撑宽。 */}
+      <div className="model-card-head" style={{ flexWrap: "wrap" }}>
         <input
           className="input media-family-name"
           aria-label={`模型 ${name} 展示名称`}
@@ -1298,7 +1480,7 @@ function MediaFamilyCard({
           <button
             className="btn btn-ghost btn-sm"
             type="button"
-            disabled={busy || !lead.providerId || fetchingProvider === lead.providerId}
+            disabled={busy || !lead.providerId || fetchingProvider === providerCacheKey}
             title={
               lead.providerId
                 ? "从上游供应商拉取可用模型列表"
@@ -1306,7 +1488,7 @@ function MediaFamilyCard({
             }
             onClick={() => onFetchModels(lead.providerId)}
           >
-            {fetchingProvider === lead.providerId ? "获取中…" : "获取模型列表"}
+            {fetchingProvider === providerCacheKey ? "获取中…" : "获取模型列表"}
           </button>
           <button
             className="btn btn-danger btn-sm"
@@ -1329,6 +1511,24 @@ function MediaFamilyCard({
               onUpdateKind(indexes, value === "image" ? "image" : "video")
             }
             options={KIND_OPTIONS}
+          />
+        </label>
+        <label className="field">
+          <span className="field-label">适配器</span>
+          <Select
+            ariaLabel={`模型 ${name} 适配器`}
+            value={lead.adapter ?? "ark"}
+            disabled={busy}
+            options={ADAPTER_OPTIONS}
+            onChange={(adapter) => onUpdateFamily(indexes, {
+              adapter,
+              supportedAspectRatios: undefined,
+              ...(adapter === "toapis" && lead.videoReference ? {
+                videoReference: {
+                  ...lead.videoReference, tokenCostCredits: "0", tokenPriceCredits: "0",
+                },
+              } : {}),
+            })}
           />
         </label>
         <label className="field">
@@ -1383,7 +1583,7 @@ function MediaFamilyCard({
         {isVideo ? (
           <div className="field">
             <span className="field-label">原生音频</span>
-            <div className="choice-row">
+            {minimax ? <span className="readout">由模型决定</span> : <div className="choice-row">
               <button
                 className={"choice-chip" + (lead.generateAudio ? " selected" : "")}
                 type="button"
@@ -1395,7 +1595,7 @@ function MediaFamilyCard({
               >
                 生成音频
               </button>
-            </div>
+            </div>}
           </div>
         ) : null}
         <div className="field">
@@ -1407,6 +1607,11 @@ function MediaFamilyCard({
           </span>
         </div>
       </div>
+
+      {minimax ? <Notice k="首尾帧画幅">
+        首尾帧按输入图片自适应，画布所选固定比例可能被上游忽略；制作单仍按固定画幅合成。
+        {lead.generateAudio ? <p>当前配置开启了不支持的音频开关，请在 JSON 中修正后保存。</p> : null}
+      </Notice> : null}
 
       {conflicts.length > 0 ? (
         <Notice k="共享配置冲突">
@@ -1429,8 +1634,8 @@ function MediaFamilyCard({
               <th aria-label="预览档位" />
               <th>档位</th>
               <th>平台模型 ID</th>
-              <th className="num">成本（credit/秒）</th>
-              <th className="num">售价（credit/秒）</th>
+              <th className="num">成本（credit/{isVideo ? "秒" : "张"}）</th>
+              <th className="num">售价（credit/{isVideo ? "秒" : "张"}）</th>
               <th className="num">毛利</th>
               <th>状态</th>
               <th aria-label="操作" />
@@ -1440,7 +1645,7 @@ function MediaFamilyCard({
             {indexes.map((index, row) => {
               const tier = drafts[index];
               if (!tier) return null;
-              const label = isVideo ? (tier.resolutions[0] ?? `档位 ${row + 1}`) : "单张";
+              const label = hasTiers ? (tier.resolutions[0] ?? `档位 ${row + 1}`) : "单张";
               const selected = (tier.resolutions[0] ?? "") === (preview.resolutions[0] ?? "");
               const price = previewMicro(tier.priceCredits);
               return (
@@ -1452,18 +1657,18 @@ function MediaFamilyCard({
                       name={`media-preview-${familyId}`}
                       aria-label={`预览 ${label} 档`}
                       checked={selected}
-                      onChange={() => setPreviewTier(isVideo ? label : "")}
+                      onChange={() => setPreviewTier(hasTiers ? label : "")}
                     />
                   </td>
                   <td>
-                    {isVideo ? (
+                    {hasTiers ? (
                       <Select
                         ariaLabel={`模型 ${name} 第 ${row + 1} 档分辨率`}
                         value={tier.resolutions[0] ?? ""}
                         onChange={(value) =>
-                          onUpdateTier(index, { resolutions: [value] })
+                          onUpdateTier(index, { resolutions: [value], name: tierName(name, { ...tier, resolutions: [value] }) })
                         }
-                        options={RESOLUTIONS.map((resolution) => ({
+                        options={resolutions.map((resolution) => ({
                           value: resolution,
                           label: resolution,
                         }))}
@@ -1519,8 +1724,8 @@ function MediaFamilyCard({
                     <button
                       className="media-remove-tier"
                       type="button"
-                      disabled={busy || (isVideo && indexes.length <= 1)}
-                      title={isVideo && indexes.length <= 1 ? "至少保留一个档位" : "移除该档位"}
+                      disabled={busy || (hasTiers && indexes.length <= 1)}
+                      title={hasTiers && indexes.length <= 1 ? "至少保留一个档位" : "移除该档位"}
                       onClick={() => onRemoveTier(index)}
                     >
                       移除
@@ -1533,7 +1738,7 @@ function MediaFamilyCard({
         </table>
       </div>
 
-      {isVideo && unusedResolutions.length > 0 ? (
+      {hasTiers && unusedResolutions.length > 0 ? (
         <div className="media-add-tier">
           <span className="readout">添加档位</span>
           {unusedResolutions.map((resolution) => (
@@ -1647,7 +1852,14 @@ function MediaFamilyCard({
         </div>
       ) : null}
 
-      {isVideo ? (
+      {!isVideo && hasTiers ? <div className="media-trial">
+        <span className="readout">{preview.resolutions[0]} · {preview.priceCredits ? `售价 ${preview.priceCredits} credit/张` : "尚未配置售价"}</span>
+      </div> : null}
+
+      {isVideo && minimax && !minimax.videoReference ? <Notice k="视频参考不可用">
+        MiniMax H3 Max Turbo 仅支持文生视频和首尾帧，不支持参考媒体。
+        {reference ? <button className="btn btn-ghost btn-sm" type="button" disabled={busy} onClick={() => onUpdateFamily(indexes, { videoReference: undefined })}>移除不支持的视频参考配置</button> : null}
+      </Notice> : isVideo ? (
         <div className="media-vr-panel">
           <label className="video-reference-toggle">
             <input
@@ -1662,8 +1874,8 @@ function MediaFamilyCard({
                         enabled: true,
                         maxDurationSeconds: "15",
                         maxImages: "8",
-                        tokenCostCredits: "",
-                        tokenPriceCredits: "",
+                        tokenCostCredits: isToapis ? "0" : "",
+                        tokenPriceCredits: isToapis ? "0" : "",
                       }
                     : undefined,
                 })
@@ -1672,7 +1884,7 @@ function MediaFamilyCard({
             <span>
               <strong>启用视频参考</strong>
               <span className="video-reference-note">
-                {" "}整卡共享 · 原片段 + 替换图 · 按实际 usage token 幂等实扣，不按秒预估
+                {" "}整卡共享 · 原片段 + 替换图 · {isToapis ? "按输出秒数、使用档位售价结算" : "按实际 usage token 幂等实扣，不按秒预估"}
               </span>
             </span>
           </label>
@@ -1686,7 +1898,7 @@ function MediaFamilyCard({
                     type="number"
                     inputMode="numeric"
                     min={2}
-                    max={90}
+                    max={isToapis ? 15 : 90}
                     step={1}
                     aria-label={`模型 ${name} 视频参考时长上限`}
                     value={reference.maxDurationSeconds}
@@ -1720,7 +1932,7 @@ function MediaFamilyCard({
                     }
                   />
                 </label>
-                <label className="field">
+                {!isToapis ? <label className="field">
                   <span className="field-label">Token 成本（Credit/1M token）</span>
                   <input
                     className="input num"
@@ -1737,8 +1949,8 @@ function MediaFamilyCard({
                       })
                     }
                   />
-                </label>
-                <label className="field">
+                </label> : null}
+                {!isToapis ? <label className="field">
                   <span className="field-label">Token 售价（Credit/1M token）</span>
                   <input
                     className="input num"
@@ -1755,14 +1967,14 @@ function MediaFamilyCard({
                       })
                     }
                   />
-                </label>
+                </label> : null}
               </div>
               <div className="media-vr-summary">
-                <span>
+                {!isToapis ? <span>
                   Token 毛利 <b className="media-margin">{referenceMargin}</b>
-                </span>
+                </span> : null}
                 <span>
-                  旧按秒口径（跟随档位，只读）：成本{" "}
+                  {isToapis ? "按输出秒数（跟随档位，只读）：成本 " : "旧按秒口径（跟随档位，只读）：成本 "}
                   <b>{preview.costCredits || "0"}</b> / 售价{" "}
                   <b>{preview.priceCredits || "0"}</b>
                 </span>

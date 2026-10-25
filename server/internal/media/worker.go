@@ -125,6 +125,32 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	if e != nil {
 		return e
 	}
+	if kind == "image" && m.Adapter == "toapis" && shot.Status == "pending" {
+		request := CanvasRequest{Resolution: firstFrameResolution(m), AspectRatio: p.Brief.AspectRatio}
+		images := 0
+		if shot.Plan.AssetID != "" || shot.ImageAssetID != "" {
+			images = 1
+		}
+		if p.Canvas != nil {
+			request, images = *p.Canvas, len(p.Canvas.AssetIDs)
+		}
+		if validateToAPIsImageInput(m, request, images) != nil {
+			// 旧快照也需在准入前校验冻结图片 SKU，确定性输入拒绝不能成为未知付费请求。
+			return s.failVideoReference(ctx, p, index, shot, "provider_input_unsupported")
+		}
+	}
+	if kind == "video" && m.Adapter == "toapis" && (shot.Status == "pending" || shot.Status == "image_ready") {
+		resolution, ratio, images := p.Brief.Resolution, p.Brief.AspectRatio, 1
+		if p.Canvas != nil {
+			resolution, ratio, images = p.Canvas.Resolution, p.Canvas.AspectRatio, len(p.Canvas.AssetIDs)
+		} else if isWholeVideoReferenceExecution(p) {
+			images = len(wholeReferenceImageIDs(p, shot))
+		}
+		if validateToAPIsInput(m, resolution, ratio, shot.Plan.Duration, images, videoReferenceRequested(p)) != nil {
+			// 历史或损坏快照也必须在准入前校验型号输入，不能把本地确定性拒绝误当未知上游受理。
+			return s.failVideoReference(ctx, p, index, shot, "provider_input_unsupported")
+		}
+	}
 	var referenceVideoURL string
 	if videoReferenceRequested(p) {
 		videoModelID := p.Brief.VideoModel
@@ -138,6 +164,11 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		clip, clipErr := s.ensureVideoReferenceClip(ctx, p, shot, videoModel.VideoReference.MaxDurationSeconds)
 		if clipErr != nil {
 			return s.failVideoReference(ctx, p, index, shot, clipErr.Error())
+		}
+		capability, toapisModel := toapisModelCapabilities(videoModel.UpstreamModel)
+		if videoModel.Adapter == "toapis" && toapisModel && clip.Size > capability.referenceMaxBytes {
+			// ToAPIs 素材上限低于平台存储上限；准入前按校验后的实际片段大小拒绝，避免付费后才发现超限。
+			return s.failVideoReference(ctx, p, index, shot, "video_reference_clip_size_limit")
 		}
 		referenceVideoURL = clip.URL
 	}
@@ -185,6 +216,9 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	provider, e := s.Provider(ctx, m)
 	if e != nil {
 		return e
+	}
+	if shot.Status == "image_running" {
+		return s.pollImage(ctx, p, index, shot, provider)
 	}
 	if shot.Status == "video_running" || shot.Status == "video_ready" {
 		result, e := provider.Query(ctx, shot.VideoTaskID)
@@ -359,21 +393,28 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		image = s.Blobs.URL(p.TeamID, p.Canvas.AssetIDs[0])
 	}
 	if kind == "image" {
-		var url string
+		var submission ProviderImageSubmission
 		var e error
 		if p.Canvas != nil {
 			images := []string{}
 			for _, id := range p.Canvas.AssetIDs {
 				images = append(images, s.Blobs.URL(p.TeamID, id))
 			}
-			url, e = provider.CanvasImage(ctx, m, *p.Canvas, images)
+			submission, e = provider.SubmitCanvasImage(ctx, m, *p.Canvas, images)
 		} else {
-			url, e = provider.Image(ctx, m, shot.Plan.ImagePrompt, image, p.Brief.AspectRatio)
+			submission, e = provider.SubmitImage(ctx, m, shot.Plan.ImagePrompt, image, p.Brief.AspectRatio)
 		}
 		if e != nil {
 			return s.submissionFailure(ctx, p, index, shot, e)
 		}
-		if update(func(v *Shot) { v.ResultURL = url; v.Status = "image_generated" }) == nil {
+		if update(func(v *Shot) {
+			if submission.TaskID != "" {
+				v.ImageTaskID, v.Status = submission.TaskID, "image_running"
+				v.ImageNextQueryAt = nextImageQueryAt(time.Now())
+			} else {
+				v.ResultURL, v.Status = submission.URL, "image_generated"
+			}
+		}) == nil {
 			return ErrConflict
 		}
 		return nil
@@ -464,7 +505,7 @@ func (s *Service) unknown(ctx context.Context, p *Project, i int) error {
 // 上游明确拒绝才关闭身份；超时与 5xx 无法证明未受理，保留身份与锁价核对但不占余额。
 func (s *Service) submissionFailure(ctx context.Context, p *Project, index int, shot Shot, cause error) error {
 	switch cause.Error() {
-	case "provider_http_400", "provider_http_401", "provider_http_403", "provider_http_404", "provider_http_413", "provider_http_422", "provider_http_429":
+	case "provider_http_400", "provider_http_401", "provider_http_402", "provider_http_403", "provider_http_404", "provider_http_413", "provider_http_422", "provider_http_429":
 		if e := s.Repo.Store.ReleaseReservationByID(ctx, shot.ReservationID, time.Now()); e != nil {
 			return e
 		}

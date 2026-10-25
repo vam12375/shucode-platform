@@ -239,6 +239,8 @@ func (s *Service) action(ctx context.Context, team, id string, version int64, ac
 					shot.Attempt++
 					shot.ReservationID = ""
 					shot.VideoTaskID = ""
+					shot.ImageTaskID = ""
+					shot.ImageNextQueryAt = time.Time{}
 					shot.PendingChargeMicro = 0
 					shot.ReservedMicro = 0
 					shot.Stage = ""

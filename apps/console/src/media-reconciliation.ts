@@ -3,10 +3,12 @@ import type { SelectOption } from "./components/Select.js";
 export type ReconciliationOutcome =
   | "video_task"
   | "video_usage"
+  | "image_task"
   | "image_result"
   | "not_accepted";
 
 const IMAGE_OUTCOMES: ReconciliationOutcome[] = ["image_result", "not_accepted"];
+const ASYNC_IMAGE_OUTCOMES: ReconciliationOutcome[] = ["image_task", ...IMAGE_OUTCOMES];
 const VIDEO_OUTCOMES: ReconciliationOutcome[] = [
   "video_task",
   "video_usage",
@@ -24,24 +26,59 @@ const OUTCOME_OPTIONS: Record<"image" | "video", SelectOption[]> = {
     { value: "not_accepted", label: "确认未受理，零扣关闭" },
   ],
 };
+const ASYNC_IMAGE_OPTIONS: SelectOption[] = [
+  { value: "image_task", label: "图片已受理，补录 task ID" },
+  ...OUTCOME_OPTIONS.image,
+];
+const ASYNC_IMAGE_MODELS = new Set([
+  "gpt-image-2",
+  "gpt-image-2.5-flare",
+  "gpt-image-2.5-sunburst",
+]);
+
+export interface ImageReconciliationProject {
+  brief?: { imageModel?: string };
+  canvas?: { kind: string; modelId: string };
+  models?: readonly {
+    id: string;
+    kind: string;
+    adapter?: string;
+    upstreamModel: string;
+  }[];
+}
+
+export function hasAsyncImageReconciliation(
+  project: ImageReconciliationProject,
+): boolean {
+  // 恢复能力必须来自本次已冻结的 SKU，不能随当前模型目录变化或误用另一个图片型号。
+  const modelID = project.canvas
+    ? project.canvas.kind === "image" ? project.canvas.modelId : undefined
+    : project.brief?.imageModel;
+  if (!modelID) return false;
+  const model = project.models?.find((item) => item.id === modelID);
+  return model?.kind === "image" && model.adapter === "toapis" && ASYNC_IMAGE_MODELS.has(model.upstreamModel);
+}
 
 export function reconciliationOutcomesForStage(
   stage?: string,
+  asyncImage = false,
 ): ReconciliationOutcome[] {
-  if (stage === "image") return IMAGE_OUTCOMES;
+  if (stage === "image") return asyncImage ? ASYNC_IMAGE_OUTCOMES : IMAGE_OUTCOMES;
   if (stage === "video") return VIDEO_OUTCOMES;
   return [];
 }
 
-export function reconciliationOptionsForStage(stage?: string): SelectOption[] {
+export function reconciliationOptionsForStage(stage?: string, asyncImage = false): SelectOption[] {
+  if (stage === "image" && asyncImage) return ASYNC_IMAGE_OPTIONS;
   if (stage === "image" || stage === "video") return OUTCOME_OPTIONS[stage];
   return [];
 }
 
 export function defaultReconciliationOutcome(
   stage?: string,
+  asyncImage = false,
 ): ReconciliationOutcome | "" {
-  if (stage === "image") return "image_result";
+  if (stage === "image") return asyncImage ? "image_task" : "image_result";
   if (stage === "video") return "video_task";
   return "";
 }
@@ -51,6 +88,7 @@ export function reconciliationValueLabel(
 ): string {
   if (outcome === "video_task") return "视频 Task ID";
   if (outcome === "video_usage") return "Ark completion_tokens";
+  if (outcome === "image_task") return "图片 Task ID";
   if (outcome === "image_result") return "图片结果 URL";
   return "";
 }
@@ -60,6 +98,7 @@ export function reconciliationValuePlaceholder(
 ): string {
   if (outcome === "video_task") return "供应商返回的视频任务 ID";
   if (outcome === "video_usage") return "例如 108900";
+  if (outcome === "image_task") return "供应商返回的图片任务 ID";
   if (outcome === "image_result") return "可直接下载的图片结果地址";
   return "";
 }
@@ -67,8 +106,9 @@ export function reconciliationValuePlaceholder(
 export function isReconciliationOutcomeForStage(
   stage: string | undefined,
   outcome: ReconciliationOutcome | "",
+  asyncImage = false,
 ): outcome is ReconciliationOutcome {
-  return reconciliationOutcomesForStage(stage).includes(
+  return reconciliationOutcomesForStage(stage, asyncImage).includes(
     outcome as ReconciliationOutcome,
   );
 }

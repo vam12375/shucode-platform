@@ -4,6 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
 )
 
 // ProviderError 只保存可公开的供应商错误码；原 message 可能含素材地址和凭据，不能进入任务投影。
@@ -61,8 +65,9 @@ func sanitizeProviderError(code string) *ProviderError {
 }
 
 type providerHTTPError struct {
-	status int
-	detail *ProviderError
+	status       int
+	detail       *ProviderError
+	retryAfterAt time.Time
 }
 
 func (e *providerHTTPError) Error() string {
@@ -79,6 +84,10 @@ func providerErrorFrom(err error) *ProviderError {
 }
 
 func publicVideoTaskID(id string) string {
+	return providerTaskID(id)
+}
+
+func providerTaskID(id string) string {
 	if len(id) == 0 || len(id) > 256 {
 		return ""
 	}
@@ -89,4 +98,15 @@ func publicVideoTaskID(id string) string {
 		return ""
 	}
 	return id
+}
+
+func providerRetryAfter(raw string, now time.Time) time.Time {
+	raw = strings.TrimSpace(raw)
+	if seconds, err := strconv.ParseUint(raw, 10, 31); err == nil {
+		return now.Add(time.Duration(seconds) * time.Second)
+	}
+	if at, err := http.ParseTime(raw); err == nil && at.After(now) {
+		return at
+	}
+	return time.Time{}
 }

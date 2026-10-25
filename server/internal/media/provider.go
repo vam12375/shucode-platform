@@ -8,11 +8,15 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/vam12375/shucode-platform/server/internal/upstreamurl"
 )
 
-// Ark 使用供应商配置中的完整 API 前缀（例如 .../api/v3），密钥只在服务端解密。
+// Adapter 来自制作单冻结模型；密钥只在服务端解密。
 type Provider struct {
 	BaseURL, Key string
+	Adapter      string
 	Client       *http.Client
 }
 
@@ -25,7 +29,12 @@ func (p Provider) request(ctx context.Context, method, path string, body any, ou
 			return err
 		}
 	}
-	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(p.BaseURL, "/")+path, bytes.NewReader(data))
+	endpoint := strings.TrimRight(p.BaseURL, "/") + path
+	if p.Adapter == "toapis" {
+		// 控制台会规范化掉 /v1；复用上游 URL 拼接，兼容服务根与代理版本前缀。
+		endpoint = upstreamurl.Join(p.BaseURL, path)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(data))
 	if err != nil {
 		return err
 	}
@@ -45,7 +54,11 @@ func (p Provider) request(ctx context.Context, method, path string, body any, ou
 			Error providerErrorResponse `json:"error"`
 		}
 		_ = json.Unmarshal(raw, &failure)
-		return &providerHTTPError{status: resp.StatusCode, detail: sanitizeProviderError(failure.Error.Code)}
+		failureResult := &providerHTTPError{status: resp.StatusCode, detail: sanitizeProviderError(failure.Error.Code)}
+		if resp.StatusCode == http.StatusTooManyRequests {
+			failureResult.retryAfterAt = providerRetryAfter(resp.Header.Get("Retry-After"), time.Now())
+		}
+		return failureResult
 	}
 	if err = json.Unmarshal(raw, out); err != nil {
 		return fmt.Errorf("provider_invalid_response: %w", err)
@@ -53,6 +66,9 @@ func (p Provider) request(ctx context.Context, method, path string, body any, ou
 	return nil
 }
 func (p Provider) Image(ctx context.Context, m Model, prompt, image string, aspectRatios ...string) (string, error) {
+	if p.Adapter != "" && p.Adapter != "ark" {
+		return "", ErrInvalid
+	}
 	var out struct {
 		Data []struct {
 			URL string `json:"url"`
@@ -133,6 +149,12 @@ func (p Provider) SubmitWithReferenceImages(ctx context.Context, m Model, b Brie
 	if referenceVideo != "" && (m.VideoReference == nil || len(images) > m.VideoReference.MaxImages) {
 		return "", fmt.Errorf("video_reference_unsupported")
 	}
+	if p.Adapter == "toapis" {
+		return p.submitToAPIs(ctx, m, CanvasRequest{Prompt: s.Prompt, Resolution: b.Resolution, AspectRatio: b.AspectRatio, Duration: s.Duration}, images, referenceVideo)
+	}
+	if p.Adapter != "" && p.Adapter != "ark" {
+		return "", ErrInvalid
+	}
 	var out struct {
 		ID string `json:"id"`
 	}
@@ -160,6 +182,12 @@ type ProviderResult struct {
 
 func (p Provider) Query(ctx context.Context, id string) (ProviderResult, error) {
 	var out ProviderResult
+	if p.Adapter == "toapis" {
+		return p.queryToAPIs(ctx, id)
+	}
+	if p.Adapter != "" && p.Adapter != "ark" {
+		return out, ErrInvalid
+	}
 	if strings.ContainsAny(id, "/?#") {
 		return out, ErrInvalid
 	}
@@ -168,6 +196,9 @@ func (p Provider) Query(ctx context.Context, id string) (ProviderResult, error) 
 }
 
 func (p Provider) CanvasImage(ctx context.Context, m Model, r CanvasRequest, images []string) (string, error) {
+	if p.Adapter != "" && p.Adapter != "ark" {
+		return "", ErrInvalid
+	}
 	var out struct {
 		Data []struct {
 			URL string `json:"url"`
@@ -196,6 +227,12 @@ func (p Provider) CanvasVideo(ctx context.Context, m Model, r CanvasRequest, ima
 			return "", fmt.Errorf("video_reference_unsupported")
 		}
 		video = referenceVideos[0]
+	}
+	if p.Adapter == "toapis" {
+		return p.submitToAPIs(ctx, m, r, images, video)
+	}
+	if p.Adapter != "" && p.Adapter != "ark" {
+		return "", ErrInvalid
 	}
 	// 原 true 会把供应商水印写入视频；画布各生成模式也需显式关闭，不能依赖默认值。
 	body := map[string]any{"model": m.UpstreamModel, "content": videoContent(r.Prompt, images, video), "resolution": r.Resolution, "ratio": providerVideoRatio(r.AspectRatio), "duration": r.Duration, "watermark": false}

@@ -24,7 +24,10 @@ func FindModel(models []Model, id, kind string) (Model, error) {
 func ValidateModels(models []Model) error {
 	seen := map[string]bool{}
 	for _, m := range models {
-		if strings.TrimSpace(m.ID) == "" || m.Name == "" || seen[m.ID] || m.ProviderID == "" || m.UpstreamModel == "" || m.Adapter != "ark" || m.PriceVersion == "" || m.PriceMicro <= 0 || m.PriceMicro > 100_000_000 || m.CostMicro < 0 || m.CostMicro > 100_000_000 {
+		if strings.TrimSpace(m.ID) == "" || m.Name == "" || seen[m.ID] || m.ProviderID == "" || m.UpstreamModel == "" || (m.Adapter != "ark" && m.Adapter != "toapis") || m.PriceVersion == "" || m.PriceMicro <= 0 || m.PriceMicro > 100_000_000 || m.CostMicro < 0 || m.CostMicro > 100_000_000 {
+			return ErrInvalid
+		}
+		if m.Adapter == "toapis" && validateToAPIsModel(m) != nil {
 			return ErrInvalid
 		}
 		seen[m.ID] = true
@@ -58,7 +61,7 @@ func ValidateModels(models []Model) error {
 			}
 		}
 		for _, r := range m.Resolutions {
-			if (m.Kind == "image" && !slices.Contains(imageTiers(m), r)) || (m.Kind == "video" && r != "480p" && r != "720p" && r != "1080p" && r != "4k") {
+			if (m.Kind == "image" && !slices.Contains(imageTiers(m), r)) || (m.Kind == "video" && m.Adapter != "toapis" && r != "480p" && r != "720p" && r != "1080p" && r != "4k") {
 				return ErrInvalid
 			}
 		}
@@ -107,6 +110,9 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	if e != nil {
 		return e
 	}
+	if m.Adapter == "toapis" && validateToAPIsModel(m) != nil {
+		return ErrInvalid
+	}
 	// 多镜头合成必须有固定画幅；auto 仅允许画布直接输出，不得落入默认竖屏分支。
 	if b.AspectRatio == "auto" || !slices.Contains(ModelAspectRatios(m), b.AspectRatio) {
 		return ErrInvalid
@@ -137,8 +143,12 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 		return fmt.Errorf("duration_not_supported")
 	}
 	if b.ImageModel != "" {
-		if _, e = FindModel(models, b.ImageModel, "image"); e != nil {
-			return e
+		image, imageErr := FindModel(models, b.ImageModel, "image")
+		if imageErr != nil {
+			return imageErr
+		}
+		if !slices.Contains(ModelAspectRatios(image), b.AspectRatio) || image.Adapter == "toapis" && validateToAPIsImageModel(image) != nil {
+			return ErrInvalid
 		}
 	}
 	for _, id := range b.AssetIDs {

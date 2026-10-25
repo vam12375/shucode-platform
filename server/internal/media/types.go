@@ -159,6 +159,8 @@ type Shot struct {
 	Status                string         `json:"status"`
 	Attempt               int            `json:"attempt"`
 	VideoTaskID           string         `json:"videoTaskId,omitempty"`
+	ImageTaskID           string         `json:"imageTaskId,omitempty"`
+	ImageNextQueryAt      time.Time      `json:"imageNextQueryAt,omitempty"`
 	ReferenceVideoAssetID string         `json:"referenceVideoAssetId,omitempty"`
 	ResultURL             string         `json:"resultUrl,omitempty"`
 	ImageAssetID          string         `json:"imageAssetId,omitempty"`
@@ -268,6 +270,7 @@ func (s Shot) pendingCharge() int64 {
 }
 
 func (s *Shot) clearPending() {
+	s.ImageNextQueryAt = time.Time{}
 	s.ReservationID = ""
 	s.PendingChargeMicro = 0
 	s.ReservedMicro = 0

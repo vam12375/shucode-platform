@@ -14,11 +14,13 @@ import { Select } from "../components/Select.js";
 import { Chip, Notice } from "../components/StatusChip.js";
 import {
   defaultReconciliationOutcome,
+  hasAsyncImageReconciliation,
   isReconciliationOutcomeForStage,
   pendingMediaChargeMicro,
   reconciliationOptionsForStage,
   reconciliationValueLabel,
   reconciliationValuePlaceholder,
+  type ImageReconciliationProject,
   type ReconciliationOutcome,
 } from "../media-reconciliation.js";
 import { formatShanghaiTime } from "../time.js";
@@ -32,7 +34,7 @@ interface PendingShot {
   chargedMicro?: number;
 }
 
-interface PendingProject {
+interface PendingProject extends ImageReconciliationProject {
   id: string;
   teamId: string;
   version: number;
@@ -92,8 +94,9 @@ function ReconcileDrawer({
   onClose: () => void;
   onDone: () => void;
 }) {
+  const asyncImage = hasAsyncImageReconciliation(row.project);
   const [outcome, setOutcome] = useState<ReconciliationOutcome | "">(() =>
-    defaultReconciliationOutcome(row.shot.stage),
+    defaultReconciliationOutcome(row.shot.stage, asyncImage),
   );
   const [value, setValue] = useState("");
   const [tokens, setTokens] = useState("");
@@ -101,7 +104,7 @@ function ReconcileDrawer({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const { project, shot } = row;
-  const outcomeOptions = reconciliationOptionsForStage(shot.stage);
+  const outcomeOptions = reconciliationOptionsForStage(shot.stage, asyncImage);
   const stageSupported = outcomeOptions.length > 0;
 
   useEffect(() => {
@@ -114,7 +117,7 @@ function ReconcileDrawer({
 
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
-    if (!isReconciliationOutcomeForStage(shot.stage, outcome)) {
+    if (!isReconciliationOutcomeForStage(shot.stage, outcome, asyncImage)) {
       setError("任务阶段缺失或核对结果与阶段不匹配，无法提交。");
       return;
     }
@@ -189,7 +192,7 @@ function ReconcileDrawer({
             </p>
             <p className="readout drawer-note">
               {shot.stage === "image" ? "图片模型" : "视频模型"}{" "}
-              <b>{shot.stage === "image" ? project.brief.imageModel || "—" : project.brief.videoModel}</b> · {project.brief.resolution} ·{" "}
+              <b>{project.canvas?.modelId || (shot.stage === "image" ? project.brief.imageModel || "—" : project.brief.videoModel)}</b> · {project.brief.resolution} ·{" "}
               {project.brief.duration}s
             </p>
           </section>

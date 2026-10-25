@@ -14,10 +14,16 @@ var fixedVideoRatios = []string{"16:9", "4:3", "1:1", "3:4", "9:16", "21:9"}
 // 目录、控制台和准入共用此入口；未知型号保持历史集合，不能凭名称相似推测开放新任务能力。
 func ModelAspectRatios(m Model) []string {
 	if m.Kind == "image" {
+		if m.Adapter == "toapis" && toapisImageModelSupported(m.UpstreamModel) {
+			return toapisImageRatios(m.UpstreamModel)
+		}
 		return slices.Clone(imageRatios)
 	}
 	if m.Kind == "video" {
 		upstream := strings.TrimSpace(m.UpstreamModel)
+		if m.Adapter == "toapis" && (toapisSeedanceModel(upstream) || toapisMiniMaxModel(upstream)) {
+			return append([]string{"auto"}, fixedVideoRatios...)
+		}
 		if m.Adapter == "ark" {
 			if seedance20Model(upstream) {
 				return append([]string{"auto"}, fixedVideoRatios...)
@@ -76,6 +82,8 @@ func nearestFixedVideoRatio(width, height int) string {
 // 图片能力在平台归一化，公开目录、准入与 adapter 共用，避免客户端选择上游拒绝的档位。
 func imageTiers(m Model) []string {
 	switch {
+	case m.Adapter == "toapis" && toapisImageModelSupported(m.UpstreamModel):
+		return []string{"1K", "2K", "4K"}
 	case strings.Contains(m.UpstreamModel, "seedream-5-0-pro"):
 		return []string{"1K", "2K"}
 	case strings.Contains(m.UpstreamModel, "seedream-5-0"):
@@ -92,6 +100,9 @@ func imageTiers(m Model) []string {
 }
 
 func ImageResolutions(m Model) []string {
+	if m.Adapter == "toapis" && validateToAPIsImageModel(m) != nil {
+		return []string{}
+	}
 	tiers := imageTiers(m)
 	if len(m.Resolutions) > 0 {
 		out := []string{}

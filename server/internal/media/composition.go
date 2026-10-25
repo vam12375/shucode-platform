@@ -142,9 +142,9 @@ func (s *Service) compose(ctx context.Context, p *Project) error {
 	defer os.RemoveAll(dir)
 	runCtx, cancel := context.WithTimeout(ctx, composeTimeout(p.Brief.Resolution))
 	defer cancel()
-	w, h := outputSize(p.Brief.Resolution, p.Brief.AspectRatio)
-	if w <= 0 || h <= 0 {
-		return fmt.Errorf("unsupported_composition_aspect_ratio")
+	w, h, e := s.compositionOutputSize(runCtx, p)
+	if e != nil {
+		return e
 	}
 	list := []string{}
 	fontSize, marginLR, marginV := subtitleMetrics(w, h)

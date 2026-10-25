@@ -9,6 +9,33 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.52.0] - 2026-10-25
+
+### 新增(ToAPIs 媒体供应商)
+
+- 媒体目录支持显式 `adapter: toapis`，Provider 按冻结模型选择适配器；Base URL 兼容
+  `toapis.com`/`toapis.cn` 根地址或 `/v1` 前缀，经共用 `upstreamurl.Join` 组装 `/v1/...`，
+  Bearer 密钥只留在服务端，不因供应商文字协议改走 `x-api-key`。
+- 视频新增 Seedance 2（`seedance-2`、`-fast`、`-mini`）与 MiniMax H3 / Max / Max Turbo：
+  Seedance 支持 480p/720p/1080p/4k（fast/mini 仅 480p/720p）、4–15 秒与参考视频；
+  H3/Max 支持 768p/2K 或 480p/768p、4/5–15 秒与 50MB 参考片段，Turbo 不接受参考视频；
+  Max/Turbo 的 `480P`/`768P` 由适配器转换。ToAPIs 参考按输出秒数、档位售价结算，
+  不开放 Ark token 费率；H3 首尾帧画幅由输入图片自适应，合成按真实输出短边与交付比例计算。
+- 图片新增 GPT Image 2 / 2.5 Flare / 2.5 Sunburst，按 1K/2K/4K 独立 SKU 计价；同步与异步受理
+  分开投影，异步任务由 `ImageTaskID` 和原 lease 查询、落盘并按张幂等结算，未知受理进入 root
+  核对 `image_task` 且不重发；首帧沿用冻结图片 SKU 的分辨率与比例。
+- 控制台新增 ToAPIs 适配器与三组预设，支持图片档位、只读比例、`type`/`adapter` 模型发现与
+  缓存隔离；核对抽屉仅对冻结的 ToAPIs 图片 SKU 提供 `image_task`。
+- 补充 ToAPIs 三型号族、分辨率/时长/音频/参考边界、图片同步/异步、报价、错误诊断、核对与
+  Ark 回归测试。
+
+### 验证
+
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`（69 项）
+- `make -C server lint test`
+
 ## [0.51.0] - 2026-10-24
 
 ### 新增(按真实模型开放视频比例)

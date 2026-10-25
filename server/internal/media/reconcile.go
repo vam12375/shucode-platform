@@ -39,6 +39,15 @@ func (s *Service) Reconcile(ctx context.Context, team, id string, r Reconciliati
 			if shot.Stage != "video" || shot.VideoTaskID == "" || r.Tokens <= 0 {
 				return ErrInvalid
 			}
+		case "image_task":
+			modelID := p.Brief.ImageModel
+			if p.Canvas != nil {
+				modelID = p.Canvas.ModelID
+			}
+			model, modelErr := FindModel(p.Models, modelID, "image")
+			if shot.Stage != "image" || modelErr != nil || model.Adapter != "toapis" || validateToAPIsImageModel(model) != nil || providerTaskID(r.Value) == "" {
+				return ErrInvalid
+			}
 		case "image_result":
 			if shot.Stage != "image" || !ValidURL(r.Value) {
 				return ErrInvalid
@@ -84,6 +93,11 @@ func (s *Service) Reconcile(ctx context.Context, team, id string, r Reconciliati
 		case "image_result":
 			ss.ResultURL = r.Value
 			ss.Status = "image_generated"
+			v.Status = "queued"
+		case "image_task":
+			ss.ImageTaskID = r.Value
+			ss.ImageNextQueryAt = nextImageQueryAt(time.Now())
+			ss.Status = "image_running"
 			v.Status = "queued"
 		}
 		v.Error = ""
