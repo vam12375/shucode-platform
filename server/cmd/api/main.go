@@ -57,6 +57,9 @@ func main() {
 	if env.TurnstileSiteKey == "" {
 		logger.Warn("未配置 TURNSTILE_SITE_KEY/TURNSTILE_SECRET_KEY，登录页不启用人机验证")
 	}
+	if env.RootMFARequired {
+		logger.Info("已启用 ROOT_MFA_REQUIRED：root 未绑定 TOTP 时仅能访问安全设置")
+	}
 	if !env.MemoryDB && strings.HasPrefix(env.PublicAPIOrigin, "https:") && len(env.TrustedProxyIPs) == 0 {
 		logger.Warn("API_TRUSTED_PROXY_IPS 未配置：经 Nginx 回源时所有请求可能折叠到 Docker 网桥 IP，登录限流分桶会失效")
 	}
@@ -121,13 +124,16 @@ func main() {
 
 	// 事件总线与限流:REDIS_URL 配置时用 Redis(跨实例),否则进程内(单实例语义)。
 	var bus events.Bus
-	var consoleLimiter, platformLimiter, loginIPLimiter, rootLoginLimiter, modelProbeLimiter ratelimit.Limiter
+	var consoleLimiter, platformLimiter, loginIPLimiter, loginIPBurstLimiter, rootLoginLimiter, modelProbeLimiter, publicReadLimiter ratelimit.Limiter
 	var redisClient *redis.Client
 	window := ratelimit.Window{Window: 5 * time.Minute, Max: 10}
 	ipWindow := ratelimit.Window{Window: 24 * time.Hour, Max: 100}
+	ipBurstWindow := ratelimit.Window{Window: time.Minute, Max: 20}
 	rootWindow := ratelimit.Window{Window: time.Hour, Max: 5}
 	// 用户端"测试"会真实调用上游；按用户限速，既允许复查延迟又避免持续成本。
 	probeWindow := ratelimit.Window{Window: 10 * time.Minute, Max: 30}
+	// setup/status、public-config 等匿名只读端点也限速，避免被无限探测。
+	publicReadWindow := ratelimit.Window{Window: time.Minute, Max: 120}
 	if env.RedisURL != "" {
 		options, err := redis.ParseURL(env.RedisURL)
 		if err != nil {
@@ -144,16 +150,20 @@ func main() {
 		consoleLimiter = ratelimit.NewRedis(redisClient, window)
 		platformLimiter = ratelimit.NewRedis(redisClient, window)
 		loginIPLimiter = ratelimit.NewRedis(redisClient, ipWindow)
+		loginIPBurstLimiter = ratelimit.NewRedis(redisClient, ipBurstWindow)
 		rootLoginLimiter = ratelimit.NewRedis(redisClient, rootWindow)
 		modelProbeLimiter = ratelimit.NewRedis(redisClient, probeWindow)
+		publicReadLimiter = ratelimit.NewRedis(redisClient, publicReadWindow)
 		logger.Info("已启用 Redis 共享限流与事件总线")
 	} else {
 		bus = events.NewInProc()
 		consoleLimiter = ratelimit.NewInProc(window)
 		platformLimiter = ratelimit.NewInProc(window)
 		loginIPLimiter = ratelimit.NewInProc(ipWindow)
+		loginIPBurstLimiter = ratelimit.NewInProc(ipBurstWindow)
 		rootLoginLimiter = ratelimit.NewInProc(rootWindow)
 		modelProbeLimiter = ratelimit.NewInProc(probeWindow)
+		publicReadLimiter = ratelimit.NewInProc(publicReadWindow)
 	}
 
 	var turnstileVerifier apiapp.TurnstileVerifier
@@ -186,7 +196,10 @@ func main() {
 		ConsoleLoginLimiter:  consoleLimiter,
 		PlatformLoginLimiter: platformLimiter,
 		LoginIPLimiter:       loginIPLimiter,
+		LoginIPBurstLimiter:  loginIPBurstLimiter,
 		RootLoginLimiter:     rootLoginLimiter,
+		PublicReadLimiter:    publicReadLimiter,
+		LoginGate:            apiapp.NewLoginGate(env.LoginMaxConcurrent),
 		ModelProbeLimiter:    modelProbeLimiter,
 		Turnstile:            turnstileVerifier,
 		Logger:               logger,

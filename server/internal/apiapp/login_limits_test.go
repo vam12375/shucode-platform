@@ -99,8 +99,8 @@ func TestLoginSessionTTLByRole(t *testing.T) {
 	if root.Code != 200 {
 		t.Fatalf("root 登录: %d %s", root.Code, root.Body.String())
 	}
-	if cookie := root.Header().Get("set-cookie"); !strings.Contains(cookie, "Max-Age=86400") {
-		t.Fatalf("root 会话应 24 小时: %s", cookie)
+	if cookie := root.Header().Get("set-cookie"); !strings.Contains(cookie, "Max-Age=43200") {
+		t.Fatalf("root 会话应 12 小时: %s", cookie)
 	}
 
 	member := f.do("POST", "/console/api/auth/login", "",

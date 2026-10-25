@@ -9,6 +9,37 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.53.0] - 2026-10-25
+
+### 新增(安全边界加固)
+
+- 新增可选 `ROOT_MFA_REQUIRED`（默认关闭）：启用后未绑定 TOTP 的 root 只能读取 `/auth/me`、
+  退出登录或访问 `/security/mfa/*`，其余控制台接口返回 403；登录、初始化与 `/auth/me`
+  返回 `mfaSetupRequired`，绑定完成后恢复业务访问并续签会话；设备授权页引导先完成绑定。
+- 登录限流拆为归一化账号桶（10 次/5min）、Pure-IP 分钟突发桶（20 次/min）、Pure-IP 日桶
+  （100 次/24h）与 root 专属桶（5 次/h），拒绝统一返回 429 + `Retry-After`；
+  `LOGIN_MAX_CONCURRENT` 限制单实例并发 scrypt，槽位耗尽直接 429，不排队。
+- 会话：root/admin 绝对有效期 12 小时；所有会话默认 30 分钟空闲超时
+  （`SESSION_IDLE_MINUTES`，0 关闭），超时立即删除会话。登录成功/失败与 root 登录/
+  设备登录写入审计；root MFA 变更、root 登录触发限流、管理员重置密码和用户改密发送
+  安全事件通知，不记录口令、恢复码或 TOTP。
+- 安全响应头新增 COOP/CORP；配置 `CSP_REPORT_URI` 时同时下发 report-uri/report-to 与
+  Reporting-Endpoints；`setup/status`、`public-config` 增加匿名只读限速（故障 fail-open）；
+  登录/初始化/团队充值拒绝未知字段；usage 导出写入审计。
+- 控制台入口 HTML 改为 `no-store`，只有带内容哈希的静态资源使用 immutable；新增 root MFA
+  绑定门与登录 `Retry-After` 倒计时；nginx 关闭 `server_tokens`。
+- 补齐 `.env.example`/README 的 `ROOT_MFA_REQUIRED`、`SESSION_IDLE_MINUTES`、
+  `LOGIN_MAX_CONCURRENT`、`CSP_REPORT_URI`、HSTS/security.txt 说明。
+- 回归测试：账号/IP 分桶与 Retry-After、并发槽位、未知字段、root MFA 门禁、空闲超时、
+  COOP/CORP/CSP 上报、公开端点限流、导出审计、静态缓存与 CORS。
+
+### 验证
+
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`（69 项）
+- `make -C server lint test`
+
 ## [0.52.0] - 2026-10-25
 
 ### 新增(ToAPIs 媒体供应商)

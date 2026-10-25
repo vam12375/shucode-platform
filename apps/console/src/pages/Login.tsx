@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api } from "../api.js";
+import { api, type ApiError } from "../api.js";
 import { Gauge } from "../components/Gauge.js";
 import { Turnstile } from "../components/Turnstile.js";
 import { normalizeTurnstileSiteKey, turnstileRequired } from "../turnstile.js";
-import type { AdminUser } from "../App.js";
+import type { SessionData } from "../permissions.js";
 
 interface PublicConfig {
   turnstileSiteKey?: unknown;
   turnstileEnabled?: unknown;
 }
 
-export function LoginPage({ onLogin }: { onLogin: (user: AdminUser) => void }) {
+export function LoginPage({ onLogin }: { onLogin: (data: SessionData) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -22,6 +22,16 @@ export function LoginPage({ onLogin }: { onLogin: (user: AdminUser) => void }) {
   const [turnstileEnabled, setTurnstileEnabled] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState(0);
+
+  useEffect(() => {
+    if (retryAfterSeconds <= 0) return;
+    const timer = window.setTimeout(
+      () => setRetryAfterSeconds((value) => Math.max(0, value - 1)),
+      1000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [retryAfterSeconds]);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,10 +72,14 @@ export function LoginPage({ onLogin }: { onLogin: (user: AdminUser) => void }) {
       setError("请先完成人机验证");
       return;
     }
+    if (retryAfterSeconds > 0) {
+      setError(`尝试次数过多，请 ${retryAfterSeconds} 秒后重试`);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const data = await api<{ user: AdminUser }>("/auth/login", {
+      const data = await api<SessionData>("/auth/login", {
         method: "POST",
         body: JSON.stringify({
           email,
@@ -77,8 +91,14 @@ export function LoginPage({ onLogin }: { onLogin: (user: AdminUser) => void }) {
           ...(recoveryCode.trim() ? { recoveryCode: recoveryCode.trim() } : {}),
         }),
       });
-      onLogin(data.user);
+      setRetryAfterSeconds(0);
+      onLogin(data);
     } catch (submitError) {
+      const retryAfter =
+        submitError instanceof Error
+          ? (submitError as ApiError).retryAfter
+          : undefined;
+      if (retryAfter && retryAfter > 0) setRetryAfterSeconds(retryAfter);
       setError(submitError instanceof Error ? submitError.message : "登录失败");
       resetTurnstile();
     } finally {
@@ -159,11 +179,21 @@ export function LoginPage({ onLogin }: { onLogin: (user: AdminUser) => void }) {
             />
           </label>
         </details>
-        {error ? <p className="error">{error}</p> : null}
+        {error ? (
+          <p className="error">
+            {error}
+            {retryAfterSeconds > 0 ? `（${retryAfterSeconds} 秒后可重试）` : ""}
+          </p>
+        ) : null}
         <button
           className="btn"
           type="submit"
-          disabled={busy || !configReady || (turnstileEnabled && !turnstileToken)}
+          disabled={
+            busy ||
+            !configReady ||
+            (turnstileEnabled && !turnstileToken) ||
+            retryAfterSeconds > 0
+          }
         >
           {busy ? "登录中…" : "登录"}
         </button>

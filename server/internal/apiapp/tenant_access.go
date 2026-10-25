@@ -60,6 +60,29 @@ func consoleAccessGuard(deps *Deps) gin.HandlerFunc {
 			return
 		}
 		if user.Role == store.RoleRoot {
+			// 启用 ROOT_MFA_REQUIRED 后，未绑定 TOTP 的 root 会话只能读取
+			// 自身资料、退出登录或访问 MFA 设置接口；其他业务接口一律 403，
+			// 防止“先登录、再慢慢补 MFA”的窗口被长期利用。
+			if deps.Env.RootMFARequired {
+				state, ok := cachedRootMFAState(c)
+				if !ok {
+					var err error
+					state, _, err = readRootMFAState(c.Request.Context(), deps, user.ID)
+					if err != nil {
+						rootMFAUnavailable(c)
+						c.Abort()
+						return
+					}
+				}
+				if !state.Enabled {
+					allowed := (c.Request.Method == "GET" && path == "/auth/me") ||
+						path == "/auth/logout" || strings.HasPrefix(path, "/security/mfa")
+					if !allowed {
+						c.AbortWithStatusJSON(403, fail(403, "请先完成超级管理员双重验证绑定"))
+						return
+					}
+				}
+			}
 			c.Next()
 			return
 		}

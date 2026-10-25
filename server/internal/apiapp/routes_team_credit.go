@@ -25,6 +25,9 @@ func registerTeamCreditRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(400, fail(400, "请求参数不合法"))
 			return
 		}
+		if !rejectUnknownFields(c, body, "amountCredits", "requestId") {
+			return
+		}
 		amount, ok := body["amountCredits"].(string)
 		micro, err := credits.ParseCreditsToMicro(amount)
 		if !ok || !addedCreditAmountPattern.MatchString(amount) || err != nil || micro <= 0 || micro > 999_999_999_999_999_999 {

@@ -60,6 +60,15 @@ type Env struct {
 	HSTSPreload bool
 	// SecurityContact:security.txt 的上报渠道（mailto 或 https URL）。
 	SecurityContact string
+	// CSPReportURI:可选 CSP 违规上报地址；为空则不下发 report-uri/report-to。
+	CSPReportURI string
+	// RootMFARequired:可选加固；启用后 root 必须绑定 TOTP 才能进入业务接口。
+	// 默认关闭；显式 ROOT_MFA_REQUIRED=true 才启用。
+	RootMFARequired bool
+	// SessionIdleTimeout:会话空闲超时；0 表示只按绝对过期时间判断。
+	SessionIdleTimeout time.Duration
+	// LoginMaxConcurrent:单实例同时执行口令 KDF 的登录请求上限。
+	LoginMaxConcurrent int
 	// TurnstileSiteKey/TurnstileSecretKey:登录页人机验证；两者必须同时配置。
 	TurnstileSiteKey   string
 	TurnstileSecretKey string
@@ -143,6 +152,28 @@ func LoadPlatformEnv() (*Env, error) {
 	if (turnstileSiteKey == "") != (turnstileSecretKey == "") {
 		return nil, fmt.Errorf("TURNSTILE_SITE_KEY 与 TURNSTILE_SECRET_KEY 必须同时配置")
 	}
+	// root 强制 MFA 是可选加固；默认关闭，显式设置 ROOT_MFA_REQUIRED=true 才启用。
+	rootMFARequired := false
+	if raw := strings.TrimSpace(os.Getenv("ROOT_MFA_REQUIRED")); raw != "" {
+		rootMFARequired = platformenv.Truthy(raw)
+	}
+	sessionIdleMinutes, err := strconv.Atoi(platformenv.EnvOr("SESSION_IDLE_MINUTES", "30"))
+	if err != nil || sessionIdleMinutes < 0 || sessionIdleMinutes > 10080 {
+		return nil, fmt.Errorf("SESSION_IDLE_MINUTES 非法（0-10080）")
+	}
+	loginMaxConcurrent, err := strconv.Atoi(platformenv.EnvOr("LOGIN_MAX_CONCURRENT", "8"))
+	if err != nil || loginMaxConcurrent < 1 || loginMaxConcurrent > 1024 {
+		return nil, fmt.Errorf("LOGIN_MAX_CONCURRENT 非法（1-1024）")
+	}
+	cspReportURI := strings.TrimSpace(os.Getenv("CSP_REPORT_URI"))
+	if cspReportURI != "" {
+		parsed, parseErr := url.Parse(cspReportURI)
+		if parseErr != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") ||
+			parsed.Host == "" || parsed.User != nil ||
+			strings.ContainsAny(cspReportURI, " \t\r\n\"'\\;,") {
+			return nil, fmt.Errorf("CSP_REPORT_URI 必须是 http/https 绝对地址")
+		}
+	}
 	return &Env{
 		Port:                port,
 		Host:                platformenv.EnvOr("HOST", "0.0.0.0"),
@@ -176,6 +207,10 @@ func LoadPlatformEnv() (*Env, error) {
 		HSTSIncludeSubdomains:  platformenv.Truthy(os.Getenv("HSTS_INCLUDE_SUBDOMAINS")),
 		HSTSPreload:            platformenv.Truthy(os.Getenv("HSTS_PRELOAD")),
 		SecurityContact:        strings.TrimSpace(os.Getenv("SECURITY_CONTACT")),
+		CSPReportURI:           cspReportURI,
+		RootMFARequired:        rootMFARequired,
+		SessionIdleTimeout:     time.Duration(sessionIdleMinutes) * time.Minute,
+		LoginMaxConcurrent:     loginMaxConcurrent,
 		TurnstileSiteKey:       turnstileSiteKey,
 		TurnstileSecretKey:     turnstileSecretKey,
 		TurnstileVerifyURL:     platformenv.EnvOr("TURNSTILE_VERIFY_URL", turnstile.DefaultEndpoint),

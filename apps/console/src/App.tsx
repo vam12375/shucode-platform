@@ -13,6 +13,7 @@ import {
 import { CatalogPage, InvitePage, ProfilePage, TenantPage } from "./pages/Tenant.js";
 import { Notice } from "./components/StatusChip.js";
 import { DialogHost, ToastHost } from "./components/Feedback.js";
+import { MfaSettings } from "./components/MfaSettings.js";
 import { ReadoutRail } from "./components/ReadoutRail.js";
 import { AuditPage } from "./pages/Audit.js";
 import { ConfigPage } from "./pages/ConfigPage.js";
@@ -108,6 +109,7 @@ export function App() {
   const [rootTeams, setRootTeams] = useState<ConsoleTeam[]>([]);
   const [teamId, setTeamId] = useState("");
   const [setupRequired, setSetupRequired] = useState(false);
+  const [mfaSetupRequired, setMfaSetupRequired] = useState(false);
   const [route, setRoute] = useState(() => normalizeHash(window.location.hash));
   const [ready, setReady] = useState(false);
   useAutoHideScrollbars();
@@ -126,12 +128,13 @@ export function App() {
     setMemberships(active);
     setTeamId(next);
     setApiTeamScope(next);
+    setMfaSetupRequired(data.mfaSetupRequired === true);
     setUser(data.user);
   }, []);
   const refreshSession = useCallback(async () => {
     const session = await api<SessionData>("/auth/me");
     receiveSession(session);
-    if (session.user.role === "root") {
+    if (session.user.role === "root" && !session.mfaSetupRequired) {
       const data = await api<{ teams: ConsoleTeam[] }>("/teams");
       setRootTeams(data.teams);
     }
@@ -164,6 +167,7 @@ export function App() {
     setApiTeamScope("");
     setTeamId("");
     setMemberships([]);
+    setMfaSetupRequired(false);
     setUser(null);
     navigate("/usage");
   }, []);
@@ -176,7 +180,7 @@ export function App() {
       return (
         <RootSetupPage
           onSetup={(next) => {
-            receiveSession({ user: next });
+            receiveSession(next);
             void refreshSession();
             setSetupRequired(false);
           }}
@@ -194,7 +198,7 @@ export function App() {
     return (
       <LoginPage
         onLogin={(next) => {
-          receiveSession({ user: next });
+          receiveSession(next);
           void refreshSession();
           const invitation = sessionStorage.getItem("console-invitation");
           if (invitation) {
@@ -203,6 +207,45 @@ export function App() {
           }
         }}
       />
+    );
+  }
+
+  if (mfaSetupRequired) {
+    return (
+      <AuthProvider
+        value={{
+          user,
+          memberships,
+          teams: [],
+          teamId: "",
+          team: undefined,
+          membership: undefined,
+          isRoot: true,
+          canManageTeam: true,
+          selectTeam: () => undefined,
+          refreshSession,
+        }}
+      >
+        <ToastHost />
+        <DialogHost />
+        <div className="login-page">
+          <div className="login-card mfa-gate-card">
+            <h1 className="login-title">MENDAO</h1>
+            <p className="login-sub">超级管理员安全绑定 · MANDATORY MFA</p>
+            <p className="readout">
+              当前部署已启用强制双重验证：请先绑定身份验证器；完成绑定前，除安全设置外的控制台接口都会被拒绝。
+            </p>
+            <MfaSettings />
+            <button
+              className="btn btn-ghost"
+              type="button"
+              onClick={() => void logout()}
+            >
+              退出登录
+            </button>
+          </div>
+        </div>
+      </AuthProvider>
     );
   }
 

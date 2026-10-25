@@ -28,6 +28,7 @@ export interface Membership {
 export interface SessionData {
   user: ConsoleUser;
   memberships?: Membership[];
+  mfaSetupRequired?: boolean;
 }
 
 export function isTeamManager(

@@ -26,7 +26,7 @@ func TestHealthzAndStaticHosting(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dist, "assets"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dist, "assets", "app.js"), []byte("console.log(1)"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dist, "assets", "app-abcdef12.js"), []byte("console.log(1)"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	f.deps.Env.ConsoleDistDir = dist
@@ -56,12 +56,12 @@ func TestHealthzAndStaticHosting(t *testing.T) {
 	index := httptest.NewRecorder()
 	engine.ServeHTTP(index, httptest.NewRequest("GET", "/console/", nil))
 	if index.Code != 200 || !strings.Contains(index.Body.String(), "console") ||
-		index.Header().Get("Cache-Control") != "no-cache" {
+		index.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("index 托管不符: %d %q", index.Code, index.Header().Get("Cache-Control"))
 	}
 
 	asset := httptest.NewRecorder()
-	engine.ServeHTTP(asset, httptest.NewRequest("GET", "/console/assets/app.js", nil))
+	engine.ServeHTTP(asset, httptest.NewRequest("GET", "/console/assets/app-abcdef12.js", nil))
 	if asset.Code != 200 || !strings.Contains(asset.Header().Get("Content-Type"), "javascript") ||
 		!strings.Contains(asset.Header().Get("Cache-Control"), "immutable") {
 		t.Fatalf("静态资源响应头不符: %d %v", asset.Code, asset.Header())

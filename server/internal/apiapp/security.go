@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -54,6 +55,10 @@ func securityHeaders(deps *Deps) gin.HandlerFunc {
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("Referrer-Policy", "no-referrer")
 		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		// 控制台是独立应用，不需要被其他窗口 opener 引用；CORP 阻止其他站点
+		// 以 no-cors 方式嵌入控制台/API 响应，降低点击劫持与旁路读取面。
+		c.Header("Cross-Origin-Opener-Policy", "same-origin")
+		c.Header("Cross-Origin-Resource-Policy", "same-origin")
 		// Turnstile 脚本与挑战 iframe 都在 challenges.cloudflare.com；只在启用时放宽。
 		turnstileHosts := ""
 		if deps.Env.TurnstileSiteKey != "" {
@@ -71,6 +76,11 @@ func securityHeaders(deps *Deps) gin.HandlerFunc {
 		if len(httpsOrigins) > 0 {
 			csp += "; upgrade-insecure-requests"
 		}
+		if reportURI := deps.Env.CSPReportURI; reportURI != "" {
+			// 同时下发 report-uri（兼容旧浏览器）与 report-to（Reporting API）。
+			csp += "; report-uri " + reportURI + "; report-to csp"
+			c.Header("Reporting-Endpoints", `csp="`+reportURI+`"`)
+		}
 		c.Header("Content-Security-Policy", csp)
 		if hstsValue != "" {
 			c.Header("Strict-Transport-Security", hstsValue)
@@ -83,6 +93,26 @@ func securityHeaders(deps *Deps) gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+// allowPublicRead:匿名只读端点的轻量防探测限速。限流后端故障时放行，
+// 因为这些接口本身不做昂贵计算；真正需要 fail-closed 的是密码校验路径。
+func allowPublicRead(c *gin.Context, deps *Deps, scope string) bool {
+	if deps.PublicReadLimiter == nil {
+		return true
+	}
+	allowed, err := deps.PublicReadLimiter.Allow(c.Request.Context(),
+		"public-read:"+scope+":"+resolveLimiterClientIP(c, deps))
+	if err != nil {
+		deps.Logger.Warn("公开端点限流不可用，按 fail-open 放行", "scope", scope, "error", err)
+		return true
+	}
+	if !allowed {
+		setRetryAfter(c, time.Minute)
+		c.AbortWithStatusJSON(429, fail(429, "请求过于频繁，请稍后再试"))
+		return false
+	}
+	return true
 }
 
 // consoleHostGuard:配置 CONSOLE_ALLOWED_HOSTS 后，管理面只在指定 Host 暴露。

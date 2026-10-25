@@ -28,9 +28,15 @@ type Deps struct {
 	ConfigEvents         events.Bus
 	ConsoleLoginLimiter  ratelimit.Limiter
 	PlatformLoginLimiter ratelimit.Limiter
-	// LoginIPLimiter:Pure-IP 全局登录桶；RootLoginLimiter:root 专属更紧的桶。
-	LoginIPLimiter   ratelimit.Limiter
-	RootLoginLimiter ratelimit.Limiter
+	// LoginIPLimiter:Pure-IP 日总量桶；LoginIPBurstLimiter:分钟级突发桶。
+	// RootLoginLimiter:root 专属更紧的桶。
+	LoginIPLimiter      ratelimit.Limiter
+	LoginIPBurstLimiter ratelimit.Limiter
+	RootLoginLimiter    ratelimit.Limiter
+	// PublicReadLimiter:setup/status、public-config 等匿名只读端点的轻量限速。
+	PublicReadLimiter ratelimit.Limiter
+	// LoginGate:限制同实例内同时执行 scrypt 的登录数；nil 表示不限。
+	LoginGate *LoginGate
 	// ModelProbeLimiter:用户端模型实测的按用户桶；nil 表示不限流（测试夹具）。
 	ModelProbeLimiter ratelimit.Limiter
 	// Turnstile:登录页人机验证；nil 表示未配置，登录行为保持原样。

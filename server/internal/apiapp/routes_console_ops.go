@@ -993,6 +993,16 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
+		// 导出是数据外流的主要形式：记录操作者、范围和条数，便于事后审计。
+		exportDetail := map[string]any{
+			"teamId": filter.TeamID, "userId": filter.UserID, "model": filter.Model,
+			"providerId": filter.ProviderID, "count": len(records), "truncated": len(records) >= 100_000,
+		}
+		if filter.TeamID != "" {
+			writeTeamAudit(c.Request.Context(), deps, user, filter.TeamID, "usage.export", "usage", "", exportDetail)
+		} else {
+			writeAudit(c.Request.Context(), deps, user, "usage.export", "usage", "", exportDetail)
+		}
 		filename := "usage-" + deps.Now().UTC().Format("20060102-150405") + ".csv"
 		c.Header("content-type", "text/csv; charset=utf-8")
 		c.Header("content-disposition", `attachment; filename="`+filename+`"`)

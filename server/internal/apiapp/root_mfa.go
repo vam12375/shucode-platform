@@ -30,6 +30,40 @@ type rootMFAState struct {
 }
 
 func rootMFAKey(userID string) string { return "_security.root-mfa." + userID }
+
+const rootMFAStateCacheKey = "root.mfa.state"
+
+func cacheRootMFAState(c *gin.Context, state rootMFAState) {
+	c.Set(rootMFAStateCacheKey, state)
+}
+
+func cachedRootMFAState(c *gin.Context) (rootMFAState, bool) {
+	raw, exists := c.Get(rootMFAStateCacheKey)
+	if !exists {
+		return rootMFAState{}, false
+	}
+	state, ok := raw.(rootMFAState)
+	return state, ok
+}
+
+// rootMFAEnrollmentRequired:仅在显式启用 ROOT_MFA_REQUIRED 时要求 root
+// 先绑定 TOTP。状态读取失败按“仍需绑定”处理，让 consoleAccessGuard
+// 失败关闭而不是误放行。
+func rootMFAEnrollmentRequired(ctx context.Context, deps *Deps, c *gin.Context, user *store.UserRecord) bool {
+	if user == nil || user.Role != store.RoleRoot || deps.Env == nil || !deps.Env.RootMFARequired {
+		return false
+	}
+	if state, ok := cachedRootMFAState(c); ok {
+		return !state.Enabled
+	}
+	state, _, err := readRootMFAState(ctx, deps, user.ID)
+	if err != nil {
+		return true
+	}
+	cacheRootMFAState(c, state)
+	return !state.Enabled
+}
+
 func readRootMFAState(ctx context.Context, deps *Deps, userID string) (rootMFAState, []byte, error) {
 	state := rootMFAState{Version: 1, LastCounter: -1}
 	raw, err := deps.Store.GetConfigValue(ctx, rootMFAKey(userID))
@@ -77,6 +111,7 @@ func allowRootMFAAttempt(ctx context.Context, deps *Deps, c *gin.Context, userID
 		return false
 	}
 	if !allowed {
+		setRetryAfter(c, loginAccountWindow)
 		c.JSON(429, fail(429, "安全验证尝试次数过多，请稍后重试"))
 		return false
 	}
@@ -169,6 +204,7 @@ func verifyRootMFA(ctx context.Context, deps *Deps, c *gin.Context, user *store.
 		rootMFAUnavailable(c)
 		return false
 	}
+	cacheRootMFAState(c, state)
 	if !state.Enabled {
 		cacheSessionSecurityProof(c, user.ID, state.SecurityVersion)
 		return true
@@ -182,6 +218,7 @@ func verifyRootMFA(ctx context.Context, deps *Deps, c *gin.Context, user *store.
 		return false
 	}
 	if !valid {
+		writeAuthAudit(ctx, deps, user.ID, "auth.login", "failure", authRequestIP(c, deps), map[string]any{"reason": "mfa_failed"})
 		rejectRootMFA(c)
 		return false
 	}
@@ -191,9 +228,11 @@ func verifyRootMFA(ctx context.Context, deps *Deps, c *gin.Context, user *store.
 		return false
 	}
 	if !swapped {
+		writeAuthAudit(ctx, deps, user.ID, "auth.login", "failure", authRequestIP(c, deps), map[string]any{"reason": "mfa_replayed"})
 		rejectRootMFA(c)
 		return false
 	}
+	cacheRootMFAState(c, next)
 	cacheSessionSecurityProof(c, user.ID, next.SecurityVersion)
 	return true
 }
@@ -357,6 +396,7 @@ func registerRootMFARoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		writeAudit(ctx, deps, user, "security.mfa.enabled", "user", user.ID, map[string]any{"recoveryCodeCount": len(codes)})
+		notifySecurityEvent(deps, "security.mfa.enabled", "超级管理员已启用双重验证 user="+user.ID)
 		c.JSON(200, okData(gin.H{"recoveryCodes": codes}))
 	})
 	for _, action := range []string{"disable", "recovery-codes"} {
@@ -420,8 +460,10 @@ func registerRootMFARoutes(router *gin.Engine, deps *Deps) {
 			}
 			writeAudit(ctx, deps, user, auditAction, "user", user.ID, map[string]any{"recoveryCodeCount": len(codes)})
 			if action == "disable" {
+				notifySecurityEvent(deps, "security.mfa.disabled", "超级管理员已关闭双重验证 user="+user.ID)
 				c.JSON(200, okData(gin.H{"enabled": false}))
 			} else {
+				notifySecurityEvent(deps, "security.mfa.recovery_rotated", "超级管理员已重新生成恢复码 user="+user.ID)
 				c.JSON(200, okData(gin.H{"recoveryCodes": codes}))
 			}
 		})
@@ -438,11 +480,25 @@ func allowRootMFAPlatformPasswordLogin(ctx context.Context, deps *Deps, c *gin.C
 		rootMFAUnavailable(c)
 		return false
 	}
+	cacheRootMFAState(c, state)
 	if !state.Enabled {
+		if deps.Env.RootMFARequired {
+			origin := strings.TrimRight(deps.Env.PublicConsoleOrigin, "/")
+			if origin == "" {
+				origin = strings.TrimRight(deps.Env.PublicAPIOrigin, "/")
+			}
+			target := origin + "/console/#/login"
+			body := `<p class="brand">Mendao</p><h1>需要绑定双重验证</h1><p>超级管理员必须先登录控制台绑定身份验证器，再返回本页面继续设备授权。</p><p><a href="` + escapeHTML(target) + `" target="_blank" rel="noopener">打开控制台</a></p>`
+			c.Data(403, "text/html; charset=utf-8", []byte(htmlLayout("需要绑定双重验证 - Mendao", body, "")))
+			return false
+		}
 		cacheSessionSecurityProof(c, user.ID, state.SecurityVersion)
 		return true
 	}
 	origin := strings.TrimRight(deps.Env.PublicConsoleOrigin, "/")
+	if origin == "" {
+		origin = strings.TrimRight(deps.Env.PublicAPIOrigin, "/")
+	}
 	target := origin + "/console/#/login"
 	body := `<p class="brand">Mendao</p><h1>需要双因素验证</h1><p>请先在控制台完成登录，再返回本页面继续设备授权。</p><p><a href="` + escapeHTML(target) + `" target="_blank" rel="noopener">打开控制台登录</a></p>`
 	c.Data(403, "text/html; charset=utf-8", []byte(htmlLayout("需要双因素验证 - Mendao", body, "")))

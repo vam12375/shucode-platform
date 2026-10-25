@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -14,6 +15,10 @@ import (
 // app.ts 的镜像:路由装配 + 控制台静态托管 + 独立域名 CORS + 统一错误体。
 
 const staticMimeDefault = "application/octet-stream"
+
+// Vite 产物使用 `name-<hash>.ext`；只有带内容哈希的文件才能安全 immutable，
+// 否则 index.html 引用的固定文件名会被旧缓存长期钉死。
+var hashedStaticAsset = regexp.MustCompile(`-[0-9A-Za-z_-]{8,}\.[0-9A-Za-z]+$`)
 
 var staticMime = map[string]string{
 	".html":  "text/html; charset=utf-8",
@@ -135,7 +140,8 @@ func consoleStaticMiddleware(distDir string) gin.HandlerFunc {
 			c.Abort()
 			return false
 		}
-		c.Header("Cache-Control", "no-cache")
+		// 控制台入口 HTML 不缓存：共享终端退出后不能从缓存里翻出上一会话页面。
+		c.Header("Cache-Control", "no-store")
 		c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)
 		c.Abort()
 		return true
@@ -195,8 +201,12 @@ func consoleStaticMiddleware(distDir string) gin.HandlerFunc {
 		if contentType == "" {
 			contentType = staticMimeDefault
 		}
-		// 带内容哈希的构建产物可以永久缓存；其余保持短缓存。
-		cacheControl := "public, max-age=31536000, immutable"
+		// 带内容哈希的构建产物可以永久缓存；固定文件名只做短缓存，
+		// 避免发版后浏览器继续使用旧 index.html 里的入口脚本。
+		cacheControl := "public, max-age=3600"
+		if hashedStaticAsset.MatchString(filepath.Base(candidate)) {
+			cacheControl = "public, max-age=31536000, immutable"
+		}
 		c.Header("Cache-Control", cacheControl)
 		c.Header("Content-Type", contentType)
 		http.ServeContent(c.Writer, c.Request, filepath.Base(candidate), info.ModTime(), file)

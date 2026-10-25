@@ -2103,6 +2103,21 @@ textarea {
   margin-top: 4px;
 }
 
+/* root 强制 MFA 绑定门：沿用登录页外壳，但需要容纳 MFA 设置面板。 */
+.login-card.mfa-gate-card {
+  width: min(92vw, 620px);
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.mfa-gate-card .pane {
+  margin: 16px 0 12px;
+}
+
+.mfa-gate-card .readout {
+  margin: 14px 0 0;
+}
+
 .login-foot {
   font-family: var(--font-mono);
   font-size: 10.5px;

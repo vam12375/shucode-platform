@@ -21,7 +21,7 @@ const sessionCookieName = "mendao_session"
 
 const (
 	sessionTTL           = 7 * 24 * time.Hour
-	privilegedSessionTTL = 24 * time.Hour
+	privilegedSessionTTL = 12 * time.Hour
 )
 
 func getCookieValue(c *gin.Context, name string) string {
@@ -51,6 +51,14 @@ func readSessionUser(ctx context.Context, deps *Deps, c *gin.Context) (*store.Us
 		}
 		return nil, nil
 	}
+	// 空闲超时独立于绝对过期：被窃取的 Cookie 在用户离开后 30 分钟即失效，
+	// 不再有整整 7 天/12 小时的可利用窗口。0 表示只按绝对时间判断。
+	if deps.Env.SessionIdleTimeout > 0 && session.LastSeenAt.Add(deps.Env.SessionIdleTimeout).Before(deps.Now()) {
+		if err := deps.Store.DeleteSession(ctx, session.TokenHash); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
 	user, err := deps.Store.FindUserByID(ctx, session.UserID)
 	if err != nil {
 		return nil, err
@@ -63,6 +71,7 @@ func readSessionUser(ctx context.Context, deps *Deps, c *gin.Context) (*store.Us
 		if err != nil {
 			return nil, err
 		}
+		cacheRootMFAState(c, state)
 		// 删除旧会话不能覆盖并发签发窗口；安全版本不匹配的迟到会话也必须失效。
 		if session.SecurityVersion != state.SecurityVersion {
 			return nil, nil

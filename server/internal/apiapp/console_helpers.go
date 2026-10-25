@@ -52,6 +52,22 @@ func readObjectBodyLimited(c *gin.Context, maxBytes int64) (map[string]any, bool
 	return obj, ok
 }
 
+// rejectUnknownFields:登录/初始化等凭据入口只接受白名单字段。静默忽略未知字段
+// 在将来某个 handler 复用 body 时就是 mass assignment 的温床；这里直接 400。
+func rejectUnknownFields(c *gin.Context, body map[string]any, allowed ...string) bool {
+	known := make(map[string]bool, len(allowed))
+	for _, field := range allowed {
+		known[field] = true
+	}
+	for key := range body {
+		if !known[key] {
+			c.JSON(400, fail(400, "请求参数不合法"))
+			return false
+		}
+	}
+	return true
+}
+
 // redactSecretString:上游错误正文可能回显密钥，落库/返回前统一脱敏。
 func redactSecretString(text, secret string) string {
 	if secret == "" {

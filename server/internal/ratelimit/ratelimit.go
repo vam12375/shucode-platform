@@ -25,26 +25,35 @@ type Window struct {
 }
 
 // Rule 是 CompositeAllow 的一个限流桶；Limiter 为 nil 时跳过（便于测试/逐步启用）。
+// RetryAfter 用于把被拒桶的窗口长度回传给客户端；零值由调用方决定兜底值。
 type Rule struct {
-	Limiter Limiter
-	Key     string
+	Limiter    Limiter
+	Key        string
+	RetryAfter time.Duration
 }
 
-// CompositeAllow 依次检查多个桶，任一拒绝即拒绝；用于登录的 IP 全局桶 + 邮箱桶。
+// CompositeAllow 依次检查多个桶，任一拒绝即拒绝；用于登录的账号/IP 多级桶。
 func CompositeAllow(ctx context.Context, rules ...Rule) (bool, error) {
+	allowed, _, err := CompositeAllowWithRetry(ctx, rules...)
+	return allowed, err
+}
+
+// CompositeAllowWithRetry 与 CompositeAllow 语义一致，但额外返回首个拒绝桶的
+// RetryAfter。登录接口据此下发 Retry-After，避免客户端只能盲目重试。
+func CompositeAllowWithRetry(ctx context.Context, rules ...Rule) (bool, time.Duration, error) {
 	for _, rule := range rules {
 		if rule.Limiter == nil {
 			continue
 		}
 		allowed, err := rule.Limiter.Allow(ctx, rule.Key)
 		if err != nil {
-			return false, err
+			return false, 0, err
 		}
 		if !allowed {
-			return false, nil
+			return false, rule.RetryAfter, nil
 		}
 	}
-	return true, nil
+	return true, 0, nil
 }
 
 // hashKey 把调用方拼装的业务键收敛成固定长度，避免长邮箱/伪造前缀直接成为

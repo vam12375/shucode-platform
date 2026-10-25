@@ -117,11 +117,12 @@ postgres + redis（healthcheck 就绪）
 
 ### 生产安全基线
 
-- **HTTPS 是硬前提**：公网 HTTP 会暴露口令、会话与录入的上游 key。生产编排将 api/gateway 固定绑定到 `127.0.0.1`，宿主机 Nginx 负责 TLS，避免公网 8787/8788 绕过 HTTPS。HSTS 为 `max-age=31536000; includeSubDomains`（preload 需另行评估）。边缘不要对 `/console/api/*`、SSE 或网关响应启用 Cache Everything；Nginx 示例已关闭代理缓冲与缓存，支持流式响应。
+- **HTTPS 是硬前提**：公网 HTTP 会暴露口令、会话与录入的上游 key。生产编排将 api/gateway 固定绑定到 `127.0.0.1`，宿主机 Nginx 负责 TLS，避免公网 8787/8788 绕过 HTTPS。HSTS 由应用按 `HSTS_MAX_AGE` 下发（默认一年）；`includeSubDomains`/`preload` 必须显式开启，且要先确认该域下每个子域都有有效证书（preload 提交后极难撤回）。边缘不要对 `/console/api/*`、SSE 或网关响应启用 Cache Everything；Nginx 示例已关闭代理缓冲与缓存，支持流式响应。
 - **管理与公开入口分离**：设置 `CONSOLE_ALLOWED_HOSTS` 后，`/console` 只接受指定 Host；配合 Cloudflare Access（或 VPN）保护管理域名，公开 API 域名无法绕入。首次初始化接口另由 `SETUP_ALLOWED_HOSTS` 限制到专用初始化 Host（该 Host 也要加入 `CONSOLE_ALLOWED_HOSTS`），避免公网探测 `setup/status`/`setup/root`。
+- **root 双重验证（可选）**：`ROOT_MFA_REQUIRED` 默认关闭。显式设为 `true` 后，未绑定 TOTP 的 root 只能读取自身资料、退出登录或访问 `/security/mfa/*`，其余控制台接口返回 403；绑定完成后会话自动续签。
 - **登录人机验证**：同时配置 `TURNSTILE_SITE_KEY` 与 `TURNSTILE_SECRET_KEY` 后，控制台登录页和设备授权登录页会渲染 Cloudflare Turnstile；服务端在密码校验前调用 siteverify 并校验 `action=login`，校验服务不可用时 fail-closed。site key 经 `/console/api/public-config` 下发，secret 只留在服务端；两项必须同时配置，留空则保持原登录行为。Turnstile 站点域名需覆盖控制台域名。
-- **登录防爆破分层**：登录同时检查 Pure-IP 全局桶（100 次/24h）、IP+归一化邮箱桶（10 次/5min，去 `+tag`、Gmail 点号归一）、root 专属桶（5 次/h）；限流键在 Redis/内存中先 SHA-256 收敛。未知邮箱与禁用账号仍执行 scrypt（dummy/真实哈希）避免时序枚举；登录/初始化 JSON 上限 64 KiB，邮箱字段 ≤254 字符。
-- **会话**：普通账号会话 7 天，root/admin 会话 24 小时；密码或 MFA 变更会撤销旧会话。
+- **登录防爆破分层**：登录同时检查归一化账号桶（10 次/5min，去 `+tag`、Gmail 点号归一）、Pure-IP 分钟级突发桶（20 次/min）、Pure-IP 日桶（100 次/24h）与 root 专属桶（5 次/h）；任一拒绝返回 `429` 和 `Retry-After`。`LOGIN_MAX_CONCURRENT` 限制单实例同时执行的 scrypt 数，槽位耗尽直接 429 而非排队。未知邮箱与禁用账号仍执行 scrypt（dummy/真实哈希）避免时序枚举；登录/初始化 JSON 上限 64 KiB，邮箱字段 ≤254 字符。
+- **会话**：普通账号会话 7 天，root/admin 会话 12 小时；所有会话默认 30 分钟空闲超时（`SESSION_IDLE_MINUTES`，0 关闭）；密码或 MFA 变更会撤销旧会话。
 - **可信代理解析**：api 与 gateway 都只在 TCP 对端命中 `API_TRUSTED_PROXY_IPS` / `GATEWAY_TRUSTED_PROXY_IPS` 精确地址时才读取转发头；反代须覆盖或清洗转发头。宿主反代访问 Docker 发布的回环端口后，容器可能看到网桥 gateway，必须填写实测的精确对端；只有实际对端为 `127.0.0.1` 时才填该值。`CF-Connecting-IP` 默认不信任（普通反代不会清洗它），只有源站只能经 Cloudflare 访问时才设 `TRUST_CF_CONNECTING_IP=1`。
 - **上游密钥边界**：供应商地址强制 https、拒绝 userinfo/查询串，管理端与网关都不跟随重定向；默认禁止出站访问回环、私网与云元数据地址（自建内网上游需显式设 `UPSTREAM_ALLOW_PRIVATE_NETWORKS=1`）。新建供应商与修改地址/密钥仅 root 可操作。
 - **计量**：OpenAI 流式请求由网关强制 `include_usage=true`；上游成功但缺失 usage 时按准入预留额保守结算并标记 `usage_missing_estimated`，便于对账。请求幂等键按 `(team_id, request_id)` 隔离。

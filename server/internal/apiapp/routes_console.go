@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -27,6 +28,9 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 	// root 只能创建一次且凭据只以 scrypt 哈希入库；初始化完成后两个接口都不再允许写入。
 
 	group.GET("/setup/status", func(c *gin.Context) {
+		if !allowPublicRead(c, deps, "setup-status") {
+			return
+		}
 		root, err := deps.Store.FindRootUser(c.Request.Context())
 		if err != nil {
 			internalError(c, deps, err)
@@ -38,6 +42,9 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 
 	// 登录页公开配置：site key 本身是公开值，secret 永远不下发。
 	group.GET("/public-config", func(c *gin.Context) {
+		if !allowPublicRead(c, deps, "public-config") {
+			return
+		}
 		c.Header("cache-control", "no-store")
 		c.JSON(200, okData(gin.H{
 			"turnstileSiteKey": deps.Env.TurnstileSiteKey,
@@ -77,13 +84,16 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 				return
 			}
 			if !allowed {
-				c.JSON(429, fail(429, "尝试次数过多，请稍后再试"))
+				writeLoginRateLimited(c, "尝试次数过多，请稍后再试", loginAccountWindow)
 				return
 			}
 		}
 		body, ok := readObjectBodyLimited(c, maxLoginJSONBodyBytes)
 		if !ok {
 			c.JSON(400, fail(400, "请求参数不合法"))
+			return
+		}
+		if !rejectUnknownFields(c, body, "email", "displayName", "password") {
 			return
 		}
 		email, okEmail := trimmedRequired(body["email"], 3, 254)
@@ -118,7 +128,10 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
-		c.JSON(200, okData(gin.H{"user": toPublicUser(user), "rootInitialized": true}))
+		c.JSON(200, okData(gin.H{
+			"user": toPublicUser(user), "rootInitialized": true,
+			"mfaSetupRequired": rootMFAEnrollmentRequired(ctx, deps, c, user),
+		}))
 	})
 
 	// ---- auth ----
@@ -130,17 +143,21 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(400, fail(400, "请求参数不合法"))
 			return
 		}
+		if !rejectUnknownFields(c, body, "email", "password", "turnstileToken", "code", "recoveryCode") {
+			return
+		}
 		email, okEmail := trimmedRequired(body["email"], 3, 254)
 		password, okPassword := body["password"].(string)
 		if !okEmail || !okPassword || password == "" {
 			c.JSON(400, fail(400, "请求参数不合法"))
 			return
 		}
+		ip := authRequestIP(c, deps)
 		if deps.ConsoleLoginLimiter == nil {
 			c.JSON(503, fail(503, "登录限流服务不可用，请稍后重试"))
 			return
 		}
-		allowed, err := checkLoginRateLimits(ctx, deps, c, deps.ConsoleLoginLimiter, email)
+		allowed, retryAfter, err := checkLoginRateLimits(ctx, deps, c, deps.ConsoleLoginLimiter, email)
 		if err != nil {
 			// 管理面 fail-closed：限流后端故障时不能退化为无限次口令尝试。
 			deps.Logger.Error("登录限流不可用，拒绝登录", "error", err)
@@ -148,7 +165,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		if !allowed {
-			c.JSON(429, fail(429, "尝试次数过多，请稍后再试"))
+			writeLoginRateLimited(c, "尝试次数过多，请稍后再试", retryAfter)
 			return
 		}
 		turnstileToken, _ := body["turnstileToken"].(string)
@@ -162,17 +179,30 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
-		allowed, err = checkRootLoginLimit(ctx, deps, user)
+		allowed, retryAfter, err = checkRootLoginLimit(ctx, deps, user)
 		if err != nil {
 			deps.Logger.Error("root 登录限流不可用，拒绝登录", "error", err)
 			c.JSON(503, fail(503, "登录限流服务不可用，请稍后重试"))
 			return
 		}
 		if !allowed {
-			c.JSON(429, fail(429, "尝试次数过多，请稍后再试"))
+			deps.Logger.Warn("root 登录触发专属限流", "ip", ip, "userId", user.ID)
+			notifySecurityEvent(deps, "root.login.blocked", "root 登录触发限流 user="+user.ID+" ip="+ip)
+			writeLoginRateLimited(c, "尝试次数过多，请稍后再试", retryAfter)
 			return
 		}
-		if !verifyLoginPassword(user, password) {
+		valid, gateBusy := verifyLoginPasswordWithGate(deps, user, password)
+		if gateBusy {
+			writeLoginRateLimited(c, "登录请求过多，请稍后重试", time.Second)
+			return
+		}
+		if !valid {
+			userID := ""
+			if user != nil {
+				userID = user.ID
+			}
+			writeAuthAudit(ctx, deps, userID, "auth.login", "failure", ip,
+				map[string]any{"reason": loginFailureReason(user)})
 			c.JSON(401, fail(401, "邮箱或密码不正确"))
 			return
 		}
@@ -184,12 +214,19 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
+		writeAuthAudit(ctx, deps, user.ID, "auth.login", "success", ip, nil)
+		if user.Role == store.RoleRoot {
+			notifySecurityEvent(deps, "root.login", "超级管理员登录成功 user="+user.ID+" ip="+ip)
+		}
 		memberships, err := publicMemberships(ctx, deps, user)
 		if err != nil {
 			internalError(c, deps, err)
 			return
 		}
-		c.JSON(200, okData(gin.H{"user": toPublicUser(user), "memberships": memberships}))
+		c.JSON(200, okData(gin.H{
+			"user": toPublicUser(user), "memberships": memberships,
+			"mfaSetupRequired": rootMFAEnrollmentRequired(ctx, deps, c, user),
+		}))
 	})
 
 	group.POST("/auth/logout", func(c *gin.Context) {
@@ -210,7 +247,10 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
-		c.JSON(200, okData(gin.H{"user": toPublicUser(user), "memberships": memberships}))
+		c.JSON(200, okData(gin.H{
+			"user": toPublicUser(user), "memberships": memberships,
+			"mfaSetupRequired": rootMFAEnrollmentRequired(c.Request.Context(), deps, c, user),
+		}))
 	})
 
 	// ---- teams ----
@@ -867,6 +907,9 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			}
 		}
 		writeAudit(ctx, deps, admin, "user.update", "user", user.ID, map[string]any{"fields": auditFields})
+		if hasPassword {
+			notifySecurityEvent(deps, "user.password.reset", "管理员重置了用户密码 target="+user.ID+" actor="+admin.ID)
+		}
 		c.JSON(200, okData(gin.H{"user": toPublicUser(user)}))
 	})
 

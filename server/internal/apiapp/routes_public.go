@@ -690,13 +690,15 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 			rootMFAUnavailable(c)
 			return
 		}
-		allowed, err := checkLoginRateLimits(ctx, deps, c, deps.PlatformLoginLimiter, email)
+		ip := authRequestIP(c, deps)
+		allowed, retryAfter, err := checkLoginRateLimits(ctx, deps, c, deps.PlatformLoginLimiter, email)
 		if err != nil {
 			// 此表单也签发控制台会话；限流故障不能退化为无限次密码验证。
 			c.Data(503, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{Title: "登录暂不可用", Message: "登录验证暂不可用，请稍后重试。", Tone: "error"})))
 			return
 		}
 		if !allowed {
+			setRetryAfter(c, retryAfter)
 			c.Data(429, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
 				FlowID: flowID, DeviceName: flow.DeviceName, Error: "尝试次数过多，请稍后再试。",
 				TurnstileSiteKey: deps.Env.TurnstileSiteKey,
@@ -719,7 +721,7 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 				return
 			}
 		}
-		allowed, err = checkRootLoginLimit(ctx, deps, user)
+		allowed, retryAfter, err = checkRootLoginLimit(ctx, deps, user)
 		if err != nil {
 			deps.Logger.Error("设备登录 root 限流不可用，拒绝登录", "error", err)
 			c.Data(503, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
@@ -728,13 +730,29 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		if !allowed {
+			setRetryAfter(c, retryAfter)
 			c.Data(429, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
 				FlowID: flowID, DeviceName: flow.DeviceName, Error: "尝试次数过多，请稍后再试。", Email: email,
 				TurnstileSiteKey: deps.Env.TurnstileSiteKey,
 			})))
 			return
 		}
-		if !verifyLoginPassword(user, password) {
+		valid, gateBusy := verifyLoginPasswordWithGate(deps, user, password)
+		if gateBusy {
+			setRetryAfter(c, time.Second)
+			c.Data(429, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
+				FlowID: flowID, DeviceName: flow.DeviceName, Error: "登录请求过多，请稍后再试。", Email: email,
+				TurnstileSiteKey: deps.Env.TurnstileSiteKey,
+			})))
+			return
+		}
+		if !valid {
+			userID := ""
+			if user != nil {
+				userID = user.ID
+			}
+			writeAuthAudit(ctx, deps, userID, "auth.device.login", "failure", ip,
+				map[string]any{"reason": loginFailureReason(user)})
 			c.Data(401, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
 				FlowID: flowID, DeviceName: flow.DeviceName, Error: "邮箱或密码不正确。", Email: email,
 				TurnstileSiteKey: deps.Env.TurnstileSiteKey,
@@ -748,6 +766,10 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 		if err := loginWithSession(ctx, deps, c, user); err != nil {
 			internalError(c, deps, err)
 			return
+		}
+		writeAuthAudit(ctx, deps, user.ID, "auth.device.login", "success", ip, nil)
+		if user.Role == store.RoleRoot {
+			notifySecurityEvent(deps, "root.device_login", "超级管理员通过设备授权页登录 user="+user.ID+" ip="+ip)
 		}
 		c.Redirect(303, "/app/platform/login?flow_id="+flowID)
 	})

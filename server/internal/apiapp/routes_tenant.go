@@ -125,6 +125,7 @@ func registerTenantRoutes(router *gin.Engine, deps *Deps) {
 				return
 			}
 			if !allowed {
+				setRetryAfter(c, loginAccountWindow)
 				c.JSON(429, fail(429, "尝试次数过多"))
 				return
 			}
@@ -166,6 +167,9 @@ func registerTenantRoutes(router *gin.Engine, deps *Deps) {
 			}
 		}
 		writeAudit(ctx, deps, user, "profile.update", "user", user.ID, map[string]any{"fields": fields})
+		if passwordChanged {
+			notifySecurityEvent(deps, "user.password.changed", "账号修改了自己的密码 user="+user.ID)
+		}
 		memberships, err := publicMemberships(ctx, deps, updated)
 		if err != nil {
 			internalError(c, deps, err)

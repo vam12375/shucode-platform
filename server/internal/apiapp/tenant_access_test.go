@@ -216,8 +216,16 @@ func TestTenantUsageAndExportsAreScopedAndRedacted(t *testing.T) {
 		}
 	}
 	audit := dataOf(t, f.do("GET", "/console/api/audit", f.adminCookie, ""))["logs"].([]any)
-	if len(audit) != 1 || audit[0].(map[string]any)["action"] != "member.update" {
-		t.Fatalf("audit leaked: %v", audit)
+	actions := map[string]bool{}
+	for _, raw := range audit {
+		entry := raw.(map[string]any)
+		actions[entry["action"].(string)] = true
+		if entry["action"] == "other.private" || entry["action"] == "pricing.update" {
+			t.Fatalf("audit leaked cross-team/platform rows: %v", entry)
+		}
+	}
+	if !actions["member.update"] {
+		t.Fatalf("团队审计缺少 member.update: %v", actions)
 	}
 	if rec := f.do("GET", "/console/api/audit", f.memberCookie, ""); rec.Code != 403 {
 		t.Fatalf("member audit access: %d", rec.Code)

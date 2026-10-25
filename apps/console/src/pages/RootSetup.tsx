@@ -1,12 +1,12 @@
 import { useState, type FormEvent } from "react";
 import { api } from "../api.js";
-import type { AdminUser } from "../App.js";
+import type { SessionData } from "../permissions.js";
 
 /**
  * 首次初始化超级管理员（root）。
  * 只在数据库里没有 root 时由服务端放行；口令经 scrypt 哈希入库，不写入 .env。
  */
-export function RootSetupPage({ onSetup }: { onSetup: (user: AdminUser) => void }) {
+export function RootSetupPage({ onSetup }: { onSetup: (data: SessionData) => void }) {
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
@@ -24,12 +24,12 @@ export function RootSetupPage({ onSetup }: { onSetup: (user: AdminUser) => void 
     setBusy(true);
     setError(null);
     try {
-      const data = await api<{ user: AdminUser }>("/setup/root", {
+      const data = await api<SessionData>("/setup/root", {
         method: "POST",
         headers: { "x-bootstrap-secret": bootstrapSecret },
         body: JSON.stringify({ email, displayName, password }),
       });
-      onSetup(data.user);
+      onSetup(data);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "初始化失败");
     } finally {
