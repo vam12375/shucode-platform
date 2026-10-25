@@ -106,6 +106,8 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		}
 		for _, a := range assets {
 			if a.ID == id {
+				// 签名 URL 允许 Desktop/Web 以 no-cors 跨源加载预览；只放宽此媒体响应，脚本 CORS 仍关闭。
+				c.Header("Cross-Origin-Resource-Policy", "cross-origin")
 				c.Header("Content-Type", a.Mime)
 				c.Header("Content-Disposition", "inline")
 				c.Header("Cache-Control", "private, max-age=300")

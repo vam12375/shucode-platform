@@ -9,6 +9,19 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.53.1] - 2026-10-25
+
+### 修复(签名媒体跨域预览)
+
+- 全局 CORP 改为 `same-origin` 后，Desktop/Web 以 no-cors 跨源加载签名媒体预览会被拦截；
+  仅签名媒体资源响应放宽 `Cross-Origin-Resource-Policy: cross-origin`，不开放
+  `Access-Control-Allow-Origin`，脚本跨源读取仍关闭。
+- 补充签名媒体 CORP 与 ACAO 缺失回归测试。
+
+### 验证
+
+- `make -C server lint test`
+
 ## [0.53.0] - 2026-10-25
 
 ### 新增(安全边界加固)

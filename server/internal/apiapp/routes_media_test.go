@@ -100,6 +100,12 @@ func TestMediaAuthUploadTeamIsolationAndAdminBoundary(t *testing.T) {
 	if w = request("GET", signed, bytes.NewBuffer(nil), false, ""); w.Code != 200 {
 		t.Fatal(w.Code)
 	}
+	if got := w.Header().Get("Cross-Origin-Resource-Policy"); got != "cross-origin" {
+		t.Fatalf("签名媒体资源应允许 Desktop/Web 跨源预览，CORP=%q", got)
+	}
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("展示签名媒体不需要开放脚本跨源读取，ACAO=%q", got)
+	}
 	if w = request("GET", strings.Replace(signed, team, uuid.NewString(), 1), bytes.NewBuffer(nil), false, ""); w.Code != 403 {
 		t.Fatal("cross team signature", w.Code)
 	}
