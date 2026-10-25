@@ -40,6 +40,15 @@ test("request model shows its recorded effort without replacing the model identi
   assert.doesNotMatch(html, />未记录<\/span>/);
 });
 
+test("request models display the root label without leaking their internal mapping", () => {
+  const html = renderToStaticMarkup(createElement(UsageModel, {
+    record: { model: "media:private-route-1k", modelDisplayName: "门道绘图", modelKind: "image" },
+  }));
+  assert.match(html, /门道绘图/);
+  assert.match(html, /不适用/);
+  assert.doesNotMatch(html, /private-route|title="media:/);
+});
+
 test("explicit none and zero budget remain recorded facts", () => {
   const record = { model: "example", reasoningEffort: "none", reasoningBudgetTokens: 0 };
   assert.equal(reasoning.reasoningEffortText(record), "none");
@@ -74,7 +83,7 @@ test("legacy model requests and media fees have distinct missing-value semantics
 });
 
 const usageSource = await readFile(new URL("../src/pages/Usage.tsx", import.meta.url), "utf8");
-async function mountUsage(records, isRoot = true) {
+async function mountUsage(records, isRoot = true, usageOptions = {}) {
   const slots = [];
   const effects = [];
   let cursor = 0;
@@ -102,7 +111,7 @@ async function mountUsage(records, isRoot = true) {
         if (path.startsWith("/models")) return { models: [] };
         if (path === "/devices") return { devices: [] };
         if (path.startsWith("/usage/series")) return { series: [] };
-        if (path === "/usage") return { records, aggregates: [], nextCursor: null, costSummary: null };
+        if (path === "/usage") return { records, aggregates: [], nextCursor: null, costSummary: null, ...usageOptions };
         throw new Error(`Unexpected API ${path}`);
       },
     },
@@ -224,4 +233,21 @@ test("non-root usage never renders procurement data even if an unexpected fixtur
   const dialog = elements(ui.render(), "div").find((node) => node.props.role === "dialog");
   assert.doesNotMatch(nodeText(dialog), /采购价|frozen-v1|recorded-upstream-model/);
   assert.equal(elements(dialog, "a").length, 0);
+});
+
+test("usage filters and distribution labels use projected names while filter values remain opaque", async () => {
+  const key = "media:opaque-group";
+  const record = costRecord({ model: key, modelDisplayName: "门道绘图", modelKind: "image", upstreamModel: "", creditsMicro: 1000 });
+  const aggregate = { model: key, modelDisplayName: "门道绘图", requests: 2, inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, creditsMicro: 1000, latencyMsSum: 0 };
+  const ui = await mountUsage([record], false, { aggregates: [aggregate], modelOptions: [{ modelId: key, displayName: "门道绘图", enabled: true }] });
+  const tree = ui.render();
+  const filter = elements(tree, "select").find((node) => node.props.ariaLabel === "按模型筛选");
+  assert.deepEqual(Array.from(filter.props.options, (option) => ({ ...option })), [{ value: "", label: "全部模型" }, { value: key, label: "门道绘图" }]);
+  assert.match(nodeText(tree), /门道绘图/);
+  const chart = elements(tree, "donut")[0];
+  assert.equal(chart.props.segments[0].label, "门道绘图");
+  elements(tree, "button").find((button) => button.props["aria-label"] === "查看请求详情 request-cost").props.onClick();
+  const dialog = elements(ui.render(), "div").find((node) => node.props.role === "dialog");
+  assert.equal(nodeText(elements(dialog, "h3")[0]), "门道绘图");
+  assert.doesNotMatch(nodeText(dialog), /opaque-group/);
 });

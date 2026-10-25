@@ -20,6 +20,7 @@ import { ConfigPage } from "./pages/ConfigPage.js";
 import { DevicesPage } from "./pages/Devices.js";
 import { LoginPage } from "./pages/Login.js";
 import { ModelsPage } from "./pages/Models.js";
+import { ModelDisplayPage } from "./pages/ModelDisplay.js";
 import { MediaModelsPage } from "./pages/MediaModels.js";
 import { OpsPage } from "./pages/Ops.js";
 import { OrgPage } from "./pages/Org.js";
@@ -64,6 +65,7 @@ const NAV_GROUPS = [
     items: [
       { path: "/providers", label: "上游供应商" },
       { path: "/media-models", label: "媒体模型" },
+      { path: "/model-display", label: "模型展示" },
       { path: "/devices", label: "设备凭据" },
     ],
   },
@@ -313,6 +315,9 @@ export function App() {
       break;
     case "models":
       page = <ModelsPage />;
+      break;
+    case "model-display":
+      page = <ModelDisplayPage />;
       break;
     case "media-models":
       page = <MediaModelsPage />;

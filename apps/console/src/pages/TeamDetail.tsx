@@ -32,6 +32,7 @@ interface TeamDetail {
   }>;
   aggregates: Array<{
     model: string;
+    modelDisplayName?: string;
     requests: number;
     inputTokens: number;
     outputTokens: number;
@@ -594,7 +595,7 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
             <tbody>
               {aggregates.map((row) => (
                 <tr key={row.model}>
-                  <td>{row.model}</td>
+                  <td>{row.modelDisplayName || row.model}</td>
                   <td className="num">{row.requests.toLocaleString("en-US")}</td>
                   <td className="num">{row.inputTokens.toLocaleString("en-US")}</td>
                   <td className="num">{row.outputTokens.toLocaleString("en-US")}</td>

@@ -66,6 +66,14 @@ const validDraft = () => ({
   },
 });
 
+test("editing media prices and JSON round trips retain the root display name", () => {
+  const draft = output.toDraft({ ...model, displayName: "门道视频" });
+  assert.equal(draft.displayName, "门道视频");
+  const saved = output.toApiModel({ ...draft, priceCredits: "0.5" });
+  assert.equal(saved.displayName, "门道视频");
+  assert.equal(output.toApiModel(output.draftsFromJson(JSON.stringify([saved]))[0]).displayName, "门道视频");
+});
+
 test("legacy sparse duration lists retain their saved semantics on load and JSON round trip", () => {
   const legacy = { ...model, durations: [4, 5, 10, 15] };
   const draft = output.toDraft(legacy);

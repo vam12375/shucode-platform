@@ -96,6 +96,14 @@ a:hover {
   overflow-wrap: anywhere;
 }
 
+.model-display-table { min-width: 690px; }
+.model-display-table .input { min-width: 210px; }
+.model-display-table code { overflow-wrap: anywhere; }
+.model-display-preview { padding: 0; margin: 0; list-style: none; }
+.model-display-preview > li { padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+.model-display-preview > li:last-child { border-bottom: 0; }
+.model-display-preview strong { overflow-wrap: anywhere; }
+
 .error {
   color: var(--signal);
   margin: 8px 0;

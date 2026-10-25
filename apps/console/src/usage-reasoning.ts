@@ -1,12 +1,16 @@
 /** 网关记录的实际请求参数；历史记录缺字段不代表关闭思考。 */
 export interface UsageReasoningParameters {
   model: string;
+  modelDisplayName?: string;
+  modelKind?: "text" | "image" | "video" | "media";
   reasoningEffort?: string | null;
   reasoningBudgetTokens?: number | null;
 }
 
 function missingText(record: UsageReasoningParameters): string {
-  return record.model.startsWith("media:") ? "不适用" : "未记录";
+  return record.modelKind === "image" || record.modelKind === "video" || record.modelKind === "media" || record.model.startsWith("media:")
+    ? "不适用"
+    : "未记录";
 }
 
 function effort(record: UsageReasoningParameters): string {

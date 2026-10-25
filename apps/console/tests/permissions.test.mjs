@@ -42,6 +42,7 @@ test("direct navigation cannot expose platform management to team admins", () =>
   for (const section of [
     "pricing",
     "models",
+    "model-display",
     "providers",
     "ops",
     "users",
@@ -88,6 +89,7 @@ test("scope covers usage, charts, CSV, audit and member lists without affecting 
     "/usage?teamId=team-b",
   );
   assert.equal(scopedPath("/auth/me", "team-a"), "/auth/me");
+  assert.equal(scopedPath("/model-display", "team-a"), "/model-display");
   assert.equal(
     scopedPath("/teams/team-a/policy", "team-a"),
     "/teams/team-a/policy",

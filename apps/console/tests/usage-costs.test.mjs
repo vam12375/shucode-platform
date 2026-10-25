@@ -125,5 +125,6 @@ test("detail procurement rates use frozen strings and never current model prices
 test("fixed analysis fees have a readable label without classifying ordinary zero-sale requests", () => {
   assert.equal(costs.usageModelName("media:reference-analysis"), "原片分镜分析（固定费）");
   assert.equal(costs.usageModelName("deepseek-flash"), "deepseek-flash");
-  assert.equal(costs.usageModelName("media:seedance"), "media:seedance");
+  assert.equal(costs.usageModelName("media:seedance"), "媒体模型");
+  assert.equal(costs.usageModelName("media:private-route", "门道绘图"), "门道绘图");
 });

@@ -71,6 +71,12 @@ interface ModelOption {
   offPeakMultiplier: string;
 }
 
+interface UsageModelOption {
+  modelId: string;
+  displayName: string;
+  enabled: boolean;
+}
+
 interface DeviceOption {
   id: string;
   name: string;
@@ -79,6 +85,8 @@ interface DeviceOption {
 
 interface AggregateRow {
   model: string;
+  modelDisplayName?: string;
+  modelKind?: "text" | "image" | "video" | "media";
   requests: number;
   inputTokens: number;
   outputTokens: number;
@@ -118,6 +126,8 @@ interface UsageRecordRow extends UsageReasoningParameters {
   teamId: string;
   deviceTokenId: string | null;
   model: string;
+  modelDisplayName?: string;
+  modelKind?: "text" | "image" | "video" | "media";
   upstreamModel: string;
   priceSnapshot?: PriceSnapshot | null;
   providerId: string | null;
@@ -174,6 +184,7 @@ interface UsagePageData {
   aggregates: AggregateRow[];
   records: UsageRecordRow[];
   nextCursor: string | null;
+  modelOptions?: UsageModelOption[];
   costSummary: UsageCostSummary | null;
 }
 
@@ -320,6 +331,7 @@ export function UsagePage() {
   const [filterRequestId, setFilterRequestId] = useState("");
   const [providers, setProviders] = useState<ProviderOption[]>([]);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+  const [usageModelOptions, setUsageModelOptions] = useState<UsageModelOption[]>([]);
   const [devices, setDevices] = useState<DeviceOption[]>([]);
   const [detail, setDetail] = useState<UsageRecordRow | null>(null);
   const [aggregates, setAggregates] = useState<AggregateRow[]>([]);
@@ -350,9 +362,11 @@ export function UsagePage() {
             isRoot
               ? api<{ providers: ProviderOption[] }>("/providers")
               : Promise.resolve({ providers: [] }),
-            api<{ models: ModelOption[] }>(
-              isRoot ? "/models?includeDisabled=1" : "/models",
-            ),
+            isRoot
+              ? api<{ models: ModelOption[] }>(
+                  "/models?includeDisabled=1",
+                )
+              : Promise.resolve({ models: [] }),
             api<{ devices: DeviceOption[] }>("/devices"),
           ]);
         setTeams(teamData.teams);
@@ -488,6 +502,7 @@ export function UsagePage() {
     try {
       const data = await fetchUsage(null);
       setAggregates(data.aggregates);
+      if (data.modelOptions) setUsageModelOptions(data.modelOptions);
       setRecords(data.records);
       setCostSummary(data.costSummary);
       setNextCursor(data.nextCursor);
@@ -603,7 +618,7 @@ export function UsagePage() {
         ? row.inputTokens + row.cacheReadTokens + row.cacheCreationTokens
         : row.creditsMicro;
     const rows = aggregates
-      .map((row) => ({ model: row.model, value: valueOf(row) }))
+      .map((row) => ({ model: row.model, label: usageModelName(row.model, row.modelDisplayName), value: valueOf(row) }))
       .filter((row) => row.value > 0)
       .sort((a, b) => b.value - a.value);
     const total = rows.reduce((sum, row) => sum + row.value, 0);
@@ -612,6 +627,7 @@ export function UsagePage() {
     if (rest.length > 0) {
       top.push({
         model: `其他 ${rest.length} 模型`,
+        label: `其他 ${rest.length} 模型`,
         value: rest.reduce((sum, row) => sum + row.value, 0),
       });
     }
@@ -886,7 +902,7 @@ export function UsagePage() {
               onChange={setFilterModel}
               options={[
                 { value: "", label: "全部模型" },
-                ...modelOptions.map((model) => ({
+                ...(usageModelOptions.length ? usageModelOptions : isRoot ? modelOptions : []).map((model) => ({
                   value: model.modelId,
                   label: model.enabled
                     ? model.displayName
@@ -1091,7 +1107,7 @@ export function UsagePage() {
                       className={`donut-dot donut-color-${(index % 6) + 1}`}
                       aria-hidden="true"
                     />
-                    <span className="donut-name">{segment.model}</span>
+                    <span className="donut-name">{segment.label ?? usageModelName(segment.model)}</span>
                     <span className="num readout">
                       {donutBy === "tokens"
                         ? compactToken(segment.value)
@@ -1145,7 +1161,7 @@ export function UsagePage() {
                   row.cacheCreationTokens;
                 return (
                   <tr key={row.model}>
-                    <td>{usageModelName(row.model)}</td>
+                    <td>{usageModelName(row.model, row.modelDisplayName)}</td>
                     <td className="num">
                       {row.requests.toLocaleString("en-US")}
                     </td>
@@ -1394,7 +1410,7 @@ export function UsagePage() {
                     {isRoot ? <td>{record.clientIp ?? "—"}</td> : null}
                     <td>
                       {record.model === "media:reference-analysis" ? (
-                        <span title={record.model}>{usageModelName(record.model)}</span>
+                        <span>{usageModelName(record.model, record.modelDisplayName)}</span>
                       ) : <UsageModel record={record} />}
                     </td>
                     <td>
@@ -1464,7 +1480,7 @@ export function UsagePage() {
             onClick={(event) => event.stopPropagation()}
           >
             <p className="readout dialog-k">计量 / 请求详情</p>
-            <h3 className="dialog-title">{usageModelName(detail.model)}</h3>
+            <h3 className="dialog-title">{usageModelName(detail.model, detail.modelDisplayName)}</h3>
             {(() => {
               const status = statusChip(detail.status);
               const cost = isRoot ? historicalCostDisplay(detail.priceSnapshot) : null;

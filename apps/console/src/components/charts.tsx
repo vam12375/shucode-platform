@@ -234,7 +234,7 @@ export function ModelDonutChart({
   totalUnit,
   formatValue,
 }: {
-  segments: { model: string; value: number }[];
+  segments: { model: string; label?: string; value: number }[];
   total: number;
   totalUnit: string;
   formatValue: (value: number) => string;
@@ -288,7 +288,7 @@ function DonutTooltip({
         const payload = item.payload;
         const model =
           payload && typeof payload === "object" && "model" in payload
-            ? String((payload as { model?: unknown }).model ?? "")
+            ? String((payload as { label?: unknown; model?: unknown }).label ?? (payload as { model?: unknown }).model ?? "")
             : "";
         return (
           <p key={index} className="chart-tooltip-row">

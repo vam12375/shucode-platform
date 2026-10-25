@@ -100,6 +100,7 @@ const SEEDREAM_PRESETS = [
 interface MediaModel {
   id: string;
   name: string;
+  displayName?: string;
   kind: "image" | "video";
   providerId: string;
   upstreamModel: string;
@@ -136,6 +137,7 @@ export interface MediaModelDraft {
   familyId: string;
   id: string;
   name: string;
+  displayName?: string;
   kind: "image" | "video";
   providerId: string;
   upstreamModel: string;
@@ -288,6 +290,8 @@ export function toDraft(model: MediaModel): MediaModelDraft {
     familyId: "",
     id: model.id,
     name: model.name,
+    // 对外名称由模型展示页管理；编辑价格必须原样保留，不能被本页字段白名单丢弃。
+    ...(model.displayName !== undefined ? { displayName: model.displayName } : {}),
     kind: model.kind,
     providerId: model.providerId,
     upstreamModel: model.upstreamModel,
@@ -327,6 +331,7 @@ export function toApiModel(draft: MediaModelDraft): MediaModel {
     // 平台模型 ID 默认等于上游模型；手动填写后才作为独立别名保存。
     id: draft.id.trim() || upstreamModel,
     name: draft.name.trim(),
+    ...(draft.displayName !== undefined ? { displayName: draft.displayName } : {}),
     kind: draft.kind,
     providerId: draft.providerId,
     upstreamModel,
@@ -368,6 +373,7 @@ export function toApiModel(draft: MediaModelDraft): MediaModel {
 // 共享字段只有卡片一个编辑入口；逐档副本仅用于兼容现有目录 API 和保留导入冲突证据。
 function sharedConfiguration(draft: MediaModelDraft): Partial<MediaModelDraft> {
   return {
+    displayName: draft.displayName,
     kind: draft.kind,
     providerId: draft.providerId,
     upstreamModel: draft.upstreamModel,
@@ -657,6 +663,7 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
       familyId: "",
       id: typeof record.id === "string" ? record.id : "",
       name: typeof record.name === "string" ? record.name : "",
+      ...(typeof record.displayName === "string" ? { displayName: record.displayName } : {}),
       kind,
       providerId: typeof record.providerId === "string" ? record.providerId : "",
       upstreamModel:

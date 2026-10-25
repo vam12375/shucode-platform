@@ -90,8 +90,11 @@ export function frozenCostRateText(
   return `${rates.currency?.trim().toUpperCase() || "币种未记录"} ${rates[key]} / 百万 Token`;
 }
 
-export function usageModelName(model: string): string {
-  return model === "media:reference-analysis" ? "原片分镜分析（固定费）" : model;
+export function usageModelName(model: string, displayName?: string): string {
+  if (displayName?.trim()) return displayName.trim();
+  if (model === "media:reference-analysis") return "原片分镜分析（固定费）";
+  // 老平台没有对外投影字段时也不把内部媒体型号回显给团队成员。
+  return model.startsWith("media:") ? "媒体模型" : model;
 }
 
 interface CostRecord {
