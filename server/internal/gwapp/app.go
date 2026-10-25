@@ -384,10 +384,11 @@ func handleModelsRequest(c *gin.Context, deps Deps) {
 			continue
 		}
 		data = append(data, gin.H{
-			"id":       model.ModelID,
-			"object":   "model",
-			"created":  model.CreatedAt.Unix(),
-			"owned_by": "mendao-platform",
+			"id":           model.ModelID,
+			"object":       "model",
+			"display_name": store.ModelDisplayName(model.ModelID, model.DisplayName),
+			"created":      model.CreatedAt.Unix(),
+			"owned_by":     "mendao-platform",
 		})
 	}
 	c.JSON(200, gin.H{"object": "list", "data": data})

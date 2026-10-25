@@ -17,8 +17,11 @@ func publicMediaModelGroupID(m media.Model) string {
 }
 
 func publicMediaModelGroupName(m media.Model) string {
+	if name := strings.TrimSpace(m.DisplayName); name != "" {
+		return name
+	}
 	name := strings.TrimSpace(m.Name)
-	if m.Kind == "video" {
+	if m.Kind == "video" || m.Kind == "image" {
 		for _, resolution := range m.Resolutions {
 			suffix := " " + strings.ToLower(resolution)
 			if strings.HasSuffix(strings.ToLower(name), suffix) {
@@ -28,10 +31,11 @@ func publicMediaModelGroupName(m media.Model) string {
 		}
 	}
 	if name == "" {
-		name = strings.TrimSpace(m.ID)
-	}
-	if name == "" {
-		name = m.Kind
+		if m.Kind == "image" {
+			name = "图片模型"
+		} else {
+			name = "视频模型"
+		}
 	}
 	return string([]rune(name)[:min(len([]rune(name)), 200)])
 }

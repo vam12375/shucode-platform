@@ -122,7 +122,7 @@ func toPublicModel(model *store.PlatformModelRecord) modelPublic {
 		configMode = modelConfigRecommended
 	}
 	return modelPublic{
-		ModelID: model.ModelID, DisplayName: model.DisplayName,
+		ModelID: model.ModelID, DisplayName: store.ModelDisplayName(model.ModelID, model.DisplayName),
 		UpstreamModel:      stringPtrOrNil(model.UpstreamModel),
 		UpstreamProviderID: stringPtrOrNil(model.UpstreamProviderID),
 		InputPricePerMtok:  model.InputPricePerMtok, OutputPricePerMtok: model.OutputPricePerMtok,
@@ -135,6 +135,8 @@ func toPublicModel(model *store.PlatformModelRecord) modelPublic {
 }
 
 type usagePublic struct {
+	ModelDisplayName      string                      `json:"modelDisplayName"`
+	ModelKind             string                      `json:"modelKind"`
 	PriceSnapshot         *store.UsagePricingSnapshot `json:"priceSnapshot"`
 	ID                    string                      `json:"id"`
 	RequestID             string                      `json:"requestId"`
@@ -176,6 +178,8 @@ func toPublicUsage(record *store.UsageRecord) usagePublic {
 }
 
 type aggregatePublic struct {
+	ModelDisplayName    string `json:"modelDisplayName"`
+	ModelKind           string `json:"modelKind"`
 	Model               string `json:"model"`
 	Requests            int64  `json:"requests"`
 	InputTokens         int64  `json:"inputTokens"`

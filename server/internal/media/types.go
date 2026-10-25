@@ -11,6 +11,7 @@ const IndexKey = "media:projects:v1"
 type Model struct {
 	ID            string   `json:"id"`
 	Name          string   `json:"name"`
+	DisplayName   string   `json:"displayName,omitempty"`
 	Kind          string   `json:"kind"`
 	ProviderID    string   `json:"providerId"`
 	UpstreamModel string   `json:"upstreamModel"`

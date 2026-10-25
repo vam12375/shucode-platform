@@ -441,7 +441,8 @@ func publicMediaModels(models []media.Model) []gin.H {
 			durations = m.AllowedDurations()
 		}
 		// 用户消耗用于客户端展示；供应商成本与内部价格版本只用于服务端计费及 root 控制台。
-		model := gin.H{"id": m.ID, "name": m.Name, "kind": m.Kind, "resolutions": resolutions, "maxReferenceImages": media.MaxReferenceImages(m), "durations": durations, "generateAudio": m.GenerateAudio, "priceMicro": m.PriceMicro}
+		name := groupNames[publicMediaModelGroupID(m)]
+		model := gin.H{"id": m.ID, "name": name, "kind": m.Kind, "resolutions": resolutions, "maxReferenceImages": media.MaxReferenceImages(m), "durations": durations, "generateAudio": m.GenerateAudio, "priceMicro": m.PriceMicro}
 		groupID := publicMediaModelGroupID(m)
 		model["groupId"] = groupID
 		model["groupName"] = groupNames[groupID]

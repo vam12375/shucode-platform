@@ -224,13 +224,17 @@ func publicMemberships(ctx context.Context, deps *Deps, user *store.UserRecord) 
 
 func usageForConsole(c *gin.Context, record *store.UsageRecord) any {
 	row := toPublicUsage(record)
+	display := usageDisplay(c, record.Model)
+	row.Model = publicUsageModel(c, record.Model)
+	row.ModelDisplayName = display.Name
+	row.ModelKind = display.Kind
 	user, _ := c.Get(consoleUserKey)
 	if user != nil && user.(*store.UserRecord).Role == store.RoleRoot {
 		return row
 	}
 	return gin.H{
 		"id": row.ID, "requestId": row.RequestID, "userId": row.UserID, "teamId": row.TeamID,
-		"deviceTokenId": row.DeviceTokenID, "model": row.Model, "inputTokens": row.InputTokens,
+		"deviceTokenId": row.DeviceTokenID, "model": row.Model, "modelDisplayName": row.ModelDisplayName, "modelKind": row.ModelKind, "inputTokens": row.InputTokens,
 		"reasoningEffort": row.ReasoningEffort, "reasoningBudgetTokens": row.ReasoningBudgetTokens,
 		"outputTokens": row.OutputTokens, "cacheReadTokens": row.CacheReadTokens,
 		"cacheCreationTokens": row.CacheCreationTokens, "creditsMicro": row.CreditsMicro,

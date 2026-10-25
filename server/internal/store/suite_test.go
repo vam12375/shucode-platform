@@ -16,6 +16,26 @@ import (
 
 // runSuite:内存与 Postgres 实现共用的行为契约(端口语义的唯一定义处)。
 func runSuite(t *testing.T, ctx context.Context, s PlatformStore) {
+	t.Run("model display CAS preserves routing and prices", func(t *testing.T) {
+		id := "display-cas-test"
+		original, err := s.UpsertModel(ctx, UpsertModelInput{ModelID: id, DisplayName: "Original", UpstreamModel: "private-route", ProvideUpstreamModel: true, InputPricePerMtok: "1.250000", OutputPricePerMtok: "2.500000"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		changed, err := s.CompareAndSwapModelDisplayName(ctx, id, "Original", "Public model")
+		if err != nil || !changed {
+			t.Fatalf("CAS: %v %v", changed, err)
+		}
+		if changed, err = s.CompareAndSwapModelDisplayName(ctx, id, "Original", "Stale"); err != nil || changed {
+			t.Fatalf("stale CAS: %v %v", changed, err)
+		}
+		after, err := s.GetModel(ctx, id)
+		if err != nil || after.DisplayName != "Public model" || after.UpstreamModel != original.UpstreamModel || after.InputPricePerMtok != original.InputPricePerMtok || after.OutputPricePerMtok != original.OutputPricePerMtok {
+			t.Fatalf("CAS mutated unrelated values: %+v %v", after, err)
+		}
+		s.DeleteModel(ctx, id)
+	})
+
 	t.Helper()
 	t.Run("users", func(t *testing.T) { testUsers(t, ctx, s) })
 	t.Run("sessions", func(t *testing.T) { testSessions(t, ctx, s) })

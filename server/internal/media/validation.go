@@ -23,7 +23,16 @@ func FindModel(models []Model, id, kind string) (Model, error) {
 }
 func ValidateModels(models []Model) error {
 	seen := map[string]bool{}
+	displayNames := map[string]string{}
 	for _, m := range models {
+		if m.DisplayName != "" && (strings.TrimSpace(m.DisplayName) != m.DisplayName || len([]rune(m.DisplayName)) > 120) {
+			return ErrInvalid
+		}
+		group := strings.Join([]string{m.Kind, m.ProviderID, m.Adapter, m.UpstreamModel}, "\x00")
+		if previous, exists := displayNames[group]; exists && previous != m.DisplayName {
+			return ErrInvalid
+		}
+		displayNames[group] = m.DisplayName
 		if strings.TrimSpace(m.ID) == "" || m.Name == "" || seen[m.ID] || m.ProviderID == "" || m.UpstreamModel == "" || (m.Adapter != "ark" && m.Adapter != "toapis") || m.PriceVersion == "" || m.PriceMicro <= 0 || m.PriceMicro > 100_000_000 || m.CostMicro < 0 || m.CostMicro > 100_000_000 {
 			return ErrInvalid
 		}

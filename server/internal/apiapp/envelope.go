@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/vam12375/shucode-platform/server/internal/store"
 	"sort"
 	"strings"
 )
@@ -73,7 +74,7 @@ func buildUserConfigEnvelope(input BuildUserConfigInput) map[string]any {
 	for _, model := range input.Models {
 		ruleConfig := map[string]any{"enabled": true}
 		// 目录名称曾在信封投影时丢失，客户端只能显示 ID；名称单独覆盖，能力仍按原模式继承。
-		if displayName := strings.TrimSpace(model.DisplayName); displayName != "" {
+		if displayName := store.ModelDisplayName(model.ModelID, model.DisplayName); displayName != "" {
 			ruleConfig["displayName"] = displayName
 		}
 		if model.ConfigMode == modelConfigManual && len(model.Config) > 0 {
@@ -184,7 +185,7 @@ func computeUserConfigSyncID(input BuildUserConfigInput) string {
 		}
 		models = append(models, modelStable{
 			ID:          model.ModelID,
-			DisplayName: strings.TrimSpace(model.DisplayName),
+			DisplayName: store.ModelDisplayName(model.ModelID, model.DisplayName),
 			ConfigMode:  mode, Config: config,
 		})
 	}

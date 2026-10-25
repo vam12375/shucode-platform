@@ -384,6 +384,18 @@ func usageMatches(record UsageRecord, filter UsageFilter) bool {
 	if filter.UserID != "" && record.UserID != filter.UserID {
 		return false
 	}
+	if filter.Models != nil {
+		match := false
+		for _, model := range filter.Models {
+			if record.Model == model {
+				match = true
+				break
+			}
+		}
+		if !match {
+			return false
+		}
+	}
 	if filter.Model != "" && record.Model != filter.Model {
 		return false
 	}

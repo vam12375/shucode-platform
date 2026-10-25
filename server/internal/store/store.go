@@ -107,6 +107,7 @@ type PlatformStore interface {
 	// ---- models ----
 	ListModels(ctx context.Context, includeDisabled bool) ([]PlatformModelRecord, error)
 	GetModel(ctx context.Context, modelID string) (*PlatformModelRecord, error)
+	CompareAndSwapModelDisplayName(ctx context.Context, modelID, expectedName, displayName string) (bool, error)
 	UpsertModel(ctx context.Context, input UpsertModelInput) (*PlatformModelRecord, error)
 	// SetModelConfig:只更新客户端能力配置；recommended 时清空 override。
 	SetModelConfig(ctx context.Context, modelID, mode string, config []byte) (*PlatformModelRecord, error)

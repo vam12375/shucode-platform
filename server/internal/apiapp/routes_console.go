@@ -420,10 +420,10 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 				"memberDisabledAt": isoStringPtr(member.MemberDisabledAt), "monthlyBudgetCredits": member.MonthlyBudgetCredits,
 			})
 		}
-		aggregateRows := make([]aggregatePublic, 0, len(aggregates))
-		for _, row := range aggregates {
-			aggregateRows = append(aggregateRows, toPublicAggregate(row))
+		if !prepareModelDisplay(c, deps) {
+			return
 		}
+		aggregateRows := aggregateUsageForConsole(c, aggregates)
 		usageRows := make([]any, 0, len(recent))
 		for i := range recent {
 			usageRows = append(usageRows, usageForConsole(c, &recent[i]))
@@ -1082,12 +1082,13 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 				continue
 			}
 			// 售价属于平台经营信息，普通用户目录只下发展示与排序所需字段。
-			rows = append(rows, gin.H{"modelId": model.ModelID, "displayName": model.DisplayName,
+			rows = append(rows, gin.H{"modelId": model.ModelID, "displayName": store.ModelDisplayName(model.ModelID, model.DisplayName),
 				"enabled": model.Enabled, "sortOrder": model.SortOrder})
 		}
 		c.JSON(200, okData(gin.H{"models": rows}))
 	})
 
+	registerModelDisplayRoutes(group, deps)
 	registerModelProbeRoute(group, deps)
 	registerModelCapabilityRoutes(group, deps)
 
@@ -1198,7 +1199,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		deps.ConfigEvents.Emit(events.DomainModels)
-		writeAudit(ctx, deps, admin, "model.upsert", "model", model.ModelID, map[string]any{"displayName": model.DisplayName})
+		writeAudit(ctx, deps, admin, "model.upsert", "model", model.ModelID, map[string]any{"displayName": store.ModelDisplayName(model.ModelID, model.DisplayName)})
 		c.JSON(200, okData(gin.H{"model": toPublicModel(model)}))
 	})
 

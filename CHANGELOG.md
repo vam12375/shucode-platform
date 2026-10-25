@@ -9,6 +9,29 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.54.0] - 2026-10-25
+
+### 新增(模型展示与用量归因)
+
+- 新增 root 专用 `GET/PUT /console/api/model-display`：按逻辑模型维护文字/图片/视频对外名称，
+  文字写入 `PlatformModelRecord.DisplayName`，媒体写入各档共享的 `Model.DisplayName`；
+  PUT 仅接受 `id/displayName/expectedVersion`，名称 1–120 字符，CAS 冲突 409，不覆盖并行
+  价格、能力或路由编辑。
+- 媒体逻辑组名称统一用于公开目录与画布选择器；缺省名从 `Name` 去除分辨率后缀，遗留文字目录
+  仅在空名或等于 modelId 时回退 `deepseek-flash`、`deepseek-v4-pro`、`glm-5-3-flash-260828`
+  三项确认名称，显式别名始终优先。
+- 用户配置信封、`syncId`/ETag、`/v1/models` 和客户端目录使用同一解析后的展示名，名称变化
+  参与同步身份，但不改变 modelId、上游映射、能力或价格。
+- 非 root 用量记录/聚合/CSV 使用 `modelDisplayName`、`modelKind` 与稳定 opaque 展示 key；
+  同媒体逻辑组多档聚合为一项，筛选 key 在服务端还原为授权范围内实际模型集合；root 保留
+  内部 ID 追溯，删除目录后的未知历史项使用通用类型名称。
+- Store 新增内存/Postgres 展示名 CAS 与按实际账本模型集合过滤，避免全量写入覆盖价格和路由。
+- 补充 root 权限、CAS 冲突、默认名称、信封/`syncId`、非 root 投影与筛选边界回归测试。
+
+### 验证
+
+- `make -C server lint test`
+
 ## [0.53.1] - 2026-10-25
 
 ### 修复(签名媒体跨域预览)

@@ -549,6 +549,7 @@ type UsageFilter struct {
 	TeamID     string
 	UserID     string
 	Model      string
+	Models     []string // nil 不筛选；非 nil 同时匹配所列实际账本模型。
 	ProviderID string
 	Status     UsageStatus
 	RequestID  string

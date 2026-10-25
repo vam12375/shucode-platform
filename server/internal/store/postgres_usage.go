@@ -308,6 +308,7 @@ func listUsageWhere(filter UsageFilter) (string, []any) {
 		nullableUsageStatus(filter.Status),
 		nullableTime(filter.CursorCreatedAt), nullIfEmpty(filter.CursorID),
 		nullIfEmpty(filter.RequestID),
+		filter.Models,
 	}
 	return `
 		WHERE ($1::timestamptz IS NULL OR created_at >= $1::timestamptz)
@@ -321,7 +322,8 @@ func listUsageWhere(filter UsageFilter) (string, []any) {
 				$8::timestamptz IS NULL
 				OR (created_at, id) < ($8::timestamptz, $9::uuid)
 			)
-			AND ($10::text IS NULL OR request_id = $10)`, args
+			AND ($10::text IS NULL OR request_id = $10)
+   AND ($11::text[] IS NULL OR model = ANY($11::text[]))`, args
 }
 
 func nullableUsageStatus(s UsageStatus) any {
@@ -334,7 +336,7 @@ func nullableUsageStatus(s UsageStatus) any {
 func (s *PostgresStore) ListUsage(ctx context.Context, filter UsageFilter) ([]UsageRecord, error) {
 	where, args := listUsageWhere(filter)
 	rows, err := s.pool.Query(ctx,
-		`SELECT `+usageCols+` FROM usage_records `+where+` ORDER BY created_at DESC LIMIT $11`,
+		`SELECT `+usageCols+` FROM usage_records `+where+` ORDER BY created_at DESC LIMIT $12`,
 		argsList(args, int64(clampLimit(filter.Limit)))...)
 	if err != nil {
 		return nil, err
@@ -445,7 +447,7 @@ func (s *PostgresStore) AggregateUsageCosts(ctx context.Context, filter UsageFil
 
 // isGlobalUsageFilter:无任何维度/游标条件时，趋势图可走小时 rollup。
 func isGlobalUsageFilter(filter UsageFilter) bool {
-	return filter.TeamID == "" && filter.UserID == "" && filter.Model == "" &&
+	return filter.TeamID == "" && filter.UserID == "" && filter.Model == "" && filter.Models == nil &&
 		filter.ProviderID == "" && filter.Status == "" && filter.RequestID == "" &&
 		filter.CursorCreatedAt == nil && filter.CursorID == ""
 }
@@ -494,7 +496,7 @@ func (s *PostgresStore) AggregateUsageSeries(ctx context.Context, filter UsageFi
 	rows, err := s.pool.Query(ctx, `
 		SELECT
 			to_char(
-				date_trunc($11, created_at AT TIME ZONE 'Asia/Shanghai'),
+				date_trunc($12, created_at AT TIME ZONE 'Asia/Shanghai'),
 				'YYYY-MM-DD"T"HH24:MI:SS'
 			) AS bucket_start,
 			count(*)::int AS requests,

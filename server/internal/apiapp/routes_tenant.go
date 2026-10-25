@@ -281,7 +281,7 @@ func registerTenantRoutes(router *gin.Engine, deps *Deps) {
 		}
 		available := make([]gin.H, 0, len(models))
 		for _, model := range models {
-			available = append(available, gin.H{"modelId": model.ModelID, "displayName": model.DisplayName})
+			available = append(available, gin.H{"modelId": model.ModelID, "displayName": store.ModelDisplayName(model.ModelID, model.DisplayName)})
 		}
 		c.JSON(200, okData(gin.H{"teamId": policy.TeamID, "dailyBudgetCredits": policy.DailyBudgetCredits,
 			"monthlyBudgetCredits": policy.MonthlyBudgetCredits, "allowedModelIds": policy.AllowedModelIDs, "budgetAlertPercent": policy.BudgetAlertPercent,

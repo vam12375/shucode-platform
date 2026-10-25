@@ -859,6 +859,9 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		if !scopeUsageFilter(c, deps, &filter) {
 			return filter, false, false
 		}
+		if !resolveUsageModelFilter(c, deps, &filter) {
+			return filter, false, false
+		}
 		return filter, true, true
 	}
 
@@ -884,6 +887,18 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		baseFilter, okFilter, _ := parseUsageQueryFilter(c)
 		if !okFilter {
 			return
+		}
+		optionsFilter := baseFilter
+		optionsFilter.Model = ""
+		optionsFilter.Models = nil
+		optionsRows, err := deps.Store.AggregateUsage(ctx, optionsFilter)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		modelOptions := []gin.H{}
+		for _, row := range aggregateUsageForConsole(c, optionsRows) {
+			modelOptions = append(modelOptions, gin.H{"modelId": row.Model, "displayName": row.ModelDisplayName, "enabled": true})
 		}
 		pageFilter := baseFilter
 		pageLimit := limit + 1
@@ -927,16 +942,16 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 			cursor := encodeUsageCursor(isoString(last.CreatedAt), last.ID)
 			nextCursor = &cursor
 		}
-		aggregateRows := make([]aggregatePublic, 0, len(aggregates))
-		for _, row := range aggregates {
-			aggregateRows = append(aggregateRows, toPublicAggregate(row))
+		if !prepareModelDisplay(c, deps) {
+			return
 		}
+		aggregateRows := aggregateUsageForConsole(c, aggregates)
 		recordRows := make([]any, 0, len(records))
 		for i := range records {
 			recordRows = append(recordRows, usageForConsole(c, &records[i]))
 		}
 		c.JSON(200, okData(gin.H{
-			"aggregates": aggregateRows, "records": recordRows, "nextCursor": nextCursor,
+			"aggregates": aggregateRows, "records": recordRows, "nextCursor": nextCursor, "modelOptions": modelOptions,
 			"costSummary": toPublicUsageCostSummary(costSummary),
 		}))
 	})
@@ -1030,7 +1045,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 			if record.ReasoningBudgetTokens != nil {
 				budget = strconv.FormatInt(*record.ReasoningBudgetTokens, 10)
 			}
-			row := []string{isoString(record.CreatedAt), record.RequestID, record.UserID, record.TeamID, record.DeviceTokenID, record.Model, record.ReasoningEffort, budget,
+			row := []string{isoString(record.CreatedAt), record.RequestID, record.UserID, record.TeamID, record.DeviceTokenID, exportUsageModel(c, record.Model), record.ReasoningEffort, budget,
 				strconv.FormatInt(record.InputTokens, 10), strconv.FormatInt(record.OutputTokens, 10), strconv.FormatInt(record.CacheReadTokens, 10), strconv.FormatInt(record.CacheCreationTokens, 10),
 				strconv.FormatInt(record.CreditsMicro, 10), string(record.Status), record.ErrorType, latency}
 			if user.Role == store.RoleRoot {
