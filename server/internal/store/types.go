@@ -188,16 +188,17 @@ type PlatformModelRecord struct {
 
 // UpstreamRouteRecord:模型的可调度上游路由（渠道池）。
 type UpstreamRouteRecord struct {
-	ID            string
-	ModelID       string
-	ProviderID    string
-	ProviderName  string
-	UpstreamModel string
-	Priority      int64
-	Weight        int64
-	Enabled       bool
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID              string
+	ModelID         string
+	ProviderID      string
+	ProviderName    string
+	ProviderEnabled bool
+	UpstreamModel   string
+	Priority        int64
+	Weight          int64
+	Enabled         bool
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 type CreateUpstreamRouteInput struct {
@@ -553,7 +554,7 @@ type UsageFilter struct {
 	ProviderID string
 	Status     UsageStatus
 	RequestID  string
-	Limit      *int64 // listUsage 专用,默认 50 最大 500。
+	Limit      *int64 // listUsage 专用，默认 50；公开页最多 500，内部含下一页探测最多 501。
 	// 游标 (created_at, id) 元组:取严格更旧于该行的记录,两字段必须同时设置。
 	CursorCreatedAt *time.Time
 	CursorID        string
@@ -561,7 +562,7 @@ type UsageFilter struct {
 
 type AuditLogFilter struct {
 	TeamID          string
-	Limit           *int64 // 默认 50 最大 500。
+	Limit           *int64 // 默认 50；公开页最多 500，内部含下一页探测最多 501。
 	CursorCreatedAt *time.Time
 	CursorID        string
 	ActorUserID     string

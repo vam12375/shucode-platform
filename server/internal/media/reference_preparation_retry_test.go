@@ -181,6 +181,7 @@ func TestReferencePreparationRetryRejectsUnsafeOrIncompleteExecution(t *testing.
 		"reserved":              func(p *Project) { p.Shots[0].ReservedMicro = 1 },
 		"released":              func(p *Project) { p.Shots[0].ReleasedMicro = 1 },
 		"stage":                 func(p *Project) { p.Shots[0].Stage = "video" },
+		"provider":              func(p *Project) { p.Shots[0].ProviderID = "selected-provider" },
 		"tokens":                func(p *Project) { p.Shots[0].ProviderUsageTokens = 1 },
 		"token-charge":          func(p *Project) { p.Shots[0].TokenChargeMicro = 1 },
 		"token-rate":            func(p *Project) { p.Shots[0].TokenRateMicroPerMillion = 1 },

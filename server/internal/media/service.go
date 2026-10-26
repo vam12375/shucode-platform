@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/vam12375/shucode-platform/server/internal/routepool"
 	"github.com/vam12375/shucode-platform/server/internal/store"
 	"reflect"
 	"strconv"
@@ -20,6 +21,7 @@ type Service struct {
 	SourceParser        *SourceParser
 	ReferenceProbe      func(context.Context, string) (ReferenceMetadata, error)
 	ArchiveCanvasOutput func(context.Context, CanvasArchiveInput) CanvasTeamAssetArchive
+	RouteScheduler      *routepool.Scheduler
 }
 
 func (s *Service) Create(ctx context.Context, team, user, device, id string, b Brief) (*Project, error) {

@@ -28,7 +28,7 @@ func wholeReferenceFixture() (Brief, []Model, Plan) {
 }
 
 func TestExplicitLegacyReviewSaveDropsOnlyUnstartedPerShotClipBindings(t *testing.T) {
-	for _, kind := range []string{"pending", "queued", "submitted", "diagnostic", "image", "admission", "charged", "attempt", "cancelled"} {
+	for _, kind := range []string{"pending", "queued", "submitted", "diagnostic", "image", "admission", "provider", "charged", "attempt", "cancelled"} {
 		t.Run(kind, func(t *testing.T) {
 			f := setup(t)
 			brief, models, plan := wholeReferenceFixture()
@@ -51,6 +51,8 @@ func TestExplicitLegacyReviewSaveDropsOnlyUnstartedPerShotClipBindings(t *testin
 				p.Shots[0].ImageAssetID = "generated-image"
 			case "admission":
 				p.Shots[0].ReservationID = "admitted"
+			case "provider":
+				p.Shots[0].ProviderID = "selected-provider"
 			case "charged":
 				p.ChargedMicro = 1
 			case "attempt":

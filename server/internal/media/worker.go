@@ -125,6 +125,10 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	if e != nil {
 		return e
 	}
+	m, e = s.routedModel(ctx, p, index, shot, m, kind)
+	if e != nil {
+		return e
+	}
 	if kind == "image" && m.Adapter == "toapis" && shot.Status == "pending" {
 		request := CanvasRequest{Resolution: firstFrameResolution(m), AspectRatio: p.Brief.AspectRatio}
 		images := 0

@@ -309,6 +309,20 @@ async function mountModels(models, providers = [provider]) {
   };
 }
 
+// 预设入口默认收起在「从预设添加」下：展开后点选具体预设，返回新一帧。
+// 单卡目录在挂载时即展开，因此预设按钮可直接命中。
+function clickPreset(f, label, tree) {
+  const open = nodes(tree ?? f.render(), (node) => node.type === "button" && nodeText(node) === "从预设添加")[0];
+  if (open) {
+    open.props.onClick();
+    tree = f.render();
+  }
+  const preset = nodes(tree ?? f.render(), (node) => node.type === "button" && nodeText(node) === label)[0];
+  assert.ok(preset, `${label} preset action is available`);
+  preset.props.onClick();
+  return f.render();
+}
+
 function nodes(tree, predicate) {
   if (Array.isArray(tree)) return tree.flatMap((node) => nodes(node, predicate));
   if (!tree || typeof tree !== "object") return [];
@@ -436,9 +450,7 @@ test("adding preset tiers inherits the existing family shared configuration", as
     priceVersion: "custom-version",
     videoReference: capability,
   }]);
-  let tree = f.render();
-  nodes(tree, (node) => node.type === "button" && nodeText(node) === "Seedance 2.0 系列")[0].props.onClick();
-  tree = f.render();
+  let tree = clickPreset(f, "Seedance 2.0 系列");
   for (const input of nodes(tree, (node) => (node.props?.["aria-label"] ?? "").endsWith("售价") && node.props.value === "")) {
     input.props.onChange({ target: { value: "0.5" } });
   }
@@ -517,11 +529,7 @@ test("ToAPIs validation rejects unsupported capabilities and token billing", () 
 
 test("ToAPIs preset adds eight distinct unpriced tiers and preserves Ark entries", async () => {
   const f = await mountModels([model], [provider, { ...provider, id: "toapis", name: "ToAPIs", baseUrl: "https://toapis.com/v1" }]);
-  let tree = f.render();
-  const preset = nodes(tree, (node) => node.type === "button" && nodeText(node) === "ToAPIs Seedance 2.0")[0];
-  assert.ok(preset, "explicit ToAPIs preset action is available");
-  preset.props.onClick();
-  tree = f.render();
+  let tree = clickPreset(f, "ToAPIs Seedance 2.0");
   const emptyPrices = nodes(tree, (node) => (node.props?.["aria-label"] ?? "").endsWith("售价") && node.props.value === "");
   assert.equal(emptyPrices.length, 8, "presets must not invent prices");
   for (const price of emptyPrices) price.props.onChange({ target: { value: "0.5" } });
@@ -570,9 +578,7 @@ test("ToAPIs model discovery requests video and caches separately from Ark", asy
 
 test("ToAPIs preset does not bind an unrelated Ark supplier", async () => {
   const f = await mountModels([model]);
-  let tree = f.render();
-  nodes(tree, (node) => node.type === "button" && nodeText(node) === "ToAPIs Seedance 2.0")[0].props.onClick();
-  tree = f.render();
+  const tree = clickPreset(f, "ToAPIs Seedance 2.0");
   assert.equal(nodes(tree, (node) => node.type === "Select" && (node.props.ariaLabel ?? "").endsWith("适配器")).length, 1);
   assert.match(nodeText(tree), /1 个上游模型/);
 });
@@ -608,11 +614,7 @@ test("MiniMax H3 validates exact family capabilities without expanding Seedance"
 
 test("MiniMax H3 preset adds six unpriced tiers, preserves Seedance and round-trips JSON", async () => {
   const f = await mountModels([toapisModel()], [provider, { ...provider, id: "toapis", baseUrl: "https://toapis.cn/v1" }]);
-  let tree = f.render();
-  const preset = nodes(tree, (node) => node.type === "button" && nodeText(node) === "ToAPIs MiniMax H3")[0];
-  assert.ok(preset);
-  preset.props.onClick();
-  tree = f.render();
+  let tree = clickPreset(f, "ToAPIs MiniMax H3");
   const emptyPrices = nodes(tree, (node) => (node.props?.["aria-label"] ?? "").endsWith("售价") && node.props.value === "");
   assert.equal(emptyPrices.length, 6);
   for (const price of emptyPrices) price.props.onChange({ target: { value: "0.5" } });
@@ -682,11 +684,7 @@ test("GPT image SKUs preserve one canonical resolution through load, save and JS
 
 test("GPT image preset adds nine unpriced independent image tiers without replacing old models", async () => {
   const f = await mountModels([model, toapisModel()], [provider, { ...provider, id: "toapis", baseUrl: "https://api.toapis.com/v1" }]);
-  let tree = f.render();
-  const preset = nodes(tree, (node) => node.type === "button" && nodeText(node) === "ToAPIs GPT Image")[0];
-  assert.ok(preset);
-  preset.props.onClick();
-  tree = f.render();
+  let tree = clickPreset(f, "ToAPIs GPT Image");
   const prices = nodes(tree, (node) => (node.props?.["aria-label"] ?? "").endsWith("售价") && node.props.value === "");
   assert.equal(prices.length, 9, "presets require explicit administrator prices");
   prices.forEach((price, index) => price.props.onChange({ target: { value: String((index + 1) / 10) } }));
@@ -708,6 +706,9 @@ test("GPT image preset adds nine unpriced independent image tiers without replac
   const reloaded = await mountModels(images);
   let loaded = reloaded.render();
   assert.equal(nodes(loaded, (node) => node.type === "article").length, 3);
+  // 多卡目录默认折叠；展开全部后每张卡都应保留原位，不清空档位状态。
+  nodes(loaded, (node) => node.type === "button" && nodeText(node) === "全部展开")[0].props.onClick();
+  loaded = reloaded.render();
   assert.equal(nodes(loaded, (node) => node.type === "Select" && (node.props.ariaLabel ?? "").endsWith("档分辨率")).length, 9);
   nodes(loaded, (node) => node.type === "button" && nodeText(node) === "JSON 批量编辑")[0].props.onClick();
   loaded = reloaded.render();
@@ -745,4 +746,124 @@ test("ToAPIs image discovery uses image type and isolates cache from video on th
   nodes(tree, (node) => node.type === "button" && nodeText(node) === "获取模型列表")[0].props.onClick();
   await f.settle();
   assert.ok(f.calls.some((call) => call.path === "/providers/ark/models?type=video&adapter=toapis"));
+});
+
+test("multi-card catalogs collapse to one-line summaries and keep editing one card at a time", async () => {
+  const priced = { ...model, durations: undefined, minDuration: 4, maxDuration: 15 };
+  const unpriced = {
+    ...model, id: "seedream-pro", name: "Seedream Pro", kind: "image",
+    upstreamModel: "doubao-seedream-pro", resolutions: [], durations: undefined,
+    minDuration: undefined, maxDuration: undefined, priceMicro: 0,
+  };
+  const f = await mountModels([priced, unpriced]);
+  let tree = f.render();
+  assert.equal(nodes(tree, (node) => node.type === "article").length, 2);
+  // 摘要行展开器以 aria-controls 指向卡片编辑体区分于预设、分区等 aria-expanded 控件。
+  const toggles = nodes(tree, (node) =>
+    node.type === "button" && String(node.props?.["aria-controls"] ?? "").startsWith("media-family-body-"))
+  assert.equal(toggles.length, 2);
+  assert.ok(toggles.every((toggle) => toggle.props["aria-expanded"] === false), "many cards start collapsed");
+  const bodyHidden = () => nodes(tree, (node) => typeof node.props?.id === "string" && node.props.id.startsWith("media-family-body-"));
+  assert.ok(bodyHidden().every((body) => body.props.hidden === true));
+  assert.match(nodeText(tree), /缺 1 档价格/);
+  assert.match(nodeText(tree), /已配置/);
+
+  toggles[0].props.onClick();
+  tree = f.render();
+  assert.equal(bodyHidden()[0].props.hidden, false, "the edited card expands in place");
+  assert.equal(bodyHidden()[1].props.hidden, true);
+
+  const search = nodes(tree, (node) => node.props?.["aria-label"] === "搜索媒体模型")[0];
+  search.props.onChange({ target: { value: "seedream" } });
+  tree = f.render();
+  assert.equal(nodes(tree, (node) => node.type === "article").length, 1);
+  assert.match(nodeText(tree), /Seedream Pro/);
+
+  search.props.onChange({ target: { value: "" } });
+  tree = f.render();
+  const attention = nodes(tree, (node) => node.type === "button" && nodeText(node) === "待处理 1")[0];
+  assert.ok(attention, "attention filter surfaces the unpriced card");
+  attention.props.onClick();
+  tree = f.render();
+  assert.equal(nodes(tree, (node) => node.type === "article").length, 1);
+  assert.match(nodeText(tree), /缺 1 档价格/);
+});
+
+test("a validation failure expands and reveals the offending collapsed card", async () => {
+  const priced = { ...model, durations: undefined, minDuration: 4, maxDuration: 15 };
+  const unpriced = {
+    ...model, id: "seedream-pro", name: "Seedream Pro", kind: "image",
+    upstreamModel: "doubao-seedream-pro", resolutions: [], durations: undefined,
+    minDuration: undefined, maxDuration: undefined, priceMicro: 0,
+  };
+  const f = await mountModels([priced, unpriced]);
+  let tree = f.render();
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "保存配置")[0].props.onClick();
+  tree = f.render();
+  assert.equal(f.calls.filter((call) => call.options).length, 0, "invalid catalogs never reach the API");
+  assert.match(nodeText(tree), /「Seedream Pro」单价需在 0–100 credit 之间/);
+  const bodies = nodes(tree, (node) => typeof node.props?.id === "string" && node.props.id.startsWith("media-family-body-"));
+  assert.equal(bodies[1].props.hidden, false, "the offending card is revealed");
+  assert.equal(bodies[0].props.hidden, true);
+});
+
+test("page sections switch without dropping the model draft in progress", async () => {
+  const f = await mountModels([{ ...model, durations: undefined, minDuration: 4, maxDuration: 15 }]);
+  let tree = f.render();
+  nodes(tree, (node) => (node.props?.["aria-label"] ?? "").endsWith("售价"))[0].props.onChange({ target: { value: "0.7" } });
+  tree = f.render();
+  const panels = () => nodes(tree, (node) => typeof node.props?.id === "string" && node.props.id.startsWith("media-panel-"));
+  assert.deepEqual(panels().map((panel) => panel.props.hidden), [false, true, true]);
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "原片解析与定价")[0].props.onClick();
+  tree = f.render();
+  assert.deepEqual(panels().map((panel) => panel.props.hidden), [true, false, true]);
+  assert.ok(nodes(tree, (node) => node.type === "SourceParserStatus").length === 1);
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "模型清单")[0].props.onClick();
+  tree = f.render();
+  assert.match(nodeText(tree), /有未保存修改/);
+  assert.equal(nodes(tree, (node) => (node.props?.["aria-label"] ?? "").endsWith("售价"))[0].props.value, "0.7");
+});
+
+test("media route pools round trip per SKU through price edits and JSON without changing capability identity", () => {
+  const routes = [{ providerId: provider.id, priority: 0, weight: 2, enabled: true }, { providerId: "other", priority: 100, weight: 1, enabled: false }];
+  const draft = output.toDraft({ ...model, routes });
+  const saved = output.toApiModel({ ...draft, priceCredits: "0.5" });
+  assert.deepEqual(JSON.parse(JSON.stringify(saved.routes)), routes);
+  assert.deepEqual(JSON.parse(JSON.stringify(output.toApiModel(output.draftsFromJson(JSON.stringify([saved]))[0]).routes)), routes);
+  assert.equal(saved.adapter, model.adapter);
+  assert.equal(saved.upstreamModel, model.upstreamModel);
+  assert.equal(output.toApiModel(output.toDraft(model)).routes, undefined);
+  assert.equal(output.toApiModel({ ...draft, routes: [] }).routes, undefined);
+});
+
+test("media pools reject duplicate or missing suppliers and invalid priority or weight while allowing explicit all-disabled pools", () => {
+  const route = { providerId: provider.id, priority: "100", weight: "1", enabled: true };
+  assert.equal(output.mediaRouteProblem([{ ...route, enabled: false }], [provider]), null);
+  for (const routes of [
+    [{ ...route, providerId: "missing" }], [route, { ...route }],
+    [{ ...route, priority: "1.2" }], [{ ...route, priority: "1e2" }], [{ ...route, priority: "1000001" }],
+    [{ ...route, weight: "0" }], [{ ...route, weight: "2x" }], [{ ...route, weight: "10001" }],
+    Array.from({ length: 33 }, () => route),
+  ]) assert.ok(output.mediaRouteProblem(routes, [provider]), JSON.stringify(routes));
+  assert.throws(() => output.draftsFromJson(JSON.stringify([{ ...model, routes: { providerId: provider.id } }])), /路由池必须是数组/);
+  assert.throws(() => output.draftsFromJson(JSON.stringify([{ ...model, routes: [{ ...route, priority: 100, weight: 1, adapter: "toapis" }] }])), /适配器由档位共享/);
+});
+
+test("editing a media SKU route marks the catalog dirty and preserves other tiers' independent pools", async () => {
+  const models = [
+    { ...model, routes: [{ providerId: provider.id, priority: 100, weight: 1, enabled: true }] },
+    { ...model, id: "video-model-1080p", name: "Video model 1080p", resolutions: ["1080p"], routes: [{ providerId: provider.id, priority: 200, weight: 4, enabled: false }] },
+  ];
+  const f = await mountModels(models);
+  let tree = f.render();
+  const weight = nodes(tree, (node) => String(node.props?.["aria-label"] ?? "").includes("720p 路由 1 权重"))[0];
+  assert.ok(weight);
+  weight.props.onChange({ target: { value: "3" } });
+  tree = f.render();
+  assert.match(nodeText(tree), /有未保存修改/);
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "保存配置")[0].props.onClick();
+  await f.settle();
+  const saved = JSON.parse(f.calls.find((call) => call.options).options.body);
+  assert.deepEqual(saved[0].routes, [{ providerId: provider.id, priority: 100, weight: 3, enabled: true }]);
+  assert.deepEqual(saved[1].routes, models[1].routes);
 });

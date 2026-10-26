@@ -28,6 +28,7 @@ import (
 	"github.com/vam12375/shucode-platform/server/internal/media"
 	"github.com/vam12375/shucode-platform/server/internal/pricing"
 	"github.com/vam12375/shucode-platform/server/internal/ratelimit"
+	"github.com/vam12375/shucode-platform/server/internal/routepool"
 	"github.com/vam12375/shucode-platform/server/internal/store"
 	"github.com/vam12375/shucode-platform/server/internal/upstreamurl"
 )
@@ -56,6 +57,8 @@ type Deps struct {
 	SettlementFallback SettlementFallback
 	// AttemptRecorder:记录每个上游 attempt（含供应商请求 ID），便于故障转移对账。
 	AttemptRecorder AttemptRecorder
+	// RoutePool 为当前网关实例共享的供应商轮转状态，不能按请求重建。
+	RoutePool *routepool.Scheduler
 }
 
 type SettlementFallback interface {
@@ -263,6 +266,9 @@ func buildOpenAIResponsesSpec() protocolSpec {
 
 // New 组装 gin 路由:错误形状跟随协议(onError 等价物用 recovery 返回 anthropic 500)。
 func New(deps Deps) *gin.Engine {
+	if deps.RoutePool == nil {
+		deps.RoutePool = routepool.New()
+	}
 	gin.SetMode(gin.ReleaseMode)
 	app := gin.New()
 	// 与 TS 路由逐位兼容:Gin 默认会把未知路径的尾斜杠 301 到去斜杠版本,TS 直接 404。

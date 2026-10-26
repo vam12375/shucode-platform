@@ -1496,6 +1496,310 @@ textarea {
   gap: 14px;
 }
 
+/* ---- 页面分区标签：页头下方的一级切换（模型清单 / 原片解析 / 提交核对） ---- */
+.page-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  margin: -6px 0 16px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.page-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.page-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 8px 12px 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.14s ease, border-color 0.14s ease;
+}
+
+.page-tab:hover {
+  color: var(--ink);
+}
+
+.page-tab[aria-selected="true"] {
+  border-bottom-color: var(--amber);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* 待办数量：色点 + 数字，不承载除「待核对」以外的语义。 */
+.page-tab-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--signal);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* 预设：按供应商批量补档，收起后不占清单首屏。 */
+.media-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.preset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 筛选条：搜索 + 类型/待处理筛选 + 展开状态。 */
+.media-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px 14px;
+  flex-wrap: wrap;
+  padding-top: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.media-search {
+  flex: 1 1 220px;
+  max-width: 360px;
+}
+
+.media-list-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.media-list-body {
+  padding-top: 12px;
+}
+
+/* ---- 折叠卡片：摘要一行 + 展开编辑体 ---- */
+.media-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.media-summary-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.media-summary-toggle:hover .media-summary-name {
+  color: var(--amber-text);
+}
+
+.media-summary-caret {
+  flex: none;
+  width: 12px;
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.media-summary-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.media-summary-adapter {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+}
+
+.media-summary-provider {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.media-summary-upstream {
+  flex: 0 1 auto;
+  min-width: 60px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.media-summary-tiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 档位药丸：档位名 + 售价读数；缺价用失败色点，与状态列同口径。 */
+.media-tier-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 1px 7px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.media-tier-pill em {
+  font-style: normal;
+  color: var(--ink-soft);
+}
+
+.media-tier-pill.is-missing {
+  border-style: dashed;
+  border-color: rgba(191, 58, 31, 0.45);
+  background: transparent;
+}
+
+.media-tier-pill.is-missing em {
+  color: var(--signal);
+}
+
+.media-summary-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+/* 变更标记走文字 + 琥珀下划线，不复用状态五级 tone（变更轴与状态轴互相独立）。 */
+.media-change-tag {
+  padding: 1px 6px;
+  border-radius: 2px;
+  background: #fbf4df;
+  color: var(--amber-text);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.media-family-body[hidden] {
+  display: none;
+}
+
+.media-family-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.media-family-head {
+  gap: 12px;
+}
+
+.media-family-head .readout {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.media-family-card.is-expanded {
+  border-color: var(--ink);
+}
+
+/* 底部常驻保存条：吸在主区可视底部，卡片再长也不用滚回清单末尾。 */
+.media-save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 14px -16px -14px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: var(--surface);
+}
+
+/* 有未保存修改时整条换成琥珀底，离开页面前仍能一眼看到。 */
+.media-save-bar.is-dirty {
+  background: #fbf4df;
+  border-top-color: var(--amber);
+}
+
+.media-save-bar .readout {
+  margin-left: auto;
+  text-align: right;
+}
+
+@media (max-width: 720px) {
+  .media-summary-provider,
+  .media-summary-upstream {
+    display: none;
+  }
+
+  .media-summary-name {
+    max-width: 140px;
+  }
+
+  .media-list-actions {
+    margin-left: 0;
+  }
+
+  .media-save-bar .readout {
+    margin-left: 0;
+    text-align: left;
+  }
+}
+
 .media-family-name {
   flex: 1 1 220px;
   max-width: 360px;

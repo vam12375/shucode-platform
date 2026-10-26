@@ -292,7 +292,12 @@ function ReconcileDrawer({
   );
 }
 
-export function MediaReconciliation() {
+/** 待核对镜头数随刷新变化时回报给上层，供分区标签显示待办数量。 */
+export function MediaReconciliation({
+  onPendingCount,
+}: {
+  onPendingCount?: (count: number) => void;
+} = {}) {
   const [projects, setProjects] = useState<PendingProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -315,6 +320,11 @@ export function MediaReconciliation() {
   }, [refresh]);
 
   const rows = pendingRowsOf(projects);
+
+  useEffect(() => {
+    if (loading) return;
+    onPendingCount?.(rows.length);
+  }, [loading, rows.length, onPendingCount]);
 
   return (
     <>

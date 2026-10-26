@@ -9,14 +9,15 @@ const ConfigKey = "media:catalog:v1"
 const IndexKey = "media:projects:v1"
 
 type Model struct {
-	ID            string   `json:"id"`
-	Name          string   `json:"name"`
-	DisplayName   string   `json:"displayName,omitempty"`
-	Kind          string   `json:"kind"`
-	ProviderID    string   `json:"providerId"`
-	UpstreamModel string   `json:"upstreamModel"`
-	Adapter       string   `json:"adapter"`
-	Resolutions   []string `json:"resolutions"`
+	ID            string       `json:"id"`
+	Name          string       `json:"name"`
+	DisplayName   string       `json:"displayName,omitempty"`
+	Kind          string       `json:"kind"`
+	ProviderID    string       `json:"providerId"`
+	UpstreamModel string       `json:"upstreamModel"`
+	Adapter       string       `json:"adapter"`
+	Resolutions   []string     `json:"resolutions"`
+	Routes        []ModelRoute `json:"routes,omitempty"`
 	// Durations 是旧版枚举时长；MinDuration/MaxDuration 是连续区间（秒）。
 	// 区间一旦配置即优先，Durations 仅作缺省时的兼容回退。
 	Durations      []int                     `json:"durations,omitempty"`
@@ -27,6 +28,14 @@ type Model struct {
 	PriceMicro     int64                     `json:"priceMicro"`
 	PriceVersion   string                    `json:"priceVersion"`
 	VideoReference *VideoReferenceCapability `json:"videoReference,omitempty"`
+}
+
+// 媒体路由共用目录中的真实型号与能力，避免切换供应商后改变已报价的输入语义。
+type ModelRoute struct {
+	ProviderID string `json:"providerId"`
+	Priority   int64  `json:"priority"`
+	Weight     int64  `json:"weight"`
+	Enabled    bool   `json:"enabled"`
 }
 
 // DurationSupported 判断单个镜头秒数是否可用：区间优先，旧枚举兜底。
@@ -189,6 +198,7 @@ type Shot struct {
 	QuoteMicro            int64          `json:"quoteMicro"`
 	ReservationID         string         `json:"reservationId,omitempty"`
 	Stage                 string         `json:"stage,omitempty"`
+	ProviderID            string         `json:"providerId,omitempty"`
 	PendingChargeMicro    int64          `json:"pendingChargeMicro,omitempty"`
 	ReservedMicro         int64          `json:"reservedMicro,omitempty"`
 	ReleasedMicro         int64          `json:"releasedMicro,omitempty"`
@@ -294,6 +304,7 @@ func (s *Shot) clearPending() {
 	s.ReservedMicro = 0
 	s.ReleasedMicro = 0
 	s.Stage = ""
+	s.ProviderID = ""
 	s.ProviderUsageTokens = 0
 	s.TokenChargeMicro = 0
 	s.TokenRateMicroPerMillion = 0

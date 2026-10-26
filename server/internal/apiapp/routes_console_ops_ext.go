@@ -22,13 +22,23 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 		return gin.H{
 			"id": route.ID, "modelId": route.ModelID, "providerId": route.ProviderID,
 			"providerName": route.ProviderName, "upstreamModel": route.UpstreamModel,
-			"priority": route.Priority, "weight": route.Weight, "enabled": route.Enabled,
+			"providerEnabled": route.ProviderEnabled,
+			"priority":        route.Priority, "weight": route.Weight, "enabled": route.Enabled,
 			"createdAt": isoString(route.CreatedAt), "updatedAt": isoString(route.UpdatedAt),
 		}
 	}
 
 	group.GET("/models/:modelId/routes", func(c *gin.Context) {
 		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
+			return
+		}
+		model, err := deps.Store.GetModel(c.Request.Context(), c.Param("modelId"))
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if model == nil {
+			c.JSON(404, fail(404, "模型不存在"))
 			return
 		}
 		routes, err := deps.Store.ListUpstreamRoutes(c.Request.Context(), c.Param("modelId"), true)
@@ -78,7 +88,12 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(404, fail(404, "供应商不存在"))
 			return
 		}
-		upstreamModel, _ := trimmedOptional(body["upstreamModel"], 200)
+		// 非字符串或超长映射过去会静默变成空值，使请求转发到错误的真实型号。
+		upstreamModel, okModel := trimmedOptional(body["upstreamModel"], 200)
+		if !okModel {
+			c.JSON(400, fail(400, "upstreamModel 不合法"))
+			return
+		}
 		priority := int64(100)
 		if raw, exists := body["priority"]; exists {
 			parsed, okInt := intInRange(raw, 0, 1_000_000)

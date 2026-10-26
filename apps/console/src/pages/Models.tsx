@@ -9,7 +9,8 @@ import {
   type ModelConfigTarget,
 } from "../components/ModelConfigDrawer.js";
 import { Select } from "../components/Select.js";
-import { Chip, Notice } from "../components/StatusChip.js";
+import { Notice } from "../components/StatusChip.js";
+import { ModelRoutePool } from "../components/ModelRoutePool.js";
 
 interface ModelRow {
   modelId: string;
@@ -30,17 +31,6 @@ interface ModelRow {
 interface ProviderOption {
   id: string;
   name: string;
-  enabled: boolean;
-}
-
-interface RouteRow {
-  id: string;
-  modelId: string;
-  providerId: string;
-  providerName: string;
-  upstreamModel: string;
-  priority: number;
-  weight: number;
   enabled: boolean;
 }
 
@@ -116,12 +106,6 @@ export function ModelsPage() {
   const [importBusy, setImportBusy] = useState(false);
   // 渠道池：按模型维护多条上游路由（priority 越小越优先，同优先级按 weight 加权）。
   const [routeModelId, setRouteModelId] = useState("");
-  const [routes, setRoutes] = useState<RouteRow[]>([]);
-  const [routeProviderId, setRouteProviderId] = useState("");
-  const [routeUpstreamModel, setRouteUpstreamModel] = useState("");
-  const [routePriority, setRoutePriority] = useState("100");
-  const [routeWeight, setRouteWeight] = useState("1");
-  const [routeBusy, setRouteBusy] = useState(false);
   // 点编辑单元格：同一时刻只编辑一格（Enter/失焦收起，Esc 还原草稿）。
   type ModelsEditableField = "displayName" | "upstreamModel" | "inputPricePerMtok" | "outputPricePerMtok" | "cacheReadPricePerMtok" | "cacheWritePricePerMtok" | "offPeakMultiplier" | "sortOrder";
   const [editingCell, setEditingCell] = useState<{ modelId: string; field: ModelsEditableField } | null>(null);
@@ -149,83 +133,6 @@ export function ModelsPage() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  const loadRoutes = useCallback(async (modelId: string): Promise<void> => {
-    if (!modelId) {
-      setRoutes([]);
-      return;
-    }
-    try {
-      const data = await api<{ routes: RouteRow[] }>(`/models/${encodeURIComponent(modelId)}/routes`);
-      setRoutes(data.routes);
-    } catch (loadError) {
-      toastErr(loadError instanceof Error ? loadError.message : "路由加载失败");
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadRoutes(routeModelId);
-  }, [routeModelId, loadRoutes]);
-
-  const addRoute = async (): Promise<void> => {
-    if (!routeModelId || !routeProviderId) return;
-    setRouteBusy(true);
-    try {
-      await api(`/models/${encodeURIComponent(routeModelId)}/routes`, {
-        method: "POST",
-        body: JSON.stringify({
-          providerId: routeProviderId,
-          upstreamModel: routeUpstreamModel.trim(),
-          priority: Number.parseInt(routePriority, 10) || 0,
-          weight: Number.parseInt(routeWeight, 10) || 1,
-        }),
-      });
-      setRouteProviderId("");
-      setRouteUpstreamModel("");
-      await loadRoutes(routeModelId);
-      toastOk("已添加路由", "已添加");
-    } catch (actionError) {
-      toastErr(actionError instanceof Error ? actionError.message : "添加路由失败");
-    } finally {
-      setRouteBusy(false);
-    }
-  };
-
-  const toggleRoute = async (route: RouteRow): Promise<void> => {
-    setRouteBusy(true);
-    try {
-      await api(`/routes/${route.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ enabled: !route.enabled }),
-      });
-      await loadRoutes(routeModelId);
-    } catch (actionError) {
-      toastErr(actionError instanceof Error ? actionError.message : "更新路由失败");
-    } finally {
-      setRouteBusy(false);
-    }
-  };
-
-  const deleteRoute = async (route: RouteRow): Promise<void> => {
-    const answer = await confirmDialog({
-      k: "删除路由",
-      title: `删除 ${route.providerName} 的路由？`,
-      message: "删除后该供应商不再参与此模型的调度；至少保留一条路由或模型自身的供应商绑定。",
-      confirmText: "删除",
-      danger: true,
-    });
-    if (!answer.confirmed) return;
-    setRouteBusy(true);
-    try {
-      await api(`/routes/${route.id}`, { method: "DELETE" });
-      await loadRoutes(routeModelId);
-      toastOk("已删除路由", "已删除");
-    } catch (actionError) {
-      toastErr(actionError instanceof Error ? actionError.message : "删除路由失败");
-    } finally {
-      setRouteBusy(false);
-    }
-  };
 
   const save = async (modelId: string): Promise<void> => {
     const draft = drafts[modelId];
@@ -507,7 +414,7 @@ export function ModelsPage() {
           <span className="readout">{models.length} 个 · 保存后随下一轮配置下发</span>
         </div>
         <div className="pane-b">
-          <div className="model-grid">
+          <div className="model-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(460px, 100%), 1fr))" }}>
             {models.map((model) => {
               const draft = drafts[model.modelId] ?? toDraft(model);
               const cost = pricingMap.get(model.modelId);
@@ -516,7 +423,7 @@ export function ModelsPage() {
                   key={model.modelId}
                   className={draft.enabled ? "model-card" : "model-card disabled"}
                 >
-                  <div className="model-card-head">
+                  <div className="model-card-head" style={{ flexWrap: "wrap" }}>
                     <span className="model-card-id" title={model.modelId}>
                       {model.modelId}
                     </span>
@@ -632,124 +539,25 @@ export function ModelsPage() {
       <section className="pane d2">
         <div className="pane-h">
           <h2>路由池</h2>
-          <span className="readout">同一模型多供应商容灾 · priority 小者优先</span>
+          <span className="readout">同一模型 · 多供应商加权轮转与容灾</span>
         </div>
         <div className="pane-b">
-          <div className="form-row" style={{ marginBottom: 12 }}>
-            <Select
-              ariaLabel="选择模型"
-              style={{ width: 240 }}
-              value={routeModelId}
-              onChange={setRouteModelId}
-              options={[
-                { value: "", label: "选择模型…" },
-                ...models.map((model) => ({ value: model.modelId, label: model.displayName })),
-              ]}
-            />
-            <Select
-              ariaLabel="选择供应商"
-              style={{ width: 190 }}
-              value={routeProviderId}
-              onChange={setRouteProviderId}
-              options={[
-                { value: "", label: "选择供应商…" },
-                ...providers.map((provider) => ({
-                  value: provider.id,
-                  label: provider.enabled ? provider.name : `${provider.name}（已停用）`,
-                })),
-              ]}
-            />
-            <input
-              className="input"
-              style={{ width: 190 }}
-              value={routeUpstreamModel}
-              onChange={(event) => setRouteUpstreamModel(event.target.value)}
-              placeholder="上游模型（留空按模型 ID）"
-              aria-label="路由上游模型"
-            />
-            <input
-              className="input num"
-              style={{ width: 90 }}
-              value={routePriority}
-              onChange={(event) => setRoutePriority(event.target.value)}
-              placeholder="priority"
-              aria-label="路由优先级"
-            />
-            <input
-              className="input num"
-              style={{ width: 80 }}
-              value={routeWeight}
-              onChange={(event) => setRouteWeight(event.target.value)}
-              placeholder="weight"
-              aria-label="路由权重"
-            />
-            <button
-              className="btn"
-              type="button"
-              disabled={routeBusy || !routeModelId || !routeProviderId}
-              onClick={() => void addRoute()}
-            >
-              添加路由
-            </button>
-          </div>
-          {routeModelId ? (
-            <div className="table-scroll">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th scope="col">供应商</th>
-                    <th scope="col">上游模型</th>
-                    <th scope="col" className="num">优先级</th>
-                    <th scope="col" className="num">权重</th>
-                    <th scope="col">状态</th>
-                    <th scope="col" aria-label="操作" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {routes.map((route) => (
-                    <tr key={route.id}>
-                      <td>{route.providerName}</td>
-                      <td>{route.upstreamModel || "（按模型 ID）"}</td>
-                      <td className="num">{route.priority}</td>
-                      <td className="num">{route.weight}</td>
-                      <td>
-                        <Chip tone={route.enabled ? "ok" : "mute"}>{route.enabled ? "启用" : "停用"}</Chip>
-                      </td>
-                      <td>
-                        <div className="form-row" style={{ gap: 6 }}>
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            type="button"
-                            disabled={routeBusy}
-                            onClick={() => void toggleRoute(route)}
-                          >
-                            {route.enabled ? "停用" : "启用"}
-                          </button>
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            type="button"
-                            disabled={routeBusy}
-                            onClick={() => void deleteRoute(route)}
-                          >
-                            删除
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {routes.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="readout">
-                        该模型还没有路由池，网关会回退到「模型清单」里绑定的单一供应商。
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="readout" style={{ margin: 0 }}>选择模型后管理其上游路由池。</p>
-          )}
+          <Select
+            ariaLabel="选择路由池模型"
+            style={{ width: 300 }}
+            value={routeModelId}
+            onChange={setRouteModelId}
+            options={[
+              { value: "", label: "选择模型…" },
+              ...models.map((model) => ({ value: model.modelId, label: `${model.displayName} · ${model.modelId}` })),
+            ]}
+          />
+          {routeModelId ? <ModelRoutePool
+            key={routeModelId}
+            modelId={routeModelId}
+            upstreamModel={models.find((model) => model.modelId === routeModelId)?.upstreamModel ?? ""}
+            providers={providers}
+          /> : <p className="readout">选择模型后管理其上游路由池。</p>}
         </div>
       </section>
 

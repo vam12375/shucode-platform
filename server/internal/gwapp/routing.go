@@ -3,11 +3,11 @@ package gwapp
 import (
 	"context"
 	"fmt"
-	"math/rand/v2"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/vam12375/shucode-platform/server/internal/routepool"
 	"github.com/vam12375/shucode-platform/server/internal/store"
 	"github.com/vam12375/shucode-platform/server/internal/upstreamurl"
 )
@@ -125,7 +125,7 @@ func resolveTargets(ctx context.Context, deps Deps, model *store.PlatformModelRe
 	}
 
 	if len(targets) > 0 {
-		return orderTargets(targets), nil
+		return orderTargets(deps.RoutePool, model.ModelID+":"+spec.upstreamPath, targets), nil
 	}
 	// 已配置路由池但全部不可用时，不静默回落到 env 单上游（会把请求发到非预期供应商）。
 	if configuredRoutes {
@@ -188,49 +188,20 @@ func resolveTargets(ctx context.Context, deps Deps, model *store.PlatformModelRe
 	}}, nil
 }
 
-// orderTargets:低 priority 优先；同一 priority 内按权重做加权随机排序。
-func orderTargets(targets []upstreamTarget) []upstreamTarget {
-	ordered := append([]upstreamTarget(nil), targets...)
-	// 稳定排序，保证同 priority 的输入顺序确定后再加权随机。
-	for i := 1; i < len(ordered); i++ {
-		for j := i; j > 0 && ordered[j].Priority < ordered[j-1].Priority; j-- {
-			ordered[j], ordered[j-1] = ordered[j-1], ordered[j]
-		}
+// 旧随机选路只能在大量请求后近似均衡；共享轮转状态使相同权重的渠道逐次交替。
+func orderTargets(scheduler *routepool.Scheduler, key string, targets []upstreamTarget) []upstreamTarget {
+	if scheduler == nil {
+		scheduler = routepool.New()
 	}
-	out := make([]upstreamTarget, 0, len(ordered))
-	for start := 0; start < len(ordered); {
-		end := start + 1
-		for end < len(ordered) && ordered[end].Priority == ordered[start].Priority {
-			end++
-		}
-		group := append([]upstreamTarget(nil), ordered[start:end]...)
-		for len(group) > 0 {
-			total := int64(0)
-			for _, target := range group {
-				total += maxInt64(1, target.Weight)
-			}
-			pick := rand.Int64N(total)
-			index := 0
-			for i, target := range group {
-				pick -= maxInt64(1, target.Weight)
-				if pick < 0 {
-					index = i
-					break
-				}
-			}
-			out = append(out, group[index])
-			group = append(group[:index], group[index+1:]...)
-		}
-		start = end
+	candidates := make([]routepool.Candidate, len(targets))
+	for i, target := range targets {
+		candidates[i] = routepool.Candidate{ID: target.ProviderID, Priority: target.Priority, Weight: target.Weight}
+	}
+	out := make([]upstreamTarget, 0, len(targets))
+	for _, index := range scheduler.Order(key, candidates) {
+		out = append(out, targets[index])
 	}
 	return out
-}
-
-func maxInt64(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // StartProviderProber:周期性探测自动熔断的供应商；恢复后重新纳入调度。

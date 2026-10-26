@@ -19,6 +19,7 @@ import (
 func (s *memoryStore) routeView(route UpstreamRouteRecord) UpstreamRouteRecord {
 	if provider, ok := s.providers[route.ProviderID]; ok {
 		route.ProviderName = provider.Name
+		route.ProviderEnabled = provider.Enabled
 	}
 	return route
 }

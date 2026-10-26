@@ -97,12 +97,27 @@ const SEEDREAM_PRESETS = [
   { id: "seedream-4.0", name: "Seedream 4.0", upstreamModel: "doubao-seedream-4-0-250828" },
 ] as const;
 
+interface MediaModelRoute {
+  providerId: string;
+  priority: number;
+  weight: number;
+  enabled: boolean;
+}
+
+export interface MediaRouteDraft {
+  providerId: string;
+  priority: string;
+  weight: string;
+  enabled: boolean;
+}
+
 interface MediaModel {
   id: string;
   name: string;
   displayName?: string;
   kind: "image" | "video";
   providerId: string;
+  routes?: MediaModelRoute[];
   upstreamModel: string;
   adapter: string;
   resolutions: string[];
@@ -141,6 +156,7 @@ export interface MediaModelDraft {
   displayName?: string;
   kind: "image" | "video";
   providerId: string;
+  routes?: MediaRouteDraft[];
   upstreamModel: string;
   adapter?: string;
   resolutions: string[];
@@ -297,6 +313,7 @@ export function toDraft(model: MediaModel): MediaModelDraft {
     ...(model.displayName !== undefined ? { displayName: model.displayName } : {}),
     kind: model.kind,
     providerId: model.providerId,
+    ...(model.routes !== undefined ? { routes: model.routes.map((route) => ({ ...route, priority: String(route.priority), weight: String(route.weight) })) } : {}),
     upstreamModel: model.upstreamModel,
     adapter: model.adapter ?? "ark",
     resolutions: [...(model.resolutions ?? [])],
@@ -341,6 +358,12 @@ export function toApiModel(draft: MediaModelDraft): MediaModel {
     ...(draft.displayName !== undefined ? { displayName: draft.displayName } : {}),
     kind: draft.kind,
     providerId: draft.providerId,
+    ...(draft.routes?.length ? { routes: draft.routes.map((route) => {
+      const priority = mediaRouteInteger(route.priority, 0, 1_000_000);
+      const weight = mediaRouteInteger(route.weight, 1, 10_000);
+      if (priority === null || weight === null) throw new Error("路由优先级或权重不是有效整数，请先修正路由池。");
+      return { ...route, priority, weight };
+    }) } : {}),
     upstreamModel,
     adapter: draft.adapter ?? "ark",
     // GPT 图片按分辨率独立锁价，丢弃档位会把三个 SKU 都回退为默认清晰度。
@@ -428,143 +451,206 @@ function sharedConflicts(drafts: MediaModelDraft[]): string[] {
   );
 }
 
-export function validateDrafts(
+export interface DraftProblem {
+  message: string;
+  // 出错条目所在的卡片，供折叠清单展开定位。
+  familyId: string;
+}
+
+export function findDraftProblem(
   drafts: MediaModelDraft[],
   providers: ProviderOption[],
-): string | null {
+): DraftProblem | null {
   const seen = new Set<string>();
   for (const [index, draft] of drafts.entries()) {
-    const upstreamModel = draft.upstreamModel.trim();
-    const modelID = draft.id.trim() || upstreamModel;
-    const label = familyNameOf(draft) || modelID || `第 ${index + 1} 个模型`;
-    if (!modelID) return `「${label}」缺少模型 ID，请先填写上游模型。`;
-    if (seen.has(modelID)) return `模型 ID「${modelID}」重复，请改为唯一值。`;
-    seen.add(modelID);
-    if (!draft.name.trim()) return `「${label}」缺少展示名称。`;
-    if (!draft.providerId) return `「${label}」未选择上游供应商。`;
-    if (!providers.some((provider) => provider.id === draft.providerId)) {
-      return `「${label}」引用的上游供应商已不存在，请重新选择。`;
-    }
-    if (!upstreamModel) return `「${label}」缺少上游模型 ID。`;
-    const adapter = draft.adapter ?? "ark";
-    if (adapter !== "ark" && adapter !== "toapis") return `「${label}」适配器不受支持。`;
-    if (adapter === "toapis") {
-      if (draft.kind === "image") {
-        if (!isToapisGptImage(draft)) return `「${label}」ToAPIs 仅支持已接入的 GPT Image 2 / 2.5 图片模型。`;
-        if (draft.resolutions.length !== 1 || !TOAPIS_IMAGE_RESOLUTIONS.includes(draft.resolutions[0])) {
-          return `「${label}」GPT Image 每个档位必须配置一个 1K、2K 或 4K 分辨率。`;
-        }
-        if (draft.generateAudio) return `「${label}」图片模型不支持生成音频。`;
-      } else {
-        const minimax = minimaxCapability(upstreamModel);
-        if (!minimax && !TOAPIS_SEEDANCE_PRESETS.some((preset) => preset.upstreamModel === upstreamModel)) {
-          return `「${label}」ToAPIs 仅支持已接入的 Seedance 2.0 和 MiniMax H3 系列视频模型。`;
-        }
-        if (draft.resolutions.some((resolution) => !modelResolutions(draft).includes(resolution))) {
-          return `「${label}」分辨率不受该 ToAPIs 模型支持。`;
-        }
-        const minDuration = minimax?.minDuration ?? 4;
-        if (Number(draft.minDuration) < minDuration || Number(draft.maxDuration) > 15 || draft.legacyDurations?.some((duration) => duration < minDuration || duration > 15)) {
-          return `「${label}」该 ToAPIs 模型镜头时长需在 ${minDuration}–15 秒内。`;
-        }
-        if (minimax && draft.generateAudio) return `「${label}」MiniMax H3 音频由模型决定，不支持生成音频开关。`;
-        if (minimax && !minimax.videoReference && draft.videoReference?.enabled) return `「${label}」MiniMax H3 Max Turbo 不支持视频参考。`;
-        if (draft.videoReference?.enabled && (
-          Number(draft.videoReference.maxDurationSeconds) > 15 ||
-          Number(draft.videoReference.tokenCostCredits || "0") !== 0 ||
-          Number(draft.videoReference.tokenPriceCredits || "0") !== 0
-        )) return `「${label}」ToAPIs 视频参考上限为 15 秒，按输出秒数计费，不能配置 token 费率。`;
-      }
-    }
-    if (!draft.priceVersion.trim()) return `「${label}」缺少价格版本。`;
-    if (!/^\d+(\.\d{1,6})?$/.test(draft.costCredits.trim())) {
-      return `「${label}」成本价格式不正确（credit，最多 6 位小数）。`;
-    }
-    const costMicro = parseCreditsToMicro(draft.costCredits);
-    if (costMicro < 0 || costMicro > 100_000_000) {
-      return `「${label}」成本价需在 0–100 credit 之间。`;
-    }
-    if (!/^\d+(\.\d{1,6})?$/.test(draft.priceCredits.trim())) {
-      return `「${label}」单价格式不正确（credit，最多 6 位小数）。`;
-    }
-    const micro = parseCreditsToMicro(draft.priceCredits);
-    if (micro <= 0 || micro > 100_000_000) {
-      return `「${label}」单价需在 0–100 credit 之间。`;
-    }
-    if (draft.kind === "video") {
-      if (draft.resolutions.length === 0) return `「${label}」至少选择一个分辨率。`;
-      if (
-        draft.legacyDurations !== undefined &&
-        (draft.legacyDurations.length === 0 ||
-          draft.legacyDurations.some(
-            (duration) => !Number.isInteger(duration) || duration < 2 || duration > 30,
-          ))
-      ) return `「${label}」旧枚举时长必须为 2–30 秒的整数。`;
-      const min = draft.minDuration.trim();
-      const max = draft.maxDuration.trim();
-      if (!/^\d+$/.test(min) || !/^\d+$/.test(max)) {
-        return `「${label}」镜头时长区间必须为整数秒。`;
-      }
-      const minDuration = Number(min);
-      const maxDuration = Number(max);
-      if (minDuration < 2 || maxDuration > 30 || minDuration > maxDuration) {
-        return `「${label}」镜头时长区间需在 2–30 秒内，且起始不大于结束。`;
-      }
-    }
-    if (draft.videoReference?.enabled) {
-      if (draft.kind !== "video") return `「${label}」只有视频模型可以启用视频参考。`;
-      if (!/^\d+$/.test(draft.videoReference.maxDurationSeconds.trim())) {
-        return `「${label}」视频参考片段上限必须为 1–90 秒的整数。`;
-      }
-      const maxDurationSeconds = Number(draft.videoReference.maxDurationSeconds);
-      if (
-        !Number.isSafeInteger(maxDurationSeconds) ||
-        maxDurationSeconds < 1 ||
-        maxDurationSeconds > 90
-      ) {
-        return `「${label}」视频参考片段上限必须为 1–90 秒的整数。`;
-      }
-      if (!/^\d+$/.test(draft.videoReference.maxImages.trim())) {
-        return `「${label}」视频参考图上限必须为 1–8 张的整数。`;
-      }
-      const maxImages = Number(draft.videoReference.maxImages);
-      if (!Number.isSafeInteger(maxImages) || maxImages < 1 || maxImages > 8) {
-        return `「${label}」视频参考图上限必须为 1–8 张的整数。`;
-      }
-      // 0 表示该型号不发送参考音频；非零时必须 ≥2 秒且不超过片段上限，与平台校验同口径。
-      const audioRaw = (draft.videoReference.maxAudioSeconds ?? "0").trim();
-      if (!/^\d+$/.test(audioRaw)) {
-        return `「${label}」参考音频上限必须为 0 或 2–90 的整数。`;
-      }
-      const maxAudioSeconds = Number(audioRaw);
-      if (
-        !Number.isSafeInteger(maxAudioSeconds) ||
-        maxAudioSeconds === 1 ||
-        maxAudioSeconds > maxDurationSeconds
-      ) {
-        return `「${label}」参考音频上限必须为 0 或 2–${maxDurationSeconds} 的整数。`;
-      }
-      const rates = [
-        ["token 成本", draft.videoReference.tokenCostCredits || "0"],
-        ["token 售价", draft.videoReference.tokenPriceCredits || "0"],
-      ] as const;
-      for (const [field, value] of rates) {
-        if (!/^\d+(\.\d{1,6})?$/.test(value.trim())) {
-          return `「${label}」视频参考 ${field} 格式不正确（credit，最多 6 位小数）。`;
-        }
-        const rate = parseCreditsToMicro(value);
-        if (rate < 0 || rate > 1_000_000_000) {
-          return `「${label}」视频参考 ${field} 超出允许范围。`;
-        }
-      }
-    }
+    const message = tierProblem(draft, index, seen, providers);
+    if (message) return { message, familyId: draft.familyId };
   }
   // 旧配置或 JSON 导入会保留逐档差异；指出真实冲突，避免把合法时长误报为无法保存。
   for (const family of groupFamilies(drafts)) {
     const tiers = family.indexes.map((index) => drafts[index]);
     const conflicts = sharedConflicts(tiers);
     if (conflicts.length) {
-      return `「${familyNameOf(tiers[0])}」共享配置不一致：${conflicts.join("、")}。请在卡片中统一后再保存。`;
+      return {
+        message: `「${familyNameOf(tiers[0])}」共享配置不一致：${conflicts.join("、")}。请在卡片中统一后再保存。`,
+        familyId: family.id,
+      };
+    }
+  }
+  return null;
+}
+
+function mediaRouteInteger(value: string, min: number, max: number): number | null {
+  if (!/^\d+$/.test(value.trim())) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= min && parsed <= max ? parsed : null;
+}
+
+export function mediaRouteProblem(routes: MediaRouteDraft[] | undefined, providers: ProviderOption[]): string | null {
+  if (!routes?.length) return null;
+  if (routes.length > 32) return "每个档位最多配置 32 条路由。";
+  const seen = new Set<string>();
+  for (const route of routes) {
+    if (!providers.some((provider) => provider.id === route.providerId)) return "路由池存在未选择或已删除的供应商。";
+    if (seen.has(route.providerId)) return "路由池不能重复绑定同一供应商。";
+    seen.add(route.providerId);
+    if (mediaRouteInteger(route.priority, 0, 1_000_000) === null) return "路由优先级必须是 0–1000000 的整数。";
+    if (mediaRouteInteger(route.weight, 1, 10_000) === null) return "路由权重必须是 1–10000 的整数。";
+    if (typeof route.enabled !== "boolean") return "路由状态必须是布尔值。";
+  }
+  return null;
+}
+
+function importedMediaRoutes(value: unknown, index: number): MediaRouteDraft[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new Error(`第 ${index + 1} 项的路由池必须是数组。`);
+  return value.map((raw) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error(`第 ${index + 1} 项的路由必须是对象。`);
+    const route = raw as Record<string, unknown>;
+    if (typeof route.providerId !== "string" || typeof route.priority !== "number" || !Number.isSafeInteger(route.priority) || typeof route.weight !== "number" || !Number.isSafeInteger(route.weight) || typeof route.enabled !== "boolean" || Object.keys(route).some((key) => !["providerId", "priority", "weight", "enabled"].includes(key))) {
+      throw new Error(`第 ${index + 1} 项的路由需提供供应商、整数优先级、整数权重和布尔启用状态；上游模型与适配器由档位共享。`);
+    }
+    return { providerId: route.providerId, priority: String(route.priority), weight: String(route.weight), enabled: route.enabled };
+  });
+}
+
+export function validateDrafts(
+  drafts: MediaModelDraft[],
+  providers: ProviderOption[],
+): string | null {
+  return findDraftProblem(drafts, providers)?.message ?? null;
+}
+
+function tierProblem(
+  draft: MediaModelDraft,
+  index: number,
+  seen: Set<string>,
+  providers: ProviderOption[],
+): string | null {
+  const upstreamModel = draft.upstreamModel.trim();
+  const modelID = draft.id.trim() || upstreamModel;
+  const label = familyNameOf(draft) || modelID || `第 ${index + 1} 个模型`;
+  if (!modelID) return `「${label}」缺少模型 ID，请先填写上游模型。`;
+  if (seen.has(modelID)) return `模型 ID「${modelID}」重复，请改为唯一值。`;
+  seen.add(modelID);
+  if (!draft.name.trim()) return `「${label}」缺少展示名称。`;
+  if (!draft.providerId) return `「${label}」未选择上游供应商。`;
+  if (!providers.some((provider) => provider.id === draft.providerId)) {
+    return `「${label}」引用的上游供应商已不存在，请重新选择。`;
+  }
+  const routeProblem = mediaRouteProblem(draft.routes, providers);
+  if (routeProblem) return `「${label}」${routeProblem}`;
+  if (!upstreamModel) return `「${label}」缺少上游模型 ID。`;
+  const adapter = draft.adapter ?? "ark";
+  if (adapter !== "ark" && adapter !== "toapis") return `「${label}」适配器不受支持。`;
+  if (adapter === "toapis") {
+    if (draft.kind === "image") {
+      if (!isToapisGptImage(draft)) return `「${label}」ToAPIs 仅支持已接入的 GPT Image 2 / 2.5 图片模型。`;
+      if (draft.resolutions.length !== 1 || !TOAPIS_IMAGE_RESOLUTIONS.includes(draft.resolutions[0])) {
+        return `「${label}」GPT Image 每个档位必须配置一个 1K、2K 或 4K 分辨率。`;
+      }
+      if (draft.generateAudio) return `「${label}」图片模型不支持生成音频。`;
+    } else {
+      const minimax = minimaxCapability(upstreamModel);
+      if (!minimax && !TOAPIS_SEEDANCE_PRESETS.some((preset) => preset.upstreamModel === upstreamModel)) {
+        return `「${label}」ToAPIs 仅支持已接入的 Seedance 2.0 和 MiniMax H3 系列视频模型。`;
+      }
+      if (draft.resolutions.some((resolution) => !modelResolutions(draft).includes(resolution))) {
+        return `「${label}」分辨率不受该 ToAPIs 模型支持。`;
+      }
+      const minDuration = minimax?.minDuration ?? 4;
+      if (Number(draft.minDuration) < minDuration || Number(draft.maxDuration) > 15 || draft.legacyDurations?.some((duration) => duration < minDuration || duration > 15)) {
+        return `「${label}」该 ToAPIs 模型镜头时长需在 ${minDuration}–15 秒内。`;
+      }
+      if (minimax && draft.generateAudio) return `「${label}」MiniMax H3 音频由模型决定，不支持生成音频开关。`;
+      if (minimax && !minimax.videoReference && draft.videoReference?.enabled) return `「${label}」MiniMax H3 Max Turbo 不支持视频参考。`;
+      if (draft.videoReference?.enabled && (
+        Number(draft.videoReference.maxDurationSeconds) > 15 ||
+        Number(draft.videoReference.tokenCostCredits || "0") !== 0 ||
+        Number(draft.videoReference.tokenPriceCredits || "0") !== 0
+      )) return `「${label}」ToAPIs 视频参考上限为 15 秒，按输出秒数计费，不能配置 token 费率。`;
+    }
+  }
+  if (!draft.priceVersion.trim()) return `「${label}」缺少价格版本。`;
+  if (!/^\d+(\.\d{1,6})?$/.test(draft.costCredits.trim())) {
+    return `「${label}」成本价格式不正确（credit，最多 6 位小数）。`;
+  }
+  const costMicro = parseCreditsToMicro(draft.costCredits);
+  if (costMicro < 0 || costMicro > 100_000_000) {
+    return `「${label}」成本价需在 0–100 credit 之间。`;
+  }
+  if (!/^\d+(\.\d{1,6})?$/.test(draft.priceCredits.trim())) {
+    return `「${label}」单价格式不正确（credit，最多 6 位小数）。`;
+  }
+  const micro = parseCreditsToMicro(draft.priceCredits);
+  if (micro <= 0 || micro > 100_000_000) {
+    return `「${label}」单价需在 0–100 credit 之间。`;
+  }
+  if (draft.kind === "video") {
+    if (draft.resolutions.length === 0) return `「${label}」至少选择一个分辨率。`;
+    if (
+      draft.legacyDurations !== undefined &&
+      (draft.legacyDurations.length === 0 ||
+        draft.legacyDurations.some(
+          (duration) => !Number.isInteger(duration) || duration < 2 || duration > 30,
+        ))
+    ) return `「${label}」旧枚举时长必须为 2–30 秒的整数。`;
+    const min = draft.minDuration.trim();
+    const max = draft.maxDuration.trim();
+    if (!/^\d+$/.test(min) || !/^\d+$/.test(max)) {
+      return `「${label}」镜头时长区间必须为整数秒。`;
+    }
+    const minDuration = Number(min);
+    const maxDuration = Number(max);
+    if (minDuration < 2 || maxDuration > 30 || minDuration > maxDuration) {
+      return `「${label}」镜头时长区间需在 2–30 秒内，且起始不大于结束。`;
+    }
+  }
+  if (draft.videoReference?.enabled) {
+    if (draft.kind !== "video") return `「${label}」只有视频模型可以启用视频参考。`;
+    if (!/^\d+$/.test(draft.videoReference.maxDurationSeconds.trim())) {
+      return `「${label}」视频参考片段上限必须为 1–90 秒的整数。`;
+    }
+    const maxDurationSeconds = Number(draft.videoReference.maxDurationSeconds);
+    if (
+      !Number.isSafeInteger(maxDurationSeconds) ||
+      maxDurationSeconds < 1 ||
+      maxDurationSeconds > 90
+    ) {
+      return `「${label}」视频参考片段上限必须为 1–90 秒的整数。`;
+    }
+    if (!/^\d+$/.test(draft.videoReference.maxImages.trim())) {
+      return `「${label}」视频参考图上限必须为 1–8 张的整数。`;
+    }
+    const maxImages = Number(draft.videoReference.maxImages);
+    if (!Number.isSafeInteger(maxImages) || maxImages < 1 || maxImages > 8) {
+      return `「${label}」视频参考图上限必须为 1–8 张的整数。`;
+    }
+    // 0 表示该型号不发送参考音频；非零时必须 ≥2 秒且不超过片段上限，与平台校验同口径。
+    const audioRaw = (draft.videoReference.maxAudioSeconds ?? "0").trim();
+    if (!/^\d+$/.test(audioRaw)) {
+      return `「${label}」参考音频上限必须为 0 或 2–90 的整数。`;
+    }
+    const maxAudioSeconds = Number(audioRaw);
+    if (
+      !Number.isSafeInteger(maxAudioSeconds) ||
+      maxAudioSeconds === 1 ||
+      maxAudioSeconds > maxDurationSeconds
+    ) {
+      return `「${label}」参考音频上限必须为 0 或 2–${maxDurationSeconds} 的整数。`;
+    }
+    const rates = [
+      ["token 成本", draft.videoReference.tokenCostCredits || "0"],
+      ["token 售价", draft.videoReference.tokenPriceCredits || "0"],
+    ] as const;
+    for (const [field, value] of rates) {
+      if (!/^\d+(\.\d{1,6})?$/.test(value.trim())) {
+        return `「${label}」视频参考 ${field} 格式不正确（credit，最多 6 位小数）。`;
+      }
+      const rate = parseCreditsToMicro(value);
+      if (rate < 0 || rate > 1_000_000_000) {
+        return `「${label}」视频参考 ${field} 超出允许范围。`;
+      }
     }
   }
   return null;
@@ -690,6 +776,7 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
       ...(typeof record.displayName === "string" ? { displayName: record.displayName } : {}),
       kind,
       providerId: typeof record.providerId === "string" ? record.providerId : "",
+      ...(record.routes !== undefined ? { routes: importedMediaRoutes(record.routes, index) } : {}),
       upstreamModel:
         typeof record.upstreamModel === "string" ? record.upstreamModel : "",
       adapter: typeof record.adapter === "string" ? record.adapter : "ark",
@@ -719,6 +806,100 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
 
 const PREVIEW_PLACEHOLDER = 10;
 
+type MediaSection = "models" | "source" | "reconcile";
+
+const MEDIA_SECTIONS: { id: MediaSection; label: string }[] = [
+  { id: "models", label: "模型清单" },
+  { id: "source", label: "原片解析与定价" },
+  { id: "reconcile", label: "提交核对" },
+];
+
+type FamilyChange = "new" | "modified" | "unchanged";
+
+/** 卡片基线：加载/保存成功时的档位快照，用于在折叠清单上标出「新增 / 已修改」。 */
+interface FamilySnapshot {
+  key: string;
+  value: string;
+}
+
+/** 卡片身份（类型 + 适配器 + 供应商 + 上游模型）：导入后 familyId 会重排，只能按内容认回。 */
+function familyKeyOf(drafts: MediaModelDraft[]): string {
+  const lead = drafts[0];
+  return lead
+    ? familyKey(lead)
+    : "";
+}
+
+/** 搜索命中范围：卡片名、上游模型、平台 ID 与供应商名。 */
+function matchesQuery(
+  tiers: MediaModelDraft[],
+  query: string,
+  providerName: string,
+  adapter: string,
+): boolean {
+  if (!query) return true;
+  const haystack = [
+    familyNameOf(tiers[0]),
+    ...tiers.flatMap((tier) => [tier.upstreamModel, tier.id, tier.displayName ?? ""]),
+    providerName,
+    adapter,
+  ]
+    .join("\n")
+    .toLowerCase();
+  return query.toLowerCase().split(/\s+/).every((term) => haystack.includes(term));
+}
+
+function familySnapshots(drafts: MediaModelDraft[]): Record<string, FamilySnapshot> {
+  const snapshots: Record<string, FamilySnapshot> = {};
+  for (const family of groupFamilies(drafts)) {
+    const tiers = family.indexes.map((index) => drafts[index]);
+    snapshots[family.id] = {
+      key: familyKeyOf(tiers),
+      value: JSON.stringify(tiers, (field, value) =>
+        field === "familyId" ? undefined : value,
+      ),
+    };
+  }
+  return snapshots;
+}
+
+function expandedKeysOf(drafts: MediaModelDraft[], expanded: Set<string>): Set<string> {
+  return new Set(
+    groupFamilies(drafts)
+      .filter((family) => expanded.has(family.id))
+      .map((family) => familyKeyOf(family.indexes.map((index) => drafts[index]))),
+  );
+}
+
+/** 保存/重新加载后保留仍存在的卡片展开状态；新条目由调用方决定。 */
+function expandMatching(
+  drafts: MediaModelDraft[],
+  keys: Set<string>,
+): Set<string> {
+  return new Set(
+    groupFamilies(drafts)
+      .filter((family) =>
+        keys.has(familyKeyOf(family.indexes.map((index) => drafts[index]))),
+      )
+      .map((family) => family.id),
+  );
+}
+
+function familyChange(
+  tiers: MediaModelDraft[],
+  familyId: string,
+  baseline: Record<string, FamilySnapshot>,
+): FamilyChange {
+  const previous = baseline[familyId] ?? Object.values(baseline).find(
+    (entry) => entry.key === familyKeyOf(tiers),
+  );
+  if (!previous) return "new";
+  const current = JSON.stringify(tiers, (field, value) =>
+    field === "familyId" ? undefined : value,
+  );
+  return current === previous.value ? "unchanged" : "modified";
+}
+
 export function MediaModelsPage() {
   const [drafts, setDrafts] = useState<MediaModelDraft[]>([]);
   const [providers, setProviders] = useState<ProviderOption[]>([]);
@@ -731,16 +912,35 @@ export function MediaModelsPage() {
   const [jsonError, setJsonError] = useState("");
   const [providerModels, setProviderModels] = useState<Record<string, string[]>>({});
   const [fetchingProvider, setFetchingProvider] = useState("");
+  // 折叠清单：一次只展开正在编辑的卡片，卡片多时不必一路滚动。
+  const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
+  const [baseline, setBaseline] = useState<Record<string, FamilySnapshot>>({});
+  const [section, setSection] = useState<MediaSection>("models");
+  const [presetsOpen, setPresetsOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [kindFilter, setKindFilter] = useState<"all" | "video" | "image">("all");
+  const [attentionOnly, setAttentionOnly] = useState(false);
+  // 新增/校验失败后需要滚动到视野的卡片；滚动完成后清空。
+  const [focusedFamily, setFocusedFamily] = useState("");
+  const [pendingReconcile, setPendingReconcile] = useState(0);
 
-  const load = useCallback(async () => {
+  // 展开状态由调用方传入：挂载时无既往状态，放弃修改时带上当前展开的卡片。
+  const load = useCallback(async (previousExpanded: Set<string> = new Set()) => {
     setLoading(true);
     try {
       const [models, providerData] = await Promise.all([
         api<MediaModel[]>("/media/models"),
         api<{ providers: ProviderOption[] }>("/providers"),
       ]);
-      setDrafts(assignFamilyIds(models.map(toDraft)));
+      const next = assignFamilyIds(models.map(toDraft));
+      const families = groupFamilies(next);
+      setDrafts(next);
       setProviders(providerData.providers);
+      // 只有一张卡时直接展开；多卡时保持折叠，展开过的卡片按身份认回。
+      setExpandedFamilies(
+        families.length === 1 ? new Set([families[0].id]) : expandMatching(next, previousExpanded),
+      );
+      setBaseline(familySnapshots(next));
       setDirty(false);
       setError("");
       setJsonText("");
@@ -753,8 +953,20 @@ export function MediaModelsPage() {
   }, []);
 
   useEffect(() => {
+    // 只在挂载时加载；放弃修改由按钮显式调用 load，并传入当前展开状态。
     void load();
   }, [load]);
+
+  // 新增或校验失败的卡片需要出现在视野里；等它渲染完再滚动，期间不动输入焦点。
+  useEffect(() => {
+    if (!focusedFamily) return;
+    const reduceMotion = typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    document
+      .getElementById(`media-family-${focusedFamily}`)
+      ?.scrollIntoView({ block: "start", behavior: reduceMotion ? "auto" : "smooth" });
+    setFocusedFamily("");
+  }, [focusedFamily]);
 
   const updateTier = (index: number, patch: Partial<MediaModelDraft>): void => {
     setDrafts((previous) =>
@@ -873,13 +1085,38 @@ export function MediaModelsPage() {
     setError("");
   };
 
+  const toggleFamily = (familyId: string): void => {
+    setExpandedFamilies((previous) => {
+      const next = new Set(previous);
+      if (next.has(familyId)) next.delete(familyId);
+      else next.add(familyId);
+      return next;
+    });
+  };
+
+  // 新增或出错定位：清掉筛选让卡片可见，再展开并滚动过去。
+  const revealFamilies = (familyIds: string[], focus: boolean): void => {
+    const target = new Set(familyIds);
+    if (!target.size) return;
+    setQuery("");
+    setKindFilter("all");
+    setAttentionOnly(false);
+    setExpandedFamilies((previous) => {
+      const next = new Set(previous);
+      for (const familyId of target) next.add(familyId);
+      return next;
+    });
+    if (focus) setFocusedFamily(familyIds[0]);
+  };
+
   const addModel = (): void => {
     const fallbackProvider =
       providers.find((provider) => provider.enabled)?.id ?? providers[0]?.id ?? "";
+    const familyId = nextFamilyId();
     setDrafts((previous) => [
       ...previous,
       {
-        familyId: nextFamilyId(),
+        familyId,
         id: "",
         name: "",
         kind: "video",
@@ -896,6 +1133,7 @@ export function MediaModelsPage() {
     ]);
     setDirty(true);
     setError("");
+    revealFamilies([familyId], true);
   };
 
   const preferredProvider = (): string => {
@@ -924,51 +1162,52 @@ export function MediaModelsPage() {
     const existing = new Set(
       drafts.map((draft) => draft.id.trim() || draft.upstreamModel.trim()),
     );
-    let added = 0;
-    setDrafts((previous) => {
-      const next = [...previous];
-      for (const preset of family === "minimax" ? TOAPIS_MINIMAX_PRESETS : adapter === "toapis" ? TOAPIS_SEEDANCE_PRESETS : SEEDANCE_PRESETS) {
-        const existingFamily = next.find(
-          (draft) =>
-            draft.kind === "video" &&
-            (draft.adapter ?? "ark") === adapter &&
-            draft.providerId === providerId &&
-            draft.upstreamModel.trim() === preset.upstreamModel,
-        );
-        const familyId = existingFamily?.familyId ?? nextFamilyId();
-        for (const tier of preset.tiers) {
-          if (existing.has(tier.id)) continue;
-          next.push({
-            familyId,
-            id: tier.id,
-            name: `${preset.name} ${tier.resolution}`,
-            kind: "video",
-            providerId,
-            upstreamModel: preset.upstreamModel,
-            adapter,
-            resolutions: [tier.resolution],
-            minDuration: String(family === "minimax" ? TOAPIS_MINIMAX_CAPABILITIES[preset.upstreamModel]!.minDuration : DEFAULT_MIN_DURATION),
-            maxDuration: String(DEFAULT_MAX_DURATION),
-            costCredits: "0",
-            generateAudio: family !== "minimax",
-            priceCredits: "",
-            priceVersion: "v1",
-            // 补档必须继承卡片共享配置；默认值会与旧枚举、音频或价格版本冲突并阻塞保存。
-            ...(existingFamily ? sharedConfiguration(existingFamily) : {}),
-          });
-          added += 1;
-        }
+    const additions: MediaModelDraft[] = [];
+    const touched: string[] = [];
+    for (const preset of family === "minimax" ? TOAPIS_MINIMAX_PRESETS : adapter === "toapis" ? TOAPIS_SEEDANCE_PRESETS : SEEDANCE_PRESETS) {
+      const existingFamily = drafts.find(
+        (draft) =>
+          draft.kind === "video" &&
+          (draft.adapter ?? "ark") === adapter &&
+          draft.providerId === providerId &&
+          draft.upstreamModel.trim() === preset.upstreamModel,
+      );
+      const familyId = existingFamily?.familyId ?? nextFamilyId();
+      const before = additions.length;
+      for (const tier of preset.tiers) {
+        if (existing.has(tier.id)) continue;
+        additions.push({
+          familyId,
+          id: tier.id,
+          name: `${preset.name} ${tier.resolution}`,
+          kind: "video",
+          providerId,
+          upstreamModel: preset.upstreamModel,
+          adapter,
+          resolutions: [tier.resolution],
+          minDuration: String(family === "minimax" ? TOAPIS_MINIMAX_CAPABILITIES[preset.upstreamModel]!.minDuration : DEFAULT_MIN_DURATION),
+          maxDuration: String(DEFAULT_MAX_DURATION),
+          costCredits: "0",
+          generateAudio: family !== "minimax",
+          priceCredits: "",
+          priceVersion: "v1",
+          // 补档必须继承卡片共享配置；默认值会与旧枚举、音频或价格版本冲突并阻塞保存。
+          ...(existingFamily ? sharedConfiguration(existingFamily) : {}),
+        });
       }
-      return next;
-    });
-    if (added === 0) {
+      if (additions.length > before) touched.push(familyId);
+    }
+    if (additions.length === 0) {
       toastErr(`${adapter === "toapis" ? "ToAPIs " : ""}${familyName} 条目都已在目录中，请直接编辑现有条目`, "无需重复添加");
       return;
     }
+    setDrafts((previous) => [...previous, ...additions]);
     setDirty(true);
     setError("");
+    revealFamilies(touched, true);
+    setPresetsOpen(false);
     toastOk(
-      `已加入 ${added} 个档位条目，请确认供应商并填写成本和售价`,
+      `已加入 ${additions.length} 个档位条目，请确认供应商并填写成本和售价`,
       `已加入 ${adapter === "toapis" ? "ToAPIs " : ""}${familyName} 系列`,
     );
   };
@@ -987,10 +1226,11 @@ export function MediaModelsPage() {
       toastErr("Seedream 条目都已在目录中，请直接编辑现有条目", "无需重复添加");
       return;
     }
+    const families = additions.map(() => nextFamilyId());
     setDrafts((previous) => [
       ...previous,
-      ...additions.map((preset) => ({
-        familyId: nextFamilyId(),
+      ...additions.map((preset, index) => ({
+        familyId: families[index],
         id: preset.id,
         name: preset.name,
         kind: "image" as const,
@@ -1007,6 +1247,8 @@ export function MediaModelsPage() {
     ]);
     setDirty(true);
     setError("");
+    revealFamilies(families, true);
+    setPresetsOpen(false);
     toastOk(
       `已加入 ${additions.length} 个图片模型，请填写成本和售价`,
       "已加入 Seedream",
@@ -1027,9 +1269,11 @@ export function MediaModelsPage() {
     }
     const existing = new Set(drafts.map((draft) => draft.id.trim() || draft.upstreamModel.trim()));
     const additions: MediaModelDraft[] = [];
+    const touched: string[] = [];
     for (const preset of TOAPIS_GPT_IMAGE_PRESETS) {
       const existingFamily = drafts.find((draft) => isToapisGptImage(draft) && draft.providerId === providerId && draft.upstreamModel.trim() === preset.upstreamModel);
       const familyId = existingFamily?.familyId ?? nextFamilyId();
+      const before = additions.length;
       for (const resolution of TOAPIS_IMAGE_RESOLUTIONS) {
         const id = `toapis-${preset.upstreamModel}-${resolution.toLowerCase()}`;
         if (existing.has(id)) continue;
@@ -1042,6 +1286,7 @@ export function MediaModelsPage() {
           ...(existingFamily ? sharedConfiguration(existingFamily) : {}),
         });
       }
+      if (additions.length > before) touched.push(familyId);
     }
     if (!additions.length) {
       toastErr("GPT Image 条目都已在目录中，请直接编辑现有档位", "无需重复添加");
@@ -1050,6 +1295,8 @@ export function MediaModelsPage() {
     setDrafts((previous) => [...previous, ...additions]);
     setDirty(true);
     setError("");
+    revealFamilies(touched, true);
+    setPresetsOpen(false);
     toastOk(`已加入 ${additions.length} 个图片档位，请确认供应商地址并填写每张成本和售价`, "已加入 ToAPIs GPT Image");
   };
 
@@ -1108,20 +1355,26 @@ export function MediaModelsPage() {
   };
 
   const save = async (): Promise<void> => {
-    const problem = validateDrafts(drafts, providers);
+    const problem = findDraftProblem(drafts, providers);
     if (problem) {
-      setError(problem);
-      toastErr(problem, "无法保存");
+      setError(problem.message);
+      // 折叠清单里看不到出错的卡片：展开并滚动过去，省去逐个翻找。
+      revealFamilies([problem.familyId], true);
+      toastErr(problem.message, "无法保存");
       return;
     }
     setBusy(true);
     setError("");
+    const previousExpanded = expandedKeysOf(drafts, expandedFamilies);
     try {
       const saved = await api<MediaModel[]>("/media/models", {
         method: "PUT",
         body: JSON.stringify(drafts.map(toApiModel)),
       });
-      setDrafts(assignFamilyIds(saved.map(toDraft)));
+      const next = assignFamilyIds(saved.map(toDraft));
+      setDrafts(next);
+      setExpandedFamilies(expandMatching(next, previousExpanded));
+      setBaseline(familySnapshots(next));
       setDirty(false);
       setAdvancedOpen(false);
       toastOk("新制作单将使用本次媒体模型配置", "已保存");
@@ -1170,6 +1423,95 @@ export function MediaModelsPage() {
     })),
   ];
 
+  const providerNameOf = (providerId: string): string => {
+    const provider = providers.find((item) => item.id === providerId);
+    return provider
+      ? provider.enabled
+        ? provider.name
+        : `${provider.name}（已停用）`
+      : providerId;
+  };
+  const summaries = new Map(
+    families.map((family) => {
+      const tiers = family.indexes.map((index) => drafts[index]);
+      return [family.id, {
+        tiers,
+        missing: tiers.filter((tier) => previewMicro(tier.priceCredits) <= 0).length,
+        conflicted: sharedConflicts(tiers).length > 0,
+        change: familyChange(tiers, family.id, baseline),
+      }] as const;
+    }),
+  );
+  const attentionCount = [...summaries.values()].filter(
+    (summary) => summary.missing > 0 || summary.conflicted || summary.change !== "unchanged",
+  ).length;
+  const changedCount = [...summaries.values()].filter(
+    (summary) => summary.change !== "unchanged",
+  ).length;
+  // 基线里按 id 或身份都认不回的卡片视为已删除。
+  const liveKeys = new Set(
+    families.map((family) =>
+      familyKeyOf(family.indexes.map((index) => drafts[index])),
+    ),
+  );
+  const removedCount = Object.entries(baseline).filter(
+    ([id, snapshot]) => !summaries.has(id) && !liveKeys.has(snapshot.key),
+  ).length;
+  const visibleFamilies = families.filter((family) => {
+    const summary = summaries.get(family.id);
+    if (!summary?.tiers.length) return false;
+    if (kindFilter !== "all" && summary.tiers[0].kind !== kindFilter) return false;
+    if (
+      attentionOnly &&
+      summary.missing === 0 &&
+      !summary.conflicted &&
+      summary.change === "unchanged"
+    ) return false;
+    return matchesQuery(
+      summary.tiers,
+      query.trim(),
+      providerNameOf(summary.tiers[0].providerId),
+      summary.tiers[0].adapter ?? "ark",
+    );
+  });
+  const allVisibleExpanded = visibleFamilies.length > 0 &&
+    visibleFamilies.every((family) => expandedFamilies.has(family.id));
+  const filtered = visibleFamilies.length !== families.length;
+  const changeSummary = [
+    dirty ? "有未保存修改" : "配置已同步",
+    ...(changedCount ? [`${changedCount} 张卡片已改动`] : []),
+    ...(removedCount ? [`${removedCount} 张已删除`] : []),
+  ].join(" · ");
+
+  const presetActions: { label: string; title: string; run: () => void }[] = [
+    {
+      label: "Seedance 2.0 系列",
+      title: "补齐 mini / fast / 基础版的 Seedance 2.0 档位",
+      run: () => addVideoPresets("ark"),
+    },
+    {
+      label: "ToAPIs Seedance 2.0",
+      title: "加入 ToAPIs 的 mini / fast / 标准版八档，请确认供应商并填写价格",
+      run: () => addVideoPresets("toapis"),
+    },
+    {
+      label: "ToAPIs MiniMax H3",
+      title: "加入 MiniMax H3 / Max / Max Turbo 三款六档，请确认供应商并填写价格",
+      run: () => addVideoPresets("toapis", "minimax"),
+    },
+    {
+      label: "ToAPIs GPT Image",
+      title: "加入 GPT Image 2 / 2.5 Flare / Sunburst 三款九档，请确认供应商地址并填写每张价格",
+      run: addGptImageModels,
+    },
+    {
+      label: "Seedream 图像",
+      title: "加入 Seedream 5.0 Pro / Flash / Lite / 4.5 / 4.0 图片模型",
+      run: addSeedreamModels,
+    },
+  ];
+  const presetsDisabled = loading || busy || providers.length === 0;
+
   return (
     <div>
       <header className="page-head">
@@ -1184,231 +1526,351 @@ export function MediaModelsPage() {
         </span>
       </header>
 
-      <SourceParserStatus />
-      <ReferencePricing />
+      {/* 三段配置各管一摊：默认落在模型清单，设置类内容不再把清单顶出首屏。 */}
+      <div className="page-tabs" role="tablist" aria-label="媒体模型页面分区">
+        {MEDIA_SECTIONS.map((item) => (
+          <button
+            key={item.id}
+            id={`media-tab-${item.id}`}
+            type="button"
+            role="tab"
+            className="page-tab"
+            aria-selected={section === item.id}
+            aria-controls={`media-panel-${item.id}`}
+            tabIndex={section === item.id ? 0 : -1}
+            onClick={() => setSection(item.id)}
+            onKeyDown={(event) => {
+              const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+              if (!step) return;
+              event.preventDefault();
+              const index = MEDIA_SECTIONS.findIndex((entry) => entry.id === section);
+              const next = MEDIA_SECTIONS[(index + step + MEDIA_SECTIONS.length) % MEDIA_SECTIONS.length];
+              setSection(next.id);
+              document.getElementById(`media-tab-${next.id}`)?.focus();
+            }}
+          >
+            {item.label}
+            {item.id === "reconcile" && pendingReconcile > 0 ? (
+              <span className="page-tab-count">{pendingReconcile}</span>
+            ) : null}
+          </button>
+        ))}
+      </div>
 
-      {error ? (
-        <Notice tone="stop" k="操作未完成">
-          {error}
+      <div
+        id="media-panel-models"
+        role="tabpanel"
+        aria-labelledby="media-tab-models"
+        hidden={section !== "models"}
+      >
+        <Notice k="计费口径">
+          一个上游模型一张卡：分辨率档位是卡内的价格行，镜头时长按区间（如 4–15 秒）配置，共享配置只填一次。保存后仍按每档一条模型下发，视频按镜头秒、图片按张计价，1 credit = ¥1。Ark 视频参考可按 token 费率（Credit/1M token）结算；ToAPIs 视频参考按输出秒数、使用档位售价结算。
         </Notice>
-      ) : null}
-      <Notice k="计费口径">
-        一个上游模型一张卡：分辨率档位是卡内的价格行，镜头时长按区间（如 4–15 秒）配置，共享配置只填一次。保存后仍按每档一条模型下发，视频按镜头秒、图片按张计价，1 credit = ¥1。Ark 视频参考可按 token 费率（Credit/1M token）结算；ToAPIs 视频参考按输出秒数、使用档位售价结算。
-      </Notice>
-      {!loading && providers.length === 0 ? (
-        <Notice
-          k="缺少上游供应商"
-          action={{ href: "#/providers", label: "去配置" }}
-        >
-          媒体模型需要先绑定一个上游供应商，请先在「上游供应商」中创建并填入对应的完整 API 前缀与密钥。
-        </Notice>
-      ) : null}
+        {!loading && providers.length === 0 ? (
+          <Notice
+            k="缺少上游供应商"
+            action={{ href: "#/providers", label: "去配置" }}
+          >
+            媒体模型需要先绑定一个上游供应商，请先在「上游供应商」中创建并填入对应的完整 API 前缀与密钥。
+          </Notice>
+        ) : null}
+        {error ? (
+          <Notice tone="stop" k="操作未完成">
+            {error}
+          </Notice>
+        ) : null}
 
-      <section className="pane d1">
-        <div className="pane-h">
-          <h2>模型清单</h2>
-          <div className="form-row">
-            <button
-              className="btn btn-ghost btn-sm"
-              type="button"
-              onClick={() => addVideoPresets("ark")}
-              disabled={loading || busy || providers.length === 0}
-              title={
-                providers.length === 0
-                  ? "请先创建上游供应商"
-                  : "补齐 mini / fast / 基础版的 Seedance 2.0 档位"
-              }
-            >
-              Seedance 2.0 系列
-            </button>
-            <button
-              className="btn btn-ghost btn-sm"
-              type="button"
-              onClick={() => addVideoPresets("toapis")}
-              disabled={loading || busy || providers.length === 0}
-              title="加入 ToAPIs 的 mini / fast / 标准版八档，请确认供应商并填写价格"
-            >
-              ToAPIs Seedance 2.0
-            </button>
-            <button
-              className="btn btn-ghost btn-sm"
-              type="button"
-              onClick={() => addVideoPresets("toapis", "minimax")}
-              disabled={loading || busy || providers.length === 0}
-              title="加入 MiniMax H3 / Max / Max Turbo 三款六档，请确认供应商并填写价格"
-            >
-              ToAPIs MiniMax H3
-            </button>
-            <button
-              className="btn btn-ghost btn-sm"
-              type="button"
-              onClick={addGptImageModels}
-              disabled={loading || busy || providers.length === 0}
-              title="加入 GPT Image 2 / 2.5 Flare / Sunburst 三款九档，请确认供应商地址并填写每张价格"
-            >
-              ToAPIs GPT Image
-            </button>
-            <button
-              className="btn btn-ghost btn-sm"
-              type="button"
-              onClick={addSeedreamModels}
-              disabled={loading || busy || providers.length === 0}
-              title={
-                providers.length === 0
-                  ? "请先创建上游供应商"
-                  : "加入 Seedream 5.0 Pro / Flash / Lite / 4.5 / 4.0 图片模型"
-              }
-            >
-              Seedream 图像
-            </button>
-            <button
-              className="btn btn-ghost btn-sm"
-              type="button"
-              onClick={openJson}
-              disabled={loading || busy}
-            >
-              {advancedOpen ? "收起 JSON" : "JSON 批量编辑"}
-            </button>
-            <button
-              className="btn btn-sm"
-              type="button"
-              onClick={addModel}
-              disabled={loading || busy}
-            >
-              新增模型
-            </button>
+        <section className="pane d1">
+          <div className="pane-h">
+            <h2>模型清单</h2>
+            <div className="form-row">
+              <button
+                className="btn btn-ghost btn-sm"
+                type="button"
+                aria-expanded={presetsOpen}
+                aria-controls="media-presets"
+                onClick={() => setPresetsOpen((previous) => !previous)}
+                disabled={loading || busy}
+                title="按供应商预设批量补齐已接入的 Seedance / MiniMax / GPT Image / Seedream 档位"
+              >
+                {presetsOpen ? "收起预设" : "从预设添加"}
+              </button>
+              <button
+                className="btn btn-ghost btn-sm"
+                type="button"
+                onClick={openJson}
+                disabled={loading || busy}
+              >
+                {advancedOpen ? "收起 JSON" : "JSON 批量编辑"}
+              </button>
+              <button
+                className="btn btn-sm"
+                type="button"
+                onClick={addModel}
+                disabled={loading || busy}
+              >
+                新增模型
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div className="pane-b">
-          {loading ? (
-            <p className="readout">正在加载媒体模型与供应商…</p>
-          ) : drafts.length === 0 ? (
-            <div className="empty" style={{ margin: "8px auto 0" }}>
-              <h2>还没有媒体模型</h2>
-              <p>
-                添加后，客户端媒体创作页才会出现对应的视频或图片模型。
-                <br />
-                一个上游模型一张卡，分辨率档位在卡内维护价格。
-              </p>
-              <button className="btn" type="button" onClick={addModel}>
-                新增第一个模型
-              </button>
-            </div>
-          ) : (
-            <div className="media-family-list">
-              {families.map((family) => (
-                <MediaFamilyCard
-                  key={family.id}
-                  familyId={family.id}
-                  indexes={family.indexes}
-                  drafts={drafts}
-                  providerOptions={providerOptions}
-                  providerModels={providerModels}
-                  fetchingProvider={fetchingProvider}
-                  busy={busy}
-                  onUpdateTier={updateTier}
-                  onUpdateFamily={updateFamily}
-                  onUpdateName={updateFamilyName}
-                  onUpdateKind={updateFamilyKind}
-                  onUpdateUpstream={updateUpstreamModel}
-                  onAddTier={addTier}
-                  onRemoveTier={removeTier}
-                  onRemoveFamily={removeFamily}
-                  onFetchModels={(providerId) => void fetchModels(providerId, family.indexes)}
-                />
-              ))}
-            </div>
-          )}
-
-          {!loading ? (
-            <div className="form-row" style={{ marginTop: 16 }}>
-              <button
-                className="btn"
-                type="button"
-                disabled={busy || !dirty}
-                onClick={() => void save()}
-              >
-                {busy ? "保存中…" : "保存配置"}
-              </button>
-              <button
-                className="btn btn-ghost"
-                type="button"
-                disabled={busy || !dirty}
-                onClick={() => void load()}
-              >
-                放弃修改
-              </button>
-              <span className="readout">
-                {dirty ? "有未保存修改" : "配置已同步"} · 价格版本只影响新制作单
-              </span>
+          {presetsOpen ? (
+            <div className="pane-b media-presets" id="media-presets">
+              <span className="readout">预设会追加尚未存在的档位，已存在的档位保持不动；价格仍需逐档填写。</span>
+              <div className="preset-actions">
+                {presetActions.map((preset) => (
+                  <button
+                    key={preset.label}
+                    className="btn btn-ghost btn-sm"
+                    type="button"
+                    disabled={presetsDisabled}
+                    title={
+                      providers.length === 0
+                        ? "请先创建上游供应商"
+                        : preset.title
+                    }
+                    onClick={preset.run}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : null}
-        </div>
 
-        {advancedOpen ? (
-          <div
-            className="pane-b"
-            style={{ borderTop: "1px solid var(--line-soft)" }}
-          >
-            <div
-              className="form-row"
-              style={{ justifyContent: "space-between", marginBottom: 10 }}
-            >
-              <span className="readout">批量导入后仍需点击「保存配置」</span>
-              <div className="form-row">
+          {!loading && drafts.length > 0 ? (
+            <div className="pane-b media-filter-bar">
+              <input
+                className="input media-search"
+                type="search"
+                aria-label="搜索媒体模型"
+                placeholder="搜索模型名、上游模型 ID 或供应商…"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+              <div className="choice-row">
+                {([
+                  ["all", `全部 ${families.length}`],
+                  ["video", `视频 ${families.filter((family) => summaries.get(family.id)?.tiers[0]?.kind === "video").length}`],
+                  ["image", `图片 ${families.filter((family) => summaries.get(family.id)?.tiers[0]?.kind === "image").length}`],
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    className={"choice-chip" + (kindFilter === value ? " selected" : "")}
+                    type="button"
+                    aria-pressed={kindFilter === value}
+                    onClick={() => setKindFilter(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <button
+                  className={"choice-chip" + (attentionOnly ? " selected" : "")}
+                  type="button"
+                  aria-pressed={attentionOnly}
+                  title="只看缺价、共享配置冲突或本次改动过的卡片"
+                  onClick={() => setAttentionOnly((previous) => !previous)}
+                >
+                  待处理 {attentionCount}
+                </button>
+              </div>
+              <div className="media-list-actions">
+                <span className="readout">
+                  {filtered ? `${visibleFamilies.length} / ${families.length} 张` : `${families.length} 张卡片`}
+                </span>
                 <button
                   className="btn btn-ghost btn-sm"
                   type="button"
+                  disabled={visibleFamilies.length === 0}
                   onClick={() => {
-                    try {
-                      setJsonText(
-                        JSON.stringify(drafts.map(toApiModel), null, 2),
-                      );
-                      setJsonError("");
-                    } catch (formatError) {
-                      setJsonError(errorMessage(formatError));
-                    }
+                    setExpandedFamilies(
+                      allVisibleExpanded
+                        ? new Set()
+                        : new Set(visibleFamilies.map((family) => family.id)),
+                    );
                   }}
                 >
-                  载入当前配置
-                </button>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  type="button"
-                  onClick={() => {
-                    setJsonText(exampleJson(providers[0]?.id ?? ""));
-                    setJsonError("");
-                  }}
-                >
-                  填入示例
-                </button>
-                <button
-                  className="btn btn-sm"
-                  type="button"
-                  disabled={!jsonText.trim()}
-                  onClick={importJson}
-                >
-                  从 JSON 导入
+                  {allVisibleExpanded ? "全部收起" : "全部展开"}
                 </button>
               </div>
             </div>
-            {jsonError ? <Notice tone="stop">{jsonError}</Notice> : null}
-            <textarea
-              className="media-json"
-              aria-label="媒体模型 JSON"
-              spellCheck={false}
-              value={jsonText}
-              onChange={(event) => {
-                setJsonText(event.target.value);
-                setJsonError("");
-              }}
-            />
-          </div>
-        ) : null}
-      </section>
+          ) : null}
 
-      <MediaReconciliation />
+          <div className="pane-b media-list-body">
+            {loading ? (
+              <p className="readout">正在加载媒体模型与供应商…</p>
+            ) : drafts.length === 0 ? (
+              <div className="empty" style={{ margin: "8px auto 0" }}>
+                <h2>还没有媒体模型</h2>
+                <p>
+                  添加后，客户端媒体创作页才会出现对应的视频或图片模型。
+                  <br />
+                  一个上游模型一张卡，分辨率档位在卡内维护价格。
+                </p>
+                <button className="btn" type="button" onClick={addModel}>
+                  新增第一个模型
+                </button>
+              </div>
+            ) : visibleFamilies.length === 0 ? (
+              <div className="empty" style={{ margin: "8px auto 0" }}>
+                <h2>没有匹配的卡片</h2>
+                <p>换个关键词，或清空类型与「待处理」筛选。</p>
+                <button
+                  className="btn btn-ghost"
+                  type="button"
+                  onClick={() => {
+                    setQuery("");
+                    setKindFilter("all");
+                    setAttentionOnly(false);
+                  }}
+                >
+                  清空筛选
+                </button>
+              </div>
+            ) : (
+              <div className="media-family-list">
+                {visibleFamilies.map((family) => {
+                  const summary = summaries.get(family.id);
+                  return (
+                    <MediaFamilyCard
+                      key={family.id}
+                      familyId={family.id}
+                      indexes={family.indexes}
+                      drafts={drafts}
+                      providerOptions={providerOptions}
+                      providerModels={providerModels}
+                      fetchingProvider={fetchingProvider}
+                      busy={busy}
+                      providerName={
+                        summary?.tiers[0] ? providerNameOf(summary.tiers[0].providerId) : ""
+                      }
+                      missingCount={summary?.missing ?? 0}
+                      conflicted={summary?.conflicted ?? false}
+                      change={summary?.change ?? "unchanged"}
+                      expanded={expandedFamilies.has(family.id)}
+                      onToggle={() => toggleFamily(family.id)}
+                      onUpdateTier={updateTier}
+                      onUpdateFamily={updateFamily}
+                      onUpdateName={updateFamilyName}
+                      onUpdateKind={updateFamilyKind}
+                      onUpdateUpstream={updateUpstreamModel}
+                      onAddTier={addTier}
+                      onRemoveTier={removeTier}
+                      onRemoveFamily={removeFamily}
+                      onFetchModels={(providerId) => void fetchModels(providerId, family.indexes)}
+                    />
+                  );
+                })}
+              </div>
+            )}
+
+            {!loading ? (
+              // 底部常驻保存条：卡片再长也不必滚回清单末尾才能保存。
+              <div className={"media-save-bar" + (dirty ? " is-dirty" : "")}>
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={busy || !dirty}
+                  onClick={() => void save()}
+                >
+                  {busy ? "保存中…" : "保存配置"}
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  type="button"
+                  disabled={busy || !dirty}
+                  onClick={() => {
+                    void load(expandedKeysOf(drafts, expandedFamilies));
+                  }}
+                >
+                  放弃修改
+                </button>
+                <span className="readout">{changeSummary} · 价格版本只影响新制作单</span>
+              </div>
+            ) : null}
+          </div>
+
+          {advancedOpen ? (
+            <div
+              className="pane-b"
+              style={{ borderTop: "1px solid var(--line-soft)" }}
+            >
+              <div
+                className="form-row"
+                style={{ justifyContent: "space-between", marginBottom: 10 }}
+              >
+                <span className="readout">批量导入后仍需点击「保存配置」</span>
+                <div className="form-row">
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    type="button"
+                    onClick={() => {
+                      try {
+                        setJsonText(
+                          JSON.stringify(drafts.map(toApiModel), null, 2),
+                        );
+                        setJsonError("");
+                      } catch (formatError) {
+                        setJsonError(errorMessage(formatError));
+                      }
+                    }}
+                  >
+                    载入当前配置
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    type="button"
+                    onClick={() => {
+                      setJsonText(exampleJson(providers[0]?.id ?? ""));
+                      setJsonError("");
+                    }}
+                  >
+                    填入示例
+                  </button>
+                  <button
+                    className="btn btn-sm"
+                    type="button"
+                    disabled={!jsonText.trim()}
+                    onClick={importJson}
+                  >
+                    从 JSON 导入
+                  </button>
+                </div>
+              </div>
+              {jsonError ? <Notice tone="stop">{jsonError}</Notice> : null}
+              <textarea
+                className="media-json"
+                aria-label="媒体模型 JSON"
+                spellCheck={false}
+                value={jsonText}
+                onChange={(event) => {
+                  setJsonText(event.target.value);
+                  setJsonError("");
+                }}
+              />
+            </div>
+          ) : null}
+        </section>
+      </div>
+
+      <div
+        id="media-panel-source"
+        role="tabpanel"
+        aria-labelledby="media-tab-source"
+        hidden={section !== "source"}
+      >
+        <SourceParserStatus />
+        <ReferencePricing />
+      </div>
+
+      <div
+        id="media-panel-reconcile"
+        role="tabpanel"
+        aria-labelledby="media-tab-reconcile"
+        hidden={section !== "reconcile"}
+      >
+        <MediaReconciliation onPendingCount={setPendingReconcile} />
+      </div>
     </div>
   );
 }
@@ -1421,6 +1883,12 @@ function MediaFamilyCard({
   providerModels,
   fetchingProvider,
   busy,
+  providerName,
+  missingCount,
+  conflicted,
+  change,
+  expanded,
+  onToggle,
   onUpdateTier,
   onUpdateFamily,
   onUpdateName,
@@ -1438,6 +1906,13 @@ function MediaFamilyCard({
   providerModels: Record<string, string[]>;
   fetchingProvider: string;
   busy: boolean;
+  /** 折叠清单上展示的供应商名与状态摘要，均由整张卡片汇总。 */
+  providerName: string;
+  missingCount: number;
+  conflicted: boolean;
+  change: FamilyChange;
+  expanded: boolean;
+  onToggle: () => void;
   onUpdateTier: (index: number, patch: Partial<MediaModelDraft>) => void;
   onUpdateFamily: (indexes: number[], patch: Partial<MediaModelDraft>) => void;
   onUpdateName: (indexes: number[], name: string) => void;
@@ -1493,20 +1968,60 @@ function MediaFamilyCard({
   const fetchedModels = lead.providerId ? providerModels[providerCacheKey] : undefined;
 
   return (
-    <article className="model-card media-family-card">
-      {/* 卡头的名称与操作都有最小宽度，窄屏需换行，避免整页被操作按钮撑宽。 */}
-      <div className="model-card-head" style={{ flexWrap: "wrap" }}>
-        <input
-          className="input media-family-name"
-          aria-label={`模型 ${name} 展示名称`}
-          placeholder="如 Seedance 2.0 mini"
-          value={stripTierSuffix(lead)}
-          onChange={(event) => onUpdateName(indexes, event.target.value)}
-        />
-        <Chip tone={isVideo ? "info" : "mute"}>{isVideo ? "视频" : "图片"}</Chip>
-        <span className="model-card-id" title={lead.upstreamModel}>
-          {lead.upstreamModel || "未绑定上游模型"}
-        </span>
+    <article
+      className={"model-card media-family-card" + (expanded ? " is-expanded" : "")}
+      id={`media-family-${familyId}`}
+    >
+      {/* 折叠态的一行摘要：卡片再多也只占一行，点摘要行或标题即可展开编辑。 */}
+      <div className="media-summary-row">
+        <button
+          className="media-summary-toggle"
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={`media-family-body-${familyId}`}
+          onClick={onToggle}
+        >
+          <span className="media-summary-caret" aria-hidden="true">
+            {expanded ? "▾" : "▸"}
+          </span>
+          <span className="media-summary-name" title={name}>{name}</span>
+          <Chip tone={isVideo ? "info" : "mute"}>{isVideo ? "视频" : "图片"}</Chip>
+          <span className="media-summary-adapter">{isToapis ? "ToAPIs" : "Ark"}</span>
+          <span className="media-summary-provider" title={providerName}>{providerName || "未选供应商"}</span>
+          <span className="media-summary-upstream" title={lead.upstreamModel}>
+            {lead.upstreamModel || "未绑定上游模型"}
+          </span>
+          <span className="media-summary-tiers">
+            {hasTiers
+              ? tiers.map((tier) => {
+                  const tierPrice = previewMicro(tier.priceCredits);
+                  const label = tier.resolutions[0] ?? "档位";
+                  return (
+                    <span
+                      key={label}
+                      className={"media-tier-pill" + (tierPrice > 0 ? "" : " is-missing")}
+                      title={tierPrice > 0 ? `${label}：售价 ${tier.priceCredits} credit/${isVideo ? "秒" : "张"}` : `${label} 档尚未配置售价`}
+                    >
+                      {label}
+                      <em>{tierPrice > 0 ? tier.priceCredits : "缺价"}</em>
+                    </span>
+                  );
+                })
+              : <span className="media-tier-pill">按张计价</span>}
+          </span>
+          <span className="media-summary-state">
+            {change !== "unchanged" ? (
+              <span className="media-change-tag">{change === "new" ? "新增" : "已修改"}</span>
+            ) : null}
+            {conflicted ? (
+              <Chip tone="stop">共享配置冲突</Chip>
+            ) : missingCount > 0 ? (
+              <Chip tone="stop">缺 {missingCount} 档价格</Chip>
+            ) : (
+              <Chip tone="ok">已配置</Chip>
+            )}
+          </span>
+        </button>
         <div className="media-family-actions">
           <button
             className="btn btn-ghost btn-sm"
@@ -1530,6 +2045,24 @@ function MediaFamilyCard({
             删除
           </button>
         </div>
+      </div>
+
+      <div
+        className="media-family-body"
+        id={`media-family-body-${familyId}`}
+        hidden={!expanded}
+      >
+      <div className="model-card-head media-family-head">
+        <input
+          className="input media-family-name"
+          aria-label={`模型 ${name} 展示名称`}
+          placeholder="如 Seedance 2.0 mini"
+          value={stripTierSuffix(lead)}
+          onChange={(event) => onUpdateName(indexes, event.target.value)}
+        />
+        <span className="readout">
+          {tiers.length} 个档位 · 共享配置只填一次，保存时按每档一条模型下发
+        </span>
       </div>
 
       <div className="media-shared-grid">
@@ -1767,6 +2300,41 @@ function MediaFamilyCard({
             })}
           </tbody>
         </table>
+      </div>
+
+      <div style={{ margin: "18px 0" }}>
+        <h3>路由池 · 每个档位独立配置</h3>
+        <p className="readout">同一真实模型可绑定多个供应商，共用当前适配器、上游模型和能力。优先级小者先用，同优先级按权重轮转。</p>
+        <p className="readout">媒体在生成阶段开始时选择供应商；任务受理后固定该供应商查询与结算，结果不明时进入核对，不跨供应商重复提交。</p>
+        {indexes.map((index) => {
+          const tier = drafts[index];
+          const routes = tier.routes ?? [];
+          const label = hasTiers ? (tier.resolutions[0] ?? "档位") : "单张";
+          const routeLabel = `${name} ${label}`;
+          const patchRoute = (row: number, patch: Partial<MediaRouteDraft>) => onUpdateTier(index, { routes: routes.map((route, i) => i === row ? { ...route, ...patch } : route) });
+          return <div key={`routes-${index}`} style={{ marginBottom: 16 }}>
+            <div className="form-row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
+              <strong>{label} · {tier.id || "未设平台模型 ID"}</strong>
+              <button className="btn btn-ghost btn-sm" type="button" disabled={busy || routes.length >= 32} aria-label={`${routeLabel} 添加路由`} onClick={() => onUpdateTier(index, { routes: [...routes, { providerId: routes.length === 0 ? tier.providerId : "", priority: "100", weight: "1", enabled: true }] })}>添加供应商路由</button>
+            </div>
+            {routes.length === 0 ? <p className="readout">未配置路由池，使用卡片的单一供应商绑定。添加后由池内路由接管此档位。</p> : <>
+              {!routes.some((route) => route.enabled) ? <Notice k="路由全部停用">此档位将拒绝新的生成请求，不会回退到单一供应商绑定。</Notice> : null}
+              <div className="table-scroll"><table className="table" style={{ minWidth: 680, whiteSpace: "nowrap" }}><thead><tr><th>供应商</th><th>优先级 · 小者优先</th><th>权重 · 同级分流</th><th>启用</th><th>操作</th></tr></thead><tbody>
+                {routes.map((route, row) => <tr key={row}>
+                  <td><Select disabled={busy} ariaLabel={`${routeLabel} 路由 ${row + 1} 供应商`} value={route.providerId} onChange={(value) => patchRoute(row, { providerId: value })} options={[
+                    { value: "", label: "选择供应商…" },
+                    ...providerOptions.filter((option) => option.value && (option.value === route.providerId || !routes.some((existing) => existing.providerId === option.value))),
+                  ]} /></td>
+                  <td><input className="input num" style={{ width: 120 }} inputMode="numeric" disabled={busy} aria-label={`${routeLabel} 路由 ${row + 1} 优先级`} value={route.priority} onChange={(event) => patchRoute(row, { priority: event.target.value })} /></td>
+                  <td><input className="input num" style={{ width: 100 }} inputMode="numeric" disabled={busy} aria-label={`${routeLabel} 路由 ${row + 1} 权重`} value={route.weight} onChange={(event) => patchRoute(row, { weight: event.target.value })} /></td>
+                  <td><input type="checkbox" disabled={busy} aria-label={`${routeLabel} 路由 ${row + 1} 启用`} checked={route.enabled} onChange={(event) => patchRoute(row, { enabled: event.target.checked })} /></td>
+                  <td><button className="btn btn-ghost btn-sm" type="button" disabled={busy} aria-label={`${routeLabel} 路由 ${row + 1} 移除`} onClick={() => onUpdateTier(index, { routes: routes.filter((_, i) => i !== row) })}>移除路由</button></td>
+                </tr>)}
+              </tbody></table></div>
+              {routes.length === 1 ? <p className="readout">移除最后一条路由后恢复卡片的单一供应商绑定。修改后点击「保存配置」生效。</p> : null}
+            </>}
+          </div>;
+        })}
       </div>
 
       {hasTiers && unusedResolutions.length > 0 ? (
@@ -2034,6 +2602,7 @@ function MediaFamilyCard({
           ) : null}
         </div>
       ) : null}
+      </div>
     </article>
   );
 }

@@ -22,12 +22,12 @@ func parseMicroString(value string) (int64, error) { return credits.ParseCredits
 
 // ---- upstream routes ----
 
-const upstreamRouteCols = `r.id::text, r.model_id, r.provider_id::text, COALESCE(p.name, ''),
+const upstreamRouteCols = `r.id::text, r.model_id, r.provider_id::text, COALESCE(p.name, ''), p.enabled,
 	r.upstream_model, r.priority, r.weight, r.enabled, r.created_at, r.updated_at`
 
 func scanUpstreamRoute(rows pgx.Rows) (*UpstreamRouteRecord, error) {
 	var r UpstreamRouteRecord
-	if err := rows.Scan(&r.ID, &r.ModelID, &r.ProviderID, &r.ProviderName,
+	if err := rows.Scan(&r.ID, &r.ModelID, &r.ProviderID, &r.ProviderName, &r.ProviderEnabled,
 		&r.UpstreamModel, &r.Priority, &r.Weight, &r.Enabled, &r.CreatedAt, &r.UpdatedAt); err != nil {
 		return nil, err
 	}

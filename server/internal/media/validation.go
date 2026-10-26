@@ -25,6 +25,16 @@ func ValidateModels(models []Model) error {
 	seen := map[string]bool{}
 	displayNames := map[string]string{}
 	for _, m := range models {
+		if len(m.Routes) > 32 {
+			return ErrInvalid
+		}
+		routeProviders := map[string]bool{}
+		for _, route := range m.Routes {
+			if strings.TrimSpace(route.ProviderID) == "" || route.ProviderID != strings.TrimSpace(route.ProviderID) || routeProviders[route.ProviderID] || route.Priority < 0 || route.Priority > 1_000_000 || route.Weight < 1 || route.Weight > 10_000 {
+				return ErrInvalid
+			}
+			routeProviders[route.ProviderID] = true
+		}
 		if m.DisplayName != "" && (strings.TrimSpace(m.DisplayName) != m.DisplayName || len([]rune(m.DisplayName)) > 120) {
 			return ErrInvalid
 		}

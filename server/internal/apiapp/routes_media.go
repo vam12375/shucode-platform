@@ -351,14 +351,20 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		// 目录配置允许绑定尚未启用/尚未填密钥的供应商，便于先建模型再补密钥；
 		// 真正提交生成时 s.Provider 仍会拒绝不可用供应商。
 		for _, m := range models {
-			p, e := deps.Store.GetUpstreamProvider(c.Request.Context(), m.ProviderID)
-			if e != nil {
-				internalError(c, deps, e)
-				return
+			providerIDs := []string{m.ProviderID}
+			for _, route := range m.Routes {
+				providerIDs = append(providerIDs, route.ProviderID)
 			}
-			if p == nil {
-				c.JSON(400, fail(400, "媒体模型绑定的上游供应商不存在"))
-				return
+			for _, providerID := range providerIDs {
+				p, e := deps.Store.GetUpstreamProvider(c.Request.Context(), providerID)
+				if e != nil {
+					internalError(c, deps, e)
+					return
+				}
+				if p == nil {
+					c.JSON(400, fail(400, "媒体模型绑定的上游供应商不存在"))
+					return
+				}
 			}
 		}
 		data, _ := json.Marshal(models)

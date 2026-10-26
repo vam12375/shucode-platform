@@ -15,7 +15,8 @@ func referenceReviewPlan(project *Project, plan Plan) (Plan, error) {
 		return Plan{}, ErrConflict
 	}
 	for _, shot := range project.Shots {
-		if shot.Status != "pending" || shot.Attempt > 1 || shot.VideoTaskID != "" || shot.ImageTaskID != "" || shot.ProviderError != nil || shot.ImageAssetID != "" || shot.OutputAssetID != "" || shot.ResultURL != "" || shot.ReservationID != "" || shot.Stage != "" || shot.ChargedMicro != 0 || shot.PendingChargeMicro != 0 || shot.ReservedMicro != 0 || shot.ReleasedMicro != 0 || shot.ProviderUsageTokens != 0 || shot.TokenChargeMicro != 0 {
+		// 路由绑定也是执行证据；复用统一判定，避免审阅重建丢掉已冻结的供应商归属。
+		if shot.Status != "pending" || shot.Attempt > 1 || referenceExecutionHasEvidence(shot) {
 			return Plan{}, ErrConflict
 		}
 	}

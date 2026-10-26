@@ -22,7 +22,7 @@ func referencePreparationFailure(code string) bool {
 }
 
 func referenceExecutionHasEvidence(shot Shot) bool {
-	return shot.VideoTaskID != "" || shot.ImageTaskID != "" || shot.ProviderError != nil || shot.ImageAssetID != "" || shot.OutputAssetID != "" || shot.ResultURL != "" || shot.ReservationID != "" || shot.Stage != "" || shot.ChargedMicro != 0 || shot.PendingChargeMicro != 0 || shot.ReservedMicro != 0 || shot.ReleasedMicro != 0 || shot.ProviderUsageTokens != 0 || shot.TokenChargeMicro != 0 || shot.TokenRateMicroPerMillion != 0 || shot.TokenCostMicroPerMillion != 0
+	return shot.VideoTaskID != "" || shot.ImageTaskID != "" || shot.ProviderError != nil || shot.ImageAssetID != "" || shot.OutputAssetID != "" || shot.ResultURL != "" || shot.ReservationID != "" || shot.Stage != "" || shot.ProviderID != "" || shot.ChargedMicro != 0 || shot.PendingChargeMicro != 0 || shot.ReservedMicro != 0 || shot.ReleasedMicro != 0 || shot.ProviderUsageTokens != 0 || shot.TokenChargeMicro != 0 || shot.TokenRateMicroPerMillion != 0 || shot.TokenCostMicroPerMillion != 0
 }
 
 func preserveReferencePreparationAttempt(p *Project, plan Plan, shots []Shot, quote int64) {
