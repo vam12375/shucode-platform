@@ -57,7 +57,8 @@ lint:
 	$(DOCKER_RUN) $(GO_IMAGE) sh -c 'test -z "$$(gofmt -l .)" || { gofmt -l .; exit 1; } && go vet ./...'
 
 test:
-	$(DOCKER_WORUN) $(GO_IMAGE) go test -race ./...
+	# 全量 race 套件已超过 Go 默认 10 分钟，显式放宽避免被误杀。
+	$(DOCKER_WORUN) $(GO_IMAGE) go test -race -timeout 20m ./...
 
 # 依赖漏洞扫描：固定 govulncheck 版本，避免 CI 每次拉取 latest 漂移。
 vuln:

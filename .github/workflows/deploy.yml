@@ -55,7 +55,8 @@ jobs:
           cd server
           test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
           go vet ./...
-          go test -race ./...
+          # 全量 race 套件已超过默认 10 分钟，显式放宽避免 CI 被误杀。
+          go test -race -timeout 20m ./...
       - name: Go 依赖漏洞扫描
         run: |
           cd server
