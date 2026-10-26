@@ -70,10 +70,13 @@ func (m Model) AllowedDurations() []int {
 }
 
 type VideoReferenceCapability struct {
-	MaxDurationSeconds int   `json:"maxDurationSeconds"`
-	MaxImages          int   `json:"maxImages"`
-	PriceMicro         int64 `json:"priceMicro"`
-	CostMicro          int64 `json:"costMicro"`
+	MaxDurationSeconds int `json:"maxDurationSeconds"`
+	MaxImages          int `json:"maxImages"`
+	// MaxAudioSeconds 是参考音频单段上限；0 表示该型号不接受参考音频。
+	// 整段复刻的音频与原片同源同区间，永远只有一段，因此没有段数字段。
+	MaxAudioSeconds int   `json:"maxAudioSeconds,omitempty"`
+	PriceMicro      int64 `json:"priceMicro"`
+	CostMicro       int64 `json:"costMicro"`
 	// Token* 为「输入包含视频」的每百万视频 token 费率（micro-credit）。
 	// 非零时优先按 Ark completion_tokens 结算；旧按秒价格仅作兼容回退。
 	TokenPriceMicroPerMillion int64 `json:"tokenPriceMicroPerMillion,omitempty"`
@@ -138,15 +141,17 @@ type ShotPlan struct {
 	SourceStart           float64 `json:"sourceStart"`
 	SourceEnd             float64 `json:"sourceEnd"`
 	ReferenceVideoAssetID string  `json:"referenceVideoAssetId,omitempty"`
-	Duration              int     `json:"duration"`
-	Framing               string  `json:"framing"`
-	Camera                string  `json:"camera"`
-	Action                string  `json:"action"`
-	Purpose               string  `json:"purpose"`
-	Prompt                string  `json:"prompt"`
-	ImagePrompt           string  `json:"imagePrompt,omitempty"`
-	AssetID               string  `json:"assetId"`
-	Subtitle              string  `json:"subtitle"`
+	// ReferenceAudioAssetID 与视频片段同源同区间，由 Host 真实上传后经 revise 绑定。
+	ReferenceAudioAssetID string `json:"referenceAudioAssetId,omitempty"`
+	Duration              int    `json:"duration"`
+	Framing               string `json:"framing"`
+	Camera                string `json:"camera"`
+	Action                string `json:"action"`
+	Purpose               string `json:"purpose"`
+	Prompt                string `json:"prompt"`
+	ImagePrompt           string `json:"imagePrompt,omitempty"`
+	AssetID               string `json:"assetId"`
+	Subtitle              string `json:"subtitle"`
 	// 口播文本与屏幕字幕分离；voiceover 未启用时忽略。
 	Narration             string `json:"narration,omitempty"`
 	Transition            string `json:"transition,omitempty"`
@@ -174,6 +179,7 @@ type Shot struct {
 	ImageTaskID           string         `json:"imageTaskId,omitempty"`
 	ImageNextQueryAt      time.Time      `json:"imageNextQueryAt,omitempty"`
 	ReferenceVideoAssetID string         `json:"referenceVideoAssetId,omitempty"`
+	ReferenceAudioAssetID string         `json:"referenceAudioAssetId,omitempty"`
 	ResultURL             string         `json:"resultUrl,omitempty"`
 	ImageAssetID          string         `json:"imageAssetId,omitempty"`
 	OutputAssetID         string         `json:"outputAssetId,omitempty"`

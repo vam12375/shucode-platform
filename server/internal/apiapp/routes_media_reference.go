@@ -60,7 +60,19 @@ func registerMediaReferenceRoutes(router *gin.Engine, deps *Deps) {
 		if !ok {
 			return
 		}
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, media.MaxVideo+(1<<20))
+		// kind 缺省为 video，保持既有客户端行为不变；音频上限更小，按 kind 选择读体上限。
+		kind := c.Request.FormValue("kind")
+		if kind == "" {
+			kind = "video"
+		}
+		bodyLimit := int64(media.MaxVideo)
+		if kind == "audio" {
+			bodyLimit = media.MaxAudio
+		} else if kind != "video" {
+			c.JSON(http.StatusBadRequest, fail(http.StatusBadRequest, "reference_clip_kind_invalid"))
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, bodyLimit+(1<<20))
 		if err := c.Request.ParseMultipartForm(1 << 20); err != nil {
 			c.JSON(http.StatusRequestEntityTooLarge, fail(http.StatusRequestEntityTooLarge, "video_reference_clip_size_limit"))
 			return
@@ -80,7 +92,12 @@ func registerMediaReferenceRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(http.StatusBadRequest, fail(http.StatusBadRequest, "video_reference_clip_invalid"))
 			return
 		}
-		asset, err := deps.Media.UploadReferenceClip(c.Request.Context(), m.Team.ID, c.Request.FormValue("sourceAssetId"), c.Request.FormValue("sourceChecksum"), start, end, file)
+		var asset media.Asset
+		if kind == "audio" {
+			asset, err = deps.Media.UploadReferenceAudio(c.Request.Context(), m.Team.ID, c.Request.FormValue("sourceAssetId"), c.Request.FormValue("sourceChecksum"), start, end, file)
+		} else {
+			asset, err = deps.Media.UploadReferenceClip(c.Request.Context(), m.Team.ID, c.Request.FormValue("sourceAssetId"), c.Request.FormValue("sourceChecksum"), start, end, file)
+		}
 		if err != nil {
 			referenceError(c, deps, err)
 			return
@@ -107,13 +124,13 @@ func referenceError(c *gin.Context, deps *Deps, err error) {
 		status = 409
 	case "source_video_too_large":
 		status = 413
-	case "invalid_source_url", "invalid_source_video", "source_video_probe_failed", "source_video_limits_exceeded", "source_import_cancelled", "video_reference_clip_invalid", "reference_asset_not_found", "reference_asset_not_ready", "video_source_changed":
+	case "invalid_source_url", "invalid_source_video", "source_video_probe_failed", "source_video_limits_exceeded", "source_import_cancelled", "video_reference_clip_invalid", "video_reference_audio_invalid", "video_reference_audio_unsupported", "reference_asset_not_found", "reference_asset_not_ready", "video_source_changed":
 		status = 422
-	case "video_reference_clip_size_limit":
+	case "video_reference_clip_size_limit", "video_reference_audio_size_limit":
 		status = 413
 	case "video_reference_clip_required":
 		status = 400
-	case "video_reference_clip_store_failed":
+	case "video_reference_clip_store_failed", "video_reference_audio_store_failed":
 		status = 500
 	default:
 		mediaError(c, deps, err)

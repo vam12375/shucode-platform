@@ -237,9 +237,13 @@ func (s *Service) ensureVideoReferenceClip(ctx context.Context, p *Project, shot
 	return s.validateUploadedReferenceClip(ctx, p.TeamID, source, clipID)
 }
 
+// internalAssetKinds 限定平台自建、经 Host 上传并校验的片段类型。
+// 参考音频与参考视频走同一存储，但不允许其他 kind 混入内部资产。
+var internalAssetKinds = map[string]bool{"video": true, "audio": true}
+
 // AddInternalAssetIfSame lets concurrent byte-identical retries share one metadata row.
 func (r Repository) AddInternalAssetIfSame(ctx context.Context, team string, asset Asset) error {
-	if !asset.Internal || asset.ID == "" || asset.Kind != "video" || !validSourceChecksum(asset.Checksum) || asset.Size <= 0 {
+	if !asset.Internal || asset.ID == "" || !internalAssetKinds[asset.Kind] || !validSourceChecksum(asset.Checksum) || asset.Size <= 0 {
 		return ErrInvalid
 	}
 	return updateJSON(ctx, r.Store, assetKey(team), []Asset{}, func(assets *[]Asset) error {

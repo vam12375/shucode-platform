@@ -48,6 +48,15 @@ func ValidateModels(models []Model) error {
 			if m.Kind != "video" || c.MaxDurationSeconds < 1 || c.MaxDurationSeconds > MaxReferenceSeconds || c.MaxImages < 1 || c.MaxImages > 8 || c.PriceMicro < 0 || c.PriceMicro > 100_000_000 || c.CostMicro < 0 || c.CostMicro > 100_000_000 || c.TokenPriceMicroPerMillion < 0 || c.TokenPriceMicroPerMillion > 1_000_000_000 || c.TokenCostMicroPerMillion < 0 || c.TokenCostMicroPerMillion > 1_000_000_000 || (c.PriceMicro == 0 && c.TokenPriceMicroPerMillion == 0) {
 				return ErrInvalid
 			}
+			// MaxAudioSeconds 为 0 表示不发参考音频；非零时不小于 2 秒且不超过片段上限，
+			// 否则会出现「视频合法但音频必然超限」的区间。
+			if c.MaxAudioSeconds < 0 || c.MaxAudioSeconds > c.MaxDurationSeconds || c.MaxAudioSeconds == 1 {
+				return ErrInvalid
+			}
+			// ToAPIs 的多模态协议没有参考音频槽位，声明了能力却静默丢弃会造成误导。
+			if m.Adapter == "toapis" && c.MaxAudioSeconds > 0 {
+				return ErrInvalid
+			}
 		}
 		if m.Kind == "image" && m.GenerateAudio {
 			return ErrInvalid

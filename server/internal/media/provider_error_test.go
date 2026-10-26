@@ -14,6 +14,9 @@ import (
 func TestProviderErrorOnlyAcceptsBoundedCodesAndKnownCategories(t *testing.T) {
 	for _, tc := range []struct{ code, category string }{
 		{"InputImageSensitiveContentDetected", "content_policy"},
+		{"OutputVideoSensitiveContentDetected.PolicyViolation", "content_policy"},
+		{"OutputVideoSensitiveContentDetected.PrivacyInformation", "content_policy"},
+		{"InputImageSensitiveContentDetected.PrivacyInformation", "content_policy"},
 		{"InvalidParameter", "invalid_input"},
 		{"AuthenticationError", "authentication"},
 		{"ModelNotOpen", "authentication"},

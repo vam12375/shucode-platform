@@ -9,6 +9,31 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.57.0] - 2026-10-26
+
+### 新增(原片参考音频与审核子码)
+
+- 复刻原片参考新增音频复用：`VideoReferenceCapability` 增加 `maxAudioSeconds`（0 表示不发送，
+  非零为 2–片段上限），`ShotPlan`/`Shot` 增加 `referenceAudioAssetId`；Host 通过现有
+  reference-clips 端点以 `kind=audio` 上传 PCM WAV（≤16 MiB），复用同源、同区间、校验和与
+  时长匹配校验，并使用独立 UUIDv5 命名空间。
+- Ark 视频请求在视频项之后追加 `audio_url` + `role: reference_audio`；仅当模型声明音频能力
+  且原片时长不超限时提交，未绑定或未达能力上限时降级为无音频请求，不阻断付费生成；
+  ToAPIs 不声明该能力。
+- 媒体模型控制台新增参考音频上限配置，按 0 或 2–片段上限校验，JSON 往返与共享字段冲突
+  检测同步。
+- Ark 内容审核错误补充 `.PolicyViolation` / `.PrivacyInformation` 子码，逐个精确归入既有
+  `content_policy` 分类，未知子码仍不猜测。
+- 补充音频 content 顺序、WAV 校验/大小限制/同源绑定、准备重试清理、控制台校验与审核子码
+  回归测试。
+
+### 验证
+
+- `make -C server lint test`
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`（79 项）
+
 ## [0.56.0] - 2026-10-26
 
 ### 新增（一键视频创作意图与文案字段）

@@ -118,6 +118,7 @@ interface MediaModel {
   videoReference?: {
     maxDurationSeconds: number;
     maxImages: number;
+    maxAudioSeconds?: number;
     costMicro: number;
     priceMicro: number;
     tokenCostMicroPerMillion: number;
@@ -156,6 +157,8 @@ export interface MediaModelDraft {
     enabled: boolean;
     maxDurationSeconds: string;
     maxImages: string;
+    // 0 = 不发送参考音频；非零为单段音频上限秒数。缺省与 0 等价。
+    maxAudioSeconds?: string;
     tokenCostCredits: string;
     tokenPriceCredits: string;
   };
@@ -314,6 +317,10 @@ export function toDraft(model: MediaModel): MediaModelDraft {
             enabled: true,
             maxDurationSeconds: String(model.videoReference.maxDurationSeconds),
             maxImages: String(model.videoReference.maxImages),
+            // 只在后台已声明时回填，避免给没有音频能力的型号凭空补字段。
+            ...(model.videoReference.maxAudioSeconds
+              ? { maxAudioSeconds: String(model.videoReference.maxAudioSeconds) }
+              : {}),
             tokenCostCredits: priceInputValue(model.videoReference.tokenCostMicroPerMillion ?? 0),
             tokenPriceCredits: priceInputValue(model.videoReference.tokenPriceMicroPerMillion ?? 0),
           },
@@ -355,6 +362,9 @@ export function toApiModel(draft: MediaModelDraft): MediaModel {
           videoReference: {
             maxDurationSeconds: Number(draft.videoReference.maxDurationSeconds),
             maxImages: Number(draft.videoReference.maxImages),
+            ...(Number(draft.videoReference.maxAudioSeconds || "0") > 0
+              ? { maxAudioSeconds: Number(draft.videoReference.maxAudioSeconds) }
+              : {}),
             // 旧按秒口径跟随档位主价格，仅为兼容历史制作单保留。
             costMicro,
             priceMicro,
@@ -402,6 +412,7 @@ function sharedFields(draft: MediaModelDraft): Record<string, unknown> {
     视频参考开关: vr !== null,
     视频参考时长上限: vr?.maxDurationSeconds.trim() ?? null,
     视频参考图上限: vr?.maxImages.trim() ?? null,
+    参考音频时长上限: vr ? (vr.maxAudioSeconds ?? "0").trim() : null,
     "视频参考 token 成本": vr?.tokenCostCredits.trim() ?? null,
     "视频参考 token 售价": vr?.tokenPriceCredits.trim() ?? null,
   };
@@ -519,6 +530,19 @@ export function validateDrafts(
       const maxImages = Number(draft.videoReference.maxImages);
       if (!Number.isSafeInteger(maxImages) || maxImages < 1 || maxImages > 8) {
         return `「${label}」视频参考图上限必须为 1–8 张的整数。`;
+      }
+      // 0 表示该型号不发送参考音频；非零时必须 ≥2 秒且不超过片段上限，与平台校验同口径。
+      const audioRaw = (draft.videoReference.maxAudioSeconds ?? "0").trim();
+      if (!/^\d+$/.test(audioRaw)) {
+        return `「${label}」参考音频上限必须为 0 或 2–90 的整数。`;
+      }
+      const maxAudioSeconds = Number(audioRaw);
+      if (
+        !Number.isSafeInteger(maxAudioSeconds) ||
+        maxAudioSeconds === 1 ||
+        maxAudioSeconds > maxDurationSeconds
+      ) {
+        return `「${label}」参考音频上限必须为 0 或 2–${maxDurationSeconds} 的整数。`;
       }
       const rates = [
         ["token 成本", draft.videoReference.tokenCostCredits || "0"],
@@ -1939,6 +1963,26 @@ function MediaFamilyCard({
                     }
                   />
                 </label>
+                {!isToapis ? <label className="field">
+                  <span className="field-label">参考音频上限（秒）</span>
+                  <input
+                    className="input num"
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={Number(reference.maxDurationSeconds) || 90}
+                    step={1}
+                    aria-label={`模型 ${name} 参考音频时长上限`}
+                    value={reference.maxAudioSeconds ?? "0"}
+                    disabled={busy}
+                    onChange={(event) =>
+                      onUpdateFamily(indexes, {
+                        videoReference: { ...reference, maxAudioSeconds: event.target.value },
+                      })
+                    }
+                  />
+                  <span className="video-reference-note">0 = 不发送原片音轨；Ark 2.0 单段上限 15 秒</span>
+                </label> : null}
                 {!isToapis ? <label className="field">
                   <span className="field-label">Token 成本（Credit/1M token）</span>
                   <input

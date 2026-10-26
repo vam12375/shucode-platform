@@ -45,7 +45,11 @@ func sanitizeProviderError(code string) *ProviderError {
 	category := ""
 	// 只按已知 code 精确分类；未知 code 保留以便核对，不能从供应商原文猜测失败原因。
 	switch code {
-	case "InputTextSensitiveContentDetected", "InputImageSensitiveContentDetected", "InputVideoSensitiveContentDetected", "OutputTextSensitiveContentDetected", "OutputImageSensitiveContentDetected", "OutputVideoSensitiveContentDetected":
+	// Ark 会在基础码后追加子码：.PolicyViolation 表示版权/知名 IP 限制，
+	// .PrivacyInformation 表示疑似真人肖像。两者都属于内容审核，复用既有分类保持客户端枚举不变。
+	case "InputTextSensitiveContentDetected", "InputImageSensitiveContentDetected", "InputVideoSensitiveContentDetected", "OutputTextSensitiveContentDetected", "OutputImageSensitiveContentDetected", "OutputVideoSensitiveContentDetected",
+		"InputTextSensitiveContentDetected.PolicyViolation", "InputImageSensitiveContentDetected.PolicyViolation", "InputVideoSensitiveContentDetected.PolicyViolation", "OutputTextSensitiveContentDetected.PolicyViolation", "OutputImageSensitiveContentDetected.PolicyViolation", "OutputVideoSensitiveContentDetected.PolicyViolation",
+		"InputTextSensitiveContentDetected.PrivacyInformation", "InputImageSensitiveContentDetected.PrivacyInformation", "InputVideoSensitiveContentDetected.PrivacyInformation", "OutputTextSensitiveContentDetected.PrivacyInformation", "OutputImageSensitiveContentDetected.PrivacyInformation", "OutputVideoSensitiveContentDetected.PrivacyInformation":
 		category = "content_policy"
 	case "InvalidParameter", "MissingParameter", "InvalidParameter.Unsupported", "InvalidParameter.NotFound":
 		category = "invalid_input"

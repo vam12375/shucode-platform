@@ -102,7 +102,7 @@ func videoSubmitBody(m Model, b Brief, s ShotPlan, image string, referenceVideo 
 	return videoSubmitBodyWithImages(m, b, s, []string{image}, video)
 }
 
-func videoContent(prompt string, images []string, referenceVideo string) []any {
+func videoContent(prompt string, images []string, referenceVideo string, referenceAudio ...string) []any {
 	content := []any{map[string]any{"type": "text", "text": prompt}}
 	for i, image := range images {
 		role := "first_frame"
@@ -116,12 +116,16 @@ func videoContent(prompt string, images []string, referenceVideo string) []any {
 	if referenceVideo != "" {
 		content = append(content, map[string]any{"type": "video_url", "video_url": map[string]string{"url": referenceVideo}, "role": "reference_video"})
 	}
+	// 参考音频与原片同源，用于保住卡点；缺失时只是降级，不改变其他 content 项。
+	if len(referenceAudio) > 0 && referenceAudio[0] != "" {
+		content = append(content, map[string]any{"type": "audio_url", "audio_url": map[string]string{"url": referenceAudio[0]}, "role": "reference_audio"})
+	}
 	return content
 }
 
-func videoSubmitBodyWithImages(m Model, b Brief, s ShotPlan, images []string, referenceVideo string) map[string]any {
+func videoSubmitBodyWithImages(m Model, b Brief, s ShotPlan, images []string, referenceVideo string, referenceAudio ...string) map[string]any {
 	// 原 true 会启用供应商可见水印；制作视频统一显式关闭，保留原首帧和视频参考语义。
-	body := map[string]any{"model": m.UpstreamModel, "content": videoContent(s.Prompt, images, referenceVideo), "resolution": b.Resolution, "ratio": providerVideoRatio(b.AspectRatio), "duration": s.Duration, "watermark": false}
+	body := map[string]any{"model": m.UpstreamModel, "content": videoContent(s.Prompt, images, referenceVideo, referenceAudio...), "resolution": b.Resolution, "ratio": providerVideoRatio(b.AspectRatio), "duration": s.Duration, "watermark": false}
 	// 只在模型显式开启时下发；Seedance 1.0 等不支持该参数的模型保持原请求不变。
 	if m.GenerateAudio {
 		body["generate_audio"] = true
@@ -137,7 +141,7 @@ func (p Provider) SubmitWithReference(ctx context.Context, m Model, b Brief, s S
 	return p.SubmitWithReferenceImages(ctx, m, b, s, []string{image}, referenceVideo)
 }
 
-func (p Provider) SubmitWithReferenceImages(ctx context.Context, m Model, b Brief, s ShotPlan, images []string, referenceVideo string) (string, error) {
+func (p Provider) SubmitWithReferenceImages(ctx context.Context, m Model, b Brief, s ShotPlan, images []string, referenceVideo string, referenceAudio ...string) (string, error) {
 	if len(images) == 0 {
 		return "", fmt.Errorf("first_frame_required")
 	}
@@ -150,6 +154,7 @@ func (p Provider) SubmitWithReferenceImages(ctx context.Context, m Model, b Brie
 		return "", fmt.Errorf("video_reference_unsupported")
 	}
 	if p.Adapter == "toapis" {
+		// ToAPIs 的多模态协议没有参考音频槽位，目录校验已拒绝该能力声明。
 		return p.submitToAPIs(ctx, m, CanvasRequest{Prompt: s.Prompt, Resolution: b.Resolution, AspectRatio: b.AspectRatio, Duration: s.Duration}, images, referenceVideo)
 	}
 	if p.Adapter != "" && p.Adapter != "ark" {
@@ -158,7 +163,7 @@ func (p Provider) SubmitWithReferenceImages(ctx context.Context, m Model, b Brie
 	var out struct {
 		ID string `json:"id"`
 	}
-	err := p.request(ctx, "POST", "/contents/generations/tasks", videoSubmitBodyWithImages(m, b, s, images, referenceVideo), &out)
+	err := p.request(ctx, "POST", "/contents/generations/tasks", videoSubmitBodyWithImages(m, b, s, images, referenceVideo, referenceAudio...), &out)
 	if err != nil {
 		return "", err
 	}

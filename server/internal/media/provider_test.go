@@ -92,6 +92,32 @@ func TestVideoSubmitRequiresFirstFrameBeforeRequest(t *testing.T) {
 	}
 }
 
+func TestVideoContentAddsReferenceAudioAfterVideo(t *testing.T) {
+	images := []string{"https://example.test/first.png"}
+	for _, tc := range []struct {
+		name, audio string
+		want        int
+	}{
+		{"with-audio", "https://example.test/source.wav", 4},
+		// 音频缺失只降级为视频参考，不能产生空 audio_url 项。
+		{"without-audio", "", 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			content := videoContent("商品展示", images, "https://example.test/source.mp4", tc.audio)
+			if len(content) != tc.want {
+				t.Fatalf("content = %#v", content)
+			}
+			if tc.audio == "" {
+				return
+			}
+			item := content[len(content)-1].(map[string]any)
+			if item["type"] != "audio_url" || item["role"] != "reference_audio" || item["audio_url"].(map[string]string)["url"] != tc.audio {
+				t.Fatalf("unexpected audio item: %#v", item)
+			}
+		})
+	}
+}
+
 func TestVideoGenerationDisablesWatermarkAcrossEntryPoints(t *testing.T) {
 	for _, tc := range []struct {
 		name, entry, video string

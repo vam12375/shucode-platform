@@ -151,7 +151,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			return s.failVideoReference(ctx, p, index, shot, "provider_input_unsupported")
 		}
 	}
-	var referenceVideoURL string
+	var referenceVideoURL, referenceAudioURL string
 	if videoReferenceRequested(p) {
 		videoModelID := p.Brief.VideoModel
 		if p.Canvas != nil {
@@ -171,6 +171,16 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			return s.failVideoReference(ctx, p, index, shot, "video_reference_clip_size_limit")
 		}
 		referenceVideoURL = clip.URL
+		// 参考音频只延长卡点一致性，未绑定或超出能力上限时降级为无音频请求，不能阻断付费生成。
+		if videoModel.VideoReference.MaxAudioSeconds > 0 &&
+			p.Brief.ReferenceDurationSeconds > 0 &&
+			p.Brief.ReferenceDurationSeconds <= float64(videoModel.VideoReference.MaxAudioSeconds) {
+			audio, audioErr := s.ensureReferenceAudio(ctx, p, shot)
+			if audioErr != nil {
+				return s.failVideoReference(ctx, p, index, shot, audioErr.Error())
+			}
+			referenceAudioURL = audio.URL
+		}
 	}
 	if shot.Status == "image_saved" || shot.Status == "video_saved" {
 		usage := s.usage(p, shot, m)
@@ -435,7 +445,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		for _, assetID := range replacementImageIDs {
 			images = append(images, s.Blobs.URL(p.TeamID, assetID))
 		}
-		id, e = provider.SubmitWithReferenceImages(ctx, m, p.Brief, shot.Plan, images, referenceVideoURL)
+		id, e = provider.SubmitWithReferenceImages(ctx, m, p.Brief, shot.Plan, images, referenceVideoURL, referenceAudioURL)
 	} else {
 		id, e = provider.SubmitWithReference(ctx, m, p.Brief, shot.Plan, image, referenceVideoURL)
 	}

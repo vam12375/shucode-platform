@@ -162,6 +162,16 @@ func (s *Service) Revise(ctx context.Context, team, id string, version int64, pl
 					return resolveErr
 				}
 				shots[i].ReferenceVideoAssetID = shots[i].Plan.ReferenceVideoAssetID
+				// 音频绑定是可选降级项：未传时不校验，传了就必须通过同源与字节校验。
+				if shots[i].Plan.ReferenceAudioAssetID != "" {
+					if model.VideoReference.MaxAudioSeconds <= 0 {
+						return fmt.Errorf("video_reference_audio_unsupported")
+					}
+					if _, resolveErr = s.validateUploadedReferenceAudio(ctx, team, source, shots[i].Plan.ReferenceAudioAssetID); resolveErr != nil {
+						return resolveErr
+					}
+					shots[i].ReferenceAudioAssetID = shots[i].Plan.ReferenceAudioAssetID
+				}
 			}
 			preserveReferencePreparationAttempt(p, plan, shots, total)
 		} else {

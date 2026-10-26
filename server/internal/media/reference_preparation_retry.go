@@ -11,6 +11,8 @@ func withoutReferenceClipBindings(plan Plan) Plan {
 	plan.Shots = append([]ShotPlan(nil), plan.Shots...)
 	for i := range plan.Shots {
 		plan.Shots[i].ReferenceVideoAssetID = ""
+		// 音频绑定与视频片段同批准备，不一起清空会让 equalAnalysisPlan 误判方案已变。
+		plan.Shots[i].ReferenceAudioAssetID = ""
 	}
 	return plan
 }
@@ -58,7 +60,7 @@ func (s *Service) retryReferencePreparation(ctx context.Context, p *Project) err
 		return ErrConflict
 	}
 	execution := shot.Plan
-	execution.ReferenceVideoAssetID = ""
+	execution.ReferenceVideoAssetID, execution.ReferenceAudioAssetID = "", ""
 	if execution != shots[0].Plan {
 		return ErrConflict
 	}
@@ -72,6 +74,7 @@ func (s *Service) retryReferencePreparation(ctx context.Context, p *Project) err
 	// 原报价、模型、源范围和分析结算均保持冻结；同一 CAS 只撤销错误片段并回到 Host 准备入口。
 	p.Plan = &plan
 	shot.Plan.ReferenceVideoAssetID, shot.ReferenceVideoAssetID = "", ""
+	shot.Plan.ReferenceAudioAssetID, shot.ReferenceAudioAssetID = "", ""
 	shot.Status, shot.Error = "pending", ""
 	shot.Attempt++
 	p.Status, p.Error = "review", ""

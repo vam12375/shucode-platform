@@ -61,9 +61,31 @@ const validDraft = () => ({
     enabled: true,
     maxDurationSeconds: "15",
     maxImages: "3",
+    maxAudioSeconds: "0",
     tokenCostCredits: "14",
     tokenPriceCredits: "20",
   },
+});
+
+test("reference audio limit round trips only when enabled and bounded by the clip limit", () => {
+  const draft = validDraft();
+  draft.videoReference.maxAudioSeconds = "15";
+  const saved = output.toApiModel(draft);
+  assert.equal(saved.videoReference.maxAudioSeconds, 15);
+  assert.equal(output.toDraft(saved).videoReference.maxAudioSeconds, "15");
+
+  // 0 表示不发送参考音频，不能写成显式字段。
+  draft.videoReference.maxAudioSeconds = "0";
+  assert.equal(output.toApiModel(draft).videoReference.maxAudioSeconds, undefined);
+
+  for (const invalid of ["1", "16", "-1", "2.5"]) {
+    draft.videoReference.maxAudioSeconds = invalid;
+    assert.match(
+      output.validateDrafts([draft], [provider]),
+      /参考音频上限/,
+      `expected ${invalid} to be rejected`,
+    );
+  }
 });
 
 test("editing media prices and JSON round trips retain the root display name", () => {

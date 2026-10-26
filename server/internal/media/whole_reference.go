@@ -24,6 +24,7 @@ func referenceReviewPlan(project *Project, plan Plan) (Plan, error) {
 	plan.Shots = append([]ShotPlan(nil), plan.Shots...)
 	for i := range plan.Shots {
 		plan.Shots[i].ReferenceVideoAssetID = ""
+		plan.Shots[i].ReferenceAudioAssetID = ""
 	}
 	return plan, nil
 }
