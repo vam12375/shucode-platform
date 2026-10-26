@@ -178,7 +178,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(503, fail(503, "reference_pricing_unavailable"))
 			return
 		}
-		c.JSON(200, okData(gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": quota - used, "reservedMicro": int64(0), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "assets": assets, "projects": projects, "generations": generations, "compositionAvailable": media.CompositionAvailable(), "referencePricing": pricing}))
+		c.JSON(200, okData(gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": quota - used, "reservedMicro": int64(0), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "assets": assets, "projects": projects, "generations": generations, "compositionAvailable": media.CompositionAvailable(), "referencePricing": pricing, "capabilities": media.Capabilities()}))
 	})
 	router.POST("/api/v1/media/assets", func(c *gin.Context) {
 		_, m, ok := mediaIdentity(c, deps)

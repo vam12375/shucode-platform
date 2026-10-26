@@ -115,6 +115,15 @@ type Brief struct {
 	ReferenceAssetID         string   `json:"referenceAssetId,omitempty"`
 	ReferenceDurationSeconds float64  `json:"referenceDurationSeconds,omitempty"`
 	ReplacementInstructions  string   `json:"replacementInstructions,omitempty"`
+	// 创作意图与文案控制，全部可选；客户端仅在 overview 声明 capability 时发送。
+	Audience          string `json:"audience,omitempty"`
+	Tone              string `json:"tone,omitempty"`
+	HookStyle         string `json:"hookStyle,omitempty"`
+	CallToAction      string `json:"callToAction,omitempty"`
+	AvoidClaims       string `json:"avoidClaims,omitempty"`
+	Script            string `json:"script,omitempty"`
+	NarrationLanguage string `json:"narrationLanguage,omitempty"`
+	VariantCount      int    `json:"variantCount,omitempty"`
 }
 type Reference struct {
 	URL             string    `json:"url"`
@@ -138,11 +147,13 @@ type ShotPlan struct {
 	ImagePrompt           string  `json:"imagePrompt,omitempty"`
 	AssetID               string  `json:"assetId"`
 	Subtitle              string  `json:"subtitle"`
-	Transition            string  `json:"transition,omitempty"`
-	TransitionDescription string  `json:"transitionDescription,omitempty"`
-	Subject               string  `json:"subject,omitempty"`
-	Scene                 string  `json:"scene,omitempty"`
-	Sound                 string  `json:"sound,omitempty"`
+	// 口播文本与屏幕字幕分离；voiceover 未启用时忽略。
+	Narration             string `json:"narration,omitempty"`
+	Transition            string `json:"transition,omitempty"`
+	TransitionDescription string `json:"transitionDescription,omitempty"`
+	Subject               string `json:"subject,omitempty"`
+	Scene                 string `json:"scene,omitempty"`
+	Sound                 string `json:"sound,omitempty"`
 }
 type Plan struct {
 	References []Reference `json:"references"`

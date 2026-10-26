@@ -110,6 +110,20 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	if !replica && len(b.Platforms) == 0 {
 		return ErrInvalid
 	}
+	// 创作意图来自客户端可选字段：长度与枚举必须与共享 schema 一致，
+	// 否则客户端认为合法的输入会被这里静默拒绝。variantCount 只在平台声明 planVariants 后使用。
+	if utf8.RuneCountInString(b.Audience) > 200 || utf8.RuneCountInString(b.CallToAction) > 200 || utf8.RuneCountInString(b.AvoidClaims) > 2000 || utf8.RuneCountInString(b.Script) > 4000 || b.VariantCount < 0 || b.VariantCount > 3 {
+		return ErrInvalid
+	}
+	if b.Tone != "" && !slices.Contains([]string{"professional", "lifestyle", "energetic", "warm", "luxury", "playful"}, b.Tone) {
+		return ErrInvalid
+	}
+	if b.HookStyle != "" && !slices.Contains([]string{"question", "pain_point", "result_first", "contrast", "story"}, b.HookStyle) {
+		return ErrInvalid
+	}
+	if b.NarrationLanguage != "" && !slices.Contains([]string{"zh-CN", "en-US", "ja-JP", "ko-KR"}, b.NarrationLanguage) {
+		return ErrInvalid
+	}
 	for _, p := range b.Platforms {
 		if p != "douyin" && p != "xiaohongshu" {
 			return ErrInvalid
@@ -199,7 +213,7 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 	duration := 0
 	sourceEnd := float64(0)
 	for _, p := range plan.Shots {
-		if utf8.RuneCountInString(p.Prompt) > 4000 || utf8.RuneCountInString(p.ImagePrompt) > 4000 || utf8.RuneCountInString(p.Subtitle) > 300 || utf8.RuneCountInString(p.Camera) > 500 || utf8.RuneCountInString(p.Framing) > 500 || utf8.RuneCountInString(p.Action) > 1000 || utf8.RuneCountInString(p.Purpose) > 500 {
+		if utf8.RuneCountInString(p.Prompt) > 4000 || utf8.RuneCountInString(p.ImagePrompt) > 4000 || utf8.RuneCountInString(p.Subtitle) > 300 || utf8.RuneCountInString(p.Narration) > 300 || utf8.RuneCountInString(p.Camera) > 500 || utf8.RuneCountInString(p.Framing) > 500 || utf8.RuneCountInString(p.Action) > 1000 || utf8.RuneCountInString(p.Purpose) > 500 {
 			return nil, 0, ErrInvalid
 		}
 		validShotSource := refs[p.SourceURL] || (replica && p.SourceURL == "" && len(b.ReferenceURLs) == 0 && refs[""])

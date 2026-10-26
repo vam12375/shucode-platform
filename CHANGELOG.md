@@ -9,6 +9,19 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.56.0] - 2026-10-26
+
+### 新增（一键视频创作意图与文案字段）
+
+- 媒体 `Brief` 新增可选创作意图字段：受众、语气、开头钩子、行动号召、禁用表述、自定义脚本、旁白语言与方案数量；长度与枚举与客户端共享 schema 一致，非法值按 `ErrInvalid` 拒绝。
+- `ShotPlan` 新增可选 `narration` 口播文本（≤300 字），与屏幕字幕分离，供后续 TTS 使用；当前未启用配音时忽略。
+- `/api/v1/media/overview` 新增 `capabilities`：`creativeBrief` 为 true，`planVariants`／`voiceover`／`bgm`／`subtitleStyle` 保持 false，客户端据此隐藏未实现控件并避免发送未知字段（服务端严格解码会 400）。
+
+### 验证
+
+- `make -C server lint`（gofmt + vet）
+- `make -C server test`（`go test -race ./...`，含 media 与 apiapp）
+
 ## [0.55.0] - 2026-10-25
 
 ### 新增(控制台模型展示页)

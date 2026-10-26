@@ -232,3 +232,20 @@ func (s *Service) compose(ctx context.Context, p *Project) error {
 	})
 	return e
 }
+
+// Capabilities 声明客户端可使用的高级能力。
+//
+// 这些能力需要客户端与服务端同步演进：服务端严格解码未知字段，
+// 客户端只有在能力位为 true 时才会发送对应字段。未实现的能力必须保持 false，
+// 不能为了界面提前打开，否则用户填写的意图会被静默丢弃或直接 400。
+func Capabilities() map[string]bool {
+	return map[string]bool{
+		// 创作意图（受众/语气/钩子/行动号召/禁用表述/脚本/旁白语言）已由 Brief 接收。
+		"creativeBrief": true,
+		// 配音、配乐、字幕样式与多方案变体尚未实现，禁止提前置真。
+		"planVariants":  false,
+		"voiceover":     false,
+		"bgm":           false,
+		"subtitleStyle": false,
+	}
+}
