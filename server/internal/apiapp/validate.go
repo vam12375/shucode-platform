@@ -130,8 +130,9 @@ func emailShape(value string) bool {
 // parseURLCursor:usage/audit 的 (createdAt, id) 游标,对客户端不透明。
 const cursorSeparator = "~"
 
-func encodeUsageCursor(createdAt, id string) string {
-	return createdAt + cursorSeparator + id
+func encodeUsageCursor(createdAt time.Time, id string) string {
+	// 展示时间沿用毫秒格式，游标必须保留数据库的完整精度；截断微秒会漏掉同毫秒内的剩余记录。
+	return createdAt.UTC().Format(time.RFC3339Nano) + cursorSeparator + id
 }
 
 func decodeUsageCursor(cursor string) (string, string, bool) {

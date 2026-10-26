@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"strconv"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -141,7 +143,7 @@ func (s *PostgresStore) ListAuditLogs(ctx context.Context, filter AuditLogFilter
 				$2::timestamptz IS NULL
 				OR (a.created_at, a.id) < ($2::timestamptz, $3::uuid)
 			)
-		ORDER BY a.created_at DESC
+		ORDER BY a.created_at DESC, a.id DESC
 		LIMIT $4`,
 		emptyToNil(filter.ActorUserID), nullableTime(filter.CursorCreatedAt), nullIfEmpty(filter.CursorID),
 		int64(clampLimit(filter.Limit)), nullIfEmpty(filter.TeamID))
@@ -323,7 +325,16 @@ func listUsageWhere(filter UsageFilter) (string, []any) {
 				OR (created_at, id) < ($8::timestamptz, $9::uuid)
 			)
 			AND ($10::text IS NULL OR request_id = $10)
-   AND ($11::text[] IS NULL OR model = ANY($11::text[]))`, args
+			AND ($11::text[] IS NULL OR model = ANY($11::text[]))`, args
+}
+
+func listUsageQuery(filter UsageFilter, limit int64) (string, []any) {
+	where, args := listUsageWhere(filter)
+	// 多模型筛选追加了 text[] 参数，导出的固定 LIMIT $11 曾误指该数组。
+	// 统一按 WHERE 实参数量生成 LIMIT，并以 id 打破同时间并列，保证游标分页不漏单。
+	query := `SELECT ` + usageCols + ` FROM usage_records ` + where +
+		` ORDER BY created_at DESC, id DESC LIMIT $` + strconv.Itoa(len(args)+1)
+	return query, append(args, limit)
 }
 
 func nullableUsageStatus(s UsageStatus) any {
@@ -334,10 +345,8 @@ func nullableUsageStatus(s UsageStatus) any {
 }
 
 func (s *PostgresStore) ListUsage(ctx context.Context, filter UsageFilter) ([]UsageRecord, error) {
-	where, args := listUsageWhere(filter)
-	rows, err := s.pool.Query(ctx,
-		`SELECT `+usageCols+` FROM usage_records `+where+` ORDER BY created_at DESC LIMIT $12`,
-		argsList(args, int64(clampLimit(filter.Limit)))...)
+	query, args := listUsageQuery(filter, int64(clampLimit(filter.Limit)))
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -452,12 +461,29 @@ func isGlobalUsageFilter(filter UsageFilter) bool {
 		filter.CursorCreatedAt == nil && filter.CursorID == ""
 }
 
+func usageSeriesHasWholeHourBounds(filter UsageFilter) bool {
+	if filter.From != nil && !filter.From.Equal(filter.From.Truncate(time.Hour)) {
+		return false
+	}
+	if filter.To != nil {
+		// to 是闭区间；只有小时末的最后一纳秒才覆盖完整桶，整点本身仅包含下一桶的起点。
+		exclusiveEnd := filter.To.Add(time.Nanosecond)
+		if !exclusiveEnd.Equal(exclusiveEnd.Truncate(time.Hour)) {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *PostgresStore) AggregateUsageSeries(ctx context.Context, filter UsageFilter, granularity UsageSeriesGranularity) ([]UsageSeriesRow, error) {
 	field := "day"
 	if granularity == SeriesGranularityHour {
 		field = "hour"
 	}
-	if isGlobalUsageFilter(filter) {
+	// 小时汇总只保留整桶总额，无法还原近 24 小时首尾的部分小时。
+	// 非整桶边界必须回到权威明细按原筛选聚合，避免漏首桶、多算末桶。
+	// GROUP BY 1 明确按转换后的桶聚合；同名 bucket_start 会优先指向原始小时列。
+	if isGlobalUsageFilter(filter) && usageSeriesHasWholeHourBounds(filter) {
 		rows, err := s.pool.Query(ctx, `
 			SELECT
 				to_char(
@@ -474,8 +500,8 @@ func (s *PostgresStore) AggregateUsageSeries(ctx context.Context, filter UsageFi
 			FROM usage_hourly_rollups
 			WHERE ($1::timestamptz IS NULL OR bucket_start >= $1::timestamptz)
 				AND ($2::timestamptz IS NULL OR bucket_start <= $2::timestamptz)
-			GROUP BY bucket_start
-			ORDER BY bucket_start ASC`,
+			GROUP BY 1
+			ORDER BY 1 ASC`,
 			nullableTime(filter.From), nullableTime(filter.To), field)
 		if err != nil {
 			return nil, err

@@ -629,7 +629,9 @@ func (s *memoryStore) ListUsageForExport(_ context.Context, filter UsageFilter, 
 		}
 		out = append(out, cloneUsage(record))
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	sort.SliceStable(out, func(i, j int) bool {
+		return cursorOlder(out[j].CreatedAt, out[j].ID, out[i].CreatedAt, out[i].ID)
+	})
 	if int64(len(out)) > max {
 		out = out[:max]
 	}

@@ -9,6 +9,7 @@ import ts from "typescript";
 import * as reasoning from "../src/usage-reasoning.ts";
 import * as costs from "../src/usage-costs.ts";
 import * as time from "../src/time.ts";
+import * as ranges from "../src/usage-range.ts";
 
 const require = createRequire(import.meta.url);
 const chipSource = await readFile(new URL("../src/components/StatusChip.tsx", import.meta.url), "utf8");
@@ -83,15 +84,21 @@ test("legacy model requests and media fees have distinct missing-value semantics
 });
 
 const usageSource = await readFile(new URL("../src/pages/Usage.tsx", import.meta.url), "utf8");
-async function mountUsage(records, isRoot = true, usageOptions = {}) {
+async function mountUsage(records, isRoot = true, usageOptions = {}, providerOptions = []) {
   const slots = [];
   const effects = [];
+  const calls = [];
   let cursor = 0;
   const hooks = {
     useState(initial) {
       const index = cursor++;
       if (!(index in slots)) slots[index] = initial;
       return [slots[index], (value) => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }];
+    },
+    useRef(initial) {
+      const index = cursor++;
+      if (!(index in slots)) slots[index] = { current: initial };
+      return slots[index];
     },
     useEffect(effect) {
       const index = cursor++;
@@ -105,13 +112,14 @@ async function mountUsage(records, isRoot = true, usageOptions = {}) {
     "@shucode-platform/contracts/credits": { MICRO_CREDITS_PER_CREDIT: 1_000_000, formatCreditsDisplay: String },
     "../api.js": {
       api: async (path) => {
+        calls.push(path);
         if (path === "/teams") return { teams: [] };
         if (path === "/users") return { users: [] };
-        if (path === "/providers") return { providers: [] };
+        if (path === "/providers") return { providers: providerOptions };
         if (path.startsWith("/models")) return { models: [] };
         if (path === "/devices") return { devices: [] };
         if (path.startsWith("/usage/series")) return { series: [] };
-        if (path === "/usage") return { records, aggregates: [], nextCursor: null, costSummary: null, ...usageOptions };
+        if (path.split("?")[0] === "/usage") return { records, aggregates: [], nextCursor: null, costSummary: null, ...usageOptions };
         throw new Error(`Unexpected API ${path}`);
       },
     },
@@ -125,6 +133,8 @@ async function mountUsage(records, isRoot = true, usageOptions = {}) {
     "../components/Select.js": { Select: "select" },
     "../components/StatusChip.js": chips,
     "../time.js": time,
+    "../usage-range.js": ranges,
+    "../components/UsageDateRange.js": { UsageDateRange: "UsageDateRange" },
   });
   const render = () => {
     cursor = 0;
@@ -134,7 +144,7 @@ async function mountUsage(records, isRoot = true, usageOptions = {}) {
   };
   render();
   await new Promise(setImmediate);
-  return { render };
+  return { render, calls };
 }
 
 function elements(tree, type) {
@@ -233,6 +243,28 @@ test("non-root usage never renders procurement data even if an unexpected fixtur
   const dialog = elements(ui.render(), "div").find((node) => node.props.role === "dialog");
   assert.doesNotMatch(nodeText(dialog), /采购价|frozen-v1|recorded-upstream-model/);
   assert.equal(elements(dialog, "a").length, 0);
+});
+
+test("only root request logs distinguish suppliers and upstream aliases of one public model", async () => {
+  const records = [
+    costRecord({ id: "route-a", requestId: "request-a", modelDisplayName: "DeepSeek V4.1 Flash", providerId: "provider-a", upstreamModel: "private-channel-a" }),
+    costRecord({ id: "route-b", requestId: "request-b", modelDisplayName: "DeepSeek V4.1 Flash", providerId: "provider-b", upstreamModel: "private-channel-b" }),
+  ];
+  const providers = [{ id: "provider-a", name: "采购渠道甲" }, { id: "provider-b", name: "采购渠道乙" }];
+  const root = await mountUsage(records, true, {}, providers);
+  const rootRows = elements(root.render(), "tr").filter((row) => elements(row, "button").some((button) => button.props["aria-label"]?.startsWith("查看请求详情")));
+  assert.match(nodeText(rootRows[0]), /采购渠道甲 · private-channel-a/);
+  assert.match(nodeText(rootRows[1]), /采购渠道乙 · private-channel-b/);
+  assert.match(nodeText(rootRows[0]), /CNY 0.000001/);
+  const member = await mountUsage(records, false, {}, providers);
+  const memberTree = member.render();
+  assert.ok(elements(memberTree, UsageModel).every((node) => node.props.record.modelDisplayName === "DeepSeek V4.1 Flash"));
+  assert.doesNotMatch(nodeText(memberTree), /采购渠道|private-channel|供应商成本|CNY/);
+  assert.ok(!member.calls.includes("/providers"));
+  elements(memberTree, "button").find((button) => button.props["aria-label"] === "查看请求详情 request-a").props.onClick();
+  const dialog = elements(member.render(), "div").find((node) => node.props.role === "dialog");
+  assert.match(nodeText(dialog), /DeepSeek V4.1 Flash/);
+  assert.doesNotMatch(nodeText(dialog), /采购渠道|private-channel|模型映射|供应商|采购价/);
 });
 
 test("usage filters and distribution labels use projected names while filter values remain opaque", async () => {

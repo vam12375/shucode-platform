@@ -939,7 +939,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		var nextCursor *string
 		if hasMore && len(records) > 0 {
 			last := records[len(records)-1]
-			cursor := encodeUsageCursor(isoString(last.CreatedAt), last.ID)
+			cursor := encodeUsageCursor(last.CreatedAt, last.ID)
 			nextCursor = &cursor
 		}
 		if !prepareModelDisplay(c, deps) {
@@ -962,20 +962,39 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		}
 		ctx := c.Request.Context()
 		granularity := store.SeriesGranularityDay
-		if c.Query("granularity") == "hour" {
+		switch c.Query("granularity") {
+		case "", "day":
+		case "hour":
 			granularity = store.SeriesGranularityHour
+		default:
+			c.JSON(400, fail(400, "趋势粒度只支持 day / hour"))
+			return
 		}
-		fromQuery, toQuery := c.Query("from"), c.Query("to")
-		if granularity == store.SeriesGranularityHour && fromQuery != "" && toQuery != "" {
-			// 仅用于范围长度估算:naive 串统一按 UTC 解析(与 TS 的 +Z 口径一致)。
-			fromTime, fromOK := parseQueryTime(strings.ReplaceAll(fromQuery, " ", "T") + "Z")
-			toTime, toOK := parseQueryTime(strings.ReplaceAll(toQuery, " ", "T") + "Z")
-			if fromOK && toOK {
-				span := toTime.Sub(fromTime)
-				if span > 31*24*time.Hour {
-					c.JSON(400, fail(400, "小时粒度最多查询 31 天范围"))
+		var bounds [2]*time.Time
+		for index, name := range []string{"from", "to"} {
+			if raw := c.Query(name); raw != "" {
+				parsed, valid := parseQueryTime(raw)
+				if !valid {
+					c.JSON(400, fail(400, "趋势时间范围不合法"))
 					return
 				}
+				bounds[index] = &parsed
+			}
+		}
+		if bounds[0] != nil && bounds[1] != nil {
+			// 与实际查询共用即时点解析；重复追加 Z 会让带偏移范围绕过校验。
+			span := bounds[1].Sub(*bounds[0])
+			if span < 0 {
+				c.JSON(400, fail(400, "开始时间不能晚于结束时间"))
+				return
+			}
+			if granularity == store.SeriesGranularityHour && span > 31*24*time.Hour {
+				c.JSON(400, fail(400, "小时粒度最多查询 31 天范围"))
+				return
+			}
+			if span > 3660*24*time.Hour {
+				c.JSON(400, fail(400, "趋势最多查询 3660 天范围"))
+				return
 			}
 		}
 		filter, okFilter, _ := parseUsageQueryFilter(c)
@@ -1220,12 +1239,15 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		var nextCursor *string
 		if hasMore && len(page) > 0 {
 			last := page[len(page)-1]
-			cursor := encodeUsageCursor(isoString(last.CreatedAt), last.ID)
+			cursor := encodeUsageCursor(last.CreatedAt, last.ID)
 			nextCursor = &cursor
 		}
 		rows := make([]auditPublic, 0, len(page))
+		if user.Role != store.RoleRoot && !prepareModelDisplay(c, deps) {
+			return
+		}
 		for _, row := range page {
-			rows = append(rows, toPublicAudit(row))
+			rows = append(rows, auditForConsole(c, row))
 		}
 		c.JSON(200, okData(gin.H{"logs": rows, "nextCursor": nextCursor}))
 	})

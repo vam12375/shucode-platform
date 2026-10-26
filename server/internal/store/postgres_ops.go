@@ -817,10 +817,8 @@ func (s *PostgresStore) ListUsageForExport(ctx context.Context, filter UsageFilt
 	if max > 100_000 {
 		max = 100_000
 	}
-	where, args := listUsageWhere(filter)
-	rows, err := s.pool.Query(ctx,
-		`SELECT `+usageCols+` FROM usage_records `+where+` ORDER BY created_at DESC LIMIT $11`,
-		argsList(args, max)...)
+	query, args := listUsageQuery(filter, max)
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

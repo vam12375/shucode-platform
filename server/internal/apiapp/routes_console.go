@@ -405,7 +405,7 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 		var nextCursor *string
 		if hasMore && len(recent) > 0 {
 			last := recent[len(recent)-1]
-			cursor := encodeUsageCursor(isoString(last.CreatedAt), last.ID)
+			cursor := encodeUsageCursor(last.CreatedAt, last.ID)
 			nextCursor = &cursor
 		}
 		memberRows := make([]any, 0, len(members))

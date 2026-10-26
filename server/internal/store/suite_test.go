@@ -56,8 +56,10 @@ func runSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 	t.Run("providers", func(t *testing.T) { testProviders(t, ctx, s) })
 	t.Run("pricing", func(t *testing.T) { testPricing(t, ctx, s) })
 	t.Run("audit", func(t *testing.T) { testAudit(t, ctx, s) })
+	t.Run("audit-cursor-same-timestamp", func(t *testing.T) { testAuditCursorSameTimestamp(t, ctx, s) })
 	t.Run("config-kv", func(t *testing.T) { testConfigKV(t, ctx, s) })
 	t.Run("usage", func(t *testing.T) { testUsage(t, ctx, s) })
+	t.Run("usage-model-filter-pagination-export", func(t *testing.T) { testUsageModelFilterPaginationExport(t, ctx, s) })
 	t.Run("usage-price-snapshot", func(t *testing.T) { runUsageSnapshotSuite(t, ctx, s) })
 	t.Run("team-policy-limits", func(t *testing.T) { testTeamPolicyLimits(t, ctx, s) })
 	t.Run("budget-carry-active-reservations", func(t *testing.T) { testTenantBudgetCarriesActiveReservations(t, ctx, s) })
@@ -643,7 +645,7 @@ func testUpstreamRoutes(t *testing.T, ctx context.Context, s PlatformStore) {
 	routeA, err := s.CreateUpstreamRoute(ctx, CreateUpstreamRouteInput{
 		ModelID: modelID, ProviderID: providerA.ID, UpstreamModel: "up-a", Priority: 100, Weight: 1, Enabled: true,
 	})
-	if err != nil || routeA == nil || routeA.ProviderName != providerA.Name {
+	if err != nil || routeA == nil || routeA.ProviderName != providerA.Name || !routeA.ProviderEnabled {
 		t.Fatalf("建路由 A: %v %+v", err, routeA)
 	}
 	routeB, err := s.CreateUpstreamRoute(ctx, CreateUpstreamRouteInput{
@@ -668,6 +670,19 @@ func testUpstreamRoutes(t *testing.T, ctx context.Context, s PlatformStore) {
 	}
 	if enabledList, _ := s.ListUpstreamRoutes(ctx, modelID, false); len(enabledList) != 1 {
 		t.Fatalf("停用路由不应出现在启用列表: %+v", enabledList)
+	}
+	if _, err := s.UpdateUpstreamProvider(ctx, providerA.ID, UpdateUpstreamProviderPatch{Enabled: &disabled}); err != nil {
+		t.Fatal(err)
+	}
+	if list, err := s.ListUpstreamRoutes(ctx, modelID, true); err != nil || len(list) != 2 || list[1].ProviderEnabled || !list[1].Enabled {
+		t.Fatalf("供应商停用与路由自身状态应独立返回: %v %+v", err, list)
+	}
+	if enabledList, _ := s.ListUpstreamRoutes(ctx, modelID, false); len(enabledList) != 0 {
+		t.Fatalf("停用供应商不应出现在启用列表: %+v", enabledList)
+	}
+	enabled := true
+	if _, err := s.UpdateUpstreamProvider(ctx, providerA.ID, UpdateUpstreamProviderPatch{Enabled: &enabled}); err != nil {
+		t.Fatal(err)
 	}
 	if deleted, _ := s.DeleteUpstreamRoute(ctx, routeA.ID); !deleted {
 		t.Fatal("删除路由失败")

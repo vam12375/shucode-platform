@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useAuth } from "../auth.js";
+import { Select } from "../components/Select.js";
 import { api } from "../api.js";
 import { Notice } from "../components/StatusChip.js";
 import { formatShanghaiTime } from "../time.js";
@@ -54,52 +56,63 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 export function AuditPage() {
-  const [logs, setLogs] = useState<AuditLogRow[]>([]);
+  const { teamId, user, isRoot, canManageTeam } = useAuth();
+  const [rows, setLogs] = useState<AuditLogRow[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [moreLoading, setMoreLoading] = useState(false);
+  const [pageSize, setPageSize] = useState(50);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageCursors, setPageCursors] = useState<(string | null)[]>([null]);
+  const [responseScope, setResponseScope] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const requestVersion = useRef(0);
+  const pageScope = JSON.stringify([teamId, user.id, isRoot, canManageTeam, pageSize]);
+  const currentPage = responseScope === pageScope;
+  const logs = currentPage ? rows : [];
 
-  const fetchLogs = useCallback((cursor: string | null) => {
-    const params = new URLSearchParams();
+  const load = useCallback(async (
+    cursor: string | null = null,
+    targetPage = 0,
+    cursors: (string | null)[] = [null],
+  ) => {
+    const version = ++requestVersion.current;
+    const params = new URLSearchParams({ limit: String(pageSize) });
     if (cursor) params.set("cursor", cursor);
-    return api<AuditPageData>(
-      `/audit${params.size > 0 ? `?${params.toString()}` : ""}`,
-    );
-  }, []);
-
-  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchLogs(null);
+      const data = await api<AuditPageData>(`/audit?${params.toString()}`);
+      if (version !== requestVersion.current) return;
       setLogs(data.logs);
       setNextCursor(data.nextCursor);
+      setPageIndex(targetPage);
+      setPageCursors(cursors);
+      setResponseScope(pageScope);
       setError(null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "加载失败");
+      if (version === requestVersion.current) setError(loadError instanceof Error ? loadError.message : "加载失败");
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
-  }, [fetchLogs]);
+  }, [pageScope, pageSize]);
 
   useEffect(() => {
+    setPageIndex(0);
+    setPageCursors([null]);
+    setNextCursor(null);
+    setError(null);
     void load();
+    // 团队或权限变化后，迟到的旧页不得覆盖当前范围，也不能复用其分页游标。
+    return () => { requestVersion.current += 1; };
   }, [load]);
 
-  const loadMore = useCallback(async () => {
-    if (!nextCursor || moreLoading) return;
-    setMoreLoading(true);
-    try {
-      const data = await fetchLogs(nextCursor);
-      setLogs((previous) => [...previous, ...data.logs]);
-      setNextCursor(data.nextCursor);
-      setError(null);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "加载失败");
-    } finally {
-      setMoreLoading(false);
-    }
-  }, [fetchLogs, nextCursor, moreLoading]);
+  const previousPage = (): void => {
+    if (loading || !currentPage || pageIndex === 0) return;
+    void load(pageCursors[pageIndex - 1], pageIndex - 1, pageCursors);
+  };
+  const nextPage = (): void => {
+    if (loading || !currentPage || !nextCursor) return;
+    void load(nextCursor, pageIndex + 1, [...pageCursors.slice(0, pageIndex + 1), nextCursor]);
+  };
 
   return (
     <div>
@@ -113,14 +126,14 @@ export function AuditPage() {
 
       {error ? (
         <Notice tone="stop" k="加载失败">
-          {error}
+          {error}{" "}<button className="btn btn-sm" type="button" disabled={loading} onClick={() => void load()}>重试</button>
         </Notice>
       ) : null}
 
       <section className="pane">
         <div className="pane-h">
           <h2>最近动作</h2>
-          <span className="readout">每页 50 条 · 时间倒序</span>
+          <span className="readout">每页 {pageSize} 条 · 时间倒序</span>
         </div>
         <div className="pane-b flush table-scroll vscroll">
           <table className="table">
@@ -170,18 +183,22 @@ export function AuditPage() {
             </tbody>
           </table>
         </div>
-        {nextCursor ? (
-          <div className="pane-b">
-            <button
-              className="btn btn-ghost"
-              type="button"
-              disabled={moreLoading}
-              onClick={() => void loadMore()}
-            >
-              {moreLoading ? "加载中…" : "加载更多"}
-            </button>
+        <nav className="pane-b form-row" aria-label="审计日志分页" style={{ justifyContent: "space-between" }}>
+          <div className="form-row">
+            <Select
+              ariaLabel="审计日志每页条数"
+              value={String(pageSize)}
+              onChange={(value) => setPageSize(Number(value))}
+              options={[20, 50, 100].map((size) => ({ value: String(size), label: `每页 ${size} 条` }))}
+              style={{ width: 130 }}
+            />
+            <span className="readout" aria-live="polite">第 {currentPage ? pageIndex + 1 : 1} 页 · 本页 {logs.length} 条{loading ? " · 加载中…" : ""}</span>
           </div>
-        ) : null}
+          <div className="form-row">
+            <button className="btn btn-ghost" type="button" aria-label="审计日志上一页" disabled={loading || !currentPage || pageIndex === 0} onClick={previousPage}>上一页</button>
+            <button className="btn btn-ghost" type="button" aria-label="审计日志下一页" disabled={loading || !currentPage || !nextCursor} onClick={nextPage}>下一页</button>
+          </div>
+        </nav>
       </section>
     </div>
   );

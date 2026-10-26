@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -23,6 +24,8 @@ import {
   type UsageReasoningParameters,
 } from "../usage-reasoning.js";
 import { UsageModel } from "../components/UsageModel.js";
+import { UsageDateRange } from "../components/UsageDateRange.js";
+import { resolveUsageChartRange, type UsageChartPreset } from "../usage-range.js";
 import {
   ComposedTrendChart,
   ModelDonutChart,
@@ -35,10 +38,8 @@ import { Select } from "../components/Select.js";
 import { Chip, Notice, type ChipTone } from "../components/StatusChip.js";
 import {
   formatShanghaiTime,
-  shanghaiDateOf,
   shanghaiDayEndUtc,
   shanghaiDayStartUtc,
-  shanghaiMonthRange,
 } from "../time.js";
 
 interface TeamOption {
@@ -108,17 +109,7 @@ interface SeriesRow {
   latencyMsSum: number;
 }
 
-type ChartPreset =
-  | "today"
-  | "yesterday"
-  | "7d"
-  | "14d"
-  | "30d"
-  | "month"
-  | "lastMonth";
-type ChartGranularity = "day" | "hour";
-
-/** 与 /console/api/usage 响应对齐：后端直接返回存储层记录，字段全量下发。 */
+/** 非 root 响应仅包含公开模型投影；采购快照和实际路由只对 root 下发。 */
 interface UsageRecordRow extends UsageReasoningParameters {
   id: string;
   requestId: string;
@@ -128,9 +119,9 @@ interface UsageRecordRow extends UsageReasoningParameters {
   model: string;
   modelDisplayName?: string;
   modelKind?: "text" | "image" | "video" | "media";
-  upstreamModel: string;
+  upstreamModel?: string;
   priceSnapshot?: PriceSnapshot | null;
-  providerId: string | null;
+  providerId?: string | null;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -188,8 +179,6 @@ interface UsagePageData {
   costSummary: UsageCostSummary | null;
 }
 
-const DAY = 86_400_000;
-
 function credits(micro: number): string {
   return formatCreditsDisplay(micro / MICRO_CREDITS_PER_CREDIT);
 }
@@ -241,61 +230,6 @@ function compactToken(n: number): string {
   return n.toLocaleString("en-US");
 }
 
-const CHART_PRESETS: { value: ChartPreset; label: string }[] = [
-  { value: "today", label: "今天" },
-  { value: "yesterday", label: "昨天" },
-  { value: "7d", label: "近 7 天" },
-  { value: "14d", label: "近 14 天" },
-  { value: "30d", label: "近 30 天" },
-  { value: "month", label: "本月" },
-  { value: "lastMonth", label: "上月" },
-];
-
-/** 预设的上海墙钟日期区间（闭集，含首尾）。 */
-function presetRange(preset: ChartPreset): { from: string; to: string } {
-  const now = new Date();
-  const today = shanghaiDateOf(now);
-  if (preset === "today") return { from: today, to: today };
-  if (preset === "yesterday") {
-    const yesterday = shanghaiDateOf(new Date(now.getTime() - DAY));
-    return { from: yesterday, to: yesterday };
-  }
-  const span =
-    preset === "7d" ? 7 : preset === "14d" ? 14 : preset === "30d" ? 30 : 0;
-  if (span > 0) {
-    return {
-      from: shanghaiDateOf(new Date(now.getTime() - (span - 1) * DAY)),
-      to: today,
-    };
-  }
-  return preset === "month"
-    ? shanghaiMonthRange(now, 0)
-    : shanghaiMonthRange(now, -1);
-}
-
-/** 补齐时间轴的空桶：key 与后端 bucketStart 对齐（上海墙钟）。hours 全天补零，未来小时显示 0 柱。 */
-function buildBucketKeys(
-  from: string,
-  to: string,
-  granularity: ChartGranularity,
-): string[] {
-  const keys: string[] = [];
-  for (
-    let t = Date.parse(`${from}T00:00:00Z`);
-    t <= Date.parse(`${to}T00:00:00Z`);
-    t += DAY
-  ) {
-    const day = new Date(t).toISOString().slice(0, 10);
-    if (granularity === "day") {
-      keys.push(`${day}T00:00:00`);
-    } else {
-      for (let h = 0; h < 24; h += 1)
-        keys.push(`${day}T${String(h).padStart(2, "0")}:00:00`);
-    }
-  }
-  return keys;
-}
-
 /** 详情弹窗里的单行键值：readout 作键，右对齐作值。 */
 function DetailRow({ k, children }: { k: string; children: ReactNode }) {
   return (
@@ -319,9 +253,9 @@ function DetailRow({ k, children }: { k: string; children: ReactNode }) {
 }
 
 export function UsagePage() {
-  const { isRoot, canManageTeam, user } = useAuth();
-  const [teams, setTeams] = useState<TeamOption[]>([]);
-  const [userEmails, setUserEmails] = useState<Map<string, string>>(new Map());
+  const { isRoot, canManageTeam, user, teamId } = useAuth();
+  const [teamRows, setTeams] = useState<TeamOption[]>([]);
+  const [emailRows, setUserEmails] = useState<Map<string, string>>(new Map());
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [filterUserId, setFilterUserId] = useState("");
@@ -329,28 +263,65 @@ export function UsagePage() {
   const [filterProviderId, setFilterProviderId] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterRequestId, setFilterRequestId] = useState("");
-  const [providers, setProviders] = useState<ProviderOption[]>([]);
-  const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
-  const [usageModelOptions, setUsageModelOptions] = useState<UsageModelOption[]>([]);
-  const [devices, setDevices] = useState<DeviceOption[]>([]);
+  const [providerRows, setProviders] = useState<ProviderOption[]>([]);
+  const [catalogModels, setModelOptions] = useState<ModelOption[]>([]);
+  const [usageModels, setUsageModelOptions] = useState<UsageModelOption[]>([]);
+  const [deviceRows, setDevices] = useState<DeviceOption[]>([]);
   const [detail, setDetail] = useState<UsageRecordRow | null>(null);
-  const [aggregates, setAggregates] = useState<AggregateRow[]>([]);
-  const [records, setRecords] = useState<UsageRecordRow[]>([]);
-  const [costSummary, setCostSummary] = useState<UsageCostSummary | null>(null);
+  const [aggregateRows, setAggregates] = useState<AggregateRow[]>([]);
+  const [recordRows, setRecords] = useState<UsageRecordRow[]>([]);
+  const [costTotals, setCostSummary] = useState<UsageCostSummary | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [moreLoading, setMoreLoading] = useState(false);
-  const [days, setDays] = useState<DayPoint[]>([]);
-  // 默认按小时看当天走势；大范围（>7 天）切预设时仍会自动回落按天。
-  const [chartPreset, setChartPreset] = useState<ChartPreset>("today");
-  const [chartGranularity, setChartGranularity] =
-    useState<ChartGranularity>("hour");
+  const [pageSize, setPageSize] = useState(100);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageCursors, setPageCursors] = useState<(string | null)[]>([null]);
+  const [responseScope, setResponseScope] = useState("");
+  const requestVersion = useRef(0);
+  const [metadataScope, setMetadataScope] = useState("");
+  const [seriesScope, setSeriesScope] = useState("");
+  const [dayRows, setDays] = useState<DayPoint[]>([]);
+  const [chartSelection, setChartSelection] = useState<{ preset: UsageChartPreset; from: string; to: string }>({ preset: "today", from: "", to: "" });
   const [donutBy, setDonutBy] = useState<"tokens" | "credits">("tokens");
   const [error, setError] = useState<string | null>(null);
   const [seriesError, setSeriesError] = useState<string | null>(null);
   const [seriesReloadKey, setSeriesReloadKey] = useState(0);
   const [loading, setLoading] = useState(true);
 
+  // 滚动范围只在选择、应用或刷新时捕获当前时间；普通重渲染不能推进窗口并循环请求。
+  const chartRange = useMemo(() => resolveUsageChartRange(chartSelection.preset, chartSelection.from, chartSelection.to),
+    [chartSelection.preset, chartSelection.from, chartSelection.to, seriesReloadKey]);
+  const chartGranularity = chartRange.granularity;
+  const identityScope = JSON.stringify([teamId, user.id, isRoot, canManageTeam]);
+  const chartScope = JSON.stringify([identityScope, chartRange.queryFrom, chartRange.queryTo, chartGranularity]);
+  const currentMetadata = metadataScope === identityScope;
+  const teams = currentMetadata ? teamRows : [];
+  const userEmails = currentMetadata ? emailRows : new Map<string, string>();
+  const providers = currentMetadata ? providerRows : [];
+  const modelOptions = currentMetadata ? catalogModels : [];
+  const devices = currentMetadata ? deviceRows : [];
+  const days = seriesScope === chartScope ? dayRows : [];
+
+  // 游标只属于创建它的筛选和身份范围，切换团队/权限时不得复用或展示上一范围的记录。
+  const pageScope = JSON.stringify([teamId, user.id, isRoot, canManageTeam, from, to,
+    filterUserId, filterModel, filterProviderId, filterStatus, filterRequestId, pageSize]);
+  const currentPage = responseScope === pageScope;
+  const aggregates = currentPage ? aggregateRows : [];
+  const records = currentPage ? recordRows : [];
+  const costSummary = currentPage ? costTotals : null;
+  // 筛选选项同样属于响应范围；不能在新团队请求尚未返回时显示旧模型目录。
+  const usageModelOptions = currentPage ? usageModels : [];
+
+  const providerLabel = (providerId: string | null | undefined, model: string): string => {
+    if (!providerId) {
+      if (model === "media:reference-analysis") return "平台固定服务（无上游路由）";
+      return model.startsWith("media:") ? "未记录供应商" : "网关默认上游（env 未绑定）";
+    }
+    if (!currentMetadata) return "供应商信息加载中";
+    return providers.find((item) => item.id === providerId)?.name ?? `供应商已删除（${providerId}）`;
+  };
+
   useEffect(() => {
+    let current = true;
     void (async () => {
       try {
         const [teamData, userData, providerData, modelData, deviceData] =
@@ -369,6 +340,7 @@ export function UsagePage() {
               : Promise.resolve({ models: [] }),
             api<{ devices: DeviceOption[] }>("/devices"),
           ]);
+        if (!current) return;
         setTeams(teamData.teams);
         setUserEmails(
           new Map(userData.users.map((user) => [user.id, user.email])),
@@ -376,18 +348,20 @@ export function UsagePage() {
         setProviders(providerData.providers);
         setModelOptions(modelData.models);
         setDevices(deviceData.devices);
+        setMetadataScope(identityScope);
       } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : "加载失败");
+        if (current) setError(loadError instanceof Error ? loadError.message : "加载失败");
       }
     })();
-  }, [isRoot, canManageTeam, user]);
+    return () => { current = false; };
+  }, [isRoot, canManageTeam, user, teamId, identityScope]);
 
   // 趋势图为平台口径，与页内筛选无关；一次 series 请求按上海墙钟分桶，
   // 前端补零对齐时间轴（积分图与缓存率图共用这份数据）。
   useEffect(() => {
+    let current = true;
     void (async () => {
-      const { from, to } = presetRange(chartPreset);
-      const keys = buildBucketKeys(from, to, chartGranularity);
+      const keys = chartRange.bucketKeys;
       const zeroed = new Map(
         keys.map((key) => [
           key,
@@ -401,9 +375,9 @@ export function UsagePage() {
         ]),
       );
       const query = new URLSearchParams({
-        // 查询边界是上海自然日，但服务端按 UTC 解析，必须先换算即时点。
-        from: shanghaiDayStartUtc(from),
-        to: shanghaiDayEndUtc(to),
+        // 工具已将自然日或精确滚动窗口转换为服务端约定的 UTC naive 边界。
+        from: chartRange.queryFrom,
+        to: chartRange.queryTo,
         granularity: chartGranularity,
       });
       setSeriesError(null);
@@ -411,6 +385,7 @@ export function UsagePage() {
         const data = await api<{ series: SeriesRow[] }>(
           `/usage/series?${query.toString()}`,
         );
+        if (!current) return;
         for (const row of data.series) {
           const bucket = zeroed.get(row.bucketStart);
           if (!bucket) continue;
@@ -421,9 +396,12 @@ export function UsagePage() {
             row.inputTokens + row.cacheReadTokens + row.cacheCreationTokens;
         }
         setDays([...zeroed.values()]);
+        setSeriesScope(chartScope);
       } catch (seriesLoadError) {
+        if (!current) return;
         // 失败不能把空桶当成真实零用量展示。
         setDays([]);
+        setSeriesScope(chartScope);
         setSeriesError(
           seriesLoadError instanceof Error
             ? seriesLoadError.message
@@ -431,7 +409,8 @@ export function UsagePage() {
         );
       }
     })();
-  }, [chartPreset, chartGranularity, seriesReloadKey]);
+    return () => { current = false; };
+  }, [chartRange, chartGranularity, chartScope]);
 
   const usageParams = useCallback(
     (cursor?: string) => {
@@ -439,9 +418,9 @@ export function UsagePage() {
       // 服务端把无时区时间按 UTC 解析；这里把上海自然日边界换算成 UTC。
       if (from) params.set("from", shanghaiDayStartUtc(from));
       if (to) params.set("to", shanghaiDayEndUtc(to));
-      if (filterUserId) params.set("userId", filterUserId);
+      if ((isRoot || canManageTeam) && filterUserId) params.set("userId", filterUserId);
       if (filterModel) params.set("model", filterModel);
-      if (filterProviderId) params.set("providerId", filterProviderId);
+      if (isRoot && filterProviderId) params.set("providerId", filterProviderId);
       if (filterStatus) params.set("status", filterStatus);
       if (filterRequestId.trim())
         params.set("requestId", filterRequestId.trim());
@@ -456,17 +435,20 @@ export function UsagePage() {
       filterProviderId,
       filterStatus,
       filterRequestId,
+      isRoot,
+      canManageTeam,
     ],
   );
 
   const fetchUsage = useCallback(
     (cursor: string | null) => {
       const params = usageParams(cursor ?? undefined);
+      params.set("limit", String(pageSize));
       return api<UsagePageData>(
         `/usage${params.size > 0 ? `?${params.toString()}` : ""}`,
       );
     },
-    [usageParams],
+    [usageParams, pageSize],
   );
 
   const exportUsage = useCallback(async (): Promise<void> => {
@@ -497,41 +479,52 @@ export function UsagePage() {
     }
   }, [usageParams]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (
+    cursor: string | null = null,
+    targetPage = 0,
+    cursors: (string | null)[] = [null],
+  ) => {
+    const version = ++requestVersion.current;
     setLoading(true);
+    setDetail(null);
     try {
-      const data = await fetchUsage(null);
+      const data = await fetchUsage(cursor);
+      if (version !== requestVersion.current) return;
       setAggregates(data.aggregates);
-      if (data.modelOptions) setUsageModelOptions(data.modelOptions);
+      setUsageModelOptions(data.modelOptions ?? []);
       setRecords(data.records);
       setCostSummary(data.costSummary);
       setNextCursor(data.nextCursor);
+      setPageIndex(targetPage);
+      setPageCursors(cursors);
+      setResponseScope(pageScope);
       setError(null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "加载失败");
+      if (version === requestVersion.current) setError(loadError instanceof Error ? loadError.message : "加载失败");
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
-  }, [fetchUsage]);
-
-  const loadMoreRecords = useCallback(async () => {
-    if (!nextCursor || moreLoading) return;
-    setMoreLoading(true);
-    try {
-      const data = await fetchUsage(nextCursor);
-      setRecords((previous) => [...previous, ...data.records]);
-      setNextCursor(data.nextCursor);
-      setError(null);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "加载失败");
-    } finally {
-      setMoreLoading(false);
-    }
-  }, [fetchUsage, nextCursor, moreLoading]);
+  }, [fetchUsage, pageScope]);
 
   useEffect(() => {
+    setPageIndex(0);
+    setPageCursors([null]);
+    setNextCursor(null);
+    setDetail(null);
+    setError(null);
     void load();
+    // 旧页请求即使晚于新范围返回，也不能覆盖新页或重新开放旧游标。
+    return () => { requestVersion.current += 1; };
   }, [load]);
+
+  const previousPage = (): void => {
+    if (loading || !currentPage || pageIndex === 0) return;
+    void load(pageCursors[pageIndex - 1], pageIndex - 1, pageCursors);
+  };
+  const nextPage = (): void => {
+    if (loading || !currentPage || !nextCursor) return;
+    void load(nextCursor, pageIndex + 1, [...pageCursors.slice(0, pageIndex + 1), nextCursor]);
+  };
 
   const totalCredits = aggregates.reduce(
     (sum, row) => sum + row.creditsMicro,
@@ -606,10 +599,10 @@ export function UsagePage() {
     ? primaryCostTotal.chargedMicro - primaryCostTotal.costMicro
     : 0;
 
-  // 趋势图当前范围（上海墙钟），预设/粒度切换后随 days 一起刷新。
-  const chartRange = useMemo(() => presetRange(chartPreset), [chartPreset]);
-  const presetLabel =
-    CHART_PRESETS.find((item) => item.value === chartPreset)?.label ?? "";
+  const presetLabel = chartRange.label;
+  const chartRangeLabel = chartSelection.preset === "last24h"
+    ? `${formatShanghaiTime(`${chartRange.queryFrom}Z`).slice(0, 16)} ~ ${formatShanghaiTime(`${chartRange.queryTo}Z`).slice(0, 16)}`
+    : `${chartRange.from} ~ ${chartRange.to}`;
 
   // 模型分布环形图：Token 口径 = 总 prompt（入 + 缓存读 + 缓存写），积分口径 = credit。
   const donutSegments = useMemo(() => {
@@ -656,7 +649,8 @@ export function UsagePage() {
   const chartCacheRate = cacheRate(chartCacheRead, chartCachePrompt);
 
   const bucketLabel = (date: string): string =>
-    chartGranularity === "day" ? date.slice(5, 10) : date.slice(11, 16);
+    chartGranularity === "day" ? date.slice(5, 10)
+      : chartRange.from !== chartRange.to ? `${date.slice(5, 10)} ${date.slice(11, 16)}` : date.slice(11, 16);
 
   const costTrend: ChartDatum[] = days.map((day) => ({
     label: bucketLabel(day.date),
@@ -902,7 +896,7 @@ export function UsagePage() {
               onChange={setFilterModel}
               options={[
                 { value: "", label: "全部模型" },
-                ...(usageModelOptions.length ? usageModelOptions : isRoot ? modelOptions : []).map((model) => ({
+                ...(currentPage ? (usageModelOptions.length ? usageModelOptions : isRoot ? modelOptions : []) : []).map((model) => ({
                   value: model.modelId,
                   label: model.enabled
                     ? model.displayName
@@ -986,40 +980,25 @@ export function UsagePage() {
         <div className="pane-h">
           <h2>积分趋势 · {presetLabel}</h2>
           <div className="form-row" style={{ gap: 8 }}>
-            <Select
-              ariaLabel="趋势时间范围"
-              style={{ width: 126 }}
-              value={chartPreset}
-              onChange={(next) => {
-                const preset = next as ChartPreset;
-                setChartPreset(preset);
-                // 大范围配小时粒度桶数过多，自动回落按天。
-                if (
-                  preset !== "today" &&
-                  preset !== "yesterday" &&
-                  preset !== "7d"
-                ) {
-                  setChartGranularity("day");
+            <UsageDateRange
+              preset={chartSelection.preset}
+              from={chartRange.from}
+              to={chartRange.to}
+              label={presetLabel}
+              onApply={(preset, from, to) => {
+                try {
+                  resolveUsageChartRange(preset, from, to);
+                  setChartSelection({ preset, from, to });
+                  setSeriesReloadKey((value) => value + 1);
+                } catch (cause) {
+                  setSeriesError(cause instanceof Error ? cause.message : "趋势日期范围不合法");
                 }
               }}
-              options={CHART_PRESETS.map((preset) => ({
-                value: preset.value,
-                label: preset.label,
-              }))}
             />
-            <Select
-              ariaLabel="趋势粒度"
-              style={{ width: 96 }}
-              value={chartGranularity}
-              onChange={(next) => setChartGranularity(next as ChartGranularity)}
-              options={[
-                { value: "day", label: "按天" },
-                { value: "hour", label: "按小时" },
-              ]}
-            />
-            <span className="readout">
-              {chartRange.from} ~ {chartRange.to} · 单位 credit
-            </span>
+            <Chip tone="info" title="单个自然日和近24小时按小时；其他范围按天自动分桶">
+              自动 · {chartGranularity === "hour" ? "按小时" : "按天"}
+            </Chip>
+            <span className="readout">{chartRangeLabel} · 单位 credit</span>
           </div>
         </div>
         <div className="pane-b">
@@ -1367,7 +1346,7 @@ export function UsagePage() {
       <section className="pane d2">
         <div className="pane-h">
           <h2>最近请求</h2>
-          <span className="readout">每页 100 条 · 筛选联动</span>
+          <span className="readout">每页 {pageSize} 条 · 筛选联动</span>
         </div>
         <div className="pane-b">
           <p className="readout m0">
@@ -1412,6 +1391,11 @@ export function UsagePage() {
                       {record.model === "media:reference-analysis" ? (
                         <span>{usageModelName(record.model, record.modelDisplayName)}</span>
                       ) : <UsageModel record={record} />}
+                      {isRoot && record.model !== "media:reference-analysis" ? (
+                        <div className="readout" title={`平台模型：${record.model}`}>
+                          {providerLabel(record.providerId, record.model)} · {record.upstreamModel || record.model}
+                        </div>
+                      ) : null}
                     </td>
                     <td>
                       <Chip tone={status.tone}>{status.label}</Chip>
@@ -1442,28 +1426,32 @@ export function UsagePage() {
               {records.length === 0 ? (
                 <tr>
                   <td colSpan={isRoot ? 9 : 7} className="readout">
-                    暂无请求记录。
+                    {loading ? "加载中…" : "暂无请求记录。"}
                   </td>
                 </tr>
               ) : null}
             </tbody>
           </table>
         </div>
-        {nextCursor ? (
-          <div className="pane-b">
-            <button
-              className="btn btn-ghost"
-              type="button"
-              disabled={moreLoading}
-              onClick={() => void loadMoreRecords()}
-            >
-              {moreLoading ? "加载中…" : "加载更多"}
-            </button>
+        <nav className="pane-b form-row" aria-label="最近请求分页" style={{ justifyContent: "space-between" }}>
+          <div className="form-row">
+            <Select
+              ariaLabel="最近请求每页条数"
+              value={String(pageSize)}
+              onChange={(value) => setPageSize(Number(value))}
+              options={[20, 50, 100].map((size) => ({ value: String(size), label: `每页 ${size} 条` }))}
+              style={{ width: 130 }}
+            />
+            <span className="readout" aria-live="polite">第 {currentPage ? pageIndex + 1 : 1} 页 · 本页 {records.length} 条{loading ? " · 加载中…" : ""}</span>
           </div>
-        ) : null}
+          <div className="form-row">
+            <button className="btn btn-ghost" type="button" aria-label="最近请求上一页" disabled={loading || !currentPage || pageIndex === 0} onClick={previousPage}>上一页</button>
+            <button className="btn btn-ghost" type="button" aria-label="最近请求下一页" disabled={loading || !currentPage || !nextCursor} onClick={nextPage}>下一页</button>
+          </div>
+        </nav>
       </section>
 
-      {detail ? (
+      {detail && currentPage ? (
         <div
           className="dialog-backdrop"
           onClick={() => setDetail(null)}
@@ -1484,11 +1472,7 @@ export function UsagePage() {
             {(() => {
               const status = statusChip(detail.status);
               const cost = isRoot ? historicalCostDisplay(detail.priceSnapshot) : null;
-              // providerId 为 null 表示请求未绑定供应商、走了网关 env 默认上游。
-              const provider = detail.providerId
-                ? (providers.find((item) => item.id === detail.providerId)
-                    ?.name ?? "（该供应商已删除）")
-                : "网关默认上游（env 未绑定）";
+              const provider = providerLabel(detail.providerId, detail.model);
               return (
                 <>
                   <DetailRow k="状态">

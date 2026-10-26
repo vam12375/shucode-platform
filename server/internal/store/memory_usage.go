@@ -118,7 +118,10 @@ func (s *memoryStore) ListAuditLogs(_ context.Context, filter AuditLogFilter) ([
 		entry.Detail = append([]byte(nil), entry.Detail...)
 		out = append(out, entry)
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	// 游标按(时间,UUID)比较，排序也必须使用同一元组，不能依赖相同时间的插入顺序。
+	sort.SliceStable(out, func(i, j int) bool {
+		return cursorOlder(out[j].CreatedAt, out[j].ID, out[i].CreatedAt, out[i].ID)
+	})
 	if len(out) > limit {
 		out = out[:limit]
 	}
@@ -219,7 +222,10 @@ func (s *memoryStore) ListUsage(_ context.Context, filter UsageFilter) ([]UsageR
 			out = append(out, cloneUsage(record))
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	// 排序与游标使用同一元组；同时间仅按插入顺序会在下一页跳过更大的 UUID。
+	sort.SliceStable(out, func(i, j int) bool {
+		return cursorOlder(out[j].CreatedAt, out[j].ID, out[i].CreatedAt, out[i].ID)
+	})
 	if len(out) > limit {
 		out = out[:limit]
 	}
@@ -451,8 +457,9 @@ func clampLimit(limit *int64) int {
 	if defaulted < 1 {
 		defaulted = 1
 	}
-	if defaulted > 500 {
-		defaulted = 500
+	// 公开接口最多返回 500 条，存储多读 1 条供 hasMore 探测；若再次截到 500，末页会被误判。
+	if defaulted > 501 {
+		defaulted = 501
 	}
 	return int(defaulted)
 }
