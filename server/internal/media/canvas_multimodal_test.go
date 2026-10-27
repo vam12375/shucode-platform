@@ -13,7 +13,7 @@ import (
 )
 
 func TestCanvasMultimodalProviderRolesAndOptions(t *testing.T) {
-	for _, adapter := range []string{"ark", "toapis"} {
+	for _, adapter := range []string{"ark", "toapis", ""} {
 		t.Run(adapter, func(t *testing.T) {
 			var body map[string]any
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +35,7 @@ func TestCanvasMultimodalProviderRolesAndOptions(t *testing.T) {
 			if body["generate_audio"] != false {
 				t.Fatalf("audio not forwarded: %#v", body)
 			}
-			if adapter == "ark" {
+			if adapter != "toapis" {
 				content := body["content"].([]any)
 				for i, want := range []string{"reference_image", "reference_image", "reference_video", "reference_audio"} {
 					item := content[i+1].(map[string]any)
@@ -274,5 +274,26 @@ func TestCanvasMultimodalCatalogueAudioDefaultIsExplicit(t *testing.T) {
 				t.Fatalf("silent catalogue default lost: %#v %v", body, err)
 			}
 		})
+	}
+}
+
+func TestCanvasSeedanceLegacyArkAdapterCapabilities(t *testing.T) {
+	for _, upstream := range []string{"doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-0-mini-260615"} {
+		t.Run(upstream, func(t *testing.T) {
+			explicit := Model{Kind: "video", Adapter: "ark", UpstreamModel: upstream, GenerateAudio: true, VideoReference: &VideoReferenceCapability{MaxDurationSeconds: 15, MaxImages: 8, PriceMicro: 1}}
+			legacy := explicit
+			legacy.Adapter = ""
+			got, want := CanvasCapabilitiesFor(legacy), CanvasCapabilitiesFor(explicit)
+			a, _ := json.Marshal(got)
+			b, _ := json.Marshal(want)
+			if string(a) != string(b) || got == nil {
+				t.Fatalf("legacy default Ark lost capabilities: %s versus %s", a, b)
+			}
+		})
+	}
+	for _, m := range []Model{{Kind: "video", Name: "Seedance 2.0", UpstreamModel: "unverified"}, {Kind: "video", UpstreamModel: "seedance-2"}, {Kind: "video", Adapter: "future", UpstreamModel: "doubao-seedance-2-0-260128"}} {
+		if CanvasCapabilitiesFor(m) != nil {
+			t.Fatal("legacy adapter guessed capabilities from name or another protocol", m.UpstreamModel)
+		}
 	}
 }

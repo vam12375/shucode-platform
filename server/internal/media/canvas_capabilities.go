@@ -16,10 +16,15 @@ type CanvasCapabilities struct {
 
 // 能力来自明确适配的上游型号；旧目录的两图首尾帧能力不能冒充全能参考。
 func CanvasCapabilitiesFor(m Model) *CanvasCapabilities {
-	if m.Kind != "video" || !(m.Adapter == "ark" && seedance20Model(m.UpstreamModel) || m.Adapter == "toapis" && toapisSeedanceModel(m.UpstreamModel)) {
+	adapter := m.Adapter
+	if adapter == "" {
+		// 历史目录未写adapter时provider一直默认Ark，能力投影必须与真实执行协议一致。
+		adapter = "ark"
+	}
+	if m.Kind != "video" || !(adapter == "ark" && seedance20Model(m.UpstreamModel) || adapter == "toapis" && toapisSeedanceModel(m.UpstreamModel)) {
 		return nil
 	}
-	c := &CanvasCapabilities{Modes: []string{"frames", "multimodal"}, MaxImages: 9, MaxAudios: 3, MaxTotalReferences: 12, MaxAudioSeconds: 15, GenerateAudio: m.GenerateAudio, ReturnLastFrame: m.Adapter == "ark"}
+	c := &CanvasCapabilities{Modes: []string{"frames", "multimodal"}, MaxImages: 9, MaxAudios: 3, MaxTotalReferences: 12, MaxAudioSeconds: 15, GenerateAudio: m.GenerateAudio, ReturnLastFrame: adapter == "ark"}
 	// 含视频报价必须有已配置的真实费率，不能只因供应商支持就向UI公开可计费入口。
 	if m.VideoReference != nil && (m.VideoReference.PriceMicro > 0 || m.VideoReference.TokenPriceMicroPerMillion > 0) {
 		c.MaxVideos = 3
