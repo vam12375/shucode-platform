@@ -84,6 +84,7 @@ services:
       <<: *app-env
       PORT: "8787"
       CONSOLE_DIST_DIR: /app/apps/console/dist
+      PUBLIC_MEDIA_CDN_ORIGIN: ${PUBLIC_MEDIA_CDN_ORIGIN:-}
       MEDIA_STORAGE_DIR: /app/data/media
       MEDIA_TTS_BASE_URL: ${MEDIA_TTS_BASE_URL:-}
       MEDIA_TTS_MODEL: ${MEDIA_TTS_MODEL:-}

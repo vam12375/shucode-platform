@@ -9,6 +9,28 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.62.0] - 2026-10-27
+
+### 新增(媒体 CDN origin 与签名预览)
+
+- 新增可选 `PUBLIC_MEDIA_CDN_ORIGIN`：仅替换原件/缩略图/封面签名 URL 的 origin，缺省回退
+  `PUBLIC_API_ORIGIN`；生产必须 HTTPS，仅本机开发允许 HTTP，启动时规范化并拒绝
+  userinfo、路径和查询参数。
+- overview 新增 `mediaOrigin`，图片资产新增 `thumbnailUrl`、视频资产新增 `posterUrl`；
+  签名路径、`expires`/`signature` 与 HMAC 输入保持不变，控制面仍使用 API origin。
+- 新增签名预览接口 `/api/v1/media/previews/:team/:id`：固定 640px JPEG 派生并持久缓存；
+  同进程并发合并、最多两个 FFmpeg、30s deadline、原子发布，不新增资产/费用/任务事实。
+- 原件 blobs 支持 HEAD 与 GET Range，复用验签、团队资产存在性和 `private,max-age=300`；
+  CDN 只作传输入口，不启用忽略签名的共享缓存。
+- 开发启动/Makefile/Compose 透传变量；补充 origin 校验、预览路由/缓存并发、HEAD/Range 回归。
+
+### 验证
+
+- `make -C server lint test`
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`（119 项）
+
 ## [0.61.2] - 2026-10-27
 
 ### 修复(定价条目排序)

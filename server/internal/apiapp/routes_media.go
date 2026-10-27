@@ -32,7 +32,11 @@ func NewMediaService(deps *Deps) *media.Service {
 	if client == nil {
 		client = &http.Client{Transport: netguard.NewTransport(false), Timeout: 60_000_000_000, CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("redirect_forbidden") }}
 	}
-	s := &media.Service{Repo: media.Repository{Store: deps.Store}, Blobs: media.Blobs{Root: root, Origin: strings.TrimRight(deps.Env.PublicAPIOrigin, "/"), SigningKey: key, Client: client}, WorkerID: uuid.NewString()}
+	mediaOrigin := strings.TrimSpace(deps.Env.PublicMediaCDNOrigin)
+	if mediaOrigin == "" {
+		mediaOrigin = deps.Env.PublicAPIOrigin
+	}
+	s := &media.Service{Repo: media.Repository{Store: deps.Store}, Blobs: media.Blobs{Root: root, Origin: strings.TrimRight(mediaOrigin, "/"), SigningKey: key, Client: client}, WorkerID: uuid.NewString()}
 	// 配音使用独立管理员配置，不能误把视频供应商密钥当成 speech 授权。
 	ttsClient := &http.Client{Transport: netguard.NewTransport(deps.Env.AllowPrivateUpstreamNetworks), Timeout: 2 * time.Minute, CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("redirect_forbidden") }}
 	if deps.HTTPClient != nil {
@@ -98,12 +102,14 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		deps.Media = NewMediaService(deps)
 	}
 	s := deps.Media
+	registerMediaPreviewRoutes(router, deps)
 	registerMediaReferenceRoutes(router, deps)
 	registerReferencePricingRoutes(router, deps)
 	registerMediaAnalysisConfigRoutes(router, deps)
 	registerMediaSourceRoutes(router, deps)
 	registerCanvasGenerationRoutes(router, deps)
-	router.GET("/api/v1/media/blobs/:team/:id", func(c *gin.Context) {
+	// 供应商会用 HEAD 探测参考媒体；复用 GET 验签与资产检查，避免合法媒体被误判为不可达。
+	serveMediaBlob := func(c *gin.Context) {
 		team, id := c.Param("team"), c.Param("id")
 		if !s.Blobs.Verify(team, id, c.Query("expires"), c.Query("signature")) {
 			c.Status(403)
@@ -126,7 +132,9 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			}
 		}
 		c.Status(404)
-	})
+	}
+	router.GET("/api/v1/media/blobs/:team/:id", serveMediaBlob)
+	router.HEAD("/api/v1/media/blobs/:team/:id", serveMediaBlob)
 	router.GET("/api/v1/media/overview", func(c *gin.Context) {
 		a, m, ok := mediaIdentity(c, deps)
 		if !ok {
@@ -161,6 +169,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 				continue
 			}
 			asset.URL = s.Blobs.URL(m.Team.ID, asset.ID)
+			asset = s.Blobs.WithPreviewURL(m.Team.ID, asset)
 			visibleAssets = append(visibleAssets, asset)
 		}
 		assets = visibleAssets
@@ -188,7 +197,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(503, fail(503, "reference_pricing_unavailable"))
 			return
 		}
-		c.JSON(200, okData(gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": quota - used, "reservedMicro": int64(0), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "assets": assets, "projects": projects, "generations": generations, "compositionAvailable": media.CompositionAvailable(), "referencePricing": pricing, "capabilities": s.FinishingCapabilities(ctx)}))
+		c.JSON(200, okData(gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": quota - used, "reservedMicro": int64(0), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "assets": assets, "projects": projects, "generations": generations, "compositionAvailable": media.CompositionAvailable(), "referencePricing": pricing, "capabilities": s.FinishingCapabilities(ctx), "mediaOrigin": s.Blobs.Origin}))
 	})
 	router.POST("/api/v1/media/assets", func(c *gin.Context) {
 		_, m, ok := mediaIdentity(c, deps)

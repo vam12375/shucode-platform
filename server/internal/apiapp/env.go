@@ -15,24 +15,26 @@ import (
 
 // env.ts(控制面)的镜像:变量名/默认值/派生规则逐项一致。
 type Env struct {
-	Port                int
-	Host                string
-	DatabaseURL         string
-	MemoryDB            bool
-	PublicAPIOrigin     string
-	PublicAppOrigin     string
-	PlatformSecretKey   string
-	CookieDomain        string
-	SecureCookies       bool
-	GatewayBaseURL      string
-	GatewayAPIType      string // "openai-chat-completions" | "anthropic-messages"
-	GatewayAPIBaseURL   string
-	ReleaseBaseURL      string
-	ConsoleDistDir      string
-	PublicConsoleOrigin string
-	RedisURL            string
-	AlertWebhookURL     string
-	ReservationTTL      time.Duration
+	Port            int
+	Host            string
+	DatabaseURL     string
+	MemoryDB        bool
+	PublicAPIOrigin string
+	// PublicMediaCDNOrigin:签名媒体的对外 origin；空值回退 PublicAPIOrigin，兼容已有部署。
+	PublicMediaCDNOrigin string
+	PublicAppOrigin      string
+	PlatformSecretKey    string
+	CookieDomain         string
+	SecureCookies        bool
+	GatewayBaseURL       string
+	GatewayAPIType       string // "openai-chat-completions" | "anthropic-messages"
+	GatewayAPIBaseURL    string
+	ReleaseBaseURL       string
+	ConsoleDistDir       string
+	PublicConsoleOrigin  string
+	RedisURL             string
+	AlertWebhookURL      string
+	ReservationTTL       time.Duration
 	// TrustedProxyIPs:只有 TCP 对端命中这些精确地址时才解析转发头。
 	TrustedProxyIPs []string
 	// BootstrapSecret:首次 root 初始化的一次性口令；生产模式未配置时拒绝初始化。
@@ -96,6 +98,24 @@ func LoadPlatformEnv() (*Env, error) {
 	publicAPIOrigin, err := normalizeOrigin(platformenv.EnvOr("PUBLIC_API_ORIGIN", fmt.Sprintf("http://localhost:%d", port)))
 	if err != nil {
 		return nil, fmt.Errorf("PUBLIC_API_ORIGIN 非法: %v", err)
+	}
+	publicMediaCDNOrigin := strings.TrimSpace(os.Getenv("PUBLIC_MEDIA_CDN_ORIGIN"))
+	if publicMediaCDNOrigin == "" {
+		publicMediaCDNOrigin = publicAPIOrigin
+	} else {
+		publicMediaCDNOrigin, err = normalizeOrigin(publicMediaCDNOrigin)
+		if err != nil {
+			return nil, fmt.Errorf("PUBLIC_MEDIA_CDN_ORIGIN 非法: %v", err)
+		}
+		parsed, _ := url.Parse(publicMediaCDNOrigin)
+		if parsed.Scheme == "http" {
+			// Host 下载只接受 HTTPS 或明确本机 HTTP；启动时拒绝不兼容地址，避免生成不可下载的媒体 URL。
+			switch strings.ToLower(parsed.Hostname()) {
+			case "localhost", "127.0.0.1", "::1":
+			default:
+				return nil, fmt.Errorf("PUBLIC_MEDIA_CDN_ORIGIN 必须使用 HTTPS，仅本机开发允许 HTTP")
+			}
+		}
 	}
 	publicAppOrigin, err := normalizeOrigin(platformenv.EnvOr("PUBLIC_APP_ORIGIN", publicAPIOrigin))
 	if err != nil {
@@ -175,26 +195,27 @@ func LoadPlatformEnv() (*Env, error) {
 		}
 	}
 	return &Env{
-		Port:                port,
-		Host:                platformenv.EnvOr("HOST", "0.0.0.0"),
-		DatabaseURL:         databaseURL,
-		MemoryDB:            memoryDB,
-		PublicAPIOrigin:     publicAPIOrigin,
-		PublicAppOrigin:     publicAppOrigin,
-		PlatformSecretKey:   strings.TrimSpace(os.Getenv("PLATFORM_SECRET_KEY")),
-		CookieDomain:        strings.TrimSpace(os.Getenv("COOKIE_DOMAIN")),
-		SecureCookies:       strings.HasPrefix(publicAPIOrigin, "https:"),
-		GatewayBaseURL:      gatewayBaseURL,
-		GatewayAPIType:      gatewayAPIType,
-		GatewayAPIBaseURL:   gatewayAPIBaseURL,
-		ReleaseBaseURL:      strings.TrimRight(platformenv.EnvOr("RELEASE_BASE_URL", publicAPIOrigin), "/"),
-		ConsoleDistDir:      strings.TrimSpace(os.Getenv("CONSOLE_DIST_DIR")),
-		PublicConsoleOrigin: publicConsoleOrigin,
-		RedisURL:            strings.TrimSpace(os.Getenv("REDIS_URL")),
-		AlertWebhookURL:     strings.TrimSpace(os.Getenv("ALERT_WEBHOOK_URL")),
-		ReservationTTL:      time.Duration(reservationTTLSeconds) * time.Second,
-		TrustedProxyIPs:     trustedProxies,
-		BootstrapSecret:     strings.TrimSpace(os.Getenv("BOOTSTRAP_SECRET")),
+		Port:                 port,
+		Host:                 platformenv.EnvOr("HOST", "0.0.0.0"),
+		DatabaseURL:          databaseURL,
+		MemoryDB:             memoryDB,
+		PublicAPIOrigin:      publicAPIOrigin,
+		PublicMediaCDNOrigin: publicMediaCDNOrigin,
+		PublicAppOrigin:      publicAppOrigin,
+		PlatformSecretKey:    strings.TrimSpace(os.Getenv("PLATFORM_SECRET_KEY")),
+		CookieDomain:         strings.TrimSpace(os.Getenv("COOKIE_DOMAIN")),
+		SecureCookies:        strings.HasPrefix(publicAPIOrigin, "https:"),
+		GatewayBaseURL:       gatewayBaseURL,
+		GatewayAPIType:       gatewayAPIType,
+		GatewayAPIBaseURL:    gatewayAPIBaseURL,
+		ReleaseBaseURL:       strings.TrimRight(platformenv.EnvOr("RELEASE_BASE_URL", publicAPIOrigin), "/"),
+		ConsoleDistDir:       strings.TrimSpace(os.Getenv("CONSOLE_DIST_DIR")),
+		PublicConsoleOrigin:  publicConsoleOrigin,
+		RedisURL:             strings.TrimSpace(os.Getenv("REDIS_URL")),
+		AlertWebhookURL:      strings.TrimSpace(os.Getenv("ALERT_WEBHOOK_URL")),
+		ReservationTTL:       time.Duration(reservationTTLSeconds) * time.Second,
+		TrustedProxyIPs:      trustedProxies,
+		BootstrapSecret:      strings.TrimSpace(os.Getenv("BOOTSTRAP_SECRET")),
 		AllowInsecureUpstreamURLs: platformenv.Truthy(
 			os.Getenv("ALLOW_INSECURE_UPSTREAM_URLS")),
 		AllowPrivateUpstreamNetworks: platformenv.Truthy(

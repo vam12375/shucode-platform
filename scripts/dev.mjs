@@ -144,6 +144,7 @@ function backendEnv(extra = {}) {
     MEMORY_DB: process.env.MEMORY_DB ?? "",
     PLATFORM_SECRET_KEY: process.env.PLATFORM_SECRET_KEY ?? "",
     PUBLIC_API_ORIGIN: process.env.PUBLIC_API_ORIGIN ?? "",
+    PUBLIC_MEDIA_CDN_ORIGIN: process.env.PUBLIC_MEDIA_CDN_ORIGIN ?? "",
     PUBLIC_APP_ORIGIN: process.env.PUBLIC_APP_ORIGIN ?? "",
     GATEWAY_BASE_URL: process.env.GATEWAY_BASE_URL ?? "",
     GATEWAY_API_TYPE: process.env.GATEWAY_API_TYPE ?? "",

@@ -101,6 +101,8 @@ type Asset struct {
 	Size            int64     `json:"size"`
 	CreatedAt       time.Time `json:"createdAt"`
 	URL             string    `json:"url,omitempty"`
+	ThumbnailURL    string    `json:"thumbnailUrl,omitempty"`
+	PosterURL       string    `json:"posterUrl,omitempty"`
 	DurationSeconds float64   `json:"durationSeconds,omitempty"`
 	Width           int       `json:"width,omitempty"`
 	Height          int       `json:"height,omitempty"`

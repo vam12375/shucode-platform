@@ -97,3 +97,54 @@ func TestLoadPlatformEnvSecurityDefaultsAndValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadPlatformEnvMediaCDNOrigin(t *testing.T) {
+	t.Setenv("PORT", "8787")
+	t.Setenv("MEMORY_DB", "1")
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("TURNSTILE_SITE_KEY", "")
+	t.Setenv("TURNSTILE_SECRET_KEY", "")
+	t.Setenv("PUBLIC_API_ORIGIN", "https://api.example.test")
+	t.Setenv("PUBLIC_MEDIA_CDN_ORIGIN", "https://cdn.example.test/media/ignored")
+
+	env, err := LoadPlatformEnv()
+	if err != nil {
+		t.Fatalf("媒体 CDN origin 应通过: %v", err)
+	}
+	if env.PublicAPIOrigin != "https://api.example.test" {
+		t.Fatalf("API origin 被错误修改: %q", env.PublicAPIOrigin)
+	}
+	if env.PublicMediaCDNOrigin != "https://cdn.example.test" {
+		t.Fatalf("媒体 CDN origin 未规范化: %q", env.PublicMediaCDNOrigin)
+	}
+
+	t.Setenv("PUBLIC_MEDIA_CDN_ORIGIN", "")
+	env, err = LoadPlatformEnv()
+	if err != nil {
+		t.Fatalf("未配置媒体 CDN origin 应回退 API origin: %v", err)
+	}
+	if env.PublicMediaCDNOrigin != env.PublicAPIOrigin {
+		t.Fatalf("媒体 origin 未回退 API origin: media=%q api=%q", env.PublicMediaCDNOrigin, env.PublicAPIOrigin)
+	}
+	for _, value := range []string{"http://localhost:8787", "http://127.0.0.1:8787", "http://[::1]:8787"} {
+		t.Setenv("PUBLIC_MEDIA_CDN_ORIGIN", value)
+		env, err = LoadPlatformEnv()
+		if err != nil || env.PublicMediaCDNOrigin != value {
+			t.Fatalf("本机 HTTP 媒体 origin 应仅用于开发且允许: origin=%q err=%v", value, err)
+		}
+	}
+
+	for _, value := range []string{
+		"javascript:alert(1)",
+		"https://user:pass@cdn.example.test",
+		"https://",
+		"http://cdn.example.test",
+		"http://localhost.example.test",
+		"http://127.0.0.2",
+	} {
+		t.Setenv("PUBLIC_MEDIA_CDN_ORIGIN", value)
+		if _, err := LoadPlatformEnv(); err == nil {
+			t.Fatalf("PUBLIC_MEDIA_CDN_ORIGIN=%q 应拒绝启动", value)
+		}
+	}
+}
