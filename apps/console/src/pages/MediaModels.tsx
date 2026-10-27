@@ -2588,16 +2588,74 @@ function MediaFamilyCard({
                   />
                 </label> : null}
               </div>
-              <div className="media-vr-summary">
-                {!isToapis ? <span>
-                  Token 毛利 <b className="media-margin">{referenceMargin}</b>
-                </span> : null}
-                <span>
-                  {isToapis ? "按输出秒数（跟随档位，只读）：成本 " : "旧按秒口径（跟随档位，只读）：成本 "}
-                  <b>{preview.costCredits || "0"}</b> / 售价{" "}
-                  <b>{preview.priceCredits || "0"}</b>
-                </span>
-              </div>
+              {isToapis ? (
+                <div role="group" aria-label={`模型 ${name} 视频参考价格`}>
+                  <p className="video-reference-note">
+                    视频参考按输出秒数计费，与上方档位共用成本价和售价；可直接在此设置，修改后两处同步。
+                  </p>
+                  {/* ToAPIs 不使用 token 费率，原只读摘要使启用后缺少就地定价入口。
+                      直接编辑各档草稿，保持同一价格来源，未填售价继续显示缺价。 */}
+                  <div className="table-scroll">
+                    <table className="table media-tier-table">
+                      <thead>
+                        <tr>
+                          <th>档位</th>
+                          <th className="num">成本价（credit/秒）</th>
+                          <th className="num">售价（credit/秒）</th>
+                          <th>状态</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {indexes.map((index) => {
+                          const tier = drafts[index];
+                          const label = tierLabel(tier);
+                          return (
+                            <tr key={`${familyId}-reference-${index}`}>
+                              <td>{label}</td>
+                              <td className="num">
+                                <input
+                                  className="media-price-input num"
+                                  inputMode="decimal"
+                                  aria-label={`模型 ${name} 视频参考 ${label} 成本价`}
+                                  value={tier.costCredits}
+                                  disabled={busy}
+                                  onChange={(event) => onUpdateTier(index, { costCredits: event.target.value })}
+                                />
+                              </td>
+                              <td className="num">
+                                <input
+                                  className="media-price-input num"
+                                  inputMode="decimal"
+                                  aria-label={`模型 ${name} 视频参考 ${label} 售价`}
+                                  placeholder="待配置"
+                                  value={tier.priceCredits}
+                                  disabled={busy}
+                                  onChange={(event) => onUpdateTier(index, { priceCredits: event.target.value })}
+                                />
+                              </td>
+                              <td>
+                                {previewMicro(tier.priceCredits) > 0
+                                  ? <Chip tone="ok">已配置</Chip>
+                                  : <Chip tone="stop">缺价</Chip>}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="media-vr-summary">
+                  <span>
+                    Token 毛利 <b className="media-margin">{referenceMargin}</b>
+                  </span>
+                  <span>
+                    旧按秒口径（跟随档位，只读）：成本 <b>{preview.costCredits || "0"}</b> / 售价{" "}
+                    <b>{preview.priceCredits || "0"}</b>
+                  </span>
+                </div>
+              )}
             </>
           ) : null}
         </div>

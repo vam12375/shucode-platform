@@ -560,6 +560,67 @@ test("ToAPIs reference controls expose second pricing and adapter changes invali
   assert.match(nodeText(tree), /保存后由平台同步支持比例/);
 });
 
+test("ToAPIs preset reference pricing edits every tier and saves the shared per-second rates", async () => {
+  const toapis = { ...provider, id: "toapis", name: "ToAPIs", baseUrl: "https://toapis.com/v1" };
+  const f = await mountModels([], [toapis]);
+  let tree = clickPreset(f, "ToAPIs Seedance 2.0");
+  const toggles = nodes(tree, (node) => (node.props?.["aria-label"] ?? "").endsWith("启用视频参考"));
+  assert.equal(toggles.length, 3);
+  for (const toggle of toggles) toggle.props.onChange({ target: { checked: true } });
+  tree = f.render();
+
+  const prices = nodes(tree, (node) => /视频参考 .* 售价$/.test(node.props?.["aria-label"] ?? ""));
+  const costs = nodes(tree, (node) => /视频参考 .* 成本价$/.test(node.props?.["aria-label"] ?? ""));
+  assert.equal(prices.length, 8);
+  assert.equal(costs.length, 8);
+  assert.ok(prices.every((node) => node.props.value === "" && node.props.placeholder === "待配置"));
+  assert.match(nodeText(tree), /与上方档位共用成本价和售价/);
+  assert.doesNotMatch(nodeText(tree), /按输出秒数（跟随档位，只读）/);
+
+  for (let index = 0; index < prices.length; index++) {
+    costs[index].props.onChange({ target: { value: `0.${index + 1}` } });
+    prices[index].props.onChange({ target: { value: `1.${index + 1}` } });
+  }
+  tree = f.render();
+  for (let index = 0; index < prices.length; index++) {
+    const mainLabel = prices[index].props["aria-label"].replace(" 视频参考", "");
+    const mainCostLabel = costs[index].props["aria-label"].replace(" 视频参考", "");
+    assert.equal(nodes(tree, (node) => node.props?.["aria-label"] === mainLabel)[0].props.value, `1.${index + 1}`);
+    assert.equal(nodes(tree, (node) => node.props?.["aria-label"] === mainCostLabel)[0].props.value, `0.${index + 1}`);
+  }
+
+  // 上方档位修改也必须同步回参考区，不能形成第二套价格来源。
+  const firstPriceLabel = prices[0].props["aria-label"];
+  nodes(tree, (node) => node.props?.["aria-label"] === firstPriceLabel.replace(" 视频参考", ""))[0].props.onChange({ target: { value: "2" } });
+  tree = f.render();
+  assert.equal(nodes(tree, (node) => node.props?.["aria-label"] === firstPriceLabel)[0].props.value, "2");
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "保存配置")[0].props.onClick();
+  tree = await f.settle();
+  const saved = JSON.parse(f.calls.find((call) => call.options).options.body);
+  assert.equal(saved.length, 8);
+  for (let index = 0; index < saved.length; index++) {
+    const tier = saved[index];
+    assert.equal(tier.costMicro, (index + 1) * 100_000);
+    assert.equal(tier.priceMicro, index === 0 ? 2_000_000 : 1_000_000 + (index + 1) * 100_000);
+    assert.equal(tier.videoReference.costMicro, tier.costMicro);
+    assert.equal(tier.videoReference.priceMicro, tier.priceMicro);
+    assert.equal(tier.videoReference.tokenCostMicroPerMillion, 0);
+    assert.equal(tier.videoReference.tokenPriceMicroPerMillion, 0);
+  }
+  assert.match(nodeText(tree), /配置已同步/);
+});
+
+test("enabling an unpriced ToAPIs reference still requires a sale price before save", async () => {
+  const f = await mountModels([{ ...toapisModel(), priceMicro: 0 }]);
+  let tree = f.render();
+  const group = nodes(tree, (node) => node.props?.role === "group" && (node.props["aria-label"] ?? "").endsWith("视频参考价格"))[0];
+  assert.match(nodeText(group), /缺价/);
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "保存配置")[0].props.onClick();
+  tree = await f.settle();
+  assert.equal(f.calls.some((call) => call.options), false);
+  assert.match(nodeText(tree), /售价/);
+});
+
 test("ToAPIs model discovery requests video and caches separately from Ark", async () => {
   const f = await mountModels([toapisModel()]);
   let tree = f.render();
