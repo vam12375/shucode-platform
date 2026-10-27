@@ -63,6 +63,7 @@ type SourceParser struct {
 	Key        string
 	Client     *http.Client
 	ResolveKey func(context.Context) (string, error)
+	Preflight  func(context.Context) error
 }
 
 func NormalizeSourceParserKey(raw string) (string, error) {
@@ -97,13 +98,14 @@ func (p *SourceParser) resolved(ctx context.Context) (*SourceParser, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &SourceParser{Key: key, Client: p.Client}, nil
+	return &SourceParser{Key: key, Client: p.Client, Preflight: p.Preflight}, nil
 }
 
 type referenceDownload struct {
-	URL     string
-	Headers http.Header
-	Quality int
+	URL      string
+	AudioURL string
+	Headers  http.Header
+	Quality  int
 }
 type ReferenceMetadata struct {
 	DurationSeconds float64
@@ -182,11 +184,12 @@ func (p *SourceParser) Extract(ctx context.Context, source string) (referenceDow
 			ResourceURL string            `json:"resource_url"`
 			Headers     map[string]string `json:"headers"`
 			Variants    []struct {
-				VideoURL string `json:"video_url"`
-				AudioURL string `json:"audio_url"`
-				Ext      string `json:"video_ext"`
-				Size     int64  `json:"video_filesize"`
-				Quality  int    `json:"quality"`
+				VideoURL  string `json:"video_url"`
+				AudioURL  string `json:"audio_url"`
+				Ext       string `json:"video_ext"`
+				Size      int64  `json:"video_filesize"`
+				AudioSize int64  `json:"audio_filesize"`
+				Quality   int    `json:"quality"`
 			} `json:"variants"`
 		} `json:"medias"`
 	}
@@ -209,8 +212,18 @@ func (p *SourceParser) Extract(ctx context.Context, source string) (referenceDow
 			}
 		}
 		excluded := map[string]bool{}
+		hasSplitStreams := false
 		for _, v := range m.Variants {
-			if v.AudioURL != "" || (v.Ext != "" && v.Ext != "mp4" && v.Ext != "mov" && v.Ext != "webm") || v.Size > MaxReferenceBytes || v.Size < 0 {
+			if v.AudioURL != "" {
+				// 分离流的 resource_url 可能仍是无声画面；必须作为一对验证，不能退回伪完整单流。
+				hasSplitStreams = true
+				excluded[v.VideoURL] = true
+				if (v.Ext == "" || v.Ext == "mp4" || v.Ext == "mov" || v.Ext == "webm" || v.Ext == "m4s") && v.Size >= 0 && v.AudioSize >= 0 && v.Size <= MaxReferenceBytes && v.AudioSize <= MaxReferenceBytes-v.Size && v.VideoURL != v.AudioURL && validReferenceStreamURL(v.VideoURL, false) && validReferenceStreamURL(v.AudioURL, true) {
+					candidates = append(candidates, referenceDownload{URL: v.VideoURL, AudioURL: v.AudioURL, Headers: headers.Clone(), Quality: v.Quality})
+				}
+				continue
+			}
+			if (v.Ext != "" && v.Ext != "mp4" && v.Ext != "mov" && v.Ext != "webm") || v.Size > MaxReferenceBytes || v.Size < 0 {
 				excluded[v.VideoURL] = true
 				continue
 			}
@@ -218,7 +231,7 @@ func (p *SourceParser) Extract(ctx context.Context, source string) (referenceDow
 				candidates = append(candidates, referenceDownload{URL: v.VideoURL, Headers: headers.Clone(), Quality: v.Quality})
 			}
 		}
-		if !excluded[m.ResourceURL] && validReferenceDownloadURL(m.ResourceURL) {
+		if !hasSplitStreams && !excluded[m.ResourceURL] && validReferenceDownloadURL(m.ResourceURL) {
 			candidates = append(candidates, referenceDownload{URL: m.ResourceURL, Headers: headers.Clone()})
 		}
 	}
@@ -282,6 +295,17 @@ func (s *Service) ImportReference(ctx context.Context, team, user, id, rawURL st
 	if err != nil {
 		return Asset{}, err
 	}
+	preflight := parser.Preflight
+	if preflight == nil {
+		preflight = referenceStreamDependencies
+	}
+	// 解析响应才能揭晓是否分轨，因此依赖与媒体盘必须在所有付费解析前检查。
+	if err = preflight(ctx); err != nil {
+		return Asset{}, err
+	}
+	if err = s.referenceImportStoragePreflight(team); err != nil {
+		return Asset{}, err
+	}
 	pricing, err := s.Repo.ReferencePricing(ctx)
 	if err != nil {
 		return Asset{}, err
@@ -319,11 +343,40 @@ func (s *Service) ImportReference(ctx context.Context, team, user, id, rawURL st
 	if err != nil {
 		return Asset{}, err
 	}
+	var asset Asset
+	if media.AudioURL != "" {
+		asset, err = s.prepareReferenceStreams(ctx, team, source, parser.Client, media)
+	} else {
+		asset, err = s.downloadSingleReference(ctx, team, source, parser.Client, media)
+	}
+	if err != nil {
+		return Asset{}, err
+	}
+	persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer persistCancel()
+	pending, _ := json.Marshal(referenceOperation{Digest: digest, Status: "settlement_pending", AssetID: asset.ID, Asset: &asset, Fee: &fee})
+	// CAS 响应未知时，意图可能已经提交；不能关闭收费身份或删除恢复需要的原件。
+	intentAttempted = true
+	ok, err := s.Repo.Store.CompareAndSwapConfigValue(persistCtx, key, started, pending)
+	if err != nil {
+		return Asset{}, fmt.Errorf("source_import_settlement_pending")
+	}
+	if !ok {
+		latest, readErr := s.Repo.Store.GetConfigValue(persistCtx, key)
+		if readErr != nil {
+			return Asset{}, fmt.Errorf("source_import_settlement_pending")
+		}
+		return s.replayReference(persistCtx, team, user, key, digest, latest)
+	}
+	finished = true
+	return s.replayReference(persistCtx, team, user, key, digest, pending)
+}
+
+func (s *Service) downloadSingleReference(ctx context.Context, team, source string, baseClient *http.Client, media referenceDownload) (Asset, error) {
 	downloadCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(downloadCtx, http.MethodGet, media.URL, nil)
 	req.Header = media.Headers
-	baseClient := parser.Client
 	if baseClient == nil {
 		baseClient = NewReferenceHTTPClient(90 * time.Second)
 	}
@@ -350,28 +403,7 @@ func (s *Service) ImportReference(ctx context.Context, team, user, id, rawURL st
 	if resp.ContentLength > MaxReferenceBytes {
 		return Asset{}, fmt.Errorf("source_video_too_large")
 	}
-	asset, err := s.prepareReference(downloadCtx, team, "原片.mp4", resp.Body, source)
-	if err != nil {
-		return Asset{}, err
-	}
-	persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-	defer persistCancel()
-	pending, _ := json.Marshal(referenceOperation{Digest: digest, Status: "settlement_pending", AssetID: asset.ID, Asset: &asset, Fee: &fee})
-	// CAS 响应未知时，意图可能已经提交；不能关闭收费身份或删除恢复需要的原件。
-	intentAttempted = true
-	ok, err := s.Repo.Store.CompareAndSwapConfigValue(persistCtx, key, started, pending)
-	if err != nil {
-		return Asset{}, fmt.Errorf("source_import_settlement_pending")
-	}
-	if !ok {
-		latest, readErr := s.Repo.Store.GetConfigValue(persistCtx, key)
-		if readErr != nil {
-			return Asset{}, fmt.Errorf("source_import_settlement_pending")
-		}
-		return s.replayReference(persistCtx, team, user, key, digest, latest)
-	}
-	finished = true
-	return s.replayReference(persistCtx, team, user, key, digest, pending)
+	return s.prepareReference(downloadCtx, team, "原片.mp4", resp.Body, source)
 }
 
 func (s *Service) replayReference(ctx context.Context, team, user, key, digest string, raw []byte) (Asset, error) {

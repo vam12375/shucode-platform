@@ -63,7 +63,7 @@ func referenceBillingFixture(t *testing.T) (*fixture, *atomic.Int64, []byte) {
 	f := setup(t)
 	calls := &atomic.Int64{}
 	video := append([]byte{0, 0, 0, 24, 'f', 't', 'y', 'p', 'm', 'p', '4', '2'}, make([]byte, 512)...)
-	f.s.SourceParser = &SourceParser{Key: "fixture-secret", Client: &http.Client{Transport: referenceTransport(func(r *http.Request) (*http.Response, error) {
+	f.s.SourceParser = &SourceParser{Key: "fixture-secret", Preflight: referenceFixturePreflight, Client: &http.Client{Transport: referenceTransport(func(r *http.Request) (*http.Response, error) {
 		if r.URL.String() == SnapAnyExtractURL {
 			calls.Add(1)
 			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"medias":[{"media_type":"video","resource_url":"https://cdn.example.test/video.mp4"}]}`)), Header: make(http.Header)}, nil

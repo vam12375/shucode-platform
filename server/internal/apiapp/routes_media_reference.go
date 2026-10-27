@@ -110,7 +110,7 @@ func registerMediaReferenceRoutes(router *gin.Engine, deps *Deps) {
 func referenceError(c *gin.Context, deps *Deps, err error) {
 	status := 422
 	switch err.Error() {
-	case "source_parser_unconfigured", "source_parser_auth_failed", "source_parser_credits_exhausted", "source_parser_configuration_unavailable", "reference_pricing_unavailable":
+	case "source_parser_unconfigured", "source_parser_auth_failed", "source_parser_credits_exhausted", "source_parser_configuration_unavailable", "reference_pricing_unavailable", "source_media_dependencies_missing":
 		status = 503
 	case "source_parser_rate_limited":
 		status = 429
@@ -118,19 +118,19 @@ func referenceError(c *gin.Context, deps *Deps, err error) {
 		status = 402
 	case "team_inactive":
 		status = 403
-	case "source_parser_unavailable", "source_parse_failed", "source_parser_invalid_response", "source_video_unavailable":
+	case "source_parser_unavailable", "source_parse_failed", "source_parser_invalid_response", "source_video_unavailable", "source_stream_merge_failed":
 		status = 502
 	case "source_import_in_progress", "source_import_unavailable", "source_import_failed", "source_import_settlement_pending":
 		status = 409
 	case "source_video_too_large":
 		status = 413
-	case "invalid_source_url", "invalid_source_video", "source_video_probe_failed", "source_video_limits_exceeded", "source_import_cancelled", "video_reference_clip_invalid", "video_reference_audio_invalid", "video_reference_audio_unsupported", "reference_asset_not_found", "reference_asset_not_ready", "video_source_changed":
+	case "invalid_source_url", "invalid_source_video", "source_video_probe_failed", "source_video_limits_exceeded", "source_import_cancelled", "source_stream_duration_mismatch", "video_reference_clip_invalid", "video_reference_audio_invalid", "video_reference_audio_unsupported", "reference_asset_not_found", "reference_asset_not_ready", "video_source_changed":
 		status = 422
 	case "video_reference_clip_size_limit", "video_reference_audio_size_limit":
 		status = 413
 	case "video_reference_clip_required":
 		status = 400
-	case "video_reference_clip_store_failed", "video_reference_audio_store_failed":
+	case "video_reference_clip_store_failed", "video_reference_audio_store_failed", "source_import_save_failed":
 		status = 500
 	default:
 		mediaError(c, deps, err)

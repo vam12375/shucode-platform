@@ -37,7 +37,7 @@ func TestReferenceImportClaimsBeforePaidCallAndReplaysPrivateAsset(t *testing.T)
 		}
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(video)), Header: make(http.Header)}, nil
 	})}
-	f.s.SourceParser = &SourceParser{Key: "only-parser-secret", Client: client}
+	f.s.SourceParser = &SourceParser{Key: "only-parser-secret", Client: client, Preflight: referenceFixturePreflight}
 	f.s.ReferenceProbe = func(context.Context, string) (ReferenceMetadata, error) {
 		return ReferenceMetadata{DurationSeconds: 8.4, Width: 1080, Height: 1920}, nil
 	}
@@ -69,7 +69,7 @@ func TestReferenceImportUnknownNeverRetriesAndConfigurationDoesNotPoison(t *test
 		t.Fatal("missing key accepted")
 	}
 	var calls atomic.Int64
-	f.s.SourceParser = &SourceParser{Key: "secret", Client: &http.Client{Transport: referenceTransport(func(*http.Request) (*http.Response, error) {
+	f.s.SourceParser = &SourceParser{Key: "secret", Preflight: referenceFixturePreflight, Client: &http.Client{Transport: referenceTransport(func(*http.Request) (*http.Response, error) {
 		calls.Add(1)
 		return nil, errors.New("network includes secret")
 	})}}

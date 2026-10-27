@@ -22,6 +22,7 @@ func TestReferenceImportFreezesResolvedKeyBeforeAdmission(t *testing.T) {
 	blocked := true
 	video := append([]byte{0, 0, 0, 24, 'f', 't', 'y', 'p', 'm', 'p', '4', '2'}, make([]byte, 512)...)
 	f.s.SourceParser = &SourceParser{
+		Preflight: referenceFixturePreflight,
 		ResolveKey: func(context.Context) (string, error) {
 			reads++
 			if blocked {
