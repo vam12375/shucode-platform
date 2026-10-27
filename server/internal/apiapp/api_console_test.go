@@ -311,6 +311,33 @@ func TestPricingLibrary(t *testing.T) {
 		model.OutputPricePerMtok != "3.000000" || model.Enabled {
 		t.Fatalf("带价导入字段不符: %+v", model)
 	}
+
+	// 新增条目不按前端追加顺序落库：PUT 逆序提交后，保存响应与再次读取都应按模型 ID 首字母归位。
+	sortedPut := f.do("PUT", "/console/api/model-pricing", adminCookie,
+		`{"expectedVersion":"`+putData["version"].(string)+`","entries":[`+
+			`{"modelId":"qwen3.8-omni-flash","displayName":"Qwen3.8 Omni","inputCostPerMillion":"1","outputCostPerMillion":"2"},`+
+			`{"modelId":"glm-5-3-flash-260828","displayName":"GLM 5.3 Flash","inputCostPerMillion":"1","outputCostPerMillion":"2"},`+
+			`{"modelId":"deepseek-v4.1-flash-1017","displayName":"DeepSeek V4.1","inputCostPerMillion":"1","outputCostPerMillion":"2"},`+
+			`{"modelId":"auto-price-model","displayName":"Auto Model","inputCostPerMillion":"1.5","outputCostPerMillion":"3"}]}`)
+	if sortedPut.Code != 200 {
+		t.Fatalf("保存排序定价: %d %s", sortedPut.Code, sortedPut.Body.String())
+	}
+	modelIDs := func(raw []any) string {
+		ids := make([]string, 0, len(raw))
+		for _, entry := range raw {
+			ids = append(ids, entry.(map[string]any)["modelId"].(string))
+		}
+		return strings.Join(ids, ",")
+	}
+	wantOrder := "auto-price-model,deepseek-v4.1-flash-1017,glm-5-3-flash-260828,qwen3.8-omni-flash"
+	if order := modelIDs(dataOf(t, sortedPut)["entries"].([]any)); order != wantOrder {
+		t.Fatalf("保存返回顺序应按首字母: %s", order)
+	}
+	reloaded := f.do("GET", "/console/api/model-pricing", adminCookie, "")
+	if order := modelIDs(dataOf(t, reloaded)["entries"].([]any)); order != wantOrder {
+		t.Fatalf("读取顺序应按首字母: %s", order)
+	}
+
 	if rec := f.do("GET", "/console/api/model-pricing", "", ""); rec.Code != 401 {
 		t.Fatal("未登录应 401")
 	}

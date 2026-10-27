@@ -130,6 +130,15 @@ func localeOrder(a, b string) bool {
 	return a < b
 }
 
+// SortEntries 按模型 ID 首字母（大小写无关）就地排序，作为定价清单的统一展示顺序。
+// 与 ComputeDocVersion 内部稳定排序使用同一比较口径，保证落库顺序与版本口径一致；
+// 文档本身无序字段，排序不改变版本哈希。
+func SortEntries(entries []PricingEntry) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		return localeOrder(entries[i].ModelID, entries[j].ModelID)
+	})
+}
+
 // EmptyVersion 是 KV 从未写入时的乐观锁前置版本哨兵(与 TS EMPTY_PRICING_VERSION 同值)。
 var EmptyVersion = ComputeDocVersion(nil)
 

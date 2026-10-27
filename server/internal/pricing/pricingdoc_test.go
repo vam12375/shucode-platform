@@ -92,3 +92,24 @@ func TestParseDoc(t *testing.T) {
 		}
 	}
 }
+
+// 新增条目按模型 ID 首字母归位，大小写无关且不影响内容版本。
+func TestSortEntriesByModelID(t *testing.T) {
+	entries := []PricingEntry{
+		{ModelID: "qwen3.8-omni-flash", DisplayName: "Qwen3.8 Omni"},
+		{ModelID: "glm-5-3-flash-260828", DisplayName: "GLM 5.3 Flash"},
+		{ModelID: "DeepSeek-v4.1-flash-1017", DisplayName: "DeepSeek V4.1"},
+		{ModelID: "auto-price-model", DisplayName: "Auto Model"},
+	}
+	versionBefore := ComputeDocVersion(entries)
+	SortEntries(entries)
+	want := []string{"auto-price-model", "DeepSeek-v4.1-flash-1017", "glm-5-3-flash-260828", "qwen3.8-omni-flash"}
+	for i, entry := range entries {
+		if entry.ModelID != want[i] {
+			t.Fatalf("第 %d 条应为 %s，实际 %s（完整顺序: %+v）", i, want[i], entry.ModelID, entries)
+		}
+	}
+	if versionAfter := ComputeDocVersion(entries); versionAfter != versionBefore {
+		t.Fatalf("排序不应改变内容版本: %s -> %s", versionBefore, versionAfter)
+	}
+}

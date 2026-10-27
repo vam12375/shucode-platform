@@ -732,6 +732,9 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		for _, modelID := range order {
 			entries = append(entries, byID[modelID])
 		}
+		// 前端新增条目是追加到数组末尾，若原样落库会永远沉底；
+		// 定价文档无自定义排序语义，统一按模型 ID 首字母排序后保存并返回。
+		pricing.SortEntries(entries)
 		saved, err := deps.Store.SaveModelPricing(ctx, entries, expectedVersion)
 		if err != nil {
 			internalError(c, deps, err)

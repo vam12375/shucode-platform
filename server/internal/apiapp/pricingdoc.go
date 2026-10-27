@@ -96,6 +96,7 @@ func loadDefaultPricingEntries() []pricing.PricingEntry {
 			entries = append(entries, *entry)
 		}
 	}
+	pricing.SortEntries(entries)
 	return entries
 }
 
@@ -120,6 +121,7 @@ func normalizeStoredEntries(entries []pricing.PricingEntry) []pricing.PricingEnt
 
 // loadPricingDoc:KV 无副本(或为空/损坏)时用内置默认初始化;返回条目与内容版本。
 // 并发初始化竞争时以库中现状为准(不覆盖他人写入)。
+// 读取路径按模型 ID 首字母排序：历史文档中新追加的条目会立即回到正确位置。
 func loadPricingDoc(ctx context.Context, st store.PlatformStore) (*pricing.Snapshot, error) {
 	stored, err := st.GetModelPricing(ctx)
 	if err != nil {
@@ -128,6 +130,7 @@ func loadPricingDoc(ctx context.Context, st store.PlatformStore) (*pricing.Snaps
 	if stored != nil {
 		entries := normalizeStoredEntries(stored.Entries)
 		if len(entries) > 0 {
+			pricing.SortEntries(entries)
 			return &pricing.Snapshot{Entries: entries, Version: pricing.ComputeDocVersion(entries)}, nil
 		}
 	}
@@ -144,6 +147,7 @@ func loadPricingDoc(ctx context.Context, st store.PlatformStore) (*pricing.Snaps
 		}
 		if current != nil {
 			finalEntries = normalizeStoredEntries(current.Entries)
+			pricing.SortEntries(finalEntries)
 		}
 	}
 	return &pricing.Snapshot{Entries: finalEntries, Version: pricing.ComputeDocVersion(finalEntries)}, nil
