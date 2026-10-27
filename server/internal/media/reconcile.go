@@ -21,6 +21,9 @@ func (s *Service) Reconcile(ctx context.Context, team, id string, r Reconciliati
 	if r.Version <= 0 || len(strings.TrimSpace(r.Reason)) < 5 || len(r.Reason) > 1000 {
 		return nil, ErrInvalid
 	}
+	if r.Outcome == "narration_result" || r.Outcome == "narration_not_accepted" {
+		return s.reconcileNarration(ctx, team, id, r)
+	}
 	p, err := s.Mutate(ctx, team, id, r.Version, func(p *Project) error {
 		if p.Status != "reconciliation_required" || p.LeaseUntil.After(time.Now()) || r.Shot < 0 || r.Shot >= len(p.Shots) {
 			return ErrConflict

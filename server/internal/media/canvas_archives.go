@@ -22,11 +22,14 @@ type CanvasArchiveInput struct {
 
 func canvasArchiveSources(p Project) []string {
 	var sources []string
-	for _, shot := range p.Shots {
-		if shot.Status == "succeeded" && shot.OutputAssetID != "" && !slices.Contains(sources, shot.OutputAssetID) {
-			sources = append(sources, shot.OutputAssetID)
-			if len(sources) == 4 {
-				break
+	for _, shot := range p.Shots[:min(len(p.Shots), 4)] {
+		if shot.Status != "succeeded" || shot.OutputAssetID == "" {
+			continue
+		}
+		// 返回尾帧也是已付费任务的真实产物，沿同一归档身份去重，不再新建生成流程。
+		for _, id := range []string{shot.OutputAssetID, shot.LastFrameAssetID} {
+			if id != "" && !slices.Contains(sources, id) {
+				sources = append(sources, id)
 			}
 		}
 	}

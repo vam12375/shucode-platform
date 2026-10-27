@@ -128,14 +128,32 @@ type Brief struct {
 	ReferenceDurationSeconds float64  `json:"referenceDurationSeconds,omitempty"`
 	ReplacementInstructions  string   `json:"replacementInstructions,omitempty"`
 	// 创作意图与文案控制，全部可选；客户端仅在 overview 声明 capability 时发送。
-	Audience          string `json:"audience,omitempty"`
-	Tone              string `json:"tone,omitempty"`
-	HookStyle         string `json:"hookStyle,omitempty"`
-	CallToAction      string `json:"callToAction,omitempty"`
-	AvoidClaims       string `json:"avoidClaims,omitempty"`
-	Script            string `json:"script,omitempty"`
-	NarrationLanguage string `json:"narrationLanguage,omitempty"`
-	VariantCount      int    `json:"variantCount,omitempty"`
+	Audience          string            `json:"audience,omitempty"`
+	Tone              string            `json:"tone,omitempty"`
+	HookStyle         string            `json:"hookStyle,omitempty"`
+	CallToAction      string            `json:"callToAction,omitempty"`
+	AvoidClaims       string            `json:"avoidClaims,omitempty"`
+	Script            string            `json:"script,omitempty"`
+	NarrationLanguage string            `json:"narrationLanguage,omitempty"`
+	VariantCount      int               `json:"variantCount,omitempty"`
+	Finishing         *FinishingOptions `json:"finishing,omitempty"`
+}
+
+// FinishingOptions 只用于新自动制作；缺省保留历史片段原音与字幕语义。
+type FinishingOptions struct {
+	Voiceover bool   `json:"voiceover"`
+	Music     bool   `json:"music"`
+	Subtitles string `json:"subtitles"`
+}
+
+// NarrationState 由同一媒体 worker 持久化，未知受理不得自动重新提交。
+type NarrationState struct {
+	Signature       string  `json:"signature"`
+	RequestID       string  `json:"requestId"`
+	Text            string  `json:"text"`
+	Status          string  `json:"status"`
+	AssetID         string  `json:"assetId,omitempty"`
+	DurationSeconds float64 `json:"durationSeconds,omitempty"`
 }
 type Reference struct {
 	URL             string    `json:"url"`
@@ -181,6 +199,9 @@ type Analysis struct {
 	WorkspaceIdentity string `json:"workspaceIdentity,omitempty"`
 }
 type Shot struct {
+	CanvasVideoAssetIDs   []string       `json:"canvasVideoAssetIds,omitempty"`
+	LastFrameAssetID      string         `json:"lastFrameAssetId,omitempty"`
+	LastFrameResultURL    string         `json:"lastFrameResultUrl,omitempty"`
 	Plan                  ShotPlan       `json:"plan"`
 	Status                string         `json:"status"`
 	Attempt               int            `json:"attempt"`
@@ -209,6 +230,7 @@ type Shot struct {
 	TokenCostMicroPerMillion int64 `json:"tokenCostMicroPerMillion,omitempty"`
 }
 type Project struct {
+	Narration            *NarrationState          `json:"narration,omitempty"`
 	SourceChecksum       string                   `json:"sourceChecksum,omitempty"`
 	SourceAnalysis       *SourceAnalysis          `json:"sourceAnalysis,omitempty"`
 	AnalysisFee          *FixedFee                `json:"analysisFee,omitempty"`
@@ -261,16 +283,17 @@ type ProjectView struct {
 	CancelRequested      bool                     `json:"cancelRequested"`
 }
 type ShotView struct {
-	Plan          ShotPlan       `json:"plan"`
-	Status        string         `json:"status"`
-	Attempt       int            `json:"attempt"`
-	VideoTaskID   string         `json:"videoTaskId,omitempty"`
-	ImageAssetID  string         `json:"imageAssetId,omitempty"`
-	OutputAssetID string         `json:"outputAssetId,omitempty"`
-	Error         string         `json:"error,omitempty"`
-	ProviderError *ProviderError `json:"providerError,omitempty"`
-	ChargedMicro  int64          `json:"chargedMicro"`
-	QuoteMicro    int64          `json:"quoteMicro"`
+	LastFrameAssetID string         `json:"lastFrameAssetId,omitempty"`
+	Plan             ShotPlan       `json:"plan"`
+	Status           string         `json:"status"`
+	Attempt          int            `json:"attempt"`
+	VideoTaskID      string         `json:"videoTaskId,omitempty"`
+	ImageAssetID     string         `json:"imageAssetId,omitempty"`
+	OutputAssetID    string         `json:"outputAssetId,omitempty"`
+	Error            string         `json:"error,omitempty"`
+	ProviderError    *ProviderError `json:"providerError,omitempty"`
+	ChargedMicro     int64          `json:"chargedMicro"`
+	QuoteMicro       int64          `json:"quoteMicro"`
 }
 
 func (p Project) View() ProjectView {
@@ -280,7 +303,7 @@ func (p Project) View() ProjectView {
 		if s.ProviderError != nil {
 			diagnostic = sanitizeProviderError(s.ProviderError.Code)
 		}
-		shots = append(shots, ShotView{Plan: s.Plan, Status: s.Status, Attempt: s.Attempt, VideoTaskID: publicVideoTaskID(s.VideoTaskID), ImageAssetID: s.ImageAssetID, OutputAssetID: s.OutputAssetID, Error: s.Error, ProviderError: diagnostic, ChargedMicro: s.ChargedMicro, QuoteMicro: s.QuoteMicro})
+		shots = append(shots, ShotView{Plan: s.Plan, Status: s.Status, Attempt: s.Attempt, VideoTaskID: publicVideoTaskID(s.VideoTaskID), ImageAssetID: s.ImageAssetID, OutputAssetID: s.OutputAssetID, LastFrameAssetID: s.LastFrameAssetID, Error: s.Error, ProviderError: diagnostic, ChargedMicro: s.ChargedMicro, QuoteMicro: s.QuoteMicro})
 	}
 	var archives []CanvasTeamAssetArchive
 	if p.Canvas != nil {

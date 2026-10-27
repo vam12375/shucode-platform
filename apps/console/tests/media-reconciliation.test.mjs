@@ -44,6 +44,15 @@ test("unknown stage has no default or recovery options and cannot close a reques
   }
 });
 
+test("narration recovery only accepts verified audio or explicit non-admission", () => {
+  assert.equal(defaultReconciliationOutcome("narration"), "narration_result");
+  assert.deepEqual(reconciliationOptionsForStage("narration").map(({ value }) => value), ["narration_result", "narration_not_accepted"]);
+  assert.equal(isReconciliationOutcomeForStage("narration", "video_task"), false);
+  assert.equal(isReconciliationOutcomeForStage("narration", "not_accepted"), false);
+  assert.equal(isReconciliationOutcomeForStage("video", "narration_result"), false);
+  assert.equal(reconciliationValueLabel("narration_result"), "全片独白音频 URL");
+});
+
 test("recovery fields are labeled for the selected upstream result", () => {
   assert.equal(reconciliationValueLabel("image_result"), "图片结果 URL");
   assert.equal(reconciliationValuePlaceholder("image_result"), "可直接下载的图片结果地址");
@@ -215,4 +224,50 @@ test("the Ark drawer rejects a forged image_task selection before submitting", a
   tree = await ui.settle();
   assert.equal(ui.calls.some(({ options }) => options), false);
   assert.match(nodeText(tree), /核对结果与阶段不匹配/);
+});
+
+test("unknown narration renders one full-film row and submits through the root reconcile path", async () => {
+  const project = projectFixture();
+  project.status = "failed";
+  project.narration = { status: "unknown", requestId: "speech-request-fixture" };
+  project.shots = [{ status: "pending" }, { status: "succeeded" }];
+  const ui = await mountProject(project);
+  const buttons = nodes(ui.render(), (node) => node.type === "button" && nodeText(node) === "核对");
+  assert.equal(buttons.length, 1);
+  assert.match(nodeText(ui.render()), /全片独白/);
+  buttons[0].props.onClick();
+  let tree = ui.render();
+  assert.match(nodeText(tree), /speech-request-fixture/);
+  const select = nodes(tree, (node) => node.type === "Select")[0];
+  assert.equal(select.props.value, "narration_result");
+  nodes(tree, (node) => node.type === "input")[0].props.onChange({ target: { value: "https://media.example.test/confirmed.wav" } });
+  nodes(tree, (node) => node.type === "textarea")[0].props.onChange({ target: { value: "已核实同一配音请求结果" } });
+  tree = ui.render();
+  nodes(tree, (node) => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
+  await ui.settle();
+  const call = ui.calls.find(({ options }) => options);
+  assert.deepEqual(JSON.parse(call.options.body), {
+    version: 7, shot: -1, outcome: "narration_result", value: "https://media.example.test/confirmed.wav", tokens: 0, reason: "已核实同一配音请求结果",
+  });
+});
+
+test("confirmed non-admission offers no audio field and never invokes generation", async () => {
+  const project = projectFixture();
+  project.narration = { status: "submitting", requestId: "speech-request-fixture" };
+  project.shots = [{ status: "pending" }];
+  const ui = await mountProject(project);
+  nodes(ui.render(), (node) => node.type === "button" && nodeText(node) === "核对")[0].props.onClick();
+  nodes(ui.render(), (node) => node.type === "input")[0].props.onChange({ target: { value: "https://media.example.test/previous.wav" } });
+  nodes(ui.render(), (node) => node.type === "Select")[0].props.onChange("narration_not_accepted");
+  let tree = ui.render();
+  assert.equal(nodes(tree, (node) => node.type === "input").length, 0);
+  assert.match(nodeText(tree), /不会在此自动发起配音/);
+  nodes(tree, (node) => node.type === "textarea")[0].props.onChange({ target: { value: "已核实供应商没有受理" } });
+  tree = ui.render();
+  nodes(tree, (node) => node.type === "form")[0].props.onSubmit({ preventDefault() {} });
+  await ui.settle();
+  const changes = ui.calls.filter(({ options }) => options);
+  assert.equal(changes.length, 1);
+  assert.equal(JSON.parse(changes[0].options.body).outcome, "narration_not_accepted");
+  assert.equal(JSON.parse(changes[0].options.body).value, "");
 });

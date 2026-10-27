@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/vam12375/shucode-platform/server/internal/store"
@@ -34,6 +35,39 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		return s.compose(ctx, p)
 	}
 	shot := p.Shots[index]
+	if !p.CancelRequested && (shot.Status == "pending" || shot.Status == "image_ready") {
+		if err := validateFinishingPlan(p.Brief, narrationPlan(p)); err != nil {
+			return s.failVideoReference(ctx, p, index, shot, err.Error())
+		}
+		// 只在新付费阶段前预检配置；已受理镜头即使配置撤销也必须继续查询、保存和结算。
+		if err := s.validateFinishing(ctx, p.Brief); err != nil {
+			return s.failVideoReference(ctx, p, index, shot, err.Error())
+		}
+		if hasCinematicFinishing(p) && p.Brief.Finishing.Voiceover {
+			// 整篇旁白先定真实长度，避免付完视频费用后才发现文案无法自然读完。
+			path, err := s.prepareNarration(ctx, p, "")
+			if err != nil {
+				if errors.Is(err, ErrConflict) {
+					return err
+				}
+				return s.failVideoReference(ctx, p, index, shot, err.Error())
+			}
+			seconds, err := probeFinishingAudio(ctx, path)
+			if err != nil {
+				return s.failVideoReference(ctx, p, index, shot, "narration_audio_invalid")
+			}
+			if _, err = finishingNarrationRate(seconds, float64(p.Brief.Duration)); err != nil {
+				return s.failVideoReference(ctx, p, index, shot, err.Error())
+			}
+			latest, err := s.Repo.Get(ctx, p.TeamID, p.ID)
+			if err != nil {
+				return err
+			}
+			if latest == nil || latest.CancelRequested || latest.LeaseOwner != s.WorkerID || !latest.LeaseUntil.After(time.Now()) {
+				return ErrConflict
+			}
+		}
+	}
 	update := func(fn func(*Shot)) *Project {
 		next, e := s.workerUpdate(ctx, p, func(v *Project) {
 			v.Status = "running"
@@ -48,14 +82,53 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		return next
 	}
 	downloadVideo := func(rawURL string) error {
-		a, err := s.storeOutput(ctx, p.TeamID, rawURL, "video")
+		latest, err := s.Repo.Get(ctx, p.TeamID, p.ID)
 		if err != nil {
-			if update(func(v *Shot) { v.Status = "video_ready"; v.Error = "result_download_failed" }) == nil {
+			return err
+		}
+		if latest == nil || index >= len(latest.Shots) {
+			return ErrConflict
+		}
+		saved := latest.Shots[index]
+		videoID := saved.OutputAssetID
+		if videoID == "" {
+			a, err := s.storeOutput(ctx, p.TeamID, rawURL, "video")
+			if err != nil {
+				if update(func(v *Shot) { v.Status = "video_ready"; v.Error = "result_download_failed" }) == nil {
+					return ErrConflict
+				}
+				return nil
+			}
+			videoID = a.ID
+			// 视频先落盘并持久化身份；尾帧网络失败重放只下载尾帧，不重复下载或提交视频。
+			if update(func(v *Shot) { v.OutputAssetID = videoID }) == nil {
 				return ErrConflict
 			}
-			return nil
 		}
-		if update(func(v *Shot) { v.OutputAssetID = a.ID; v.Status = "video_saved"; v.Error = "" }) == nil {
+		tailID := saved.LastFrameAssetID
+		if p.Canvas != nil && p.Canvas.ReturnLastFrame != nil && *p.Canvas.ReturnLastFrame && tailID == "" {
+			if saved.LastFrameResultURL == "" {
+				_, err := s.workerUpdate(ctx, p, func(v *Project) {
+					v.Status, v.Error = "reconciliation_required", "last_frame_result_missing"
+					v.Shots[index].Status, v.Shots[index].Error = "reconciliation_required", "last_frame_result_missing"
+				})
+				return err
+			}
+			tail, err := s.storeOutput(ctx, p.TeamID, saved.LastFrameResultURL, "image")
+			if err != nil {
+				if update(func(v *Shot) { v.Status = "video_ready"; v.Error = "last_frame_download_failed" }) == nil {
+					return ErrConflict
+				}
+				return nil
+			}
+			tailID = tail.ID
+		}
+		if update(func(v *Shot) {
+			v.OutputAssetID = videoID
+			v.LastFrameAssetID = tailID
+			v.Status = "video_saved"
+			v.Error = ""
+		}) == nil {
 			return ErrConflict
 		}
 		return nil
@@ -129,6 +202,13 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	if e != nil {
 		return e
 	}
+	submissionPlan := shot.Plan
+	if kind == "video" && (shot.Status == "pending" || shot.Status == "image_ready") {
+		submissionPlan, e = finishingGenerationPlan(p, shot.Plan)
+		if e != nil {
+			return s.failVideoReference(ctx, p, index, shot, e.Error())
+		}
+	}
 	if kind == "image" && m.Adapter == "toapis" && shot.Status == "pending" {
 		request := CanvasRequest{Resolution: firstFrameResolution(m), AspectRatio: p.Brief.AspectRatio}
 		images := 0
@@ -143,7 +223,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			return s.failVideoReference(ctx, p, index, shot, "provider_input_unsupported")
 		}
 	}
-	if kind == "video" && m.Adapter == "toapis" && (shot.Status == "pending" || shot.Status == "image_ready") {
+	if kind == "video" && m.Adapter == "toapis" && !isCanvasMultimodal(p) && (shot.Status == "pending" || shot.Status == "image_ready") {
 		resolution, ratio, images := p.Brief.Resolution, p.Brief.AspectRatio, 1
 		if p.Canvas != nil {
 			resolution, ratio, images = p.Canvas.Resolution, p.Canvas.AspectRatio, len(p.Canvas.AssetIDs)
@@ -155,8 +235,20 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			return s.failVideoReference(ctx, p, index, shot, "provider_input_unsupported")
 		}
 	}
+	if isCanvasMultimodal(p) && (shot.Status == "pending" || shot.Status == "image_ready") {
+		check := *p.Canvas
+		check.VideoReferences = append([]CanvasVideoReference{}, check.VideoReferences...)
+		for i := range check.VideoReferences {
+			if check.VideoReferences[i].StartSeconds != nil && i < len(shot.CanvasVideoAssetIDs) {
+				check.VideoReferences[i].ReferenceClipAssetID = shot.CanvasVideoAssetIDs[i]
+			}
+		}
+		if _, err := s.validateCanvasMultimodal(ctx, p.TeamID, m, check); err != nil {
+			return s.failVideoReference(ctx, p, index, shot, err.Error())
+		}
+	}
 	var referenceVideoURL, referenceAudioURL string
-	if videoReferenceRequested(p) {
+	if videoReferenceRequested(p) && !isCanvasMultimodal(p) {
 		videoModelID := p.Brief.VideoModel
 		if p.Canvas != nil {
 			videoModelID = p.Canvas.ModelID
@@ -297,6 +389,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			}
 			if update(func(v *Shot) {
 				v.ResultURL = result.Content.VideoURL
+				v.LastFrameResultURL = result.Content.LastFrameURL
 				v.ProviderUsageTokens = tokens
 				v.TokenChargeMicro = charge
 				v.TokenRateMicroPerMillion = rate
@@ -439,7 +532,16 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		for _, id := range p.Canvas.AssetIDs {
 			images = append(images, s.Blobs.URL(p.TeamID, id))
 		}
-		if referenceVideoURL != "" {
+		if isCanvasMultimodal(p) {
+			videos, audios := []string{}, []string{}
+			for _, assetID := range shot.CanvasVideoAssetIDs {
+				videos = append(videos, s.Blobs.URL(p.TeamID, assetID))
+			}
+			for _, assetID := range p.Canvas.AudioAssetIDs {
+				audios = append(audios, s.Blobs.URL(p.TeamID, assetID))
+			}
+			id, e = provider.CanvasMultimodalVideo(ctx, m, *p.Canvas, images, videos, audios)
+		} else if referenceVideoURL != "" {
 			id, e = provider.CanvasVideo(ctx, m, *p.Canvas, images, referenceVideoURL)
 		} else {
 			id, e = provider.CanvasVideo(ctx, m, *p.Canvas, images)
@@ -449,9 +551,9 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		for _, assetID := range replacementImageIDs {
 			images = append(images, s.Blobs.URL(p.TeamID, assetID))
 		}
-		id, e = provider.SubmitWithReferenceImages(ctx, m, p.Brief, shot.Plan, images, referenceVideoURL, referenceAudioURL)
+		id, e = provider.SubmitWithReferenceImages(ctx, m, p.Brief, submissionPlan, images, referenceVideoURL, referenceAudioURL)
 	} else {
-		id, e = provider.SubmitWithReference(ctx, m, p.Brief, shot.Plan, image, referenceVideoURL)
+		id, e = provider.SubmitWithReference(ctx, m, p.Brief, submissionPlan, image, referenceVideoURL)
 	}
 	if e != nil {
 		return s.submissionFailure(ctx, p, index, shot, e)
@@ -500,6 +602,10 @@ func (s *Service) failVideoReference(ctx context.Context, p *Project, index int,
 	}
 	_, err := s.workerUpdate(ctx, p, func(v *Project) {
 		v.Status = "failed"
+		// 配音请求期间可能已取消；迟到错误只记录核对事实，不能覆盖用户的取消终态。
+		if v.CancelRequested {
+			v.Status = "cancelled"
+		}
 		v.Error = reason
 		v.Shots[index].Status = "failed"
 		v.Shots[index].Error = reason
@@ -533,4 +639,8 @@ func (s *Service) submissionFailure(ctx context.Context, p *Project, index int, 
 		return e
 	}
 	return s.unknown(ctx, p, index)
+}
+
+func isCanvasMultimodal(p *Project) bool {
+	return p.Canvas != nil && p.Canvas.ReferenceMode == "multimodal"
 }

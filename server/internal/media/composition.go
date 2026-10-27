@@ -120,6 +120,9 @@ func compositionTimeline(p *Project) ([]compositionSegment, error) {
 }
 
 func (s *Service) compose(ctx context.Context, p *Project) error {
+	if err := s.validateFinishing(ctx, p.Brief); err != nil {
+		return err
+	}
 	if !CompositionAvailable() {
 		return fmt.Errorf("composition_dependencies_missing")
 	}
@@ -146,6 +149,42 @@ func (s *Service) compose(ctx context.Context, p *Project) error {
 	if e != nil {
 		return e
 	}
+	if hasCinematicFinishing(p) {
+		e = s.renderFinishingComposition(runCtx, p, segments, dir, w, h)
+	} else {
+		e = s.renderLegacyComposition(runCtx, p, segments, dir, w, h)
+	}
+	if e != nil {
+		return e
+	}
+	f, e := os.Open(filepath.Join(dir, "final.mp4"))
+	if e != nil {
+		return e
+	}
+	defer f.Close()
+	id, size, e := s.Blobs.Put(p.TeamID, f, MaxVideo)
+	if e != nil {
+		return e
+	}
+	a := Asset{ID: id, Name: p.Brief.Product + ".mp4", Kind: "video", Mime: "video/mp4", Size: size, CreatedAt: time.Now().UTC()}
+	if e = s.Repo.AddAsset(ctx, p.TeamID, a); e != nil {
+		return e
+	}
+	_, e = s.workerUpdate(ctx, p, func(v *Project) {
+		// 合成期间取消由平台事实决定，不能让旧 worker 快照把 cancelled 覆盖为 completed。
+		if v.CancelRequested {
+			v.Status = "cancelled"
+			return
+		}
+		v.OutputAssetID = id
+		v.Status = "completed"
+		v.Error = ""
+	})
+	return e
+}
+
+func (s *Service) renderLegacyComposition(runCtx context.Context, p *Project, segments []compositionSegment, dir string, w, h int) error {
+	var e error
 	list := []string{}
 	fontSize, marginLR, marginV := subtitleMetrics(w, h)
 	ass := fmt.Sprintf("[Script Info]\nScriptType: v4.00+\nPlayResX: %d\nPlayResY: %d\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Noto Sans CJK SC,%d,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,1,2,%d,%d,%d,1\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n", w, h, fontSize, marginLR, marginLR, marginV)
@@ -207,30 +246,7 @@ func (s *Service) compose(ctx context.Context, p *Project) error {
 	if e = cmd.Run(); e != nil {
 		return fmt.Errorf("composition_failed: %w", e)
 	}
-	f, e := os.Open(filepath.Join(dir, "final.mp4"))
-	if e != nil {
-		return e
-	}
-	defer f.Close()
-	id, size, e := s.Blobs.Put(p.TeamID, f, MaxVideo)
-	if e != nil {
-		return e
-	}
-	a := Asset{ID: id, Name: p.Brief.Product + ".mp4", Kind: "video", Mime: "video/mp4", Size: size, CreatedAt: time.Now().UTC()}
-	if e = s.Repo.AddAsset(ctx, p.TeamID, a); e != nil {
-		return e
-	}
-	_, e = s.workerUpdate(ctx, p, func(v *Project) {
-		// 合成期间取消由平台事实决定，不能让旧 worker 快照把 cancelled 覆盖为 completed。
-		if v.CancelRequested {
-			v.Status = "cancelled"
-			return
-		}
-		v.OutputAssetID = id
-		v.Status = "completed"
-		v.Error = ""
-	})
-	return e
+	return nil
 }
 
 // Capabilities 声明客户端可使用的高级能力。

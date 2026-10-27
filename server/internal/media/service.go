@@ -22,9 +22,14 @@ type Service struct {
 	ReferenceProbe      func(context.Context, string) (ReferenceMetadata, error)
 	ArchiveCanvasOutput func(context.Context, CanvasArchiveInput) CanvasTeamAssetArchive
 	RouteScheduler      *routepool.Scheduler
+	Narration           *NarrationConfig
+	BackgroundMusicPath string
 }
 
 func (s *Service) Create(ctx context.Context, team, user, device, id string, b Brief) (*Project, error) {
+	if err := validateFinishingOptions(b); err != nil {
+		return nil, err
+	}
 	if b.SourceOnly {
 		return s.CreateReferenceAnalysis(ctx, team, user, device, id, b.ReferenceAssetID)
 	}
@@ -46,6 +51,9 @@ func (s *Service) Create(ctx context.Context, team, user, device, id string, b B
 			return nil, ErrConflict
 		}
 		return existing, nil
+	}
+	if e := s.validateFinishing(ctx, b); e != nil {
+		return nil, e
 	}
 	models, e := s.Repo.Models(ctx)
 	if e != nil {
@@ -122,6 +130,16 @@ func (s *Service) Bind(ctx context.Context, team, id string, version int64, a An
 	return s.bindAnalysis(ctx, team, id, version, a)
 }
 func (s *Service) SetPlan(ctx context.Context, team, id string, version int64, input string, plan Plan) (*Project, error) {
+	p, err := s.Repo.Get(ctx, team, id)
+	if err != nil {
+		return nil, err
+	}
+	if p == nil {
+		return nil, fmt.Errorf("project_not_found")
+	}
+	if err = s.validateFinishing(ctx, p.Brief); err != nil {
+		return nil, err
+	}
 	return s.acceptAnalysisPlan(ctx, team, id, version, input, plan)
 }
 
@@ -197,7 +215,7 @@ func (s *Service) FailAnalysis(ctx context.Context, team, id string, version int
 		return nil, ErrInvalid
 	}
 	switch code {
-	case "analysis_failed", "video_analysis_scope_invalid", "video_analysis_scope_budget_exhausted", "video_analysis_scope_unavailable", "source_timeline_invalid", "source_url_mismatch", "source_report_invalid", "video_reference_duration_unsupported", "model_not_configured", "duration_or_budget_exceeded", "video_reference_plan_invalid", "video_reference_prompt_limit", "video_reference_unsupported", "video_reference_image_limit", "first_frame_required", "video_source_changed":
+	case "analysis_failed", "video_analysis_scope_invalid", "video_analysis_scope_budget_exhausted", "video_analysis_scope_unavailable", "source_timeline_invalid", "source_url_mismatch", "source_report_invalid", "video_reference_duration_unsupported", "model_not_configured", "duration_or_budget_exceeded", "video_reference_plan_invalid", "video_reference_prompt_limit", "video_reference_unsupported", "video_reference_image_limit", "first_frame_required", "video_source_changed", "video_plan_copy_invalid", "narration_empty", "narration_too_long", "narration_script_mismatch":
 	default:
 		return nil, ErrInvalid
 	}
@@ -210,6 +228,12 @@ func (s *Service) action(ctx context.Context, team, id string, version int64, ac
 		case "generate":
 			if p.Status != "review" {
 				return ErrConflict
+			}
+			if e := s.validateFinishing(ctx, p.Brief); e != nil {
+				return e
+			}
+			if e := validateFinishingPlan(p.Brief, narrationPlan(p)); e != nil {
+				return e
 			}
 			p.Status = "queued"
 		case "cancel":
@@ -234,6 +258,15 @@ func (s *Service) action(ctx context.Context, team, id string, version int64, ac
 			}
 			if p.CancelRequested {
 				return ErrConflict
+			}
+			if e := s.validateFinishing(ctx, p.Brief); e != nil {
+				return e
+			}
+			if e := validateFinishingPlan(p.Brief, narrationPlan(p)); e != nil {
+				return e
+			}
+			if p.Narration != nil && (p.Narration.Status == "submitting" || p.Narration.Status == "unknown") {
+				return fmt.Errorf("narration_submission_unknown")
 			}
 			if referencePreparationFailure(p.Error) {
 				return s.retryReferencePreparation(ctx, p)
@@ -350,6 +383,15 @@ func (s *Service) Tick(ctx context.Context) {
 					v.Status = "failed"
 					v.Error = "composition_failed"
 				}
+				// 新后期的配置/配音错误已确定，不能留在 running 无限重试或丢失未知受理事实。
+				if v.Brief.Finishing != nil {
+					if code := finishingFailureCode(e); code != "" {
+						v.Status, v.Error = "failed", code
+					}
+					if v.CancelRequested {
+						v.Status = "cancelled"
+					}
+				}
 			})
 		}
 		_, _ = s.workerUpdate(ctx, claimed, func(v *Project) { v.LeaseOwner = ""; v.LeaseUntil = time.Time{} })
@@ -376,6 +418,15 @@ func (s *Service) storeOutput(ctx context.Context, team, rawURL string, kind str
 	a, e := s.Blobs.Download(ctx, team, rawURL, kind)
 	if e != nil {
 		return a, e
+	}
+	if kind == "video" {
+		probe := s.ReferenceProbe
+		if probe == nil {
+			probe = ProbeReference
+		}
+		if metadata, probeErr := probe(ctx, s.Blobs.Path(team, a.ID)); probeErr == nil {
+			a.DurationSeconds, a.Width, a.Height = metadata.DurationSeconds, metadata.Width, metadata.Height
+		}
 	}
 	e = s.Repo.AddAsset(ctx, team, a)
 	return a, e

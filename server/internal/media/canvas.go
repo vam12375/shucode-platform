@@ -13,6 +13,10 @@ import (
 )
 
 type CanvasRequest struct {
+	ReferenceMode      string                 `json:"referenceMode,omitempty"`
+	AudioAssetIDs      []string               `json:"audioAssetIds,omitempty"`
+	GenerateAudio      *bool                  `json:"generateAudio,omitempty"`
+	ReturnLastFrame    *bool                  `json:"returnLastFrame,omitempty"`
 	Kind               string                 `json:"kind"`
 	ModelID            string                 `json:"modelId"`
 	Prompt             string                 `json:"prompt"`
@@ -70,7 +74,10 @@ func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id strin
 	if strings.TrimSpace(r.Prompt) == "" || utf8.RuneCountInString(r.Prompt) > 4000 || r.Count < 1 || r.Count > 4 || r.BoardID == "" || len(r.BoardID) > 200 || r.NodeID == "" || len(r.NodeID) > 200 || r.WorkspacePath == "" || len(r.WorkspacePath) > 4096 || len(r.WorkspaceIdentity) > 4096 || len(r.RemoteSessionID) > 200 {
 		return nil, ErrInvalid
 	}
-	if m.Adapter == "toapis" {
+	if err := validateCanvasOptions(m, r); err != nil {
+		return nil, err
+	}
+	if m.Adapter == "toapis" && r.ReferenceMode != "multimodal" {
 		if r.Kind == "image" {
 			if validateToAPIsImageInput(m, r, len(r.AssetIDs)) != nil {
 				return nil, ErrInvalid
@@ -85,6 +92,10 @@ func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id strin
 		}
 	} else if r.Kind != "video" || !slices.Contains(ModelAspectRatios(m), r.AspectRatio) || !m.DurationSupported(r.Duration) || !slices.Contains(m.Resolutions, r.Resolution) {
 		return nil, ErrInvalid
+	} else if r.ReferenceMode == "multimodal" {
+		if err := validateCanvasOptions(m, r); err != nil {
+			return nil, err
+		}
 	} else if len(r.VideoReferences) == 0 {
 		if len(r.AssetIDs) > 2 {
 			return nil, ErrInvalid
@@ -99,7 +110,7 @@ func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id strin
 		}
 	}
 	var videoReference *videoReferenceSource
-	if len(r.VideoReferences) > 0 {
+	if len(r.VideoReferences) > 0 && r.ReferenceMode != "multimodal" {
 		ref := r.VideoReferences[0]
 		if ref.ReferenceClipAssetID == "" {
 			return nil, fmt.Errorf("video_reference_clip_required")
@@ -134,9 +145,16 @@ func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id strin
 			return nil, ErrInvalid
 		}
 	}
+	var multimodalVideos []string
+	if r.ReferenceMode == "multimodal" {
+		multimodalVideos, err = s.validateCanvasMultimodal(ctx, team, m, r)
+		if err != nil {
+			return nil, err
+		}
+	}
 	unit := m.PriceMicro
 	if r.Kind == "video" {
-		if videoReference != nil {
+		if videoReference != nil || r.ReferenceMode == "multimodal" && len(r.VideoReferences) > 0 {
 			unit = videoReferenceQuoteMicro(m.VideoReference, r.Resolution, r.AspectRatio, r.Duration)
 		} else {
 			unit *= int64(r.Duration)
@@ -154,7 +172,7 @@ func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id strin
 			plan.SourceEnd = videoReference.EndSeconds
 			plan.ReferenceVideoAssetID = r.VideoReferences[0].ReferenceClipAssetID
 		}
-		shots[i] = Shot{Status: "pending", Attempt: 1, Plan: plan, ReferenceVideoAssetID: plan.ReferenceVideoAssetID, QuoteMicro: unit}
+		shots[i] = Shot{CanvasVideoAssetIDs: slices.Clone(multimodalVideos), Status: "pending", Attempt: 1, Plan: plan, ReferenceVideoAssetID: plan.ReferenceVideoAssetID, QuoteMicro: unit}
 	}
 	now := time.Now().UTC()
 	p := &Project{ID: id, TeamID: team, UserID: user, DeviceID: device, Version: 1, Status: "queued", Canvas: &requestForProject, Models: []Model{m}, Shots: shots, QuoteMicro: total, CreatedAt: now, UpdatedAt: now}

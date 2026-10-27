@@ -1,0 +1,63 @@
+{
+  "brief": {
+    "mode": "auto",
+    "product": "测试商品",
+    "sellingPoints": "真实材质细节",
+    "assetIds": ["fixture-product"],
+    "referenceUrls": [],
+    "platforms": ["douyin"],
+    "videoModel": "fixture-video",
+    "resolution": "720p",
+    "aspectRatio": "9:16",
+    "duration": 10,
+    "maxCreditsMicro": 1000000,
+    "reviewPlan": false,
+    "script": "把片刻留给自己。让日常慢下来。",
+    "narrationLanguage": "zh-CN",
+    "finishing": { "voiceover": true, "music": true, "subtitles": "none" }
+  },
+  "plan": {
+    "references": [
+      {
+        "url": "https://example.com/observed-video",
+        "title": "测试参考",
+        "capturedAt": "2026-10-26T00:00:00.000Z",
+        "likes": null,
+        "evidence": "测试夹具：0–2秒真实材质近景",
+        "selectionReason": "测试镜头结构"
+      }
+    ],
+    "shots": [
+      {
+        "sourceUrl": "https://example.com/observed-video",
+        "sourceStart": 0,
+        "sourceEnd": 2,
+        "duration": 5,
+        "framing": "近景",
+        "camera": "平稳向右，结束于商品边缘",
+        "action": "观察材质",
+        "purpose": "建立真实使用情境",
+        "prompt": "自然侧光、暖中性色调，缓慢向右观察商品，无浮字",
+        "assetId": "fixture-product",
+        "subtitle": "",
+        "narration": "把片刻留给自己。",
+        "transition": "cut"
+      },
+      {
+        "sourceUrl": "https://example.com/observed-video",
+        "sourceStart": 2,
+        "sourceEnd": 4,
+        "duration": 5,
+        "framing": "特写",
+        "camera": "接前镜向右，稳定收尾",
+        "action": "手放下商品",
+        "purpose": "以具体动作自然结束",
+        "prompt": "同一自然侧光和暖中性色调，手将同一商品轻轻放下，无浮字",
+        "assetId": "fixture-product",
+        "subtitle": "",
+        "narration": "让日常慢下来。",
+        "transition": "fade"
+      }
+    ]
+  }
+}

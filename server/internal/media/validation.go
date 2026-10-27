@@ -98,6 +98,9 @@ func ValidateModels(models []Model) error {
 }
 func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	replica := b.ReferenceAssetID != ""
+	if err := validateFinishingOptions(b); err != nil {
+		return err
+	}
 	if (b.Mode != "auto" && b.Mode != "replicate") || (b.GenerationMode != "" && b.GenerationMode != "storyboard" && b.GenerationMode != "video_reference") {
 		return ErrInvalid
 	}
@@ -143,10 +146,18 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	if b.NarrationLanguage != "" && !slices.Contains([]string{"zh-CN", "en-US", "ja-JP", "ko-KR"}, b.NarrationLanguage) {
 		return ErrInvalid
 	}
+	if len(b.Platforms) > 3 {
+		return ErrInvalid
+	}
+	platforms := make(map[string]bool, len(b.Platforms))
 	for _, p := range b.Platforms {
-		if p != "douyin" && p != "xiaohongshu" {
+		if p != "douyin" && p != "xiaohongshu" && p != "bilibili" {
 			return ErrInvalid
 		}
+		if platforms[p] {
+			return ErrInvalid
+		}
+		platforms[p] = true
 	}
 	m, e := FindModel(models, b.VideoModel, "video")
 	if e != nil {
@@ -207,6 +218,15 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	return nil
 }
 func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
+	if err := validateFinishingOptions(b); err != nil {
+		return nil, 0, err
+	}
+	// 审阅草稿允许用户修正文案；结构与报价仍校验，生成准入再严格检查完整独白。
+	if !b.ReviewPlan {
+		if err := validateFinishingPlan(b, plan); err != nil {
+			return nil, 0, err
+		}
+	}
 	replica := b.ReferenceAssetID != ""
 	wholeReference := replica && b.GenerationMode == "video_reference"
 	if len(plan.Shots) == 0 || len(plan.Shots) > 30 || len(plan.References) == 0 || len(plan.References) > 20 {

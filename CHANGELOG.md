@@ -9,6 +9,42 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.60.0] - 2026-10-27
+
+### 新增(画布全能参考与尾帧)
+
+- `CanvasRequest` 支持 `referenceMode=frames|multimodal`、`audioAssetIds`、`generateAudio`、
+  `returnLastFrame`；multimodal 允许纯图、纯视频、图/视频+音频（禁止仅音频），有序图≤9、
+  视频≤3、音频≤3、总≤12，视频/音频各≤15 秒；旧 frames/复刻缺省语义不变。
+- 公开 SKU 新增 `canvasCapabilities`，由真实 adapter/型号能力派生；Ark 2.0 与 ToAPIs 2.0
+  支持全能参考，`returnLastFrame` 仅 Ark；公开 durations/min/max 与 4–15 秒取交集。
+- 新增画布素材上传（图片≤20MiB、视频≤50MiB、音频≤15MiB），真实探测时长/画面并校验团队归属；
+  Ark 按图片/视频/音频有序 role 提交，ToAPIs 映射 `*_with_roles`。尾帧落盘为独立资产并通过
+  `lastFrameAssetId` 投影，下载失败只重试尾帧、不重提视频任务。
+
+### 新增(统一后期：旁白/配乐/字幕)
+
+- 新自动成片支持可选 `brief.finishing {voiceover,music,subtitles}`；旧制作单与原片复刻保持
+  旧语义。`overview.capabilities` 的 `cinematicComposition/subtitleStyle/voiceover/bgm`
+  只在真实 TTS/BGM/FFmpeg 依赖可用时为真，配置缺失在付费镜头前失败。
+- 全片一次 TTS、固定音色与稳定请求身份；submitting/unknown 不自动重发，root 可补录
+  `narration_result` 或确认未受理；字幕与旁白分离，关闭字幕不烧录。
+- 成片统一 30fps/满幅、cut/fade 与旁白/单曲配乐/ducking；逐镜原音排除，旁白超长只允许
+  1.15 倍加速，超限失败不截尾。控制台核对页支持 narration 恢复；新增
+  `MEDIA_TTS_BASE_URL/MODEL/VOICE/API_KEY` 与 `MEDIA_BGM_PATH` 接线。
+
+### 新增(研究平台 B站)
+
+- `overview.capabilities.researchPlatforms` 新增 `bilibili`，平台枚举去重并限制最多 3 个；
+  服务端接受 B站制作单，客户端按能力缺省仍只提供原两站。实际分轨导入见 0.61.0。
+
+### 验证
+
+- `make -C server lint test`
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`（119 项）
+
 ## [0.59.2] - 2026-10-27
 
 ### 修复(ToAPIs 视频参考定价)

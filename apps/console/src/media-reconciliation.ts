@@ -5,7 +5,11 @@ export type ReconciliationOutcome =
   | "video_usage"
   | "image_task"
   | "image_result"
+  | "narration_result"
+  | "narration_not_accepted"
   | "not_accepted";
+
+const NARRATION_OUTCOMES: ReconciliationOutcome[] = ["narration_result", "narration_not_accepted"];
 
 const IMAGE_OUTCOMES: ReconciliationOutcome[] = ["image_result", "not_accepted"];
 const ASYNC_IMAGE_OUTCOMES: ReconciliationOutcome[] = ["image_task", ...IMAGE_OUTCOMES];
@@ -15,7 +19,11 @@ const VIDEO_OUTCOMES: ReconciliationOutcome[] = [
   "not_accepted",
 ];
 
-const OUTCOME_OPTIONS: Record<"image" | "video", SelectOption[]> = {
+const OUTCOME_OPTIONS: Record<"image" | "video" | "narration", SelectOption[]> = {
+  narration: [
+    { value: "narration_result", label: "独白已生成，补录音频结果 URL" },
+    { value: "narration_not_accepted", label: "确认配音未受理，允许显式重试" },
+  ],
   image: [
     { value: "image_result", label: "图片已生成，补录结果 URL" },
     { value: "not_accepted", label: "确认未受理，零扣关闭" },
@@ -65,12 +73,13 @@ export function reconciliationOutcomesForStage(
 ): ReconciliationOutcome[] {
   if (stage === "image") return asyncImage ? ASYNC_IMAGE_OUTCOMES : IMAGE_OUTCOMES;
   if (stage === "video") return VIDEO_OUTCOMES;
+  if (stage === "narration") return NARRATION_OUTCOMES;
   return [];
 }
 
 export function reconciliationOptionsForStage(stage?: string, asyncImage = false): SelectOption[] {
   if (stage === "image" && asyncImage) return ASYNC_IMAGE_OPTIONS;
-  if (stage === "image" || stage === "video") return OUTCOME_OPTIONS[stage];
+  if (stage === "image" || stage === "video" || stage === "narration") return OUTCOME_OPTIONS[stage];
   return [];
 }
 
@@ -80,6 +89,7 @@ export function defaultReconciliationOutcome(
 ): ReconciliationOutcome | "" {
   if (stage === "image") return asyncImage ? "image_task" : "image_result";
   if (stage === "video") return "video_task";
+  if (stage === "narration") return "narration_result";
   return "";
 }
 
@@ -90,6 +100,7 @@ export function reconciliationValueLabel(
   if (outcome === "video_usage") return "Ark completion_tokens";
   if (outcome === "image_task") return "图片 Task ID";
   if (outcome === "image_result") return "图片结果 URL";
+  if (outcome === "narration_result") return "全片独白音频 URL";
   return "";
 }
 
@@ -100,6 +111,7 @@ export function reconciliationValuePlaceholder(
   if (outcome === "video_usage") return "例如 108900";
   if (outcome === "image_task") return "供应商返回的图片任务 ID";
   if (outcome === "image_result") return "可直接下载的图片结果地址";
+  if (outcome === "narration_result") return "经供应商核实可直接下载的音频结果地址";
   return "";
 }
 

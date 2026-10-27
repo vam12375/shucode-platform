@@ -33,6 +33,7 @@ type fixture struct {
 	videoDownloads         atomic.Int64
 	queries                atomic.Int64
 	failFirstVideoDownload bool
+	returnLastFrame        bool
 	requestMu              sync.Mutex
 	requestBodies          []map[string]any
 }
@@ -100,7 +101,11 @@ func setup(t *testing.T) *fixture {
 		if f.failQueries.Load() {
 			status = "failed"
 		}
-		json.NewEncoder(w).Encode(map[string]any{"status": status, "content": map[string]string{"video_url": f.server.URL + "/result.mp4"}})
+		content := map[string]string{"video_url": f.server.URL + "/result.mp4"}
+		if f.returnLastFrame {
+			content["last_frame_url"] = f.server.URL + "/result.png"
+		}
+		json.NewEncoder(w).Encode(map[string]any{"status": status, "content": content})
 	}))
 	t.Cleanup(f.server.Close)
 	f.s = &Service{Repo: Repository{Store: st}, WorkerID: uuid.NewString(), Blobs: Blobs{Root: t.TempDir(), Origin: "https://media.example.test", SigningKey: "test", Client: f.server.Client()}}

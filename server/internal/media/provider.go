@@ -128,7 +128,8 @@ func videoSubmitBodyWithImages(m Model, b Brief, s ShotPlan, images []string, re
 	body := map[string]any{"model": m.UpstreamModel, "content": videoContent(s.Prompt, images, referenceVideo, referenceAudio...), "resolution": b.Resolution, "ratio": providerVideoRatio(b.AspectRatio), "duration": s.Duration, "watermark": false}
 	// 只在模型显式开启时下发；Seedance 1.0 等不支持该参数的模型保持原请求不变。
 	if m.GenerateAudio {
-		body["generate_audio"] = true
+		// 新后期拥有唯一声音主轨；支持原生音频的模型必须显式关掉，省略会沿用上游默认。
+		body["generate_audio"] = b.Finishing == nil
 	}
 	return body
 }
@@ -155,6 +156,9 @@ func (p Provider) SubmitWithReferenceImages(ctx context.Context, m Model, b Brie
 	}
 	if p.Adapter == "toapis" {
 		// ToAPIs 的多模态协议没有参考音频槽位，目录校验已拒绝该能力声明。
+		if b.Finishing != nil {
+			m.GenerateAudio = false
+		}
 		return p.submitToAPIs(ctx, m, CanvasRequest{Prompt: s.Prompt, Resolution: b.Resolution, AspectRatio: b.AspectRatio, Duration: s.Duration}, images, referenceVideo)
 	}
 	if p.Adapter != "" && p.Adapter != "ark" {
@@ -177,7 +181,8 @@ type ProviderResult struct {
 	Status  string                `json:"status"`
 	Error   providerErrorResponse `json:"error"`
 	Content struct {
-		VideoURL string `json:"video_url"`
+		VideoURL     string `json:"video_url"`
+		LastFrameURL string `json:"last_frame_url"`
 	} `json:"content"`
 	Usage struct {
 		CompletionTokens int64 `json:"completion_tokens"`
@@ -226,6 +231,9 @@ func (p Provider) CanvasImage(ctx context.Context, m Model, r CanvasRequest, ima
 	return out.Data[0].URL, nil
 }
 func (p Provider) CanvasVideo(ctx context.Context, m Model, r CanvasRequest, images []string, referenceVideos ...string) (string, error) {
+	if err := validateCanvasOptions(m, r); err != nil {
+		return "", err
+	}
 	video := ""
 	if len(referenceVideos) > 0 && referenceVideos[0] != "" {
 		if m.VideoReference == nil || len(images) == 0 || len(images) > m.VideoReference.MaxImages {
@@ -243,6 +251,12 @@ func (p Provider) CanvasVideo(ctx context.Context, m Model, r CanvasRequest, ima
 	body := map[string]any{"model": m.UpstreamModel, "content": videoContent(r.Prompt, images, video), "resolution": r.Resolution, "ratio": providerVideoRatio(r.AspectRatio), "duration": r.Duration, "watermark": false}
 	if m.GenerateAudio {
 		body["generate_audio"] = true
+		if r.GenerateAudio != nil {
+			body["generate_audio"] = *r.GenerateAudio
+		}
+	}
+	if r.ReturnLastFrame != nil {
+		body["return_last_frame"] = *r.ReturnLastFrame
 	}
 	var out struct {
 		ID string `json:"id"`

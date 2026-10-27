@@ -55,6 +55,9 @@ func (p Provider) submitToAPIs(ctx context.Context, m Model, r CanvasRequest, im
 		body["watermark"] = false
 	} else {
 		body["generate_audio"] = m.GenerateAudio
+		if r.GenerateAudio != nil {
+			body["generate_audio"] = *r.GenerateAudio
+		}
 	}
 	if len(images) > 0 {
 		media := make([]map[string]string, 0, len(images))

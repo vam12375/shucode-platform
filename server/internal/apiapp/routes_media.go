@@ -14,7 +14,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -33,6 +33,16 @@ func NewMediaService(deps *Deps) *media.Service {
 		client = &http.Client{Transport: netguard.NewTransport(false), Timeout: 60_000_000_000, CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("redirect_forbidden") }}
 	}
 	s := &media.Service{Repo: media.Repository{Store: deps.Store}, Blobs: media.Blobs{Root: root, Origin: strings.TrimRight(deps.Env.PublicAPIOrigin, "/"), SigningKey: key, Client: client}, WorkerID: uuid.NewString()}
+	// 配音使用独立管理员配置，不能误把视频供应商密钥当成 speech 授权。
+	ttsClient := &http.Client{Transport: netguard.NewTransport(deps.Env.AllowPrivateUpstreamNetworks), Timeout: 2 * time.Minute, CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("redirect_forbidden") }}
+	if deps.HTTPClient != nil {
+		copyClient := *deps.HTTPClient
+		copyClient.CheckRedirect = ttsClient.CheckRedirect
+		copyClient.Timeout = 2 * time.Minute
+		ttsClient = &copyClient
+	}
+	s.Narration = &media.NarrationConfig{BaseURL: strings.TrimSpace(os.Getenv("MEDIA_TTS_BASE_URL")), Model: strings.TrimSpace(os.Getenv("MEDIA_TTS_MODEL")), Voice: strings.TrimSpace(os.Getenv("MEDIA_TTS_VOICE")), APIKey: strings.TrimSpace(os.Getenv("MEDIA_TTS_API_KEY")), Client: ttsClient, AllowInsecure: deps.Env.AllowInsecureUpstreamURLs}
+	s.BackgroundMusicPath = strings.TrimSpace(os.Getenv("MEDIA_BGM_PATH"))
 	s.ArchiveCanvasOutput = newCanvasArchivePublisher(deps, s.Blobs)
 	parserClient := media.NewReferenceHTTPClient(90 * time.Second)
 	s.SourceParser = &media.SourceParser{Client: parserClient, ResolveKey: func(ctx context.Context) (string, error) {
@@ -178,16 +188,16 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(503, fail(503, "reference_pricing_unavailable"))
 			return
 		}
-		c.JSON(200, okData(gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": quota - used, "reservedMicro": int64(0), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "assets": assets, "projects": projects, "generations": generations, "compositionAvailable": media.CompositionAvailable(), "referencePricing": pricing, "capabilities": media.Capabilities()}))
+		c.JSON(200, okData(gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": quota - used, "reservedMicro": int64(0), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "assets": assets, "projects": projects, "generations": generations, "compositionAvailable": media.CompositionAvailable(), "referencePricing": pricing, "capabilities": s.FinishingCapabilities(ctx)}))
 	})
 	router.POST("/api/v1/media/assets", func(c *gin.Context) {
 		_, m, ok := mediaIdentity(c, deps)
 		if !ok {
 			return
 		}
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, media.MaxUpload+4096)
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, media.MaxCanvasVideoBytes+4096)
 		if e := c.Request.ParseMultipartForm(1 << 20); e != nil {
-			c.JSON(413, fail(413, "图片最大20MB"))
+			c.JSON(413, fail(413, "素材最大50MB；图片20MB，音频15MB"))
 			return
 		}
 		if c.Request.MultipartForm != nil {
@@ -195,32 +205,15 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		}
 		f, h, e := c.Request.FormFile("file")
 		if e != nil {
-			c.JSON(400, fail(400, "缺少图片"))
+			c.JSON(400, fail(400, "缺少素材"))
 			return
 		}
 		defer f.Close()
-		head := make([]byte, 512)
-		n, _ := io.ReadFull(f, head)
-		mime := http.DetectContentType(head[:n])
-		if mime != "image/png" && mime != "image/jpeg" && mime != "image/webp" {
-			c.JSON(400, fail(400, "仅支持 PNG、JPEG、WebP"))
-			return
-		}
-		if _, e = f.Seek(0, 0); e != nil {
-			internalError(c, deps, e)
-			return
-		}
-		id, size, e := s.Blobs.Put(m.Team.ID, f, media.MaxUpload)
+		asset, e := s.UploadCanvasMedia(c.Request.Context(), m.Team.ID, h.Filename, c.Request.FormValue("product"), f)
 		if e != nil {
 			mediaError(c, deps, e)
 			return
 		}
-		asset := media.Asset{ID: id, Name: filepath.Base(h.Filename), Product: c.Request.FormValue("product"), Kind: "image", Mime: mime, Size: size, CreatedAt: deps.Now()}
-		if e = s.Repo.AddAsset(c.Request.Context(), m.Team.ID, asset); e != nil {
-			internalError(c, deps, e)
-			return
-		}
-		asset.URL = s.Blobs.URL(m.Team.ID, id)
 		c.JSON(200, okData(asset))
 	})
 	router.POST("/api/v1/media/projects", func(c *gin.Context) {
@@ -386,7 +379,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		}
 		pending := []media.Project{}
 		for _, p := range all {
-			if p.Status == "reconciliation_required" {
+			if p.Status == "reconciliation_required" || media.NarrationNeedsReconciliation(p) {
 				pending = append(pending, p)
 			}
 		}
@@ -446,6 +439,11 @@ func publicMediaModels(models []media.Model) []gin.H {
 		if m.MinDuration > 0 && m.MaxDuration >= m.MinDuration {
 			durations = m.AllowedDurations()
 		}
+		canvasCapability := media.CanvasCapabilitiesFor(m)
+		if canvasCapability != nil {
+			// 旧2—30配置不代表2.0全能参考支持；公开管理员配置与已适配时长的交集。
+			durations = slices.DeleteFunc(durations, func(d int) bool { return d < 4 || d > 15 })
+		}
 		// 用户消耗用于客户端展示；供应商成本与内部价格版本只用于服务端计费及 root 控制台。
 		name := groupNames[publicMediaModelGroupID(m)]
 		model := gin.H{"id": m.ID, "name": name, "kind": m.Kind, "resolutions": resolutions, "maxReferenceImages": media.MaxReferenceImages(m), "durations": durations, "generateAudio": m.GenerateAudio, "priceMicro": m.PriceMicro}
@@ -453,15 +451,28 @@ func publicMediaModels(models []media.Model) []gin.H {
 		model["groupId"] = groupID
 		model["groupName"] = groupNames[groupID]
 		model["aspectRatios"] = media.ModelAspectRatios(m)
+		if canvasCapability != nil {
+			model["canvasCapabilities"] = canvasCapability
+		}
 		if m.MinDuration > 0 && m.MaxDuration >= m.MinDuration {
-			model["minDuration"] = m.MinDuration
-			model["maxDuration"] = m.MaxDuration
+			minimum, maximum := m.MinDuration, m.MaxDuration
+			if canvasCapability != nil {
+				minimum, maximum = max(4, minimum), min(15, maximum)
+			}
+			if minimum <= maximum {
+				model["minDuration"] = minimum
+				model["maxDuration"] = maximum
+			}
 		}
 		if m.VideoReference != nil {
 			reference := gin.H{
 				"maxDurationSeconds": m.VideoReference.MaxDurationSeconds,
 				"maxImages":          m.VideoReference.MaxImages,
 				"priceMicro":         m.VideoReference.PriceMicro,
+			}
+			// 可选能力仅在配置后下发，保持旧目录缺字段的wire语义。
+			if m.VideoReference.MaxAudioSeconds > 0 {
+				reference["maxAudioSeconds"] = m.VideoReference.MaxAudioSeconds
 			}
 			// 旧目录没有 token 费率时不下发零值，保持 wire 兼容。
 			if m.VideoReference.TokenPriceMicroPerMillion > 0 {

@@ -35,6 +35,7 @@ interface PendingShot {
 }
 
 interface PendingProject extends ImageReconciliationProject {
+  narration?: { status: string; requestId: string };
   id: string;
   teamId: string;
   version: number;
@@ -62,6 +63,7 @@ function errorMessage(error: unknown): string {
 }
 
 function stageLabel(stage?: string): string {
+  if (stage === "narration") return "全片独白";
   if (stage === "video") return "视频提交";
   if (stage === "image") return "图片生成";
   return "提交结果未知";
@@ -74,11 +76,16 @@ function credits(micro?: number): string {
 
 function pendingRowsOf(projects: PendingProject[]): PendingRow[] {
   return projects
-    .flatMap((project) =>
-      project.shots
+    .flatMap((project) => {
+      const rows = project.shots
         .map((shot, index) => ({ project, index, shot }))
-        .filter((row) => row.shot.status === "reconciliation_required"),
-    )
+        .filter((row) => row.shot.status === "reconciliation_required");
+      // 配音事实属于整个制作单，仅派生一个核对项，不能伪造某个视频镜头的状态。
+      if (project.narration && ["unknown", "submitting"].includes(project.narration.status)) {
+        rows.push({ project, index: -1, shot: { status: "reconciliation_required", stage: "narration" } });
+      }
+      return rows;
+    })
     .sort(
       (left, right) =>
         Date.parse(right.project.updatedAt) - Date.parse(left.project.updatedAt),
@@ -104,6 +111,8 @@ function ReconcileDrawer({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const { project, shot } = row;
+  const narration = shot.stage === "narration";
+  const itemLabel = narration ? "全片独白" : `镜头 ${row.index + 1}`;
   const outcomeOptions = reconciliationOptionsForStage(shot.stage, asyncImage);
   const stageSupported = outcomeOptions.length > 0;
 
@@ -135,12 +144,12 @@ function ReconcileDrawer({
           version: project.version,
           shot: row.index,
           outcome,
-          value: outcome === "video_usage" ? "" : value,
+          value: outcome === "video_usage" || outcome === "narration_not_accepted" || outcome === "not_accepted" ? "" : value,
           tokens: tokenCount,
           reason,
         }),
       });
-      toastOk(`已提交镜头 ${row.index + 1} 的核对结果`, "已提交");
+      toastOk(`已提交${itemLabel}的核对结果`, "已提交");
       onDone();
     } catch (submitError) {
       setError(errorMessage(submitError));
@@ -161,7 +170,7 @@ function ReconcileDrawer({
         <header className="drawer-h">
           <div className="drawer-title">
             <Chip tone="hot">待核对</Chip>
-            <h3 id="reconcile-title">核对镜头 {row.index + 1}</h3>
+            <h3 id="reconcile-title">核对{itemLabel}</h3>
             <p className="readout">
               {project.brief.product} · {project.id}
             </p>
@@ -185,21 +194,21 @@ function ReconcileDrawer({
               商品 <b>{project.brief.product}</b> · 版本 <b>v{project.version}</b> · 阶段{" "}
               <b>{stageLabel(shot.stage)}</b>
             </p>
-            <p className="readout drawer-note">
+            {!narration ? <p className="readout drawer-note">
               尝试 <b>{shot.attempt ?? 1}</b> 次 · 本阶段待结算{" "}
               <b>{credits(pendingMediaChargeMicro(shot))}</b> · 制作单报价{" "}
               <b>{credits(project.quoteMicro)}</b> · 本镜头已扣 <b>{credits(shot.chargedMicro ?? 0)}</b>
-            </p>
-            <p className="readout drawer-note">
+            </p> : <p className="readout drawer-note">配音请求 <b>{project.narration?.requestId}</b> · {project.brief.duration}s</p>}
+            {!narration ? <p className="readout drawer-note">
               {shot.stage === "image" ? "图片模型" : "视频模型"}{" "}
               <b>{project.canvas?.modelId || (shot.stage === "image" ? project.brief.imageModel || "—" : project.brief.videoModel)}</b> · {project.brief.resolution} ·{" "}
               {project.brief.duration}s
-            </p>
+            </p> : null}
           </section>
 
           <form className="form-stack" onSubmit={(event) => void submit(event)}>
             <Notice>
-              这是上游提交结果未知时的管理员异常恢复入口。本阶段尚未结算且不占余额；请先核实供应商记录。正常生成成功后由平台自动结算，普通用户无需核对，也不要重新发起生成。
+              {narration ? "请按配音请求 ID 核实供应商记录。补录的音频须对应同一完整脚本；平台验证后复用该音轨继续制作，不重新提交配音。配音是平台后期基础设施，本入口不新增客户扣费。" : "这是上游提交结果未知时的管理员异常恢复入口。本阶段尚未结算且不占余额；请先核实供应商记录。正常生成成功后由平台自动结算，普通用户无需核对，也不要重新发起生成。"}
             </Notice>
             {!stageSupported ? (
               <Notice tone="stop" k="无法恢复">
@@ -223,9 +232,9 @@ function ReconcileDrawer({
               />
             </label>
 
-            {outcome === "not_accepted" ? (
+            {outcome === "not_accepted" || outcome === "narration_not_accepted" ? (
               <Notice tone="stop">
-                确认未受理会零扣关闭本镜头的请求身份。请确保供应商后台确实没有对应的受理记录。
+                {narration ? "确认未受理会解除配音未知状态，允许用户显式重试；不会在此自动发起配音。请确保供应商确实没有受理本请求。" : "确认未受理会零扣关闭本镜头的请求身份。请确保供应商后台确实没有对应的受理记录。"}
               </Notice>
             ) : outcome === "video_usage" ? (
               <label className="field">
@@ -332,7 +341,7 @@ export function MediaReconciliation({
         <div className="pane-h">
           <h2>供应商提交核对</h2>
           <div className="form-row">
-            <span className="readout">{rows.length} 个镜头待核对</span>
+            <span className="readout">{rows.length} 项待核对</span>
             <button
               className="btn btn-ghost btn-sm"
               type="button"
@@ -346,7 +355,7 @@ export function MediaReconciliation({
 
         <div className="pane-b" style={{ paddingTop: 0 }}>
           <Notice>
-            此列表只处理上游提交结果未知的异常任务。当前阶段不占余额且尚未结算；正常生成成功后由平台自动扣点，普通用户无需参与核对。
+            此列表处理上游提交结果未知的镜头和全片独白。请按原请求核实结果，避免重复生成；正常制作不需要人工核对。
           </Notice>
         </div>
 
@@ -366,7 +375,7 @@ export function MediaReconciliation({
               <div className="empty" style={{ margin: "8px auto" }}>
                 <h2>暂无待核对任务</h2>
                 <p>
-                  只有上游响应丢失、需要人工核实受理结果的付费镜头会出现在这里。
+                  上游响应丢失、需要人工核实受理结果的镜头或独白会出现在这里。
                   <br />
                   正常制作与已结算镜头不会进入本列表。
                 </p>
@@ -378,7 +387,7 @@ export function MediaReconciliation({
                 <thead>
                   <tr>
                     <th scope="col">制作单</th>
-                    <th scope="col">镜头</th>
+                    <th scope="col">项目</th>
                     <th scope="col">阶段</th>
                     <th scope="col">待结算</th>
                     <th scope="col">已扣</th>
@@ -394,7 +403,7 @@ export function MediaReconciliation({
                         <div className="readout">{row.project.id}</div>
                       </td>
                       <td className="num">
-                        镜头 {row.index + 1} · v{row.project.version}
+                        {row.index < 0 ? "全片独白" : `镜头 ${row.index + 1}`} · v{row.project.version}
                       </td>
                       <td>{stageLabel(row.shot.stage)}</td>
                       <td className="num">{credits(pendingMediaChargeMicro(row.shot))}</td>
