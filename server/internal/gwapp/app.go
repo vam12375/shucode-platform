@@ -294,6 +294,7 @@ func New(deps Deps) *gin.Engine {
 	app.GET("/v1/responses/:responseID", func(c *gin.Context) { handleBackgroundResponseProxy(c, deps, http.MethodGet, false) })
 	app.DELETE("/v1/responses/:responseID", func(c *gin.Context) { handleBackgroundResponseProxy(c, deps, http.MethodDelete, false) })
 	app.POST("/v1/responses/:responseID/cancel", func(c *gin.Context) { handleBackgroundResponseProxy(c, deps, http.MethodPost, true) })
+	registerDeepSeekToolRoutes(app, deps)
 	for _, spec := range []protocolSpec{buildAnthropicSpec(), buildOpenAISpec(), buildOpenAIResponsesSpec()} {
 		spec := spec
 		app.POST(spec.routePath, func(c *gin.Context) {

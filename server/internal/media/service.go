@@ -438,14 +438,14 @@ func tokenRateString(microPerMillion int64) string {
 func (s *Service) usage(p *Project, shot Shot, m Model) store.UsageRecord {
 	record := store.UsageRecord{ID: shot.ReservationID, RequestID: "media:" + shot.ReservationID, UserID: p.UserID, TeamID: p.TeamID, DeviceTokenID: p.DeviceID, Model: "media:" + m.ID, UpstreamModel: m.UpstreamModel, ProviderID: m.ProviderID, CreditsMicro: shot.pendingCharge(), Status: store.UsageStatusOk, CreatedAt: time.Now().UTC()}
 	if m.Kind != "video" || !videoReferenceRequested(p) || m.VideoReference == nil || shot.ProviderUsageTokens <= 0 {
-		return record
+		return mediaUnitUsage(record, p, shot, m)
 	}
 	rate := shot.TokenRateMicroPerMillion
 	if rate <= 0 {
 		rate = m.VideoReference.TokenPriceMicroPerMillion
 	}
 	if rate <= 0 {
-		return record
+		return mediaUnitUsage(record, p, shot, m)
 	}
 	costRate := shot.TokenCostMicroPerMillion
 	if costRate <= 0 {
@@ -464,21 +464,27 @@ func (s *Service) usage(p *Project, shot Shot, m Model) store.UsageRecord {
 		Multiplier:        "1.000000",
 		Currency:          "CNY",
 	}
-	costStatus := "priced"
+	costStatus := "estimated"
 	if costRate <= 0 {
 		costStatus = "unknown"
 	}
 	cost := sale
 	cost.OutputPerMtok = tokenRateString(costRate)
+	var estimatedMicro *int64
+	if costRate > 0 {
+		value := videoTokenChargeMicro(shot.ProviderUsageTokens, costRate)
+		estimatedMicro = &value
+	}
 	record.PriceSnapshot = &store.UsagePricingSnapshot{
 		SchemaVersion: 1,
-		CapturedAt:    time.Now().UTC(),
+		CapturedAt:    mediaSnapshotTime(p, record.CreatedAt),
 		Sale:          sale,
 		Cost: store.UsageCostSnapshot{
 			Status:         costStatus,
 			PricingVersion: m.PriceVersion,
 			ModelID:        m.ID,
 			Rates:          &cost,
+			EstimatedMicro: estimatedMicro,
 		},
 	}
 	return record

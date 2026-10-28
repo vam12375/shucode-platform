@@ -226,6 +226,14 @@ func prepareModelDisplay(c *gin.Context, deps *Deps) bool {
 }
 
 func usageDisplay(c *gin.Context, model string) usageModelDisplay {
+	// 网页工具独立按次结算，不能落入未知文字模型而混淆账单与筛选。
+	if model == "deepseek:web-search" || model == "deepseek:web-fetch" {
+		name := "网页搜索"
+		if model == "deepseek:web-fetch" {
+			name = "网页抓取"
+		}
+		return usageModelDisplay{Key: "tool:" + displayVersion(model), Name: name, Kind: "tool"}
+	}
 	if model == "media:reference-analysis" {
 		return usageModelDisplay{Key: model, Name: "参考视频分析", Kind: "media"}
 	}

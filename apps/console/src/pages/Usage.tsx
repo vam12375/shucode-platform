@@ -87,7 +87,7 @@ interface DeviceOption {
 interface AggregateRow {
   model: string;
   modelDisplayName?: string;
-  modelKind?: "text" | "image" | "video" | "media";
+  modelKind?: "text" | "image" | "video" | "media" | "tool";
   requests: number;
   inputTokens: number;
   outputTokens: number;
@@ -118,7 +118,7 @@ interface UsageRecordRow extends UsageReasoningParameters {
   deviceTokenId: string | null;
   model: string;
   modelDisplayName?: string;
-  modelKind?: "text" | "image" | "video" | "media";
+  modelKind?: "text" | "image" | "video" | "media" | "tool";
   upstreamModel?: string;
   priceSnapshot?: PriceSnapshot | null;
   providerId?: string | null;
@@ -1473,6 +1473,11 @@ export function UsagePage() {
               const status = statusChip(detail.status);
               const cost = isRoot ? historicalCostDisplay(detail.priceSnapshot) : null;
               const provider = providerLabel(detail.providerId, detail.model);
+              const requestPriced = detail.modelKind === "tool" || detail.priceSnapshot?.sale.unit === "request";
+              const mediaUnit = detail.priceSnapshot?.sale.unit;
+              const mediaPriced = mediaUnit === "image" || mediaUnit === "second";
+              const mediaRateLabel = mediaUnit === "image" ? "每张" : "每秒输出";
+              const mediaQuantity = detail.priceSnapshot?.sale.quantity;
               return (
                 <>
                   <DetailRow k="状态">
@@ -1511,12 +1516,23 @@ export function UsagePage() {
                       <DetailRow k="供应商">{provider}</DetailRow>
                     </>
                   ) : null}
-                  <DetailRow k="Token（入 / 出 / 缓存读 / 缓存写）">
+                  {requestPriced ? (
+                    <DetailRow k="计费单位">每次成功请求；失败及空结果不计费</DetailRow>
+                  ) : mediaPriced ? (
+                    <>
+                      <DetailRow k="计费单位">{mediaUnit === "image" ? "按张" : "按输出秒数"}</DetailRow>
+                      <DetailRow k="计费数量">
+                        {typeof mediaQuantity === "number" && Number.isSafeInteger(mediaQuantity) && mediaQuantity >= 0
+                          ? `${mediaQuantity.toLocaleString("en-US")} ${mediaUnit === "image" ? "张" : "秒"}`
+                          : "未记录"}
+                      </DetailRow>
+                    </>
+                  ) : <DetailRow k="Token（入 / 出 / 缓存读 / 缓存写）">
                     {detail.inputTokens.toLocaleString("en-US")} /{" "}
                     {detail.outputTokens.toLocaleString("en-US")} /{" "}
                     {detail.cacheReadTokens.toLocaleString("en-US")} /{" "}
                     {detail.cacheCreationTokens.toLocaleString("en-US")}
-                  </DetailRow>
+                  </DetailRow>}
                   <DetailRow k="用户实扣（credit）">
                     {credits(detail.creditsMicro)} credit
                   </DetailRow>
@@ -1539,6 +1555,29 @@ export function UsagePage() {
                           ? formatShanghaiTime(detail.priceSnapshot.capturedAt)
                           : "未记录"}
                       </DetailRow>
+                      {requestPriced ? (
+                        <>
+                          <DetailRow k="售价 · 每次成功请求">
+                            {frozenCostRateText(detail.priceSnapshot?.sale, "perRequest")}
+                          </DetailRow>
+                          <DetailRow k="采购价 · 每次成功请求">
+                            {frozenCostRateText(detail.priceSnapshot?.cost.rates, "perRequest")}
+                          </DetailRow>
+                          <p className="readout">按请求次数计费，返回条数、正文长度和 Token 数不影响工具单次价格。</p>
+                        </>
+                      ) : mediaPriced ? (
+                        <>
+                          <DetailRow k={`售价 · ${mediaRateLabel}`}>
+                            {frozenCostRateText(detail.priceSnapshot?.sale, "perUnit")}
+                          </DetailRow>
+                          <DetailRow k={`采购价 · ${mediaRateLabel}`}>
+                            {frozenCostRateText(detail.priceSnapshot?.cost.rates, "perUnit")}
+                          </DetailRow>
+                          <p className="readout">
+                            <a href="#/media-models">查看媒体模型价格</a>；修改采购价仅影响未来任务，不改变此历史快照。
+                          </p>
+                        </>
+                      ) : <>
                       <DetailRow k="采购价 · 输入">
                         {frozenCostRateText(detail.priceSnapshot?.cost.rates, "inputPerMtok")}
                       </DetailRow>
@@ -1557,6 +1596,7 @@ export function UsagePage() {
                       <p className="readout">
                         <a href="#/pricing">查看模型定价库</a>；修改采购价仅影响未来请求，不改变此历史快照。
                       </p>
+                      </>}
                     </>
                   ) : null}
                   <DetailRow k="延迟">

@@ -13,6 +13,10 @@ export interface PriceSnapshot {
   };
 }
 interface SnapshotRates {
+  unit?: "request" | "image" | "second";
+  perRequest?: string;
+  perUnit?: string;
+  quantity?: number;
   inputPerMtok: string;
   outputPerMtok: string;
   cacheReadPerMtok: string;
@@ -76,7 +80,13 @@ export function historicalCostDisplay(
   return {
     kind: "estimated",
     text: `${currency} ${whole}${fraction ? `.${fraction}` : ""}`,
-    reason: cost.usageEstimated
+    reason: cost.rates?.unit === "request"
+      ? "按成功请求次数与请求时的冻结采购价计算，失败及空结果不计费；供参考，非供应商最终账单。"
+      : cost.rates?.unit === "image"
+      ? "按实际生成张数与任务冻结采购价计算，供参考，非供应商最终账单。"
+      : cost.rates?.unit === "second"
+      ? "按实际输出秒数与任务冻结采购价计算，供参考，非供应商最终账单。"
+      : cost.usageEstimated
       ? "按估算 Token 与请求时的冻结采购价计算，供参考，非供应商最终账单。"
       : "按实际上游 Token 与请求时的冻结采购价计算，供参考，非供应商最终账单。",
   };
@@ -84,8 +94,17 @@ export function historicalCostDisplay(
 
 export function frozenCostRateText(
   rates: SnapshotRates | undefined,
-  key: "inputPerMtok" | "outputPerMtok" | "cacheReadPerMtok" | "cacheWritePerMtok",
+  key: "inputPerMtok" | "outputPerMtok" | "cacheReadPerMtok" | "cacheWritePerMtok" | "perRequest" | "perUnit",
 ): string {
+  if (rates?.unit === "request") {
+    if (!rates.perRequest?.trim()) return "未记录";
+    return `${rates.currency?.trim().toUpperCase() || "币种未记录"} ${rates.perRequest} / 次成功请求`;
+  }
+  // 媒体按张或输出秒数冻结单价，不能落入文字模型的百万 Token 说明。
+  if (rates?.unit === "image" || rates?.unit === "second") {
+    if (!rates.perUnit?.trim()) return "未记录";
+    return `${rates.currency?.trim().toUpperCase() || "币种未记录"} ${rates.perUnit} / ${rates.unit === "image" ? "张" : "秒输出"}`;
+  }
   if (!rates || !rates[key]?.trim()) return "未记录";
   return `${rates.currency?.trim().toUpperCase() || "币种未记录"} ${rates[key]} / 百万 Token`;
 }
@@ -93,6 +112,8 @@ export function frozenCostRateText(
 export function usageModelName(model: string, displayName?: string): string {
   if (displayName?.trim()) return displayName.trim();
   if (model === "media:reference-analysis") return "原片分镜分析（固定费）";
+  if (model === "deepseek:web-search") return "网页搜索";
+  if (model === "deepseek:web-fetch") return "网页抓取";
   // 老平台没有对外投影字段时也不把内部媒体型号回显给团队成员。
   return model.startsWith("media:") ? "媒体模型" : model;
 }

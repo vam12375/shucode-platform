@@ -172,3 +172,44 @@ func TestModelDisplayLegacyNamesAndExplicitOverrides(t *testing.T) {
 		}
 	}
 }
+
+func TestWebToolsUsageProjectionKeepsSeparateChargesAndTenantScope(t *testing.T) {
+	f := newTenantFixture(t)
+	for _, actor := range []struct{ team, user string }{{f.team.ID, f.member.ID}, {f.otherTeam.ID, f.other.ID}} {
+		for _, model := range []string{"deepseek:web-search", "deepseek:web-fetch"} {
+			err := f.store.InsertUsage(context.Background(), store.UsageRecord{ID: uuid.NewString(), RequestID: uuid.NewString(), TeamID: actor.team, UserID: actor.user, Model: model, UpstreamModel: "deepseek.com/private-tool", CreditsMicro: 5000, Status: store.UsageStatusOk, CreatedAt: time.Now()})
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	for _, cookie := range []string{f.adminCookie, f.memberCookie} {
+		rec := f.do("GET", "/console/api/usage", cookie, "")
+		if rec.Code != 200 || strings.Contains(rec.Body.String(), "deepseek") {
+			t.Fatalf("tool projection: %d %s", rec.Code, rec.Body.String())
+		}
+		aggregates := dataOf(t, rec)["aggregates"].([]any)
+		if len(aggregates) != 2 {
+			t.Fatalf("search and fetch merged: %+v", aggregates)
+		}
+		names := map[string]bool{}
+		for _, raw := range aggregates {
+			row := raw.(map[string]any)
+			names[row["modelDisplayName"].(string)] = true
+			if row["modelKind"] != "tool" || row["requests"] != float64(1) || row["creditsMicro"] != float64(5000) {
+				t.Fatalf("tool charge: %+v", row)
+			}
+			filtered := f.do("GET", "/console/api/usage?model="+row["model"].(string), cookie, "")
+			if filtered.Code != 200 || len(dataOf(t, filtered)["records"].([]any)) != 1 {
+				t.Fatalf("tool filter crossed type or team: %d %s", filtered.Code, filtered.Body.String())
+			}
+		}
+		if !names["网页搜索"] || !names["网页抓取"] {
+			t.Fatalf("missing tool names: %+v", names)
+		}
+		csv := f.do("GET", "/console/api/usage/export", cookie, "")
+		if csv.Code != 200 || strings.Contains(csv.Body.String(), "deepseek") || !strings.Contains(csv.Body.String(), "网页搜索") || !strings.Contains(csv.Body.String(), "网页抓取") {
+			t.Fatalf("tool CSV projection: %d %s", csv.Code, csv.Body.String())
+		}
+	}
+}

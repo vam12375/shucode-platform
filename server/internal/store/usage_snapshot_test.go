@@ -25,7 +25,7 @@ func runUsageSnapshotSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 			budget := int64(8192)
 			snapshot := &UsagePricingSnapshot{
 				SchemaVersion: 1, CapturedAt: at,
-				Sale: UsagePriceSnapshot{InputPerMtok: "3", OutputPerMtok: "15", CacheReadPerMtok: "0.3", CacheWritePerMtok: "3.75", Multiplier: "1", Currency: "CNY"},
+				Sale: UsagePriceSnapshot{Unit: "request", PerRequest: "0.005000", InputPerMtok: "3", OutputPerMtok: "15", CacheReadPerMtok: "0.3", CacheWritePerMtok: "3.75", Multiplier: "1", Currency: "CNY"},
 				Cost: UsageCostSnapshot{
 					Status: "estimated", PricingVersion: "prc_frozen", ModelID: "upstream-snapshot-model", EstimatedMicro: &micro,
 					Rates: &UsagePriceSnapshot{InputPerMtok: "1", OutputPerMtok: "2", CacheReadPerMtok: "0.1", CacheWritePerMtok: "0.5", Multiplier: "0.5", Currency: "USD"},
@@ -60,6 +60,7 @@ func runUsageSnapshotSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 			}
 			// 根因：结构体值拷贝仍共享快照指针，调用方修改会篡改历史账本。
 			snapshot.Sale.InputPerMtok = "999"
+			snapshot.Sale.PerRequest = "999"
 			snapshot.Cost.Rates.Currency = "CNY"
 			*snapshot.Cost.EstimatedMicro = 999
 			budget = 1
@@ -72,7 +73,7 @@ func runUsageSnapshotSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 				if records[0].ReasoningEffort != "high" || records[0].ReasoningBudgetTokens == nil || *records[0].ReasoningBudgetTokens != 8192 {
 					t.Fatalf("request reasoning was lost or aliased: %+v", records[0])
 				}
-				if got.Sale.InputPerMtok != "3" || got.Cost.Rates.Currency != "USD" || got.Cost.EstimatedMicro == nil || *got.Cost.EstimatedMicro != 17 || got.Cost.PricingVersion != "prc_frozen" || !got.CapturedAt.Equal(at) {
+				if got.Sale.InputPerMtok != "3" || got.Sale.Unit != "request" || got.Sale.PerRequest != "0.005000" || got.Cost.Rates.Currency != "USD" || got.Cost.EstimatedMicro == nil || *got.Cost.EstimatedMicro != 17 || got.Cost.PricingVersion != "prc_frozen" || !got.CapturedAt.Equal(at) {
 					t.Fatalf("历史价格快照被篡改: %+v", got)
 				}
 			}

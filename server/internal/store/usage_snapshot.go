@@ -12,6 +12,10 @@ type UsagePricingSnapshot struct {
 }
 
 type UsagePriceSnapshot struct {
+	Unit              string `json:"unit,omitempty"`
+	PerRequest        string `json:"perRequest,omitempty"`
+	PerUnit           string `json:"perUnit,omitempty"`
+	Quantity          int64  `json:"quantity,omitempty"`
 	InputPerMtok      string `json:"inputPerMtok"`
 	OutputPerMtok     string `json:"outputPerMtok"`
 	CacheReadPerMtok  string `json:"cacheReadPerMtok"`

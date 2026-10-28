@@ -92,7 +92,7 @@ func TestUsageSnapshotUsesActualVideoTokens(t *testing.T) {
 	if usage.PriceSnapshot.Cost.Rates == nil || usage.PriceSnapshot.Cost.Rates.OutputPerMtok != "28.000000" {
 		t.Fatalf("cost snapshot = %+v", usage.PriceSnapshot.Cost)
 	}
-	if usage.PriceSnapshot.Cost.PricingVersion != "v1" || usage.PriceSnapshot.Cost.Status != "priced" {
+	if usage.PriceSnapshot.Cost.PricingVersion != "v1" || usage.PriceSnapshot.Cost.Status != "estimated" || usage.PriceSnapshot.Cost.EstimatedMicro == nil || *usage.PriceSnapshot.Cost.EstimatedMicro != 2_531_088 {
 		t.Fatalf("cost metadata = %+v", usage.PriceSnapshot.Cost)
 	}
 }

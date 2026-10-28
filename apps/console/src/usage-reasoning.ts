@@ -2,13 +2,13 @@
 export interface UsageReasoningParameters {
   model: string;
   modelDisplayName?: string;
-  modelKind?: "text" | "image" | "video" | "media";
+  modelKind?: "text" | "image" | "video" | "media" | "tool";
   reasoningEffort?: string | null;
   reasoningBudgetTokens?: number | null;
 }
 
 function missingText(record: UsageReasoningParameters): string {
-  return record.modelKind === "image" || record.modelKind === "video" || record.modelKind === "media" || record.model.startsWith("media:")
+  return record.modelKind === "image" || record.modelKind === "video" || record.modelKind === "media" || record.modelKind === "tool" || record.model.startsWith("media:") || record.model === "deepseek:web-search" || record.model === "deepseek:web-fetch"
     ? "不适用"
     : "未记录";
 }

@@ -9,6 +9,29 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.63.0] - 2026-10-28
+
+### 新增(非 Token 用量成本快照)
+
+- Gateway 新增 DeepSeek 官方 Search/Fetch 代理 `/v1/tools/search`、`/v1/tools/fetch`：设备鉴权
+  与团队准入，仅 HTTP 200 且非空结果按次计费；失败/空结果/超时/其它 2xx 不扣费，重复
+  request-id 409，结算失败进入既有补偿，不借用文字模型凭据。
+- 用量快照新增 `unit=request|image|second`、`perRequest`/`perUnit`/`quantity`；用量页将
+  “网页搜索/网页抓取”和媒体按张/输出秒与百万 Token 分开显示，root 才看采购价与数量。
+- 媒体结算写入按张/输出秒的冻结售价与成本（含零成本、非法用量/价格原因），历史请求按任务
+  创建时间冻结，改价不回填；非 root 仅显示公开名称与实扣。
+- 新增 `DEEPSEEK_TOOLS_BASE_URL/API_KEY` 与 Search/Fetch 单次费用环境变量；未配置密钥时
+  明确 503，不在源码或日志中保存真实密钥。
+- 回归测试：成功/空结果/失败/超时计费、重复 request-id、工具投影与筛选、媒体按张/秒快照及
+  历史缺失。
+
+### 验证
+
+- `make -C server lint test`
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`（124 项）
+
 ## [0.62.0] - 2026-10-27
 
 ### 新增(媒体 CDN origin 与签名预览)

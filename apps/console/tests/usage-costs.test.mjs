@@ -128,3 +128,33 @@ test("fixed analysis fees have a readable label without classifying ordinary zer
   assert.equal(costs.usageModelName("media:seedance"), "媒体模型");
   assert.equal(costs.usageModelName("media:private-route", "门道绘图"), "门道绘图");
 });
+
+test("web tools freeze per-request prices and never describe their costs as token usage", () => {
+  const snapshot = record("CNY", 5000, 5000).priceSnapshot;
+  snapshot.cost.rates = { currency: "CNY", unit: "request", perRequest: "0.005000" };
+  assert.equal(costs.frozenCostRateText(snapshot.cost.rates, "perRequest"), "CNY 0.005000 / 次成功请求");
+  assert.equal(costs.historicalCostDisplay(snapshot).text, "CNY 0.005");
+  assert.match(costs.historicalCostDisplay(snapshot).reason, /成功请求次数/);
+  assert.doesNotMatch(costs.historicalCostDisplay(snapshot).reason, /Token/);
+  assert.equal(costs.usageModelName("deepseek:web-search"), "网页搜索");
+  assert.equal(costs.usageModelName("deepseek:web-fetch"), "网页抓取");
+});
+
+test("media cost snapshots keep frozen image and output-second units", () => {
+  for (const [unit, quantity, unitText, reason] of [
+    ["image", 2, "张", /实际生成张数/],
+    ["second", 10, "秒输出", /实际输出秒数/],
+  ]) {
+    const snapshot = record("CNY", 250_000, 500_000).priceSnapshot;
+    snapshot.cost.rates = { currency: "CNY", unit, perUnit: "0.125000", quantity };
+    assert.equal(costs.frozenCostRateText(snapshot.cost.rates, "perUnit"), `CNY 0.125000 / ${unitText}`);
+    assert.equal(costs.historicalCostDisplay(snapshot).text, "CNY 0.25");
+    assert.match(costs.historicalCostDisplay(snapshot).reason, reason);
+    assert.doesNotMatch(costs.historicalCostDisplay(snapshot).reason, /Token/);
+    assert.equal(costs.frozenCostRateText({ ...snapshot.cost.rates, perUnit: "" }, "perUnit"), "未记录");
+    const summary = summarizeHistoricalCosts([{ model: "media:fixture", creditsMicro: 500_000, priceSnapshot: snapshot }]);
+    assert.equal(summary.estimatedCount, 1);
+    assert.equal(summary.totals[0][1].costMicro, 250_000);
+  }
+  assert.equal(costs.historicalCostDisplay(null).text, "无历史快照");
+});

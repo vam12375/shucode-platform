@@ -283,3 +283,77 @@ test("usage filters and distribution labels use projected names while filter val
   assert.equal(nodeText(elements(dialog, "h3")[0]), "门道绘图");
   assert.doesNotMatch(nodeText(dialog), /opaque-group/);
 });
+
+test("web tool details display request pricing without million-token procurement fields", async () => {
+  const rates = { currency: "CNY", unit: "request", perRequest: "0.005000" };
+  const record = costRecord({
+    model: "deepseek:web-search", modelDisplayName: "网页搜索", modelKind: "tool",
+    creditsMicro: 5000, inputTokens: 0, outputTokens: 0,
+    priceSnapshot: {
+      schemaVersion: 1, capturedAt: "2026-10-28T00:00:00Z", sale: rates,
+      cost: { status: "estimated", estimatedMicro: 5000, pricingVersion: "deepseek-tools-2026-10-28", modelId: "deepseek:web-search", rates },
+    },
+  });
+  assert.equal(reasoning.reasoningSummary(record), "high");
+  assert.equal(reasoning.reasoningSummary({ model: record.model, modelKind: "tool" }), "不适用");
+  const ui = await mountUsage([record]);
+  elements(ui.render(), "button").find((button) => button.props["aria-label"] === "查看请求详情 request-cost").props.onClick();
+  const dialog = elements(ui.render(), "div").find((node) => node.props.role === "dialog");
+  const rows = new Map(elements(dialog).filter((node) => node.props?.k).map((node) => [node.props.k, nodeText(node)]));
+  assert.equal(rows.get("计费单位"), "每次成功请求；失败及空结果不计费");
+  assert.equal(rows.get("用户实扣（credit）"), "0.005 credit");
+  assert.equal(rows.get("供应商成本（估算）"), "CNY 0.005");
+  assert.equal(rows.get("采购价 · 每次成功请求"), "CNY 0.005000 / 次成功请求");
+  assert.equal(rows.get("售价 · 每次成功请求"), "CNY 0.005000 / 次成功请求");
+  assert.doesNotMatch(nodeText(dialog), /百万 Token|采购价 · 输入|按实际上游 Token/);
+  assert.ok(!rows.has("Token（入 / 出 / 缓存读 / 缓存写）"));
+});
+
+test("root media details display frozen prices and quantities in images or output seconds", async () => {
+  for (const [unit, kind, quantity, quantityText, label, perUnit, salePerUnit] of [
+    ["image", "image", 2, "2 张", "每张", "0.125000", "0.250000"],
+    ["second", "video", 10, "10 秒", "每秒输出", "0.025000", "0.050000"],
+  ]) {
+    const record = costRecord({
+      model: "media:fixture-model", modelDisplayName: "媒体夹具", modelKind: kind,
+      inputTokens: 0, outputTokens: 0, creditsMicro: 500_000,
+      priceSnapshot: {
+        schemaVersion: 1, capturedAt: "2026-10-28T00:00:00Z",
+        sale: { unit, perUnit: salePerUnit, quantity, currency: "CNY" },
+        cost: { status: "estimated", estimatedMicro: 250_000, pricingVersion: "frozen-media-v1", modelId: "fixture-model", rates: { unit, perUnit, quantity, currency: "CNY" } },
+      },
+    });
+    const ui = await mountUsage([record]);
+    assert.match(nodeText(ui.render()), /CNY 0.25/);
+    elements(ui.render(), "button").find((button) => button.props["aria-label"] === "查看请求详情 request-cost").props.onClick();
+    const dialog = elements(ui.render(), "div").find((node) => node.props.role === "dialog");
+    const rows = new Map(elements(dialog).filter((node) => node.props?.k).map((node) => [node.props.k, nodeText(node)]));
+    assert.equal(rows.get("计费单位"), unit === "image" ? "按张" : "按输出秒数");
+    assert.equal(rows.get("计费数量"), quantityText);
+    assert.equal(rows.get("供应商成本（估算）"), "CNY 0.25");
+    assert.equal(rows.get(`采购价 · ${label}`), `CNY ${perUnit} / ${unit === "image" ? "张" : "秒输出"}`);
+    assert.equal(rows.get(`售价 · ${label}`), `CNY ${salePerUnit} / ${unit === "image" ? "张" : "秒输出"}`);
+    assert.equal(rows.get("成本价格版本"), "frozen-media-v1");
+    assert.ok(elements(dialog, "a").some((link) => link.props.href === "#/media-models"));
+    assert.doesNotMatch(nodeText(dialog), /百万 Token|采购价 · 输入|按实际上游 Token/);
+    assert.ok(!rows.has("Token（入 / 出 / 缓存读 / 缓存写）"));
+
+    const member = await mountUsage([record], false);
+    assert.doesNotMatch(nodeText(member.render()), /供应商成本|CNY 0.25|frozen-media-v1/);
+    elements(member.render(), "button").find((button) => button.props["aria-label"] === "查看请求详情 request-cost").props.onClick();
+    const memberDialog = elements(member.render(), "div").find((node) => node.props.role === "dialog");
+    assert.doesNotMatch(nodeText(memberDialog), /采购价|CNY|frozen-media-v1/);
+    assert.equal(elements(memberDialog, "a").length, 0);
+  }
+});
+
+test("historical media requests without a frozen price remain explicitly missing", async () => {
+  const record = costRecord({ model: "media:old-image", modelKind: "image", priceSnapshot: null });
+  const ui = await mountUsage([record]);
+  elements(ui.render(), "button").find((button) => button.props["aria-label"] === "查看请求详情 request-cost").props.onClick();
+  const dialog = elements(ui.render(), "div").find((node) => node.props.role === "dialog");
+  const rows = new Map(elements(dialog).filter((node) => node.props?.k).map((node) => [node.props.k, nodeText(node)]));
+  assert.equal(rows.get("供应商成本（估算）"), "无历史快照");
+  assert.match(rows.get("成本说明"), /没有保存采购成本快照/);
+  assert.equal(rows.get("成本价格版本"), "未记录");
+});

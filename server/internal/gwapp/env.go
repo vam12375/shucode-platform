@@ -12,13 +12,18 @@ import (
 
 // env.ts 的镜像:变量名/默认值/校验逐项一致。
 type Env struct {
-	Port                         int
-	Host                         string
-	TrustedProxyIPs              []string
-	DatabaseURL                  string
-	MemoryDB                     bool
-	UpstreamBaseURL              string
-	UpstreamAPIKey               string
+	Port            int
+	Host            string
+	TrustedProxyIPs []string
+	DatabaseURL     string
+	MemoryDB        bool
+	UpstreamBaseURL string
+	UpstreamAPIKey  string
+	// DeepSeekTools* 为网页搜索/抓取的独立上游与按次价格；API key 只从运行时环境读取。
+	DeepSeekToolsBaseURL         string
+	DeepSeekToolsAPIKey          string
+	DeepSeekSearchFeeMicro       int64
+	DeepSeekFetchFeeMicro        int64
 	AnthropicVersion             string
 	UpstreamTimeoutMs            int64
 	UpstreamIdleTimeoutMs        int64
@@ -77,6 +82,14 @@ func LoadEnv() (*Env, error) {
 	if err != nil {
 		return nil, err
 	}
+	searchFee, err := readPositiveIntEnv("DEEPSEEK_SEARCH_FEE_MICRO", 5_000)
+	if err != nil {
+		return nil, err
+	}
+	fetchFee, err := readPositiveIntEnv("DEEPSEEK_FETCH_FEE_MICRO", 5_000)
+	if err != nil {
+		return nil, err
+	}
 	holidays := map[string]bool{}
 	for _, raw := range strings.Split(os.Getenv("PEAK_HOURS_HOLIDAYS"), ",") {
 		value := strings.TrimSpace(raw)
@@ -96,6 +109,10 @@ func LoadEnv() (*Env, error) {
 		MemoryDB:                     platformenv.Truthy(os.Getenv("MEMORY_DB")) || databaseURL == "",
 		UpstreamBaseURL:              strings.TrimRight(platformenv.EnvOr("UPSTREAM_BASE_URL", "https://api.anthropic.com"), "/"),
 		UpstreamAPIKey:               strings.TrimSpace(os.Getenv("UPSTREAM_API_KEY")),
+		DeepSeekToolsBaseURL:         strings.TrimRight(platformenv.EnvOr("DEEPSEEK_TOOLS_BASE_URL", "https://api.deepseek.com"), "/"),
+		DeepSeekToolsAPIKey:          strings.TrimSpace(os.Getenv("DEEPSEEK_TOOLS_API_KEY")),
+		DeepSeekSearchFeeMicro:       searchFee,
+		DeepSeekFetchFeeMicro:        fetchFee,
 		AnthropicVersion:             platformenv.EnvOr("ANTHROPIC_VERSION", "2023-06-01"),
 		UpstreamTimeoutMs:            timeout,
 		UpstreamIdleTimeoutMs:        idleTimeout,
