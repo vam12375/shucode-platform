@@ -113,6 +113,87 @@ func TestWholeReferencePreservesReviewAndBuildsOneExecution(t *testing.T) {
 	}
 }
 
+func TestWholeReferenceBuildsMinimumSegmentsAtFactBoundaries(t *testing.T) {
+	brief, models, plan := wholeReferenceFixture()
+	boundaries := []float64{0, 4, 8, 12, 14, 16, 20.155}
+	brief.ReferenceDurationSeconds = boundaries[len(boundaries)-1]
+	brief.Duration = 20
+	models[0].VideoReference.MaxSegments = 3
+	plan.Shots = plan.Shots[:0]
+	for i := 0; i < len(boundaries)-1; i++ {
+		plan.Shots = append(plan.Shots, ShotPlan{SourceStart: boundaries[i], SourceEnd: boundaries[i+1], Duration: 4, Framing: "全景", Camera: "推进", Action: "连续动作", Purpose: "复刻", Prompt: fmt.Sprintf("第%d段事实动作", i+1), AssetID: "replacement"})
+	}
+	shots, quote, err := BuildShots(brief, plan, models)
+	if err != nil || len(shots) != 2 {
+		t.Fatalf("20.155s source must use two execution segments: %+v %v", shots, err)
+	}
+	if shots[0].Plan.SourceStart != 0 || shots[0].Plan.SourceEnd != 14 || shots[1].Plan.SourceStart != 14 || shots[1].Plan.SourceEnd != 20.155 {
+		t.Fatalf("segments did not use stable fact boundaries: %+v", shots)
+	}
+	if shots[0].Plan.Duration != 15 || shots[1].Plan.Duration != 10 || quote != 17_500_000 {
+		t.Fatalf("segment output duration or quote is wrong: %+v quote=%d", shots, quote)
+	}
+	if strings.Contains(shots[0].Plan.Prompt, "第5段事实动作") || !strings.Contains(shots[1].Plan.Prompt, "第5段事实动作") {
+		t.Fatalf("segment prompt leaked facts across ranges: %+v", shots)
+	}
+
+	models[0].VideoReference.MaxSegments = 1
+	if _, _, err = BuildShots(brief, plan, models); err == nil || err.Error() != "video_reference_duration_unsupported" {
+		t.Fatalf("maxSegments=1 accepted two required segments: %v", err)
+	}
+	models[0].VideoReference.MaxSegments = 3
+	plan.Shots = []ShotPlan{{SourceStart: 0, SourceEnd: 16, Duration: 16, Framing: "全景", Camera: "推进", Action: "不可拆动作", Purpose: "复刻", Prompt: "完整事实镜头", AssetID: "replacement"}, {SourceStart: 16, SourceEnd: 20.155, Duration: 5, Framing: "全景", Camera: "推进", Action: "收尾", Purpose: "复刻", Prompt: "收尾动作", AssetID: "replacement"}}
+	if _, _, err = BuildShots(brief, plan, models); err == nil || err.Error() != "video_reference_duration_unsupported" {
+		t.Fatalf("one over-limit fact shot was split or accepted: %v", err)
+	}
+}
+
+func TestWholeReferenceRequiresAnApplicableOpeningImagePerSegment(t *testing.T) {
+	brief, models, plan := wholeReferenceFixture()
+	boundaries := []float64{0, 4, 8, 12, 14, 16, 20.155}
+	brief.ReferenceDurationSeconds, brief.Duration = 20.155, 20
+	brief.AssetIDs = []string{"opening-a", "later-only", "opening-b"}
+	models[0].VideoReference.MaxSegments = 2
+	plan.Shots = plan.Shots[:0]
+	for i := 0; i < len(boundaries)-1; i++ {
+		plan.Shots = append(plan.Shots, ShotPlan{SourceStart: boundaries[i], SourceEnd: boundaries[i+1], Duration: 4, Framing: "全景", Camera: "推进", Action: "连续动作", Purpose: "复刻", Prompt: "事实动作"})
+	}
+	plan.Shots[1].AssetID = "later-only"
+	plan.Shots[4].AssetID = "opening-b"
+	if _, _, err := BuildShots(brief, plan, models); err == nil || err.Error() != "first_frame_required" {
+		t.Fatalf("a later fact image was borrowed as the first segment opening: %v", err)
+	}
+
+	plan.Shots[0].AssetID = "opening-a"
+	shots, _, err := BuildShots(brief, plan, models)
+	if err != nil || len(shots) != 2 || shots[0].Plan.AssetID != "opening-a" || shots[1].Plan.AssetID != "opening-b" {
+		t.Fatalf("segment opening images did not follow their first facts: %+v %v", shots, err)
+	}
+}
+
+func TestWholeReferenceAggregatesBindingsPerExecutionSegment(t *testing.T) {
+	brief, models, plan := wholeReferenceFixture()
+	boundaries := []float64{0, 5, 10, 15, 20}
+	brief.ReferenceDurationSeconds, brief.Duration = 20, 20
+	models[0].VideoReference.MaxSegments = 2
+	plan.Shots = plan.Shots[:0]
+	for i := 0; i < len(boundaries)-1; i++ {
+		clip := "clip-a"
+		if i >= 3 {
+			clip = "clip-b"
+		}
+		plan.Shots = append(plan.Shots, ShotPlan{SourceStart: boundaries[i], SourceEnd: boundaries[i+1], ReferenceVideoAssetID: clip, Duration: 5, Framing: "全景", Camera: "推进", Action: "动作", Purpose: "复刻", Prompt: "事实动作", AssetID: "replacement"})
+	}
+	shots, _, err := BuildShots(brief, plan, models)
+	if err != nil || len(shots) != 2 || shots[0].Plan.ReferenceVideoAssetID != "clip-a" || shots[1].Plan.ReferenceVideoAssetID != "clip-b" {
+		t.Fatalf("segment bindings were not aggregated independently: %+v %v", shots, err)
+	}
+	plan.Shots[1].ReferenceVideoAssetID = ""
+	if _, _, err = BuildShots(brief, plan, models); err == nil || err.Error() != "video_reference_plan_invalid" {
+		t.Fatalf("partial segment binding was accepted: %v", err)
+	}
+}
+
 func TestWholeReferenceExecutionIncludesEditedIdentitySceneAndTransitions(t *testing.T) {
 	brief, models, plan := wholeReferenceFixture()
 	plan.Shots[1].Subject = "第二镜修改后的同一角色"

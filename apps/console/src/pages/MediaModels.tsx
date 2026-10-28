@@ -133,6 +133,7 @@ interface MediaModel {
   videoReference?: {
     maxDurationSeconds: number;
     maxImages: number;
+    maxSegments?: number;
     maxAudioSeconds?: number;
     costMicro: number;
     priceMicro: number;
@@ -173,6 +174,7 @@ export interface MediaModelDraft {
     enabled: boolean;
     maxDurationSeconds: string;
     maxImages: string;
+    maxSegments?: string;
     // 0 = 不发送参考音频；非零为单段音频上限秒数。缺省与 0 等价。
     maxAudioSeconds?: string;
     tokenCostCredits: string;
@@ -334,6 +336,7 @@ export function toDraft(model: MediaModel): MediaModelDraft {
             enabled: true,
             maxDurationSeconds: String(model.videoReference.maxDurationSeconds),
             maxImages: String(model.videoReference.maxImages),
+            ...(model.videoReference.maxSegments ? { maxSegments: String(model.videoReference.maxSegments) } : {}),
             // 只在后台已声明时回填，避免给没有音频能力的型号凭空补字段。
             ...(model.videoReference.maxAudioSeconds
               ? { maxAudioSeconds: String(model.videoReference.maxAudioSeconds) }
@@ -385,6 +388,7 @@ export function toApiModel(draft: MediaModelDraft): MediaModel {
           videoReference: {
             maxDurationSeconds: Number(draft.videoReference.maxDurationSeconds),
             maxImages: Number(draft.videoReference.maxImages),
+            ...(Number(draft.videoReference.maxSegments || "1") > 1 ? { maxSegments: Number(draft.videoReference.maxSegments) } : {}),
             ...(Number(draft.videoReference.maxAudioSeconds || "0") > 0
               ? { maxAudioSeconds: Number(draft.videoReference.maxAudioSeconds) }
               : {}),
@@ -626,6 +630,11 @@ function tierProblem(
     if (!Number.isSafeInteger(maxImages) || maxImages < 1 || maxImages > 8) {
       return `「${label}」视频参考图上限必须为 1–8 张的整数。`;
     }
+    const segmentsRaw = (draft.videoReference.maxSegments ?? "1").trim();
+    const maxSegments = Number(segmentsRaw);
+    if (!/^\d+$/.test(segmentsRaw) || !Number.isSafeInteger(maxSegments) || maxSegments < 1 || maxSegments > 30) {
+      return `「${label}」视频参考执行段上限必须为 1–30 段的整数。`;
+    }
     // 0 表示该型号不发送参考音频；非零时必须 ≥2 秒且不超过片段上限，与平台校验同口径。
     const audioRaw = (draft.videoReference.maxAudioSeconds ?? "0").trim();
     if (!/^\d+$/.test(audioRaw)) {
@@ -756,6 +765,8 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
         typeof capability.maxImages !== "number" ||
         !Number.isSafeInteger(capability.maxDurationSeconds) ||
         !Number.isSafeInteger(capability.maxImages) ||
+        (capability.maxSegments !== undefined &&
+          (typeof capability.maxSegments !== "number" || !Number.isSafeInteger(capability.maxSegments) || capability.maxSegments < 1 || capability.maxSegments > 30)) ||
         !Number.isSafeInteger(tokenPrice) ||
         !Number.isSafeInteger(tokenCost)
       ) {
@@ -765,6 +776,7 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
         enabled: true,
         maxDurationSeconds: String(capability.maxDurationSeconds),
         maxImages: String(capability.maxImages),
+        ...(typeof capability.maxSegments === "number" && capability.maxSegments > 0 ? { maxSegments: String(capability.maxSegments) } : {}),
         tokenCostCredits: priceInputValue(tokenCost),
         tokenPriceCredits: priceInputValue(tokenPrice),
       };
@@ -2473,6 +2485,7 @@ function MediaFamilyCard({
                         enabled: true,
                         maxDurationSeconds: "15",
                         maxImages: "8",
+                        maxSegments: "1",
                         tokenCostCredits: isToapis ? "0" : "",
                         tokenPriceCredits: isToapis ? "0" : "",
                       }
@@ -2530,6 +2543,26 @@ function MediaFamilyCard({
                       })
                     }
                   />
+                </label>
+                <label className="field">
+                  <span className="field-label">执行段上限</span>
+                  <input
+                    className="input num"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={30}
+                    step={1}
+                    aria-label={`模型 ${name} 视频参考执行段上限`}
+                    value={reference.maxSegments ?? "1"}
+                    disabled={busy}
+                    onChange={(event) =>
+                      onUpdateFamily(indexes, {
+                        videoReference: { ...reference, maxSegments: event.target.value },
+                      })
+                    }
+                  />
+                  <span className="video-reference-note">1 = 仅整段；多段只在事实镜头边界自动拆分</span>
                 </label>
                 {!isToapis ? <label className="field">
                   <span className="field-label">参考音频上限（秒）</span>

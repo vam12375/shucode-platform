@@ -113,7 +113,7 @@ func TestMediaAuthUploadTeamIsolationAndAdminBoundary(t *testing.T) {
 		t.Fatal("device cannot reconcile")
 	}
 	models := []media.Model{
-		{ID: "v", Name: "video", Kind: "video", CostMicro: 123_000, PriceMicro: 456_000, PriceVersion: "secret-version", VideoReference: &media.VideoReferenceCapability{MaxDurationSeconds: 20, MaxImages: 3, PriceMicro: 654_000, CostMicro: 321_000}},
+		{ID: "v", Name: "video", Kind: "video", CostMicro: 123_000, PriceMicro: 456_000, PriceVersion: "secret-version", VideoReference: &media.VideoReferenceCapability{MaxDurationSeconds: 20, MaxImages: 3, MaxSegments: 2, PriceMicro: 654_000, CostMicro: 321_000}},
 		{ID: "other", Name: "other", Kind: "video", CostMicro: 789_000, PriceMicro: 987_000, PriceVersion: "secret-version"},
 	}
 	data, _ := json.Marshal(models)
@@ -138,7 +138,7 @@ func TestMediaAuthUploadTeamIsolationAndAdminBoundary(t *testing.T) {
 	if !strings.Contains(w.Body.String(), `"priceMicro":456000`) {
 		t.Fatalf("媒体概览需要下发用户消耗: %s", w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), `"videoReference":{"maxDurationSeconds":20,"maxImages":3,"priceMicro":654000}`) || strings.Contains(w.Body.String(), "internal-reference-clip") {
+	if !strings.Contains(w.Body.String(), `"maxSegments":2`) || !strings.Contains(w.Body.String(), `"videoReference"`) || strings.Contains(w.Body.String(), "internal-reference-clip") {
 		t.Fatalf("媒体概览应公开视频参考能力与售价，并隐藏内部切片: %s", w.Body.String())
 	}
 	var overview struct {

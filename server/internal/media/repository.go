@@ -151,6 +151,19 @@ func (r Repository) AddAsset(ctx context.Context, team string, a Asset) error {
 	})
 }
 
+func (r Repository) RemoveAsset(ctx context.Context, team, id string) error {
+	return updateJSON(ctx, r.Store, assetKey(team), []Asset{}, func(v *[]Asset) error {
+		kept := (*v)[:0]
+		for _, item := range *v {
+			if item.ID != id {
+				kept = append(kept, item)
+			}
+		}
+		*v = kept
+		return nil
+	})
+}
+
 func (r Repository) UpsertInternalAsset(ctx context.Context, team string, asset Asset) error {
 	if !asset.Internal || asset.ID == "" || asset.Kind != "video" {
 		return ErrInvalid

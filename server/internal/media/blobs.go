@@ -26,9 +26,26 @@ type Blobs struct {
 
 func (b Blobs) Path(team, id string) string { return filepath.Join(b.Root, team, id) }
 func (b Blobs) Put(team string, reader io.Reader, limit int64) (string, int64, error) {
-	id := uuid.NewString()
+	return b.PutWithID(team, uuid.NewString(), reader, limit)
+}
+
+// PutWithID writes a blob under a caller-owned stable identity. A complete
+// existing blob is reused so a worker crash after the media write cannot
+// create a second final asset on the next lease.
+func (b Blobs) PutWithID(team, id string, reader io.Reader, limit int64) (string, int64, error) {
+	if _, err := uuid.Parse(id); err != nil {
+		return "", 0, ErrInvalid
+	}
 	dir := filepath.Join(b.Root, team)
 	if e := os.MkdirAll(dir, 0700); e != nil {
+		return "", 0, e
+	}
+	if info, e := os.Stat(b.Path(team, id)); e == nil {
+		if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > limit {
+			return "", 0, fmt.Errorf("media_size_limit")
+		}
+		return id, info.Size(), nil
+	} else if !os.IsNotExist(e) {
 		return "", 0, e
 	}
 	f, e := os.CreateTemp(dir, ".upload-*")

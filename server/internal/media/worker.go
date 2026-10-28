@@ -268,9 +268,10 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		}
 		referenceVideoURL = clip.URL
 		// 参考音频只延长卡点一致性，未绑定或超出能力上限时降级为无音频请求，不能阻断付费生成。
+		segmentDuration := shot.Plan.SourceEnd - shot.Plan.SourceStart
 		if videoModel.VideoReference.MaxAudioSeconds > 0 &&
-			p.Brief.ReferenceDurationSeconds > 0 &&
-			p.Brief.ReferenceDurationSeconds <= float64(videoModel.VideoReference.MaxAudioSeconds) {
+			segmentDuration > 0 &&
+			segmentDuration <= float64(videoModel.VideoReference.MaxAudioSeconds)+.001 {
 			audio, audioErr := s.ensureReferenceAudio(ctx, p, shot)
 			if audioErr != nil {
 				return s.failVideoReference(ctx, p, index, shot, audioErr.Error())
@@ -569,22 +570,32 @@ func videoReferenceRequested(p *Project) bool {
 }
 
 func isWholeVideoReferenceExecution(p *Project) bool {
-	return p.Canvas == nil && p.Brief.Mode == "replicate" && p.Brief.GenerationMode == "video_reference" &&
-		len(p.Shots) == 1 && p.Brief.ReferenceDurationSeconds > 0 &&
-		math.Abs(p.Shots[0].Plan.SourceStart) <= .001 &&
-		math.Abs(p.Shots[0].Plan.SourceEnd-p.Brief.ReferenceDurationSeconds) <= .001
+	if p.Canvas != nil || p.Brief.Mode != "replicate" || p.Brief.GenerationMode != "video_reference" || len(p.Shots) == 0 || p.Plan == nil || p.Brief.ReferenceDurationSeconds <= 0 {
+		return false
+	}
+	end := 0.0
+	for _, shot := range p.Shots {
+		if math.Abs(shot.Plan.SourceStart-end) > .001 || shot.Plan.SourceEnd <= shot.Plan.SourceStart {
+			return false
+		}
+		end = shot.Plan.SourceEnd
+	}
+	return math.Abs(end-p.Brief.ReferenceDurationSeconds) <= .001
 }
 
 func wholeReferenceImageIDs(p *Project, shot Shot) []string {
 	if shot.ImageAssetID != "" {
 		return []string{shot.ImageAssetID}
 	}
-	// 整段执行镜头只存首张替换图；其余身份参考仍由已审阅方案按首次出现顺序提供。
+	// 执行段只存首张替换图；其余身份参考由该段内已审阅方案按首次出现顺序提供。
 	// 旧逐镜执行不走此分支，避免恢复排队任务时改变已冻结的供应商输入。
 	images := []string{}
 	seen := map[string]bool{}
 	if p.Plan != nil {
 		for _, plan := range p.Plan.Shots {
+			if plan.SourceStart < shot.Plan.SourceStart-.001 || plan.SourceEnd > shot.Plan.SourceEnd+.001 {
+				continue
+			}
 			if plan.AssetID != "" && !seen[plan.AssetID] {
 				seen[plan.AssetID] = true
 				images = append(images, plan.AssetID)

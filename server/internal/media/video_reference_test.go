@@ -47,6 +47,7 @@ func TestValidateModelsVideoReferenceCapability(t *testing.T) {
 		"duration-over":        func(c *VideoReferenceCapability) { c.MaxDurationSeconds = 91 },
 		"images-zero":          func(c *VideoReferenceCapability) { c.MaxImages = 0 },
 		"images-over":          func(c *VideoReferenceCapability) { c.MaxImages = 9 },
+		"segments-over":        func(c *VideoReferenceCapability) { c.MaxSegments = 31 },
 		"price-zero":           func(c *VideoReferenceCapability) { c.PriceMicro = 0 },
 		"cost-negative":        func(c *VideoReferenceCapability) { c.CostMicro = -1 },
 		"cost-overflow":        func(c *VideoReferenceCapability) { c.CostMicro = 100_000_001 },

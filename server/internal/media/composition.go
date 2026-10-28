@@ -3,6 +3,7 @@ package media
 import (
 	"context"
 	"fmt"
+	"github.com/google/uuid"
 	"math"
 	"os"
 	"os/exec"
@@ -120,6 +121,20 @@ func compositionTimeline(p *Project) ([]compositionSegment, error) {
 }
 
 func (s *Service) compose(ctx context.Context, p *Project) error {
+	claimed, e := s.workerUpdate(ctx, p, func(v *Project) {
+		if v.CompositionAssetID == "" {
+			v.CompositionAssetID = uuid.NewString()
+		}
+		v.Status = "composing"
+	})
+	if e != nil {
+		return e
+	}
+	// 读取 CAS 后的项目快照，确保下面的 blob 写入使用已持久化的稳定身份。
+	p = claimed
+	if resumed, resumeErr := s.resumeComposition(ctx, p); resumed || resumeErr != nil {
+		return resumeErr
+	}
 	if err := s.validateFinishing(ctx, p.Brief); err != nil {
 		return err
 	}
@@ -129,10 +144,6 @@ func (s *Service) compose(ctx context.Context, p *Project) error {
 	segments, e := compositionTimeline(p)
 	if e != nil || len(segments) == 0 {
 		return fmt.Errorf("invalid_source_timeline")
-	}
-	_, e = s.workerUpdate(ctx, p, func(v *Project) { v.Status = "composing" })
-	if e != nil {
-		return e
 	}
 	// 容器 /tmp 是 tmpfs，大视频中间文件写持久媒体盘，避免合成占满 API 内存。
 	if e = os.MkdirAll(s.Blobs.Root, 0700); e != nil {
@@ -162,7 +173,7 @@ func (s *Service) compose(ctx context.Context, p *Project) error {
 		return e
 	}
 	defer f.Close()
-	id, size, e := s.Blobs.Put(p.TeamID, f, MaxVideo)
+	id, size, e := s.Blobs.PutWithID(p.TeamID, p.CompositionAssetID, f, MaxVideo)
 	if e != nil {
 		return e
 	}
@@ -170,17 +181,66 @@ func (s *Service) compose(ctx context.Context, p *Project) error {
 	if e = s.Repo.AddAsset(ctx, p.TeamID, a); e != nil {
 		return e
 	}
-	_, e = s.workerUpdate(ctx, p, func(v *Project) {
+	return s.finishComposition(ctx, p, id)
+}
+
+// resumeComposition closes the crash window after the atomic blob rename. Once
+// the stable output ID has a complete blob, the render itself is durable and
+// recovery only needs to idempotently register the asset and finish the project.
+func (s *Service) resumeComposition(ctx context.Context, p *Project) (bool, error) {
+	if p.CompositionAssetID == "" {
+		return false, nil
+	}
+	info, err := os.Stat(s.Blobs.Path(p.TeamID, p.CompositionAssetID))
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return true, err
+	}
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > MaxVideo {
+		return true, fmt.Errorf("composition_output_invalid")
+	}
+	a := Asset{ID: p.CompositionAssetID, Name: p.Brief.Product + ".mp4", Kind: "video", Mime: "video/mp4", Size: info.Size(), CreatedAt: time.Now().UTC()}
+	if err = s.Repo.AddAsset(ctx, p.TeamID, a); err != nil {
+		return true, err
+	}
+	return true, s.finishComposition(ctx, p, p.CompositionAssetID)
+}
+
+func (s *Service) finishComposition(ctx context.Context, p *Project, id string) error {
+	_, e := s.workerUpdate(ctx, p, func(v *Project) {
 		// 合成期间取消由平台事实决定，不能让旧 worker 快照把 cancelled 覆盖为 completed。
 		if v.CancelRequested {
 			v.Status = "cancelled"
 			return
 		}
 		v.OutputAssetID = id
+		v.CompositionAssetID = ""
 		v.Status = "completed"
 		v.Error = ""
 	})
 	return e
+}
+
+func (s *Service) cleanupCancelledComposition(ctx context.Context, p *Project) error {
+	if p.CompositionAssetID == "" {
+		return nil
+	}
+	id := p.CompositionAssetID
+	if err := s.Repo.RemoveAsset(ctx, p.TeamID, id); err != nil {
+		return err
+	}
+	if err := os.Remove(s.Blobs.Path(p.TeamID, id)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	_, err := s.workerUpdate(ctx, p, func(v *Project) {
+		if v.Status != "cancelled" || v.OutputAssetID != "" || v.CompositionAssetID != id {
+			return
+		}
+		v.CompositionAssetID = ""
+	})
+	return err
 }
 
 func (s *Service) renderLegacyComposition(runCtx context.Context, p *Project, segments []compositionSegment, dir string, w, h int) error {

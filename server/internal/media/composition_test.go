@@ -1,8 +1,14 @@
 package media
 
 import (
+	"context"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 func TestFractionalSubtitleClock(t *testing.T) {
@@ -82,6 +88,179 @@ func TestFourKComposeBudget(t *testing.T) {
 	}
 	if composeTimeout("1080p") != defaultComposeTimeout {
 		t.Fatal("non-4k compose timeout must stay unchanged")
+	}
+}
+
+func TestCompositionRecoveryReusesPersistedFinalAsset(t *testing.T) {
+	for _, assetAlreadyRegistered := range []bool{false, true} {
+		t.Run(map[bool]string{false: "crash-before-asset-registration", true: "crash-before-project-finalize"}[assetAlreadyRegistered], func(t *testing.T) {
+			f := setup(t)
+			ctx := context.Background()
+			p := f.project(t)
+			id := uuid.NewString()
+			path := f.s.Blobs.Path(f.team, id)
+			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("durable-final"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if assetAlreadyRegistered {
+				asset := Asset{ID: id, Name: "fixture product.mp4", Kind: "video", Mime: "video/mp4", Size: int64(len("durable-final"))}
+				if err := f.s.Repo.AddAsset(ctx, f.team, asset); err != nil {
+					t.Fatal(err)
+				}
+			}
+			p, err := f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
+				v.Status = "composing"
+				v.CompositionAssetID = id
+				v.LeaseOwner = "expired-worker"
+				v.LeaseUntil = time.Now().Add(-time.Minute)
+				for i := range v.Shots {
+					v.Shots[i].Status = "succeeded"
+					v.Shots[i].OutputAssetID = uuid.NewString()
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			before, err := f.s.Repo.Assets(ctx, f.team)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.s.Tick(ctx)
+			p = current(t, f, p)
+			after, err := f.s.Repo.Assets(ctx, f.team)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.Status != "completed" || p.OutputAssetID != id || p.CompositionAssetID != "" {
+				t.Fatalf("composition recovery did not finalize stable output: %+v", p)
+			}
+			wantAssetCount := len(before)
+			if !assetAlreadyRegistered {
+				wantAssetCount++
+			}
+			if len(after) != wantAssetCount {
+				t.Fatalf("composition recovery asset count=%d want=%d", len(after), wantAssetCount)
+			}
+			f.s.Tick(ctx)
+			afterRetry, err := f.s.Repo.Assets(ctx, f.team)
+			if err != nil || len(afterRetry) != wantAssetCount {
+				t.Fatalf("repeated Tick duplicated composition asset: count=%d want=%d err=%v", len(afterRetry), wantAssetCount, err)
+			}
+		})
+	}
+}
+
+func TestCancelledCompositionCleansPersistedFinalAsset(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	p := f.project(t)
+	id := uuid.NewString()
+	path := f.s.Blobs.Path(f.team, id)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("cancelled-final"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.Repo.AddAsset(ctx, f.team, Asset{ID: id, Name: "cancelled.mp4", Kind: "video", Mime: "video/mp4", Size: int64(len("cancelled-final"))}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
+		v.Status = "cancelled"
+		v.CancelRequested = true
+		v.CompositionAssetID = id
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.s.Tick(ctx)
+	p = current(t, f, p)
+	if p.CompositionAssetID != "" || p.OutputAssetID != "" || p.Status != "cancelled" {
+		t.Fatalf("cancelled composition cleanup changed terminal semantics: %+v", p)
+	}
+	if _, err = os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("cancelled composition blob remains: %v", err)
+	}
+	assets, err := f.s.Repo.Assets(ctx, f.team)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, asset := range assets {
+		if asset.ID == id {
+			t.Fatalf("cancelled composition asset remains: %+v", asset)
+		}
+	}
+}
+
+func TestCancellationRacingCompositionFinalizeRemovesUndeliveredAsset(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	p := f.project(t)
+	id := uuid.NewString()
+	path := f.s.Blobs.Path(f.team, id)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("cancelled-final"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.Repo.AddAsset(ctx, f.team, Asset{ID: id, Name: "cancelled.mp4", Kind: "video", Mime: "video/mp4", Size: int64(len("cancelled-final"))}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
+		v.Status = "composing"
+		v.CompositionAssetID = id
+		v.LeaseOwner = f.s.WorkerID
+		v.LeaseUntil = time.Now().Add(time.Minute)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Cancel wins the project CAS after the blob and asset are durable but before final delivery.
+	p, err = f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
+		v.CancelRequested = true
+		v.Status = "cancelling"
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.s.finishComposition(ctx, p, id); err != nil {
+		t.Fatal(err)
+	}
+	p = current(t, f, p)
+	if p.Status != "cancelled" || p.OutputAssetID != "" || p.CompositionAssetID != id {
+		t.Fatalf("cancelled render was delivered or lost its cleanup marker: %+v", p)
+	}
+	p, err = f.s.workerUpdate(ctx, p, func(v *Project) {
+		v.LeaseOwner = ""
+		v.LeaseUntil = time.Time{}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.s.Tick(ctx)
+	p = current(t, f, p)
+	if p.Status != "cancelled" || p.OutputAssetID != "" || p.CompositionAssetID != "" {
+		t.Fatalf("cancel cleanup changed terminal project state: %+v", p)
+	}
+	if _, err = os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("cancelled composition blob remains: %v", err)
+	}
+	assets, err := f.s.Repo.Assets(ctx, f.team)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, asset := range assets {
+		if asset.ID == id {
+			t.Fatalf("cancelled composition asset remains: %+v", asset)
+		}
 	}
 }
 

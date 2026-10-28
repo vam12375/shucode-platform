@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -149,6 +150,219 @@ func TestReferencePreparationRetryReturnsSameFrozenProjectToReview(t *testing.T)
 				t.Fatalf("stale retry replay mutated review: %v", err)
 			}
 		})
+	}
+}
+
+type partialReferencePreparationFixture struct {
+	f        *fixture
+	project  *Project
+	video    []byte
+	checksum string
+	clipA    Asset
+	clipB    Asset
+}
+
+func failedPartialReferencePreparation(t *testing.T) partialReferencePreparationFixture {
+	t.Helper()
+	f, p, _ := referencePreparationFixture(t)
+	ctx := context.Background()
+	video, err := os.ReadFile("testdata/blue.mp4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.video = video
+	sourceID := uuid.NewString()
+	sourcePath := f.s.Blobs.Path(f.team, sourceID)
+	if err = os.MkdirAll(filepath.Dir(sourcePath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(sourcePath, video, 0600); err != nil {
+		t.Fatal(err)
+	}
+	checksum, err := checksumFile(sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.s.Repo.AddAsset(ctx, f.team, Asset{ID: sourceID, Name: "synthetic-source.mp4", Kind: "video", Mime: "video/mp4", Size: int64(len(video)), DurationSeconds: 20.155, Checksum: checksum}); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.s.Repo.AddAsset(ctx, f.team, Asset{ID: "replacement", Name: "replacement.png", Kind: "image"}); err != nil {
+		t.Fatal(err)
+	}
+	clipProbe := atomic.Int32{}
+	f.s.ReferenceProbe = func(_ context.Context, path string) (ReferenceMetadata, error) {
+		if strings.Contains(filepath.Base(path), ".reference-clip-upload-") {
+			switch clipProbe.Add(1) {
+			case 1, 3:
+				return ReferenceMetadata{DurationSeconds: 14, Width: 160, Height: 90}, nil
+			case 2, 4:
+				return ReferenceMetadata{DurationSeconds: 6.155, Width: 160, Height: 90}, nil
+			}
+		}
+		return ReferenceMetadata{DurationSeconds: 20.155, Width: 160, Height: 90}, nil
+	}
+	brief, models, plan := wholeReferenceFixture()
+	brief.ReferenceAssetID = sourceID
+	brief.ReferenceDurationSeconds, brief.Duration = 20.155, 20
+	brief.MaxCreditsMicro = 50_000_000
+	models[0].VideoReference.MaxSegments = 2
+	boundaries := []float64{0, 4, 8, 12, 14, 16, 20.155}
+	plan.Shots = nil
+	for i := 0; i < len(boundaries)-1; i++ {
+		plan.Shots = append(plan.Shots, ShotPlan{SourceStart: boundaries[i], SourceEnd: boundaries[i+1], Duration: 4, Framing: "全景", Camera: "推进", Action: "连续动作", Purpose: "复刻", Prompt: fmt.Sprintf("事实镜头 %d", i+1), AssetID: "replacement"})
+	}
+	clipA, err := f.s.UploadReferenceClip(ctx, f.team, sourceID, checksum, 0, 14, bytes.NewReader(video))
+	if err != nil {
+		t.Fatal(err)
+	}
+	clipB, err := f.s.UploadReferenceClip(ctx, f.team, sourceID, checksum, 14, 20.155, bytes.NewReader(video))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range plan.Shots {
+		if i < 4 {
+			plan.Shots[i].ReferenceVideoAssetID = clipA.ID
+		} else {
+			plan.Shots[i].ReferenceVideoAssetID = clipB.ID
+		}
+	}
+	shots, quote, err := BuildShots(brief, plan, models)
+	if err != nil || len(shots) != 2 || quote != 17_500_000 {
+		t.Fatalf("unexpected partial-retry fixture plan: shots=%d quote=%d err=%v", len(shots), quote, err)
+	}
+	report := &SourceAnalysis{SourceChecksum: checksum, Summary: "20.155 秒原片事实", References: plan.References}
+	for _, shot := range plan.Shots {
+		report.Shots = append(report.Shots, SourceShot{SourceURL: shot.SourceURL, SourceStart: shot.SourceStart, SourceEnd: shot.SourceEnd, Framing: shot.Framing, Camera: shot.Camera, Action: shot.Action, Purpose: shot.Purpose})
+	}
+	p, err = f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
+		v.Brief, v.Models, v.SourceChecksum, v.SourceAnalysis = brief, models, checksum, report
+		v.Plan, v.Shots, v.QuoteMicro = &Plan{References: plan.References, Shots: append([]ShotPlan(nil), plan.Shots...)}, shots, quote
+		v.Status, v.Error = "review", ""
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Revise 是 Host 绑定的正式校验入口，先让平台验证两段真实片段。
+	p, err = f.s.Revise(ctx, f.team, p.ID, p.Version, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err = f.s.Action(ctx, f.team, p.ID, p.Version, "generate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		f.s.Tick(ctx)
+		p = current(t, f, p)
+	}
+	if p.Shots[0].Status != "succeeded" || p.Shots[1].Status != "pending" || f.submits.Load() != 1 {
+		t.Fatalf("first segment did not finish independently: status=%s shots=%+v submits=%d", p.Status, p.Shots, f.submits.Load())
+	}
+	// 模拟校验通过后片段存储损坏：第二段应在供应商 admission 前失败。
+	if err = os.WriteFile(f.s.Blobs.Path(f.team, clipB.ID), []byte("damaged"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f.s.Tick(ctx)
+	p = current(t, f, p)
+	if p.Status != "failed" || p.Error != "video_reference_clip_invalid" || p.Shots[1].Status != "failed" || f.submits.Load() != 1 {
+		t.Fatalf("second segment did not fail before provider admission: status=%s error=%s shots=%+v submits=%d", p.Status, p.Error, p.Shots, f.submits.Load())
+	}
+	return partialReferencePreparationFixture{f: f, project: p, video: video, checksum: checksum, clipA: clipA, clipB: clipB}
+}
+
+func TestPartialReferencePreparationRetryPreservesSuccessAndOnlyResubmitsFailedSegment(t *testing.T) {
+	fixture := failedPartialReferencePreparation(t)
+	f, p := fixture.f, fixture.project
+	ctx := context.Background()
+	first := p.Shots[0]
+	firstCharge, firstProjectCharge := first.ChargedMicro, p.ChargedMicro
+	team, err := f.s.Repo.Store.GetTeam(ctx, f.team)
+	if err != nil || team.UsedCredits == "0.000000" || p.QuoteMicro != 17_500_000 {
+		t.Fatalf("first segment was not settled before recovery: team=%+v quote=%d err=%v", team, p.QuoteMicro, err)
+	}
+
+	recovered, err := f.s.Action(ctx, f.team, p.ID, p.Version, "retry")
+	if err != nil || recovered.Status != "review" || !reflect.DeepEqual(recovered.Shots[0], first) || recovered.Shots[1].Status != "pending" || recovered.Shots[1].Attempt != p.Shots[1].Attempt+1 || recovered.Shots[1].ReferenceVideoAssetID != "" || recovered.ChargedMicro != firstProjectCharge {
+		t.Fatalf("partial recovery changed successful facts or failed attempt: %+v err=%v", recovered, err)
+	}
+	for i := 4; i < len(recovered.Plan.Shots); i++ {
+		if recovered.Plan.Shots[i].ReferenceVideoAssetID != "" {
+			t.Fatal("failed segment fact retained its invalid clip binding")
+		}
+	}
+
+	// A different, valid clip and a script edit on the completed segment must not erase its output/task/charge.
+	altClip, err := f.s.UploadReferenceClip(ctx, f.team, recovered.Brief.ReferenceAssetID, fixture.checksum, 0, 14, bytes.NewReader(append(bytes.Clone(fixture.video), 0)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := *recovered.Plan
+	tampered.Shots = append([]ShotPlan(nil), recovered.Plan.Shots...)
+	for i := 0; i < 4; i++ {
+		tampered.Shots[i].ReferenceVideoAssetID = altClip.ID
+	}
+	if _, err = f.s.Revise(ctx, f.team, recovered.ID, recovered.Version, tampered); !errors.Is(err, ErrConflict) {
+		t.Fatalf("revise accepted a replacement clip for a completed segment: %v", err)
+	}
+	tampered = *recovered.Plan
+	tampered.Shots = append([]ShotPlan(nil), recovered.Plan.Shots...)
+	tampered.Shots[0].Prompt += " 被修改"
+	if _, err = f.s.Revise(ctx, f.team, recovered.ID, recovered.Version, tampered); !errors.Is(err, ErrConflict) {
+		t.Fatalf("revise accepted a script edit for a completed segment: %v", err)
+	}
+	latest, err := f.s.Repo.Get(ctx, f.team, recovered.ID)
+	if err != nil || !reflect.DeepEqual(latest, recovered) {
+		t.Fatalf("rejected revise changed preserved execution: err=%v", err)
+	}
+
+	clipB, err := f.s.UploadReferenceClip(ctx, f.team, recovered.Brief.ReferenceAssetID, fixture.checksum, 14, 20.155, bytes.NewReader(append(bytes.Clone(fixture.video), 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := *recovered.Plan
+	plan.Shots = append([]ShotPlan(nil), recovered.Plan.Shots...)
+	for i := 4; i < len(plan.Shots); i++ {
+		plan.Shots[i].ReferenceVideoAssetID = clipB.ID
+	}
+	revised, err := f.s.Revise(ctx, f.team, recovered.ID, recovered.Version, plan)
+	if err != nil || !reflect.DeepEqual(revised.Shots[0], first) || revised.Shots[1].Status != "pending" || revised.Shots[1].Attempt != recovered.Shots[1].Attempt || revised.ChargedMicro != firstProjectCharge {
+		t.Fatalf("binding-only revise lost completed execution: %+v err=%v", revised, err)
+	}
+	revised, err = f.s.Action(ctx, f.team, revised.ID, revised.Version, "generate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		f.s.Tick(ctx)
+		revised = current(t, f, revised)
+	}
+	if !reflect.DeepEqual(revised.Shots[0], first) || revised.Shots[1].Status != "succeeded" || revised.ChargedMicro != revised.QuoteMicro || f.submits.Load() != 2 {
+		t.Fatalf("recovery resubmitted or recharged completed segment: status=%s shots=%+v charged=%d quote=%d submits=%d", revised.Status, revised.Shots, revised.ChargedMicro, revised.QuoteMicro, f.submits.Load())
+	}
+	team, err = f.s.Repo.Store.GetTeam(ctx, f.team)
+	if err != nil || team.UsedCredits != "18.500000" || team.ReservedCredits != "0.000000" || first.ChargedMicro != firstCharge {
+		t.Fatalf("recovery billing duplicated completed segment: team=%+v firstCharge=%d err=%v", team, firstCharge, err)
+	}
+}
+
+func TestPartialReferencePreparationRetryRejectsMismatchedSuccessfulFactBinding(t *testing.T) {
+	fixture := failedPartialReferencePreparation(t)
+	f, p := fixture.f, fixture.project
+	ctx := context.Background()
+	corrupted, err := f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
+		v.Plan.Shots[0].ReferenceVideoAssetID = "different-clip"
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.s.Action(ctx, f.team, corrupted.ID, corrupted.Version, "retry"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("retry accepted a successful segment whose fact binding differs: %v", err)
+	}
+	latest, err := f.s.Repo.Get(ctx, f.team, p.ID)
+	if err != nil || !reflect.DeepEqual(latest, corrupted) {
+		t.Fatalf("rejected recovery changed persisted project: err=%v", err)
 	}
 }
 

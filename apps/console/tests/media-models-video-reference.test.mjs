@@ -180,6 +180,23 @@ test("duration range and token rates are validated before save", () => {
   }
 });
 
+test("video reference execution segment limit accepts 30 and rejects 31", () => {
+  const atLimit = validDraft();
+  atLimit.videoReference.maxSegments = "30";
+  assert.equal(output.validateDrafts([atLimit], [provider]), null);
+  const saved = output.toApiModel(atLimit);
+  assert.equal(saved.videoReference.maxSegments, 30);
+  assert.equal(output.toDraft(saved).videoReference.maxSegments, "30");
+
+  const overLimit = validDraft();
+  overLimit.videoReference.maxSegments = "31";
+  assert.match(output.validateDrafts([overLimit], [provider]), /视频参考执行段上限必须为 1–30 段/);
+  assert.throws(
+    () => output.draftsFromJson(JSON.stringify([{ ...model, videoReference: { ...capability, maxSegments: 31 } }])),
+    /字段不完整/,
+  );
+});
+
 test("JSON rejects incomplete capability records and image models cannot enable it", () => {
   assert.throws(
     () =>

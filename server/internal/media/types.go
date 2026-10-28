@@ -81,8 +81,10 @@ func (m Model) AllowedDurations() []int {
 type VideoReferenceCapability struct {
 	MaxDurationSeconds int `json:"maxDurationSeconds"`
 	MaxImages          int `json:"maxImages"`
+	// MaxSegments 是独立复刻允许的平台执行段数；0 与 1 都保持旧版单整片语义。
+	MaxSegments int `json:"maxSegments,omitempty"`
 	// MaxAudioSeconds 是参考音频单段上限；0 表示该型号不接受参考音频。
-	// 整段复刻的音频与原片同源同区间，永远只有一段，因此没有段数字段。
+	// 每个执行段的音频与视频同源同区间。
 	MaxAudioSeconds int   `json:"maxAudioSeconds,omitempty"`
 	PriceMicro      int64 `json:"priceMicro"`
 	CostMicro       int64 `json:"costMicro"`
@@ -249,16 +251,19 @@ type Project struct {
 	Plan                 *Plan                    `json:"plan,omitempty"`
 	Shots                []Shot                   `json:"shots"`
 	QuoteMicro           int64                    `json:"quoteMicro"`
-	ChargedMicro         int64                    `json:"chargedMicro"`
-	OutputAssetID        string                   `json:"outputAssetId,omitempty"`
-	Error                string                   `json:"error,omitempty"`
-	CancelRequested      bool                     `json:"cancelRequested"`
-	TeamID               string                   `json:"teamId"`
-	UserID               string                   `json:"userId"`
-	DeviceID             string                   `json:"deviceId"`
-	Models               []Model                  `json:"models"`
-	LeaseOwner           string                   `json:"leaseOwner,omitempty"`
-	LeaseUntil           time.Time                `json:"leaseUntil"`
+	// CompositionAssetID 在合成开始前持久化，跨 worker lease/进程恢复复用同一最终资产身份。
+	// 这是平台内部恢复事实，不进入 ProjectView；OutputAssetID 仍是已完成成片的公开事实。
+	CompositionAssetID string    `json:"compositionAssetId,omitempty"`
+	ChargedMicro       int64     `json:"chargedMicro"`
+	OutputAssetID      string    `json:"outputAssetId,omitempty"`
+	Error              string    `json:"error,omitempty"`
+	CancelRequested    bool      `json:"cancelRequested"`
+	TeamID             string    `json:"teamId"`
+	UserID             string    `json:"userId"`
+	DeviceID           string    `json:"deviceId"`
+	Models             []Model   `json:"models"`
+	LeaseOwner         string    `json:"leaseOwner,omitempty"`
+	LeaseUntil         time.Time `json:"leaseUntil"`
 }
 
 // 用户投影不携带供应商路由、准入身份、锁定售价或 worker lease；opaque task ID 仅用于受理证据与排查。

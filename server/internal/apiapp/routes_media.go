@@ -483,6 +483,9 @@ func publicMediaModels(models []media.Model) []gin.H {
 			if m.VideoReference.MaxAudioSeconds > 0 {
 				reference["maxAudioSeconds"] = m.VideoReference.MaxAudioSeconds
 			}
+			if m.VideoReference.MaxSegments > 0 {
+				reference["maxSegments"] = m.VideoReference.MaxSegments
+			}
 			// 旧目录没有 token 费率时不下发零值，保持 wire 兼容。
 			if m.VideoReference.TokenPriceMicroPerMillion > 0 {
 				reference["tokenPriceMicroPerMillion"] = m.VideoReference.TokenPriceMicroPerMillion

@@ -193,7 +193,9 @@ func (s *Service) Revise(ctx context.Context, team, id string, version int64, pl
 					shots[i].ReferenceAudioAssetID = shots[i].Plan.ReferenceAudioAssetID
 				}
 			}
-			preserveReferencePreparationAttempt(p, plan, shots, total)
+			if err = preserveReferencePreparationState(p, plan, shots, total); err != nil {
+				return err
+			}
 		} else {
 			for _, shot := range shots {
 				if shot.Plan.ReferenceVideoAssetID != "" {
@@ -344,6 +346,23 @@ func (s *Service) Tick(ctx context.Context) {
 		}
 		// 归档有独立恢复事实；先处理所有成功shot，终态和部分成功也不能漏收录。
 		p = s.reconcileCanvasArchives(ctx, p)
+		if p.Status == "cancelled" && p.CompositionAssetID != "" {
+			// 合成落盘与取消可并发；稳定身份让取消后的恢复轮次能幂等删除最终媒体，避免团队资产留下孤儿。
+			if p.LeaseOwner != "" && p.LeaseUntil.After(time.Now()) {
+				continue
+			}
+			claimed, claimErr := s.Mutate(ctx, p.TeamID, p.ID, p.Version, func(v *Project) error {
+				v.LeaseOwner = s.WorkerID
+				v.LeaseUntil = time.Now().Add(workerLeaseDuration(v.Brief.Resolution))
+				return nil
+			})
+			if claimErr != nil {
+				continue
+			}
+			_ = s.cleanupCancelledComposition(ctx, claimed)
+			_, _ = s.workerUpdate(ctx, claimed, func(v *Project) { v.LeaseOwner = ""; v.LeaseUntil = time.Time{} })
+			continue
+		}
 		if p.Status == "analysis_settling" {
 			_, _ = s.finishAnalysisFee(ctx, &p)
 			continue
