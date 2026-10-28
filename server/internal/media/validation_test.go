@@ -14,7 +14,8 @@ func fixtureVideoModel() Model {
 		UpstreamModel: "doubao-seedance-2-0-mini-260615",
 		Adapter:       "ark",
 		Resolutions:   []string{"720p"},
-		Durations:     []int{4, 5, 10, 15},
+		MinDuration:   4,
+		MaxDuration:   15,
 		PriceMicro:    498_000,
 		PriceVersion:  "v1",
 	}
@@ -85,17 +86,11 @@ func TestValidateModelsAcceptsDurationRange(t *testing.T) {
 	}
 }
 
-func TestAllowedDurationsExpandsRangeButKeepsLegacyEnumeration(t *testing.T) {
+func TestAllowedDurationsExpandsContinuousRange(t *testing.T) {
 	ranged := fixtureVideoModel()
-	ranged.Durations = nil
-	ranged.MinDuration = 4
 	ranged.MaxDuration = 6
 	if got := ranged.AllowedDurations(); !slices.Equal(got, []int{4, 5, 6}) {
 		t.Fatalf("AllowedDurations() = %v, want [4 5 6]", got)
-	}
-	legacy := fixtureVideoModel()
-	if got := legacy.AllowedDurations(); !slices.Equal(got, legacy.Durations) {
-		t.Fatalf("AllowedDurations() = %v, want legacy enumeration %v", got, legacy.Durations)
 	}
 }
 

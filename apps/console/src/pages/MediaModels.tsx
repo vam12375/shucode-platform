@@ -67,8 +67,8 @@ const TOAPIS_SEEDANCE_PRESETS = SEEDANCE_PRESETS.map((preset) => ({
 
 const TOAPIS_MINIMAX_CAPABILITIES: Record<string, { resolutions: readonly string[]; minDuration: number; videoReference: boolean }> = {
   "MiniMax-H3": { resolutions: ["768p", "2K"], minDuration: 4, videoReference: true },
-  "MiniMax-H3-Max": { resolutions: ["480p", "768p"], minDuration: 5, videoReference: true },
-  "MiniMax-H3-Max-Turbo": { resolutions: ["480p", "768p"], minDuration: 5, videoReference: false },
+  "MiniMax-H3-Max": { resolutions: ["480p", "768p"], minDuration: 4, videoReference: true },
+  "MiniMax-H3-Max-Turbo": { resolutions: ["480p", "768p"], minDuration: 4, videoReference: false },
 };
 const TOAPIS_MINIMAX_PRESETS = Object.entries(TOAPIS_MINIMAX_CAPABILITIES).map(([upstreamModel, capability]) => ({
   name: `ToAPIs ${upstreamModel.replace("MiniMax-", "MiniMax ")}`,
@@ -1576,7 +1576,7 @@ export function MediaModelsPage() {
         hidden={section !== "models"}
       >
         <Notice k="计费口径">
-          一个上游模型一张卡：分辨率档位是卡内的价格行，镜头时长按区间（如 4–15 秒）配置，共享配置只填一次。保存后仍按每档一条模型下发，视频按镜头秒、图片按张计价，1 credit = ¥1。Ark 视频参考可按 token 费率（Credit/1M token）结算；ToAPIs 视频参考按输出秒数、使用档位售价结算。
+          一个上游模型一张卡：分辨率价格条目在卡内维护，镜头时长统一按连续 4–15 秒区间配置，共享配置只填一次。保存后仍按每个分辨率条目下发一条模型，视频按镜头秒、图片按张计价，1 credit = ¥1。Ark 视频参考可按 token 费率（Credit/1M token）结算；ToAPIs 视频参考按输出秒数和模型秒价结算。
         </Notice>
         {!loading && providers.length === 0 ? (
           <Notice
@@ -1628,7 +1628,7 @@ export function MediaModelsPage() {
 
           {presetsOpen ? (
             <div className="pane-b media-presets" id="media-presets">
-              <span className="readout">预设会追加尚未存在的档位，已存在的档位保持不动；价格仍需逐档填写。</span>
+              <span className="readout">预设会追加尚未存在的分辨率价格条目，已存在的条目保持不动；价格仍需逐条填写。</span>
               <div className="preset-actions">
                 {presetActions.map((preset) => (
                   <button

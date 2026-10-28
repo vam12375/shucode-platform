@@ -227,7 +227,7 @@ func failedPartialReferencePreparation(t *testing.T) partialReferencePreparation
 		}
 	}
 	shots, quote, err := BuildShots(brief, plan, models)
-	if err != nil || len(shots) != 2 || quote != 17_500_000 {
+	if err != nil || len(shots) != 2 || quote != 14_000_000 {
 		t.Fatalf("unexpected partial-retry fixture plan: shots=%d quote=%d err=%v", len(shots), quote, err)
 	}
 	report := &SourceAnalysis{SourceChecksum: checksum, Summary: "20.155 秒原片事实", References: plan.References}
@@ -278,7 +278,7 @@ func TestPartialReferencePreparationRetryPreservesSuccessAndOnlyResubmitsFailedS
 	first := p.Shots[0]
 	firstCharge, firstProjectCharge := first.ChargedMicro, p.ChargedMicro
 	team, err := f.s.Repo.Store.GetTeam(ctx, f.team)
-	if err != nil || team.UsedCredits == "0.000000" || p.QuoteMicro != 17_500_000 {
+	if err != nil || team.UsedCredits == "0.000000" || p.QuoteMicro != 14_000_000 {
 		t.Fatalf("first segment was not settled before recovery: team=%+v quote=%d err=%v", team, p.QuoteMicro, err)
 	}
 
@@ -341,7 +341,7 @@ func TestPartialReferencePreparationRetryPreservesSuccessAndOnlyResubmitsFailedS
 		t.Fatalf("recovery resubmitted or recharged completed segment: status=%s shots=%+v charged=%d quote=%d submits=%d", revised.Status, revised.Shots, revised.ChargedMicro, revised.QuoteMicro, f.submits.Load())
 	}
 	team, err = f.s.Repo.Store.GetTeam(ctx, f.team)
-	if err != nil || team.UsedCredits != "18.500000" || team.ReservedCredits != "0.000000" || revised.Shots[0].ChargedMicro != firstCharge {
+	if err != nil || team.UsedCredits != "15.000000" || team.ReservedCredits != "0.000000" || revised.Shots[0].ChargedMicro != firstCharge {
 		t.Fatalf("recovery billing duplicated completed segment: team=%+v firstCharge=%d err=%v", team, firstCharge, err)
 	}
 }

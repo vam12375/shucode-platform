@@ -112,7 +112,7 @@ func setup(t *testing.T) *fixture {
 	f.s.Provider = func(context.Context, Model) (Provider, error) {
 		return Provider{BaseURL: f.server.URL, Key: "fixture", Client: f.server.Client()}, nil
 	}
-	models := []Model{{ID: "v", Name: "fixture", Kind: "video", Adapter: "ark", ProviderID: uuid.NewString(), UpstreamModel: "fixture", Resolutions: []string{"720p"}, Durations: []int{5}, PriceMicro: 100_000, PriceVersion: "v1"}}
+	models := []Model{{ID: "v", Name: "fixture", Kind: "video", Adapter: "ark", ProviderID: uuid.NewString(), UpstreamModel: "fixture", Resolutions: []string{"720p"}, MinDuration: 4, MaxDuration: 15, PriceMicro: 100_000, PriceVersion: "v1"}}
 	raw, _ := json.Marshal(models)
 	if e = st.SetConfigValue(ctx, ConfigKey, raw); e != nil {
 		t.Fatal(e)

@@ -86,12 +86,17 @@ func (s compositionSegment) seconds() float64 { return float64(s.frames) / 30 }
 func compositionTimeline(p *Project) ([]compositionSegment, error) {
 	segments := make([]compositionSegment, len(p.Shots))
 	offset, boundary := 0.0, 0
+	deliveryFrames := 0
+	if isWholeVideoReferenceExecution(p) {
+		// 交付时长按产品规则取原片秒数的四舍五入整数；事实与上传仍保留帧级边界。
+		deliveryFrames = int(math.Round(math.Round(p.Brief.ReferenceDurationSeconds) * 30))
+	}
 	for i, shot := range p.Shots {
 		duration := float64(shot.Plan.Duration)
 		start, end := offset, offset+duration
 		if p.Brief.ReferenceAssetID != "" {
 			duration = shot.Plan.SourceEnd - shot.Plan.SourceStart
-			if math.IsNaN(shot.Plan.SourceStart) || math.IsInf(shot.Plan.SourceStart, 0) || math.Abs(shot.Plan.SourceStart-offset) > .001 || duration > float64(shot.Plan.Duration)+.001 {
+			if math.IsNaN(shot.Plan.SourceStart) || math.IsInf(shot.Plan.SourceStart, 0) || math.Abs(shot.Plan.SourceStart-offset) > .001 || (!isWholeVideoReferenceExecution(p) && duration > float64(shot.Plan.Duration)+.001) {
 				return nil, fmt.Errorf("invalid_source_timeline")
 			}
 			start, end = shot.Plan.SourceStart, shot.Plan.SourceEnd
@@ -100,6 +105,11 @@ func compositionTimeline(p *Project) ([]compositionSegment, error) {
 			return nil, fmt.Errorf("invalid_source_timeline")
 		}
 		endFrame := int(math.Round(end * 30))
+		if deliveryFrames > 0 && i == len(p.Shots)-1 {
+			endFrame = deliveryFrames
+			end = float64(endFrame) / 30
+			duration = end - start
+		}
 		if endFrame <= boundary {
 			return nil, fmt.Errorf("invalid_source_timeline")
 		}
@@ -287,6 +297,10 @@ func (s *Service) renderLegacyComposition(runCtx context.Context, p *Project, se
 		}
 		if _, err = fmt.Sscanf(string(length), "%f", &seconds); err != nil || seconds < float64(shot.Plan.Duration)-0.2 {
 			return fmt.Errorf("video_result_too_short")
+		}
+		if shortfall := duration - seconds; shortfall > 0.001 {
+			// 整片动态分配允许供应商整数档比最后事实段短；补最后一帧后再按交付时间轴拼接。
+			filter += fmt.Sprintf(",tpad=stop_mode=clone:stop_duration=%.9f", shortfall)
 		}
 		probe := exec.CommandContext(runCtx, "ffprobe", "-v", "error", "-protocol_whitelist", "file,pipe", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", input)
 		audio, _ := probe.Output()

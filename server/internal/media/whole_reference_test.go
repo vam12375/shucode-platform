@@ -17,7 +17,7 @@ func wholeReferenceFixture() (Brief, []Model, Plan) {
 	boundaries := []float64{0, 4.083, 4.333, 4.708, 5.417, 5.5, 6.167, 7.542, 7.958, 8.962902}
 	brief := Brief{Mode: "replicate", GenerationMode: "video_reference", Product: "合成角色", AssetIDs: []string{"replacement"}, ReferenceAssetID: "source", ReferenceDurationSeconds: boundaries[len(boundaries)-1], VideoModel: "v", Resolution: "480p", AspectRatio: "16:9", Duration: 9, MaxCreditsMicro: 50_000_000, ReviewPlan: true, ReplacementInstructions: "替换为同一合成角色"}
 	model := fixtureVideoModel()
-	model.ID, model.Durations = "v", []int{15, 4, 10, 5}
+	model.ID, model.Durations, model.MinDuration, model.MaxDuration = "v", nil, 4, 15
 	model.VideoReference = &VideoReferenceCapability{MaxDurationSeconds: 15, MaxImages: 2, PriceMicro: 700_000}
 	plan := Plan{References: []Reference{{URL: "", Title: "合成原片", CapturedAt: time.Now(), Evidence: "合成时间轴", SelectionReason: "回归夹具"}}}
 	for i := 0; i < len(boundaries)-1; i++ {
@@ -98,7 +98,7 @@ func TestWholeReferencePreservesReviewAndBuildsOneExecution(t *testing.T) {
 		t.Fatalf("whole reference requires one execution: shots=%d err=%v", len(shots), err)
 	}
 	shot := shots[0].Plan
-	if !reflect.DeepEqual(plan.Shots, original) || shot.SourceStart != 0 || shot.SourceEnd != brief.ReferenceDurationSeconds || shot.Duration != 10 || quote != 7_000_000 || shot.Subtitle != "" {
+	if !reflect.DeepEqual(plan.Shots, original) || shot.SourceStart != 0 || shot.SourceEnd != brief.ReferenceDurationSeconds || shot.Duration != 9 || quote != 6_300_000 || shot.Subtitle != "" {
 		t.Fatalf("review timeline, full range or quote changed: shot=%+v quote=%d", shot, quote)
 	}
 	for _, text := range []string{brief.ReplacementInstructions, "4.083", "5.417", "8.962902", "连续节拍", "镜头字幕"} {
@@ -130,7 +130,7 @@ func TestWholeReferenceBuildsMinimumSegmentsAtFactBoundaries(t *testing.T) {
 	if shots[0].Plan.SourceStart != 0 || shots[0].Plan.SourceEnd != 14 || shots[1].Plan.SourceStart != 14 || shots[1].Plan.SourceEnd != 20.155 {
 		t.Fatalf("segments did not use stable fact boundaries: %+v", shots)
 	}
-	if shots[0].Plan.Duration != 15 || shots[1].Plan.Duration != 10 || quote != 17_500_000 {
+	if shots[0].Plan.Duration != 15 || shots[1].Plan.Duration != 5 || quote != 14_000_000 {
 		t.Fatalf("segment output duration or quote is wrong: %+v quote=%d", shots, quote)
 	}
 	if strings.Contains(shots[0].Plan.Prompt, "第5段事实动作") || !strings.Contains(shots[1].Plan.Prompt, "第5段事实动作") {
@@ -227,7 +227,7 @@ func TestWholeReferenceRejectsUnsupportedWholeInputWithoutTruncation(t *testing.
 			case "over-limit":
 				models[0].VideoReference.MaxDurationSeconds = 8
 			case "no-duration":
-				models[0].Durations = []int{4, 5}
+				models[0].Durations, models[0].MinDuration, models[0].MaxDuration = nil, 0, 0
 			case "prompt-overflow":
 				plan.Shots[0].Prompt = strings.Repeat("字", 4000)
 				want = "video_reference_prompt_limit"
@@ -239,7 +239,7 @@ func TestWholeReferenceRejectsUnsupportedWholeInputWithoutTruncation(t *testing.
 				plan.Shots[1].ReferenceVideoAssetID = "clip-b"
 				want = "video_reference_plan_invalid"
 			case "budget":
-				brief.MaxCreditsMicro = 6_999_999
+				brief.MaxCreditsMicro = 6_299_999
 				want = "duration_or_budget_exceeded"
 			case "too-many-images":
 				brief.AssetIDs = append(brief.AssetIDs, "second", "third")
@@ -261,7 +261,7 @@ func TestWholeReferenceGeneratesOnlyOneSelectedImage(t *testing.T) {
 	plan.Shots[1].AssetID, plan.Shots[2].AssetID = "second", "third"
 	plan.Shots[0].ImagePrompt = "首个替换图提示"
 	shots, quote, err := BuildShots(brief, plan, models)
-	if err != nil || len(shots) != 1 || shots[0].Plan.ImagePrompt != "首个替换图提示" || quote != 7_020_000 {
+	if err != nil || len(shots) != 1 || shots[0].Plan.ImagePrompt != "首个替换图提示" || quote != 6_320_000 {
 		t.Fatalf("image generation must happen once: %+v %d %v", shots, quote, err)
 	}
 	plan.Shots[0].ImagePrompt = ""
@@ -368,5 +368,18 @@ func TestFailedAdaptationRecoveryRejectsChangedBindingSourceFeeAndExecution(t *t
 				t.Fatal("rejected recovery changed project")
 			}
 		})
+	}
+}
+
+func TestWholeReferenceOutputDurationsCoverEverySegment(t *testing.T) {
+	continuous := Model{MinDuration: 4, MaxDuration: 15}
+	if got := wholeReferenceOutputDurations(continuous, []float64{14, 6}, 20); !reflect.DeepEqual(got, []int{15, 5}) {
+		t.Fatalf("continuous catalog should allocate the historical 15+5 split: %v", got)
+	}
+	if got := wholeReferenceOutputDurations(continuous, []float64{14, 6.155}, 20); !reflect.DeepEqual(got, []int{15, 5}) {
+		t.Fatalf("continuous catalog should round the whole-film total and preserve 15+5: %v", got)
+	}
+	if got := wholeReferenceOutputDurations(continuous, []float64{2.5, 2.5, 3}, 8); got != nil {
+		t.Fatalf("continuous catalog must reject an impossible exact total: %v", got)
 	}
 }

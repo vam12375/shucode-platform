@@ -150,7 +150,7 @@ func TestFrozenFinishingDesktopWireContract(t *testing.T) {
 	if err = json.Unmarshal(raw, &fixture); err != nil {
 		t.Fatal(err)
 	}
-	model := Model{ID: "fixture-video", Kind: "video", Resolutions: []string{"720p"}, Durations: []int{5}, PriceMicro: 100_000}
+	model := Model{ID: "fixture-video", Kind: "video", Resolutions: []string{"720p"}, MinDuration: 4, MaxDuration: 15, PriceMicro: 100_000}
 	if err = ValidateBrief(fixture.Brief, []Model{model}, []Asset{{ID: "fixture-product", Kind: "image"}}); err != nil {
 		t.Fatal(err)
 	}

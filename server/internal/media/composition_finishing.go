@@ -116,7 +116,7 @@ func (s *Service) renderFinishingComposition(ctx context.Context, p *Project, se
 		input := s.Blobs.Path(p.TeamID, shot.OutputAssetID)
 		raw, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-protocol_whitelist", "file,pipe", "-show_entries", "format=duration", "-of", "csv=p=0", input).Output()
 		length, parseErr := strconv.ParseFloat(strings.TrimSpace(string(raw)), 64)
-		if err != nil || parseErr != nil || math.IsNaN(length) || math.IsInf(length, 0) || length < segment.seconds()-.2 {
+		if err != nil || parseErr != nil || math.IsNaN(length) || math.IsInf(length, 0) || (length < segment.seconds()-.2 && !isWholeVideoReferenceExecution(p)) {
 			return fmt.Errorf("video_result_too_short")
 		}
 		tail := finishingOverlapFrames(p, segments, i)
@@ -124,7 +124,8 @@ func (s *Service) renderFinishingComposition(ctx context.Context, p *Project, se
 		clipDuration := float64(clipFrames) / 30
 		name := fmt.Sprintf("clip-%03d.mp4", i)
 		// 自动生成统一满幅；旧的 decrease+pad 会把横版素材嵌入竖片，留下明显黑边。
-		filter := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,setsar=1,fps=30,trim=duration=%.9f,setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=%.9f", w, h, w, h, segment.seconds(), float64(tail)/30)
+		shortfall := max(0, segment.seconds()-length)
+		filter := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,setsar=1,fps=30,trim=duration=%.9f,setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=%.9f", w, h, w, h, segment.seconds(), max(float64(tail)/30, shortfall))
 		if err = runFinishingCommand(ctx, dir, "clip_normalization_failed", "-protocol_whitelist", "file,pipe", "-i", input, "-an", "-sn", "-dn", "-vf", filter, "-t", fmt.Sprintf("%.9f", clipDuration), "-frames:v", strconv.Itoa(clipFrames), "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", name); err != nil {
 			return err
 		}

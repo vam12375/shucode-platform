@@ -321,7 +321,7 @@ func TestSourceFirstAPIPreservesReportAndChargesAdaptationOnce(t *testing.T) {
 	if err := f.deps.Media.Repo.AddAsset(ctx, team, source); err != nil {
 		t.Fatal(err)
 	}
-	models := []media.Model{{ID: "v", Name: "video", Kind: "video", Resolutions: []string{"720p"}, Durations: []int{4}, PriceMicro: 100000, PriceVersion: "fixture"}, {ID: "im", Name: "image", Kind: "image", PriceMicro: 10000, PriceVersion: "fixture"}}
+	models := []media.Model{{ID: "v", Name: "video", Kind: "video", Resolutions: []string{"720p"}, MinDuration: 4, MaxDuration: 15, PriceMicro: 100000, PriceVersion: "fixture"}, {ID: "im", Name: "image", Kind: "image", PriceMicro: 10000, PriceVersion: "fixture"}}
 	raw, _ := json.Marshal(models)
 	if err := f.store.SetConfigValue(ctx, media.ConfigKey, raw); err != nil {
 		t.Fatal(err)

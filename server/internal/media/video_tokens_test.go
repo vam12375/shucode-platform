@@ -8,11 +8,11 @@ func TestVideoReferenceQuoteUsesFifteenSecondUpperBound(t *testing.T) {
 		MaxImages:                 4,
 		TokenPriceMicroPerMillion: 40_000_000,
 	}
-	// 480p 16:9: (15+5) × 864 × 496 × 24 / 1024 = 200,880 tokens；40 credit/M。
+	// 480p 16:9: 20 × 864 × 496 × 24 / 1024 = 200,880 tokens；40 credit/M。
 	if got := videoReferenceQuoteMicro(ref, "480p", "16:9", 5); got != 8_035_200 {
 		t.Fatalf("480p quote = %d, want 8035200", got)
 	}
-	// 720p 9:16: (15+5) × 720 × 1280 × 24 / 1024 = 432,000 tokens；40 credit/M。
+	// 720p 9:16: 20 × 720 × 1280 × 24 / 1024 = 432,000 tokens；40 credit/M。
 	if got := videoReferenceQuoteMicro(ref, "720p", "9:16", 5); got != 17_280_000 {
 		t.Fatalf("720p quote = %d, want 17280000", got)
 	}

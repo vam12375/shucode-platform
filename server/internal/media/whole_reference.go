@@ -2,6 +2,7 @@ package media
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"unicode/utf16"
@@ -104,14 +105,71 @@ func partitionWholeReference(shots []ShotPlan, capability *VideoReferenceCapabil
 	return out, nil
 }
 
-func wholeReferenceOutputDuration(model Model, sourceDuration float64) int {
-	duration := 0
-	for _, candidate := range model.AllowedDurations() {
-		if float64(candidate)+.001 >= sourceDuration && (duration == 0 || candidate < duration) {
-			duration = candidate
+// wholeReferenceOutputDurations first allocates the rounded whole-film duration
+// exactly across the execution segments. When several exact combinations are
+// possible, it gives the earlier execution segments the longer provider clock;
+// this preserves the historical 15s + 5s split for a 20s source while the
+// catalog now exposes every integer from 4s through 15s. The final composition
+// keeps the frame-level source ranges and pads a shorter provider result when
+// necessary.
+func wholeReferenceOutputDurations(model Model, sourceDurations []float64, targetTotal int) []int {
+	allowed := model.AllowedDurations()
+	if len(sourceDurations) == 0 || len(allowed) == 0 || targetTotal <= 0 {
+		return nil
+	}
+	type allocation struct {
+		durations []int
+	}
+	dp := map[int]allocation{0: {}}
+	for range sourceDurations {
+		next := make(map[int]allocation)
+		for sum, previous := range dp {
+			for _, candidate := range allowed {
+				if candidate < 2 || candidate > 30 || sum+candidate > targetTotal {
+					continue
+				}
+				current, exists := next[sum+candidate]
+				durations := append(append([]int(nil), previous.durations...), candidate)
+				if !exists || lexicographicallyLonger(durations, current.durations) {
+					next[sum+candidate] = allocation{durations: durations}
+				}
+			}
+		}
+		dp = next
+	}
+	if exact, ok := dp[targetTotal]; ok {
+		return exact.durations
+	}
+	// A current continuous catalog must reject an impossible exact total instead
+	// of silently changing the delivery clock. Keep the old covering behavior
+	// only for explicitly legacy sparse catalogs.
+	if model.MinDuration > 0 && model.MaxDuration >= model.MinDuration {
+		return nil
+	}
+	out := make([]int, len(sourceDurations))
+	for i, sourceDuration := range sourceDurations {
+		for _, candidate := range allowed {
+			if float64(candidate)+.001 >= sourceDuration && (out[i] == 0 || candidate < out[i]) {
+				out[i] = candidate
+			}
+		}
+		if out[i] == 0 {
+			return nil
 		}
 	}
-	return duration
+	return out
+}
+
+// lexicographicallyLonger makes the exact allocation deterministic and keeps
+// the earlier execution segment as full as possible (for example 15+5 for a
+// 20-second delivery split across two segments).
+func lexicographicallyLonger(a, b []int) bool {
+	for i := 0; i < len(a) && i < len(b); i++ {
+		if a[i] != b[i] {
+			return a[i] > b[i]
+		}
+	}
+	return len(a) > len(b)
 }
 
 func appendWholeReferenceScript(script *strings.Builder, shot ShotPlan) {
@@ -144,11 +202,20 @@ func buildWholeReferenceExecution(b Brief, plan Plan, model Model, models []Mode
 		return nil, 0, err
 	}
 	executions := make([]Shot, 0, len(segments))
-	var total int64
+	sourceDurations := make([]float64, 0, len(segments))
 	for _, segment := range segments {
 		facts := plan.Shots[segment.first:segment.last]
-		sourceDuration := facts[len(facts)-1].SourceEnd - facts[0].SourceStart
-		duration := wholeReferenceOutputDuration(model, sourceDuration)
+		sourceDurations = append(sourceDurations, facts[len(facts)-1].SourceEnd-facts[0].SourceStart)
+	}
+	targetTotal := int(math.Round(b.ReferenceDurationSeconds))
+	durations := wholeReferenceOutputDurations(model, sourceDurations, targetTotal)
+	if len(durations) != len(segments) {
+		return nil, 0, fmt.Errorf("video_reference_duration_unsupported")
+	}
+	var total int64
+	for index, segment := range segments {
+		facts := plan.Shots[segment.first:segment.last]
+		duration := durations[index]
 		if duration == 0 {
 			return nil, 0, fmt.Errorf("video_reference_duration_unsupported")
 		}

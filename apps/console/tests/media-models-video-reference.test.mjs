@@ -663,14 +663,14 @@ test("ToAPIs preset does not bind an unrelated Ark supplier", async () => {
 
 const minimaxModel = (upstreamModel = "MiniMax-H3") => ({
   ...toapisModel(), id: `toapis-${upstreamModel}-768p`, name: `ToAPIs ${upstreamModel} 768p`,
-  upstreamModel, resolutions: ["768p"], minDuration: upstreamModel === "MiniMax-H3" ? 4 : 5,
+  upstreamModel, resolutions: ["768p"], minDuration: 4,
   videoReference: undefined, generateAudio: false,
 });
 
 test("MiniMax H3 validates exact family capabilities without expanding Seedance", () => {
   for (const [upstream, resolutions, min] of [
-    ["MiniMax-H3", ["768p", "2K"], 4], ["MiniMax-H3-Max", ["480p", "768p"], 5],
-    ["MiniMax-H3-Max-Turbo", ["480p", "768p"], 5],
+    ["MiniMax-H3", ["768p", "2K"], 4], ["MiniMax-H3-Max", ["480p", "768p"], 4],
+    ["MiniMax-H3-Max-Turbo", ["480p", "768p"], 4],
   ]) {
     for (const resolution of resolutions) {
       const draft = output.toDraft({ ...minimaxModel(upstream), resolutions: [resolution] });
@@ -683,7 +683,7 @@ test("MiniMax H3 validates exact family capabilities without expanding Seedance"
   const h3 = output.toDraft(minimaxModel());
   const reference = { ...output.toDraft(toapisModel()).videoReference };
   assert.equal(output.validateDrafts([{ ...h3, videoReference: reference }], [provider]), null);
-  assert.ok(output.validateDrafts([{ ...h3, upstreamModel: "MiniMax-H3-Max-Turbo", minDuration: "5", videoReference: reference }], [provider]));
+  assert.ok(output.validateDrafts([{ ...h3, upstreamModel: "MiniMax-H3-Max-Turbo", minDuration: "3", videoReference: reference }], [provider]));
   assert.ok(output.validateDrafts([{ ...h3, upstreamModel: "minimax-h3" }], [provider]));
   assert.ok(output.validateDrafts([{ ...h3, upstreamModel: "toString" }], [provider]));
   assert.ok(output.validateDrafts([{ ...h3, resolutions: ["2k"] }], [provider]));
@@ -705,7 +705,7 @@ test("MiniMax H3 preset adds six unpriced tiers, preserves Seedance and round-tr
   assert.equal(added.length, 6);
   assert.deepEqual(added.map((item) => item.resolutions[0]), ["768p", "2K", "480p", "768p", "480p", "768p"]);
   assert.ok(added.every((item) => item.adapter === "toapis" && item.generateAudio === false && item.maxDuration === 15));
-  assert.deepEqual(added.map((item) => item.minDuration), [4, 4, 5, 5, 5, 5]);
+  assert.deepEqual(added.map((item) => item.minDuration), [4, 4, 4, 4, 4, 4]);
   const imported = output.draftsFromJson(JSON.stringify(added));
   assert.ok(imported.every((draft) => output.toApiModel(draft).adapter === "toapis"));
 });

@@ -34,7 +34,8 @@ func TestWholeReferenceWorkerSubmitsEachExecutionSegmentAndComposesOnce(t *testi
 	}
 	f := setup(t)
 	ctx := context.Background()
-	// 两个执行段都需要足够长的 provider 结果；合成阶段会按原片事实边界裁成 14 秒与 6.155 秒。
+	// 两个执行段的供应商整数时长总和与原片四舍五入时长一致（15+5=20）；
+	// 合成阶段仍按原片事实边界取帧，并将最终交付裁到 20 秒。
 	f.video = makeWholeReferenceWorkerVideo(t, "15")
 	brief, models, plan := wholeReferenceFixture()
 	boundaries := []float64{0, 4, 8, 12, 14, 16, 20.155}
@@ -103,7 +104,7 @@ func TestWholeReferenceWorkerSubmitsEachExecutionSegmentAndComposesOnce(t *testi
 		}
 	}
 	shots, quote, err := BuildShots(brief, plan, models)
-	if err != nil || len(shots) != 2 || quote != 17_500_000 {
+	if err != nil || len(shots) != 2 || quote != 14_000_000 {
 		t.Fatalf("unexpected execution plan: shots=%d quote=%d err=%v", len(shots), quote, err)
 	}
 	p := f.project(t)
@@ -141,7 +142,7 @@ func TestWholeReferenceWorkerSubmitsEachExecutionSegmentAndComposesOnce(t *testi
 		t.Fatalf("segments were not submitted/settled exactly once: charged=%d quote=%d submits=%d", p.ChargedMicro, quote, f.submits.Load())
 	}
 	team, err := f.s.Repo.Store.GetTeam(ctx, f.team)
-	if err != nil || team.UsedCredits != "17.500000" || team.ReservedCredits != "0.000000" {
+	if err != nil || team.UsedCredits != "14.000000" || team.ReservedCredits != "0.000000" {
 		t.Fatalf("unexpected final billing: team=%+v err=%v", team, err)
 	}
 	f.requestMu.Lock()
@@ -151,7 +152,7 @@ func TestWholeReferenceWorkerSubmitsEachExecutionSegmentAndComposesOnce(t *testi
 	}
 	for i, wantClip := range []string{clipA.ID, clipB.ID} {
 		body := f.requestBodies[i]
-		if body["duration"] != float64([]int{15, 10}[i]) {
+		if body["duration"] != float64([]int{15, 5}[i]) {
 			t.Fatalf("execution %d duration=%v", i, body["duration"])
 		}
 		content, ok := body["content"].([]any)

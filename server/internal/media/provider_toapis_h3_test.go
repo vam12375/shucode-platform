@@ -16,9 +16,6 @@ func toapisH3FixtureModel(upstream string) Model {
 	m := toapisModel()
 	m.UpstreamModel = upstream
 	m.Resolutions = []string{"768p"}
-	if upstream != "MiniMax-H3" {
-		m.MinDuration = 5
-	}
 	return m
 }
 
@@ -35,6 +32,9 @@ func TestToAPIsH3CatalogCapabilities(t *testing.T) {
 		if err := ValidateModels([]Model{m}); err != nil {
 			t.Fatalf("%s rejected: %v", upstream, err)
 		}
+		if m.MinDuration != 4 || m.MaxDuration != 15 || len(m.Durations) != 0 {
+			t.Fatalf("%s duration capability = %d–%d/%v, want continuous 4–15", upstream, m.MinDuration, m.MaxDuration, m.Durations)
+		}
 		if got := ModelAspectRatios(m); !slices.Equal(got, append([]string{"auto"}, fixedVideoRatios...)) {
 			t.Fatalf("%s ratios=%v", upstream, got)
 		}
@@ -43,23 +43,21 @@ func TestToAPIsH3CatalogCapabilities(t *testing.T) {
 		"wrong-case": func(m *Model) { m.UpstreamModel = "minimax-h3" },
 		"h3-720p":    func(m *Model) { m.Resolutions = []string{"720p"} },
 		"h3-480p":    func(m *Model) { m.Resolutions = []string{"480p"} },
-		"max-2K":     func(m *Model) { m.UpstreamModel = "MiniMax-H3-Max"; m.MinDuration = 5; m.Resolutions = []string{"2K"} },
+		"max-2K":     func(m *Model) { m.UpstreamModel = "MiniMax-H3-Max"; m.MinDuration = 4; m.Resolutions = []string{"2K"} },
 		"wire-capital-in-catalog": func(m *Model) {
 			m.UpstreamModel = "MiniMax-H3-Max"
-			m.MinDuration = 5
+			m.MinDuration = 4
 			m.Resolutions = []string{"768P"}
 		},
-		"max-four-seconds": func(m *Model) { m.UpstreamModel = "MiniMax-H3-Max" },
-		"turbo-four-enum": func(m *Model) {
+		"max-too-short": func(m *Model) { m.UpstreamModel = "MiniMax-H3-Max"; m.MinDuration = 3 },
+		"turbo-invalid-range": func(m *Model) {
 			m.UpstreamModel = "MiniMax-H3-Max-Turbo"
-			m.MinDuration = 0
-			m.MaxDuration = 0
-			m.Durations = []int{4, 5}
+			m.MinDuration = 3
 		},
 		"audio-toggle": func(m *Model) { m.GenerateAudio = true },
 		"turbo-reference": func(m *Model) {
 			m.UpstreamModel = "MiniMax-H3-Max-Turbo"
-			m.MinDuration = 5
+			m.MinDuration = 4
 			m.VideoReference = &VideoReferenceCapability{MaxDurationSeconds: 15, MaxImages: 8, PriceMicro: 100_000}
 		},
 		"too-long-reference": func(m *Model) {
@@ -166,7 +164,7 @@ func TestToAPIsH3InvalidInputsFailWithoutHTTP(t *testing.T) {
 		{"MiniMax-H3", "768p", "auto", 5, false, ""},
 		{"MiniMax-H3", "720p", "16:9", 5, false, ""},
 		{"MiniMax-H3", "768p", "16:9", 5, true, ""},
-		{"MiniMax-H3-Max", "768p", "16:9", 4, false, ""},
+		{"MiniMax-H3-Max", "768p", "16:9", 3, false, ""},
 		{"MiniMax-H3-Max-Turbo", "768p", "16:9", 5, false, "https://media.example.test/clip.mp4"},
 	} {
 		m := toapisH3FixtureModel(tc.upstream)

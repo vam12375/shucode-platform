@@ -23,9 +23,9 @@ func toapisModelCapabilities(upstream string) (toapisModelCapability, bool) {
 	case "MiniMax-H3":
 		return toapisModelCapability{[]string{"768p", "2K"}, 4, true, false, 50_000_000}, true
 	case "MiniMax-H3-Max":
-		return toapisModelCapability{[]string{"480p", "768p"}, 5, true, false, 50_000_000}, true
+		return toapisModelCapability{[]string{"480p", "768p"}, 4, true, false, 50_000_000}, true
 	case "MiniMax-H3-Max-Turbo":
-		return toapisModelCapability{[]string{"480p", "768p"}, 5, false, false, 0}, true
+		return toapisModelCapability{[]string{"480p", "768p"}, 4, false, false, 0}, true
 	default:
 		return toapisModelCapability{}, false
 	}
