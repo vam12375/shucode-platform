@@ -341,7 +341,7 @@ func TestPartialReferencePreparationRetryPreservesSuccessAndOnlyResubmitsFailedS
 		t.Fatalf("recovery resubmitted or recharged completed segment: status=%s shots=%+v charged=%d quote=%d submits=%d", revised.Status, revised.Shots, revised.ChargedMicro, revised.QuoteMicro, f.submits.Load())
 	}
 	team, err = f.s.Repo.Store.GetTeam(ctx, f.team)
-	if err != nil || team.UsedCredits != "18.500000" || team.ReservedCredits != "0.000000" || first.ChargedMicro != firstCharge {
+	if err != nil || team.UsedCredits != "18.500000" || team.ReservedCredits != "0.000000" || revised.Shots[0].ChargedMicro != firstCharge {
 		t.Fatalf("recovery billing duplicated completed segment: team=%+v firstCharge=%d err=%v", team, firstCharge, err)
 	}
 }

@@ -228,13 +228,29 @@ func (s *Service) cleanupCancelledComposition(ctx context.Context, p *Project) e
 		return nil
 	}
 	id := p.CompositionAssetID
-	if err := s.Repo.RemoveAsset(ctx, p.TeamID, id); err != nil {
+	// 清理可能晚于最终交付；物理删除前必须重新读取平台事实，不能依赖 Tick 抢 lease 时的旧快照。
+	latest, err := s.Repo.Get(ctx, p.TeamID, p.ID)
+	if err != nil || latest == nil {
 		return err
 	}
-	if err := os.Remove(s.Blobs.Path(p.TeamID, id)); err != nil && !os.IsNotExist(err) {
+	if latest.CompositionAssetID != id || latest.Status != "cancelled" {
+		return nil
+	}
+	if latest.OutputAssetID != "" {
+		_, err = s.workerUpdate(ctx, latest, func(v *Project) {
+			if v.OutputAssetID != "" && v.CompositionAssetID == id {
+				v.CompositionAssetID = ""
+			}
+		})
 		return err
 	}
-	_, err := s.workerUpdate(ctx, p, func(v *Project) {
+	if err = s.Repo.RemoveAsset(ctx, latest.TeamID, id); err != nil {
+		return err
+	}
+	if err = os.Remove(s.Blobs.Path(latest.TeamID, id)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	_, err = s.workerUpdate(ctx, latest, func(v *Project) {
 		if v.Status != "cancelled" || v.OutputAssetID != "" || v.CompositionAssetID != id {
 			return
 		}

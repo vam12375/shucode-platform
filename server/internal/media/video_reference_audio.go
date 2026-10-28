@@ -77,7 +77,9 @@ func (s *Service) UploadReferenceAudio(ctx context.Context, team, sourceID, sour
 	audioChecksum := hex.EncodeToString(h.Sum(nil))
 	probe := s.ReferenceProbe
 	if probe == nil {
-		probe = ProbeReference
+		// WAV 参考音频没有 video stream；复用视频探针会把每次合法音频上传
+		// 都判成 invalid_source_video，Host 随后只能静默降级为无音频参考。
+		probe = ProbeReferenceAudio
 	}
 	metadata, err := probe(ctx, tempPath)
 	if err != nil || !finitePositive(metadata.DurationSeconds) || metadata.DurationSeconds > MaxReferenceSeconds || math.Abs(metadata.DurationSeconds-(end-start)) > .1 {

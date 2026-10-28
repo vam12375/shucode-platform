@@ -389,33 +389,41 @@ func (s *Service) Tick(ctx context.Context) {
 		// 所有付费请求前先持久化 submitting；崩溃后只查询已知任务，不盲目重发。
 		e = s.step(ctx, claimed)
 		if e != nil && !errors.Is(e, ErrConflict) {
-			_, _ = s.workerUpdate(ctx, claimed, func(v *Project) {
-				v.Error = "media_worker_retrying"
-				allDone := true
-				for _, shot := range v.Shots {
-					if shot.Status != "succeeded" {
-						allDone = false
-					}
-				}
-				// 基础设施错误保留阶段、身份与锁定售价；只有已完成付费阶段的合成失败可安全显式重试。
-				if allDone {
-					v.Status = "failed"
-					v.Error = "composition_failed"
-				}
-				// 新后期的配置/配音错误已确定，不能留在 running 无限重试或丢失未知受理事实。
-				if v.Brief.Finishing != nil {
-					if code := finishingFailureCode(e); code != "" {
-						v.Status, v.Error = "failed", code
-					}
-					if v.CancelRequested {
-						v.Status = "cancelled"
-					}
-				}
-			})
+			_, _ = s.workerUpdate(ctx, claimed, func(v *Project) { recordWorkerFailure(v, e) })
 		}
 		_, _ = s.workerUpdate(ctx, claimed, func(v *Project) { v.LeaseOwner = ""; v.LeaseUntil = time.Time{} })
 	}
 }
+
+func recordWorkerFailure(v *Project, cause error) {
+	v.Error = "media_worker_retrying"
+	allDone := true
+	for _, shot := range v.Shots {
+		if shot.Status != "succeeded" {
+			allDone = false
+		}
+	}
+	// 供应商片段已全部完成后只剩合成；取消优先保留稳定产物 ID，供下一次 lease 清理未交付媒体。
+	if allDone && v.CancelRequested {
+		v.Status = "cancelled"
+		return
+	}
+	// 基础设施错误保留阶段、身份与锁定售价；只有已完成付费阶段的合成失败可安全显式重试。
+	if allDone {
+		v.Status = "failed"
+		v.Error = "composition_failed"
+	}
+	// 新后期的配置/配音错误已确定，不能留在 running 无限重试或丢失未知受理事实。
+	if v.Brief.Finishing != nil {
+		if code := finishingFailureCode(cause); code != "" {
+			v.Status, v.Error = "failed", code
+		}
+		if v.CancelRequested {
+			v.Status = "cancelled"
+		}
+	}
+}
+
 func (s *Service) workerUpdate(ctx context.Context, p *Project, fn func(*Project)) (*Project, error) {
 	for range 10 {
 		current, e := s.Repo.Get(ctx, p.TeamID, p.ID)

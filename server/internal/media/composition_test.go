@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -170,9 +171,13 @@ func TestCancelledCompositionCleansPersistedFinalAsset(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, err := f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
-		v.Status = "cancelled"
+		v.Status = "composing"
 		v.CancelRequested = true
 		v.CompositionAssetID = id
+		for i := range v.Shots {
+			v.Shots[i].Status = "succeeded"
+		}
+		recordWorkerFailure(v, errors.New("ffmpeg exited during cancellation"))
 		return nil
 	})
 	if err != nil {
@@ -194,6 +199,64 @@ func TestCancelledCompositionCleansPersistedFinalAsset(t *testing.T) {
 		if asset.ID == id {
 			t.Fatalf("cancelled composition asset remains: %+v", asset)
 		}
+	}
+}
+
+func TestCancelledCompositionNeverDeletesDeliveredAsset(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	p := f.project(t)
+	id := uuid.NewString()
+	path := f.s.Blobs.Path(f.team, id)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("delivered-final"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.Repo.AddAsset(ctx, f.team, Asset{ID: id, Name: "delivered.mp4", Kind: "video", Mime: "video/mp4", Size: int64(len("delivered-final"))}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
+		v.Status = "cancelled"
+		v.CancelRequested = true
+		v.CompositionAssetID = id
+		v.LeaseOwner = f.s.WorkerID
+		v.LeaseUntil = time.Now().Add(time.Minute)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := *p
+	// 模拟清理拿到旧快照后，另一个恢复步骤已经把稳定资产身份写成已交付成片。
+	p, err = f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
+		v.OutputAssetID = id
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.s.cleanupCancelledComposition(ctx, &stale); err != nil {
+		t.Fatal(err)
+	}
+	p = current(t, f, p)
+	if p.OutputAssetID != id || p.CompositionAssetID != "" || p.Status != "cancelled" {
+		t.Fatalf("delivered composition identity changed during cleanup: %+v", p)
+	}
+	if _, err = os.Stat(path); err != nil {
+		t.Fatalf("delivered composition blob was deleted: %v", err)
+	}
+	assets, err := f.s.Repo.Assets(ctx, f.team)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, asset := range assets {
+		found = found || asset.ID == id
+	}
+	if !found {
+		t.Fatal("delivered composition asset was deleted")
 	}
 }
 
