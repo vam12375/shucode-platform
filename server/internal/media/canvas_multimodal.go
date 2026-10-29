@@ -150,16 +150,23 @@ func (p Provider) CanvasMultimodalVideo(ctx context.Context, m Model, r CanvasRe
 				body[group.kind+"_with_roles"] = items
 			}
 		}
+		if m.UpstreamModel == "kling-4.0" && len(videos) > 0 {
+			body["metadata"] = map[string]bool{"keep_original_sound": true}
+		}
 	} else if p.Adapter == "ark" || p.Adapter == "" {
 		body["content"] = referenceContent(r.Prompt, images, videos, audios)
 		body["ratio"] = providerVideoRatio(r.AspectRatio)
 	} else {
 		return "", ErrInvalid
 	}
-	// 明确发送目录与请求的音频决定，不能把静音档交给上游默认值。
-	body["generate_audio"] = m.GenerateAudio
-	if r.GenerateAudio != nil {
-		body["generate_audio"] = *r.GenerateAudio
+	// 只有明确支持请求级音频开关的型号才发送 generate_audio；
+	// H3/Kling 等型号没有该参数，发送 false 也可能被上游判为非法字段。
+	capability, _ := toapisModelCapabilities(m.UpstreamModel)
+	if p.Adapter != "toapis" || capability.nativeAudioToggle {
+		body["generate_audio"] = m.GenerateAudio
+		if r.GenerateAudio != nil {
+			body["generate_audio"] = *r.GenerateAudio
+		}
 	}
 	if r.ReturnLastFrame != nil {
 		body["return_last_frame"] = *r.ReturnLastFrame

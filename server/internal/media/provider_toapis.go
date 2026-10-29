@@ -9,6 +9,14 @@ func toapisSeedanceModel(upstream string) bool {
 	return upstream == "seedance-2" || upstream == "seedance-2-fast" || upstream == "seedance-2-mini" || upstream == "seedance-2.5-ext" || upstream == "seedance-2-5"
 }
 
+// toapisVideoModel lists the video models with an explicitly implemented
+// ToAPIs adapter.  Keep this separate from toapisSeedanceModel: the latter is
+// also used by the Seedance-only duration normalizer and must not make
+// unrelated models look like Seedance.
+func toapisVideoModel(upstream string) bool {
+	return toapisSeedanceModel(upstream) || toapisMiniMaxModel(upstream) || upstream == "kling-4.0"
+}
+
 func validateToAPIsModel(m Model) error {
 	if m.Kind == "image" {
 		return validateToAPIsImageModel(m)
@@ -23,12 +31,12 @@ func validateToAPIsModel(m Model) error {
 		}
 	}
 	if m.MinDuration != 0 || m.MaxDuration != 0 {
-		if m.MinDuration < capability.minDuration || m.MaxDuration > 15 || m.MinDuration > m.MaxDuration {
+		if m.MinDuration < capability.minDuration || m.MaxDuration > capability.maxDuration || m.MinDuration > m.MaxDuration {
 			return ErrInvalid
 		}
 	}
 	for _, duration := range m.Durations {
-		if duration < capability.minDuration || duration > 15 {
+		if duration < capability.minDuration || duration > capability.maxDuration {
 			return ErrInvalid
 		}
 	}
@@ -48,7 +56,7 @@ func validateToAPIsModel(m Model) error {
 	if m.UpstreamModel == "seedance-2.5-ext" && unit != BillingUnitRequest || m.UpstreamModel == "seedance-2-5" && unit != BillingUnitToken {
 		return ErrInvalid
 	}
-	if c := m.VideoReference; c != nil && (!capability.videoReference || c.MaxDurationSeconds > 15 || (m.UpstreamModel != "seedance-2-5" && (c.TokenCostMicroPerMillion != 0 || c.TokenPriceMicroPerMillion != 0))) {
+	if c := m.VideoReference; c != nil && (!capability.videoReference || c.MaxDurationSeconds > capability.maxDuration || (m.UpstreamModel != "seedance-2-5" && (c.TokenCostMicroPerMillion != 0 || c.TokenPriceMicroPerMillion != 0))) {
 		return ErrInvalid
 	}
 	return nil
@@ -67,7 +75,8 @@ func (p Provider) submitToAPIs(ctx context.Context, m Model, r CanvasRequest, im
 		ratio = "adaptive"
 	}
 	body := map[string]any{"model": m.UpstreamModel, "prompt": r.Prompt, "resolution": toapisWireResolution(m.UpstreamModel, r.Resolution), "aspect_ratio": ratio, "duration": r.Duration}
-	if toapisMiniMaxModel(m.UpstreamModel) {
+	capability, _ := toapisModelCapabilities(m.UpstreamModel)
+	if !capability.nativeAudioToggle {
 		body["watermark"] = false
 	} else {
 		body["generate_audio"] = m.GenerateAudio
@@ -93,6 +102,11 @@ func (p Provider) submitToAPIs(ctx context.Context, m Model, r CanvasRequest, im
 	}
 	if video != "" {
 		body["video_with_roles"] = []map[string]string{{"url": video, "role": "reference_video"}}
+		if m.UpstreamModel == "kling-4.0" {
+			// Kling keeps the source video's soundtrack through its metadata
+			// option; it is not the generic generate_audio switch.
+			body["metadata"] = map[string]bool{"keep_original_sound": true}
+		}
 	}
 	var out struct {
 		ID string `json:"id"`

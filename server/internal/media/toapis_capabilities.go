@@ -5,9 +5,12 @@ import "slices"
 type toapisModelCapability struct {
 	resolutions       []string
 	minDuration       int
+	maxDuration       int
 	videoReference    bool
 	nativeAudioToggle bool
 	referenceMaxBytes int64
+	maxImages         int
+	maxVideos         int
 }
 
 func toapisMiniMaxModel(upstream string) bool {
@@ -17,19 +20,25 @@ func toapisMiniMaxModel(upstream string) bool {
 func toapisModelCapabilities(upstream string) (toapisModelCapability, bool) {
 	switch upstream {
 	case "seedance-2":
-		return toapisModelCapability{[]string{"480p", "720p", "1080p", "4k"}, 4, true, true, 100 << 20}, true
+		return toapisModelCapability{resolutions: []string{"480p", "720p", "1080p", "4k"}, minDuration: 4, maxDuration: 15, videoReference: true, nativeAudioToggle: true, referenceMaxBytes: 100 << 20, maxImages: 2, maxVideos: 3}, true
 	case "seedance-2-fast", "seedance-2-mini":
-		return toapisModelCapability{[]string{"480p", "720p"}, 4, true, true, 100 << 20}, true
+		return toapisModelCapability{resolutions: []string{"480p", "720p"}, minDuration: 4, maxDuration: 15, videoReference: true, nativeAudioToggle: true, referenceMaxBytes: 100 << 20, maxImages: 2, maxVideos: 3}, true
 	case "seedance-2.5-ext":
-		return toapisModelCapability{[]string{"720p"}, 4, true, true, 100 << 20}, true
+		return toapisModelCapability{resolutions: []string{"720p"}, minDuration: 4, maxDuration: 15, videoReference: true, nativeAudioToggle: true, referenceMaxBytes: 100 << 20, maxImages: 2, maxVideos: 3}, true
 	case "seedance-2-5":
-		return toapisModelCapability{[]string{"480p", "720p", "1080p"}, 4, true, true, 100 << 20}, true
+		return toapisModelCapability{resolutions: []string{"480p", "720p", "1080p"}, minDuration: 4, maxDuration: 15, videoReference: true, nativeAudioToggle: true, referenceMaxBytes: 100 << 20, maxImages: 2, maxVideos: 3}, true
+	case "kling-4.0":
+		// ToAPIs exposes Kling 4.0 as a generic video task.  It accepts
+		// 720p/1080p output, continuous 3–30 second durations and an optional
+		// reference video.  The model has no request-level audio toggle, so
+		// callers must omit generate_audio (see provider_toapis.go).
+		return toapisModelCapability{resolutions: []string{"720p", "1080p"}, minDuration: 3, maxDuration: 30, videoReference: true, nativeAudioToggle: false, referenceMaxBytes: 100 << 20, maxImages: 10, maxVideos: 5}, true
 	case "MiniMax-H3":
-		return toapisModelCapability{[]string{"768p", "2K"}, 4, true, false, 50_000_000}, true
+		return toapisModelCapability{resolutions: []string{"768p", "2K"}, minDuration: 4, maxDuration: 15, videoReference: true, nativeAudioToggle: false, referenceMaxBytes: 50_000_000, maxImages: 2, maxVideos: 3}, true
 	case "MiniMax-H3-Max":
-		return toapisModelCapability{[]string{"480p", "768p"}, 4, true, false, 50_000_000}, true
+		return toapisModelCapability{resolutions: []string{"480p", "768p"}, minDuration: 4, maxDuration: 15, videoReference: true, nativeAudioToggle: false, referenceMaxBytes: 50_000_000, maxImages: 2, maxVideos: 3}, true
 	case "MiniMax-H3-Max-Turbo":
-		return toapisModelCapability{[]string{"480p", "768p"}, 4, false, false, 0}, true
+		return toapisModelCapability{resolutions: []string{"480p", "768p"}, minDuration: 4, maxDuration: 15, videoReference: false, nativeAudioToggle: false, referenceMaxBytes: 0, maxImages: 2, maxVideos: 0}, true
 	default:
 		return toapisModelCapability{}, false
 	}
@@ -54,14 +63,14 @@ func toapisWireResolution(upstream, resolution string) string {
 
 func validateToAPIsInput(m Model, resolution, ratio string, duration, images int, video bool) error {
 	capability, ok := toapisModelCapabilities(m.UpstreamModel)
-	if !ok || validateToAPIsModel(m) != nil || duration < capability.minDuration || duration > 15 || !m.DurationSupported(duration) || !toapisResolutionSupported(m.UpstreamModel, resolution) || !slices.Contains(m.Resolutions, resolution) || !slices.Contains(ModelAspectRatios(m), ratio) {
+	if !ok || validateToAPIsModel(m) != nil || duration < capability.minDuration || duration > capability.maxDuration || !m.DurationSupported(duration) || !toapisResolutionSupported(m.UpstreamModel, resolution) || !slices.Contains(m.Resolutions, resolution) || !slices.Contains(ModelAspectRatios(m), ratio) {
 		return ErrInvalid
 	}
 	if video {
-		if !capability.videoReference || m.VideoReference == nil || images < 1 || images > m.VideoReference.MaxImages || images > 8 {
+		if !capability.videoReference || m.VideoReference == nil || images > m.VideoReference.MaxImages || images > capability.maxImages || images == 0 && m.UpstreamModel != "kling-4.0" {
 			return ErrInvalid
 		}
-	} else if images > 2 || toapisMiniMaxModel(m.UpstreamModel) && images == 0 && ratio == "auto" {
+	} else if images > capability.maxImages || toapisMiniMaxModel(m.UpstreamModel) && images == 0 && ratio == "auto" {
 		return ErrInvalid
 	}
 	return nil

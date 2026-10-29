@@ -69,7 +69,11 @@ func ValidateModels(models []Model) error {
 		}
 		if m.VideoReference != nil {
 			c := m.VideoReference
-			if m.Kind != "video" || c.MaxDurationSeconds < 1 || c.MaxDurationSeconds > MaxReferenceSeconds || c.MaxImages < 1 || c.MaxImages > 8 || c.MaxSegments < 0 || c.MaxSegments > 30 || c.PriceMicro < 0 || c.PriceMicro > 100_000_000 || c.CostMicro < 0 || c.CostMicro > 100_000_000 || c.TokenPriceMicroPerMillion < 0 || c.TokenPriceMicroPerMillion > 1_000_000_000 || c.TokenCostMicroPerMillion < 0 || c.TokenCostMicroPerMillion > 1_000_000_000 || (c.PriceMicro == 0 && c.TokenPriceMicroPerMillion == 0) {
+			maxReferenceImages := 8
+			if m.Adapter == "toapis" && m.UpstreamModel == "kling-4.0" {
+				maxReferenceImages = 10
+			}
+			if m.Kind != "video" || c.MaxDurationSeconds < 1 || c.MaxDurationSeconds > MaxReferenceSeconds || c.MaxImages < 1 || c.MaxImages > maxReferenceImages || c.MaxSegments < 0 || c.MaxSegments > 30 || c.PriceMicro < 0 || c.PriceMicro > 100_000_000 || c.CostMicro < 0 || c.CostMicro > 100_000_000 || c.TokenPriceMicroPerMillion < 0 || c.TokenPriceMicroPerMillion > 1_000_000_000 || c.TokenCostMicroPerMillion < 0 || c.TokenCostMicroPerMillion > 1_000_000_000 || (c.PriceMicro == 0 && c.TokenPriceMicroPerMillion == 0) {
 				return ErrInvalid
 			}
 			// MaxAudioSeconds 为 0 表示不发参考音频；非零时不小于 2 秒且不超过片段上限，

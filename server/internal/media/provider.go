@@ -147,7 +147,7 @@ func (p Provider) SubmitWithReferenceImages(ctx context.Context, m Model, b Brie
 	if b.ReferenceMode == "multimodal" {
 		missingImage = "reference_images_required"
 	}
-	if len(images) == 0 {
+	if len(images) == 0 && !(referenceVideo != "" && m.Adapter == "toapis" && m.UpstreamModel == "kling-4.0") {
 		return "", fmt.Errorf("%s", missingImage)
 	}
 	for _, image := range images {
@@ -155,7 +155,7 @@ func (p Provider) SubmitWithReferenceImages(ctx context.Context, m Model, b Brie
 			return "", fmt.Errorf("%s", missingImage)
 		}
 	}
-	if referenceVideo != "" && (m.VideoReference == nil || len(images) > m.VideoReference.MaxImages) {
+	if referenceVideo != "" && (m.VideoReference == nil || len(images) > m.VideoReference.MaxImages || len(images) == 0 && !(m.Adapter == "toapis" && m.UpstreamModel == "kling-4.0")) {
 		return "", fmt.Errorf("video_reference_unsupported")
 	}
 	if b.ReferenceMode == "multimodal" {
@@ -256,7 +256,7 @@ func (p Provider) CanvasVideo(ctx context.Context, m Model, r CanvasRequest, ima
 	}
 	video := ""
 	if len(referenceVideos) > 0 && referenceVideos[0] != "" {
-		if m.VideoReference == nil || len(images) == 0 || len(images) > m.VideoReference.MaxImages {
+		if m.VideoReference == nil || len(images) > m.VideoReference.MaxImages || len(images) == 0 && !(m.Adapter == "toapis" && m.UpstreamModel == "kling-4.0") {
 			return "", fmt.Errorf("video_reference_unsupported")
 		}
 		video = referenceVideos[0]

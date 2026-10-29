@@ -21,7 +21,10 @@ func ModelAspectRatios(m Model) []string {
 	}
 	if m.Kind == "video" {
 		upstream := strings.TrimSpace(m.UpstreamModel)
-		if m.Adapter == "toapis" && (toapisSeedanceModel(upstream) || toapisMiniMaxModel(upstream)) {
+		if m.Adapter == "toapis" && toapisVideoModel(upstream) {
+			if upstream == "kling-4.0" {
+				return []string{"auto", "16:9", "9:16", "1:1", "21:9"}
+			}
 			return append([]string{"auto"}, fixedVideoRatios...)
 		}
 		if m.Adapter == "ark" {

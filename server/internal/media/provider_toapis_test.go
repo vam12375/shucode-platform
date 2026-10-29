@@ -24,7 +24,7 @@ func toapisModel() Model {
 }
 
 func TestToAPIsModelCapabilitiesAndLimits(t *testing.T) {
-	for _, upstream := range []string{"seedance-2", "seedance-2-fast", "seedance-2-mini", "seedance-2.5-ext", "seedance-2-5"} {
+	for _, upstream := range []string{"seedance-2", "seedance-2-fast", "seedance-2-mini", "seedance-2.5-ext", "seedance-2-5", "kling-4.0"} {
 		m := toapisModel()
 		m.UpstreamModel = upstream
 		m.Resolutions = []string{"480p", "720p"}
@@ -40,13 +40,20 @@ func TestToAPIsModelCapabilitiesAndLimits(t *testing.T) {
 			m.BillingUnit, m.PriceMicro, m.TokenPriceMicroPerMillion = BillingUnitToken, 0, 70_000_000
 			m.VideoReference = &VideoReferenceCapability{MaxDurationSeconds: 15, MaxImages: 8, PriceMicro: 0, TokenPriceMicroPerMillion: 42_000_000}
 		}
+		if upstream == "kling-4.0" {
+			m.Resolutions = []string{"720p", "1080p"}
+		}
 		if upstream != "seedance-2-5" {
 			m.VideoReference = &VideoReferenceCapability{MaxDurationSeconds: 15, MaxImages: 8, PriceMicro: 100_000}
 		}
 		if err := ValidateModels([]Model{m}); err != nil {
 			t.Fatalf("%s rejected: %v", upstream, err)
 		}
-		if got := ModelAspectRatios(m); !slices.Equal(got, append([]string{"auto"}, fixedVideoRatios...)) {
+		wantRatios := append([]string{"auto"}, fixedVideoRatios...)
+		if upstream == "kling-4.0" {
+			wantRatios = []string{"auto", "16:9", "9:16", "1:1", "21:9"}
+		}
+		if got := ModelAspectRatios(m); !slices.Equal(got, wantRatios) {
 			t.Fatalf("%s ratios: %v", upstream, got)
 		}
 	}
@@ -92,6 +99,49 @@ func TestToAPIsTokenQueryPreservesTotalUsage(t *testing.T) {
 	result, err := (Provider{BaseURL: upstream.URL, Adapter: "toapis", Client: upstream.Client()}).Query(context.Background(), "tsk_vid_fixture")
 	if err != nil || result.Status != "succeeded" || result.Usage.TotalTokens != 120000 || result.Usage.CompletionTokens != 108900 {
 		t.Fatalf("query=%+v err=%v", result, err)
+	}
+}
+
+func TestToAPIsKlingCapabilitiesAndBody(t *testing.T) {
+	model := toapisModel()
+	model.ID, model.UpstreamModel = "kling-4", "kling-4.0"
+	model.Resolutions = []string{"720p", "1080p"}
+	model.MinDuration, model.MaxDuration = 3, 30
+	model.GenerateAudio = false
+	model.VideoReference = &VideoReferenceCapability{MaxDurationSeconds: 15, MaxImages: 10, PriceMicro: 1_320_000}
+	if err := ValidateModels([]Model{model}); err != nil {
+		t.Fatalf("ValidateModels() = %v", err)
+	}
+	if got := ModelAspectRatios(model); !slices.Equal(got, []string{"auto", "16:9", "9:16", "1:1", "21:9"}) {
+		t.Fatalf("ratios = %v", got)
+	}
+	var body map[string]any
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		_, _ = w.Write([]byte(`{"id":"tsk_kling_fixture","status":"queued"}`))
+	}))
+	defer upstream.Close()
+	p := Provider{BaseURL: upstream.URL + "/v1", Key: "fixture-key", Adapter: "toapis", Client: upstream.Client()}
+	id, err := p.CanvasVideo(context.Background(), model, CanvasRequest{Prompt: "fixture", Resolution: "720p", AspectRatio: "21:9", Duration: 30}, nil, "https://media.example.test/reference.mp4")
+	if err != nil || id != "tsk_kling_fixture" {
+		t.Fatalf("submit id=%s err=%v", id, err)
+	}
+	if body["model"] != "kling-4.0" || body["duration"] != float64(30) || body["aspect_ratio"] != "21:9" || body["resolution"] != "720p" {
+		t.Fatalf("body = %#v", body)
+	}
+	if _, ok := body["generate_audio"]; ok {
+		t.Fatalf("Kling request unexpectedly sent generate_audio: %#v", body)
+	}
+	if body["watermark"] != false {
+		t.Fatalf("Kling request must disable watermark: %#v", body)
+	}
+	if body["metadata"].(map[string]any)["keep_original_sound"] != true {
+		t.Fatalf("Kling reference audio metadata = %#v", body)
+	}
+	if videos, ok := body["video_with_roles"].([]any); !ok || len(videos) != 1 || videos[0].(map[string]any)["role"] != "reference_video" {
+		t.Fatalf("Kling reference video body = %#v", body)
 	}
 }
 
@@ -372,7 +422,7 @@ func TestToAPIsWorkerReusesTaskAndSettlesOrRejectsWithoutResubmitting(t *testing
 }
 
 func TestToAPIsRejectsOversizedValidatedReferenceBeforeAdmission(t *testing.T) {
-	for _, upstream := range []string{"seedance-2-mini", "MiniMax-H3", "MiniMax-H3-Max"} {
+	for _, upstream := range []string{"seedance-2-mini", "MiniMax-H3", "MiniMax-H3-Max", "kling-4.0"} {
 		t.Run(upstream, func(t *testing.T) { testToAPIsOversizedReference(t, upstream) })
 	}
 }

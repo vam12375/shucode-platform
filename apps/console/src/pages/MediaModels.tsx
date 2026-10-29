@@ -91,11 +91,37 @@ const TOAPIS_SEEDANCE_25_PRESETS = [
   },
 ] as const;
 
+const TOAPIS_KLING_PRESETS = [
+  {
+    upstreamModel: "kling-4.0",
+    name: "ToAPIs Kling 4.0",
+    tiers: [
+      {
+        id: "toapis-kling-4.0-720p",
+        resolution: "720p",
+        costCredits: "1.1",
+        priceCredits: "1.1",
+        videoReferenceCostCredits: "1.32",
+        videoReferencePriceCredits: "1.32",
+      },
+      {
+        id: "toapis-kling-4.0-1080p",
+        resolution: "1080p",
+        costCredits: "1.65",
+        priceCredits: "1.65",
+        videoReferenceCostCredits: "1.97",
+        videoReferencePriceCredits: "1.97",
+      },
+    ],
+  },
+] as const;
+
 const TOAPIS_MINIMAX_CAPABILITIES: Record<string, { resolutions: readonly string[]; minDuration: number; videoReference: boolean }> = {
   "MiniMax-H3": { resolutions: ["768p", "2K"], minDuration: 4, videoReference: true },
   "MiniMax-H3-Max": { resolutions: ["480p", "768p"], minDuration: 4, videoReference: true },
   "MiniMax-H3-Max-Turbo": { resolutions: ["480p", "768p"], minDuration: 4, videoReference: false },
 };
+const TOAPIS_KLING_CAPABILITY = { minDuration: 3, maxDuration: 30, maxImages: 10 } as const;
 const TOAPIS_MINIMAX_PRESETS = Object.entries(TOAPIS_MINIMAX_CAPABILITIES).map(([upstreamModel, capability]) => ({
   name: `ToAPIs ${upstreamModel.replace("MiniMax-", "MiniMax ")}`,
   upstreamModel,
@@ -211,6 +237,9 @@ export interface MediaModelDraft {
     maxAudioSeconds?: string;
     tokenCostCredits: string;
     tokenPriceCredits: string;
+    // 按秒/按次的输入视频独立价格；缺省时回退到档位主价格。
+    costCredits?: string;
+    priceCredits?: string;
   };
 }
 
@@ -276,6 +305,7 @@ function modelResolutions(draft: MediaModelDraft): readonly string[] {
     if (minimax) return minimax.resolutions;
     const seedance25 = TOAPIS_SEEDANCE_25_PRESETS.find((preset) => preset.upstreamModel === draft.upstreamModel.trim());
     if (seedance25) return seedance25.tiers.map((tier) => tier.resolution);
+    if (draft.upstreamModel.trim() === "kling-4.0") return ["720p", "1080p"];
   }
   return draft.adapter === "toapis" && (draft.upstreamModel.trim() === "seedance-2-mini" || draft.upstreamModel.trim() === "seedance-2-fast")
     ? ["480p", "720p"]
@@ -387,6 +417,14 @@ export function toDraft(model: MediaModel): MediaModelDraft {
               : {}),
             tokenCostCredits: priceInputValue(model.videoReference.tokenCostMicroPerMillion ?? 0),
             tokenPriceCredits: priceInputValue(model.videoReference.tokenPriceMicroPerMillion ?? 0),
+            // Kling 4.0 的 ToAPIs SKU 按「是否输入视频」独立定价；历史 Ark/ToAPIs
+            // 条目仍沿用主档位价格，避免旧目录被加载后凭空出现第二套价格来源。
+            ...(model.adapter === "toapis" && model.upstreamModel.trim() === "kling-4.0"
+              ? {
+                  costCredits: priceInputValue(model.videoReference.costMicro ?? model.costMicro ?? 0),
+                  priceCredits: priceInputValue(model.videoReference.priceMicro ?? model.priceMicro ?? 0),
+                }
+              : {}),
           },
         }
       : {}),
@@ -446,9 +484,13 @@ export function toApiModel(draft: MediaModelDraft): MediaModel {
             ...(Number(draft.videoReference.maxAudioSeconds || "0") > 0
               ? { maxAudioSeconds: Number(draft.videoReference.maxAudioSeconds) }
               : {}),
-            // 旧按秒口径跟随档位主价格，仅为兼容历史制作单保留。
-            costMicro,
-            priceMicro,
+            // 输入视频旧目录沿用档位主价格；Kling 分支在上方写入独立参考费率。
+            costMicro: draft.adapter === "toapis" && upstreamModel === "kling-4.0"
+              ? parseCreditsToMicro(draft.videoReference.costCredits ?? draft.costCredits ?? "0")
+              : costMicro,
+            priceMicro: draft.adapter === "toapis" && upstreamModel === "kling-4.0"
+              ? parseCreditsToMicro(draft.videoReference.priceCredits ?? draft.priceCredits ?? "0")
+              : priceMicro,
             tokenCostMicroPerMillion: parseCreditsToMicro(
               draft.videoReference.tokenCostCredits || "0",
             ),
@@ -621,20 +663,22 @@ function tierProblem(
       if (draft.generateAudio) return `「${label}」图片模型不支持生成音频。`;
     } else {
       const minimax = minimaxCapability(upstreamModel);
-      if (!minimax && !TOAPIS_SEEDANCE_PRESETS.some((preset) => preset.upstreamModel === upstreamModel) && !TOAPIS_SEEDANCE_25_PRESETS.some((preset) => preset.upstreamModel === upstreamModel)) {
-        return `「${label}」ToAPIs 仅支持已接入的 Seedance 2.0 / 2.5 和 MiniMax H3 系列视频模型。`;
+      const kling = upstreamModel === "kling-4.0";
+      if (!minimax && !kling && !TOAPIS_SEEDANCE_PRESETS.some((preset) => preset.upstreamModel === upstreamModel) && !TOAPIS_SEEDANCE_25_PRESETS.some((preset) => preset.upstreamModel === upstreamModel)) {
+        return `「${label}」ToAPIs 仅支持已接入的 Seedance 2.0 / 2.5、Kling 4.0 和 MiniMax H3 系列视频模型。`;
       }
       if (draft.resolutions.some((resolution) => !modelResolutions(draft).includes(resolution))) {
         return `「${label}」分辨率不受该 ToAPIs 模型支持。`;
       }
-      const minDuration = minimax?.minDuration ?? 4;
-      if (Number(draft.minDuration) < minDuration || Number(draft.maxDuration) > 15 || draft.legacyDurations?.some((duration) => duration < minDuration || duration > 15)) {
-        return `「${label}」该 ToAPIs 模型镜头时长需在 ${minDuration}–15 秒内。`;
+      const minDuration = kling ? TOAPIS_KLING_CAPABILITY.minDuration : minimax?.minDuration ?? 4;
+      const maxDuration = kling ? TOAPIS_KLING_CAPABILITY.maxDuration : 15;
+      if (Number(draft.minDuration) < minDuration || Number(draft.maxDuration) > maxDuration || draft.legacyDurations?.some((duration) => duration < minDuration || duration > maxDuration)) {
+        return `「${label}」该 ToAPIs 模型镜头时长需在 ${minDuration}–${maxDuration} 秒内。`;
       }
-      if (minimax && draft.generateAudio) return `「${label}」MiniMax H3 音频由模型决定，不支持生成音频开关。`;
+      if ((minimax || kling) && draft.generateAudio) return `「${label}」该模型音频由模型决定，不支持生成音频开关。`;
       if (minimax && !minimax.videoReference && draft.videoReference?.enabled) return `「${label}」MiniMax H3 Max Turbo 不支持视频参考。`;
-      if (draft.videoReference?.enabled && Number(draft.videoReference.maxDurationSeconds) > 15) {
-        return `「${label}」ToAPIs 视频参考片段上限为 15 秒。`;
+      if (draft.videoReference?.enabled && Number(draft.videoReference.maxDurationSeconds) > maxDuration) {
+        return `「${label}」ToAPIs 视频参考片段上限为 ${maxDuration} 秒。`;
       }
       if (draft.videoReference?.enabled && draft.billingUnit !== "token" && (
         Number(draft.videoReference.tokenCostCredits || "0") !== 0 ||
@@ -693,23 +737,26 @@ function tierProblem(
   }
   if (draft.videoReference?.enabled) {
     if (draft.kind !== "video") return `「${label}」只有视频模型可以启用视频参考。`;
+    const klingReference = draft.adapter === "toapis" && draft.upstreamModel.trim() === "kling-4.0";
+    const referenceMaxDuration = klingReference ? 30 : 90;
+    const referenceMaxImages = klingReference ? 10 : 8;
     if (!/^\d+$/.test(draft.videoReference.maxDurationSeconds.trim())) {
-      return `「${label}」视频参考片段上限必须为 1–90 秒的整数。`;
+      return `「${label}」视频参考片段上限必须为 1–${referenceMaxDuration} 秒的整数。`;
     }
     const maxDurationSeconds = Number(draft.videoReference.maxDurationSeconds);
     if (
       !Number.isSafeInteger(maxDurationSeconds) ||
       maxDurationSeconds < 1 ||
-      maxDurationSeconds > 90
+      maxDurationSeconds > referenceMaxDuration
     ) {
-      return `「${label}」视频参考片段上限必须为 1–90 秒的整数。`;
+      return `「${label}」视频参考片段上限必须为 1–${referenceMaxDuration} 秒的整数。`;
     }
     if (!/^\d+$/.test(draft.videoReference.maxImages.trim())) {
-      return `「${label}」视频参考图上限必须为 1–8 张的整数。`;
+      return `「${label}」视频参考图上限必须为 1–${referenceMaxImages} 张的整数。`;
     }
     const maxImages = Number(draft.videoReference.maxImages);
-    if (!Number.isSafeInteger(maxImages) || maxImages < 1 || maxImages > 8) {
-      return `「${label}」视频参考图上限必须为 1–8 张的整数。`;
+    if (!Number.isSafeInteger(maxImages) || maxImages < 1 || maxImages > referenceMaxImages) {
+      return `「${label}」视频参考图上限必须为 1–${referenceMaxImages} 张的整数。`;
     }
     const segmentsRaw = (draft.videoReference.maxSegments ?? "1").trim();
     const maxSegments = Number(segmentsRaw);
@@ -845,6 +892,9 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
         throw new Error(`第 ${index + 1} 项的视频参考配置必须是对象。`);
       }
       const capability = record.videoReference as Record<string, unknown>;
+      const klingReferencePricing = record.adapter === "toapis" && upstreamModel.trim() === "kling-4.0";
+      const referencePrice = klingReferencePricing ? Number(capability.priceMicro ?? 0) : 0;
+      const referenceCost = klingReferencePricing ? Number(capability.costMicro ?? 0) : 0;
       const tokenPrice = Number(capability.tokenPriceMicroPerMillion ?? 0);
       const tokenCost = Number(capability.tokenCostMicroPerMillion ?? 0);
       if (
@@ -854,6 +904,8 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
         !Number.isSafeInteger(capability.maxImages) ||
         (capability.maxSegments !== undefined &&
           (typeof capability.maxSegments !== "number" || !Number.isSafeInteger(capability.maxSegments) || capability.maxSegments < 1 || capability.maxSegments > 30)) ||
+        !Number.isSafeInteger(referencePrice) || referencePrice < 0 ||
+        !Number.isSafeInteger(referenceCost) || referenceCost < 0 ||
         !Number.isSafeInteger(tokenPrice) ||
         !Number.isSafeInteger(tokenCost)
       ) {
@@ -866,6 +918,8 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
         ...(typeof capability.maxSegments === "number" && capability.maxSegments > 0 ? { maxSegments: String(capability.maxSegments) } : {}),
         tokenCostCredits: priceInputValue(tokenCost),
         tokenPriceCredits: priceInputValue(tokenPrice),
+        ...(referenceCost > 0 ? { costCredits: priceInputValue(referenceCost) } : {}),
+        ...(referencePrice > 0 ? { priceCredits: priceInputValue(referencePrice) } : {}),
       };
     }
     return {
@@ -1269,8 +1323,8 @@ export function MediaModelsPage() {
     return ark?.id ?? providers.find((provider) => provider.enabled)?.id ?? providers[0]?.id ?? "";
   };
 
-  const addVideoPresets = (adapter: "ark" | "toapis", family: "seedance" | "minimax" | "seedance25" | "seedance25ext" = "seedance"): void => {
-    const familyName = family === "minimax" ? "MiniMax H3" : family === "seedance25" ? "Seedance 2.5" : family === "seedance25ext" ? "Seedance 2.5 Ext" : "Seedance 2.0";
+  const addVideoPresets = (adapter: "ark" | "toapis", family: "seedance" | "minimax" | "seedance25" | "seedance25ext" | "kling" = "seedance"): void => {
+    const familyName = family === "minimax" ? "MiniMax H3" : family === "seedance25" ? "Seedance 2.5" : family === "seedance25ext" ? "Seedance 2.5 Ext" : family === "kling" ? "Kling 4.0" : "Seedance 2.0";
     const toapisProvider = providers.find((provider) => {
       try {
         return provider.enabled && ["toapis.com", "toapis.cn"].includes(new URL(provider.baseUrl).hostname);
@@ -1296,7 +1350,9 @@ export function MediaModelsPage() {
         ? TOAPIS_SEEDANCE_25_PRESETS.filter((preset) => preset.upstreamModel === "seedance-2-5")
         : family === "seedance25ext"
           ? TOAPIS_SEEDANCE_25_PRESETS.filter((preset) => preset.upstreamModel === "seedance-2.5-ext")
-          : adapter === "toapis" ? TOAPIS_SEEDANCE_PRESETS : SEEDANCE_PRESETS;
+          : family === "kling"
+            ? TOAPIS_KLING_PRESETS
+            : adapter === "toapis" ? TOAPIS_SEEDANCE_PRESETS : SEEDANCE_PRESETS;
     for (const preset of presets) {
       const existingFamily = drafts.find(
         (draft) =>
@@ -1316,6 +1372,8 @@ export function MediaModelsPage() {
           tokenPriceCredits?: string;
           videoReferenceTokenCostCredits?: string;
           videoReferenceTokenPriceCredits?: string;
+          videoReferenceCostCredits?: string;
+          videoReferencePriceCredits?: string;
         };
         additions.push({
           familyId,
@@ -1327,12 +1385,12 @@ export function MediaModelsPage() {
           adapter,
           resolutions: [tier.resolution],
           minDuration: String(family === "minimax" ? TOAPIS_MINIMAX_CAPABILITIES[preset.upstreamModel]!.minDuration : DEFAULT_MIN_DURATION),
-          maxDuration: String(DEFAULT_MAX_DURATION),
+          maxDuration: String(family === "kling" ? 30 : DEFAULT_MAX_DURATION),
           costCredits: tierPricing.costCredits ?? "0",
           billingUnit: "billingUnit" in preset ? preset.billingUnit : "second",
           tokenCostCredits: tierPricing.tokenCostCredits ?? "0",
           tokenPriceCredits: tierPricing.tokenPriceCredits ?? "0",
-          generateAudio: family !== "minimax",
+          generateAudio: family !== "minimax" && family !== "kling",
           priceCredits: tierPricing.priceCredits ?? "",
           priceVersion: "v1",
           ...("videoReferenceTokenPriceCredits" in tierPricing ? {
@@ -1343,6 +1401,18 @@ export function MediaModelsPage() {
               maxSegments: "1",
               tokenCostCredits: tierPricing.videoReferenceTokenCostCredits ?? "0",
               tokenPriceCredits: tierPricing.videoReferenceTokenPriceCredits ?? "0",
+            },
+          } : {}),
+          ...(family === "kling" ? {
+            videoReference: {
+              enabled: true,
+              maxDurationSeconds: "30",
+              maxImages: "10",
+              maxSegments: "1",
+              tokenCostCredits: "0",
+              tokenPriceCredits: "0",
+              costCredits: tierPricing.videoReferenceCostCredits ?? "0",
+              priceCredits: tierPricing.videoReferencePriceCredits ?? "0",
             },
           } : {}),
           // 补档必须继承卡片共享配置；默认值会与旧枚举、音频或价格版本冲突并阻塞保存。
@@ -1681,6 +1751,11 @@ export function MediaModelsPage() {
       label: "ToAPIs MiniMax H3",
       title: "加入 MiniMax H3 / Max / Max Turbo 三款六档，请确认供应商并填写价格",
       run: () => addVideoPresets("toapis", "minimax"),
+    },
+    {
+      label: "ToAPIs Kling 4.0",
+      title: "加入 Kling 4.0 的 720p / 1080p 档位（3–30 秒，含视频参考价格）",
+      run: () => addVideoPresets("toapis", "kling"),
     },
     {
       label: "ToAPIs GPT Image",
@@ -2115,6 +2190,7 @@ function MediaFamilyCard({
   const hasTiers = hasResolutionTiers(lead);
   const isToapis = lead.adapter === "toapis";
   const minimax = isToapis ? minimaxCapability(lead.upstreamModel.trim()) : undefined;
+  const kling = isToapis && lead.upstreamModel.trim() === "kling-4.0";
   const resolutions = modelResolutions(lead);
   const name = familyNameOf(lead);
   const tiers = indexes.map((index) => drafts[index]);
@@ -2339,7 +2415,7 @@ function MediaFamilyCard({
         {isVideo ? (
           <div className="field">
             <span className="field-label">原生音频</span>
-            {minimax ? <span className="readout">由模型决定</span> : <div className="choice-row">
+            {minimax || kling ? <span className="readout">由模型决定</span> : <div className="choice-row">
               <button
                 className={"choice-chip" + (lead.generateAudio ? " selected" : "")}
                 type="button"
@@ -2742,7 +2818,7 @@ function MediaFamilyCard({
                     type="number"
                     inputMode="numeric"
                     min={2}
-                    max={isToapis ? 15 : 90}
+                    max={isToapis ? (kling ? 30 : 15) : 90}
                     step={1}
                     aria-label={`模型 ${name} 视频参考时长上限`}
                     value={reference.maxDurationSeconds}
@@ -2764,7 +2840,7 @@ function MediaFamilyCard({
                     type="number"
                     inputMode="numeric"
                     min={1}
-                    max={8}
+                    max={kling ? 10 : 8}
                     step={1}
                     aria-label={`模型 ${name} 视频参考图上限`}
                     value={reference.maxImages}
@@ -2849,12 +2925,17 @@ function MediaFamilyCard({
                           const tier = drafts[index];
                           const label = tierLabel(tier);
                           const tokenReference = tier.billingUnit === "token";
+                          const independentReferencePricing = tier.adapter === "toapis" && tier.upstreamModel.trim() === "kling-4.0";
                           const referenceCostValue = tokenReference
                             ? tier.videoReference?.tokenCostCredits ?? "0"
-                            : tier.costCredits;
+                            : independentReferencePricing
+                              ? tier.videoReference?.costCredits ?? tier.costCredits
+                              : tier.costCredits;
                           const referencePriceValue = tokenReference
                             ? tier.videoReference?.tokenPriceCredits ?? "0"
-                            : tier.priceCredits;
+                            : independentReferencePricing
+                              ? tier.videoReference?.priceCredits ?? tier.priceCredits
+                              : tier.priceCredits;
                           return (
                             <tr key={`${familyId}-reference-${index}`}>
                               <td>{label}</td>
@@ -2867,7 +2948,9 @@ function MediaFamilyCard({
                                   disabled={busy}
                                   onChange={(event) => onUpdateTier(index, tokenReference
                                     ? { videoReference: { ...tier.videoReference!, tokenCostCredits: event.target.value } }
-                                    : { costCredits: event.target.value })}
+                                    : independentReferencePricing
+                                      ? { videoReference: { ...tier.videoReference!, costCredits: event.target.value } }
+                                      : { costCredits: event.target.value })}
                                 />
                               </td>
                               <td className="num">
@@ -2880,7 +2963,9 @@ function MediaFamilyCard({
                                   disabled={busy}
                                   onChange={(event) => onUpdateTier(index, tokenReference
                                     ? { videoReference: { ...tier.videoReference!, tokenPriceCredits: event.target.value } }
-                                    : { priceCredits: event.target.value })}
+                                    : independentReferencePricing
+                                      ? { videoReference: { ...tier.videoReference!, priceCredits: event.target.value } }
+                                      : { priceCredits: event.target.value })}
                                 />
                               </td>
                               <td>

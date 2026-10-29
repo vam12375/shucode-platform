@@ -21,14 +21,28 @@ func CanvasCapabilitiesFor(m Model) *CanvasCapabilities {
 		// 历史目录未写adapter时provider一直默认Ark，能力投影必须与真实执行协议一致。
 		adapter = "ark"
 	}
-	if m.Kind != "video" || !(adapter == "ark" && seedance20Model(m.UpstreamModel) || adapter == "toapis" && toapisSeedanceModel(m.UpstreamModel)) {
+	if m.Kind != "video" || !(adapter == "ark" && seedance20Model(m.UpstreamModel) || adapter == "toapis" && (toapisSeedanceModel(m.UpstreamModel) || m.UpstreamModel == "kling-4.0")) {
 		return nil
 	}
-	c := &CanvasCapabilities{Modes: []string{"frames", "multimodal"}, MaxImages: 9, MaxAudios: 3, MaxTotalReferences: 12, MaxAudioSeconds: 15, GenerateAudio: m.GenerateAudio, ReturnLastFrame: adapter == "ark"}
+	maxImages, maxVideos, maxAudios, maxVideoSeconds := 9, 0, 3, 15
+	if adapter == "toapis" && m.UpstreamModel == "kling-4.0" {
+		if capability, ok := toapisModelCapabilities(m.UpstreamModel); ok {
+			maxImages, maxVideos, maxVideoSeconds = capability.maxImages, capability.maxVideos, capability.maxDuration
+			maxAudios = 0
+		}
+	}
+	maxTotalReferences := 12
+	c := &CanvasCapabilities{Modes: []string{"frames", "multimodal"}, MaxImages: maxImages, MaxAudios: maxAudios, MaxTotalReferences: maxTotalReferences, MaxVideoSeconds: maxVideoSeconds, MaxVideos: maxVideos, MaxAudioSeconds: 15, GenerateAudio: m.GenerateAudio, ReturnLastFrame: adapter == "ark"}
 	// 含视频报价必须有已配置的真实费率，不能只因供应商支持就向UI公开可计费入口。
 	if m.VideoReference != nil && (m.VideoReference.PriceMicro > 0 || m.VideoReference.TokenPriceMicroPerMillion > 0) {
-		c.MaxVideos = 3
-		c.MaxVideoSeconds = min(15, m.VideoReference.MaxDurationSeconds)
+		if adapter == "toapis" && m.UpstreamModel == "kling-4.0" {
+			if capability, ok := toapisModelCapabilities(m.UpstreamModel); ok {
+				c.MaxVideos = capability.maxVideos
+			}
+		} else {
+			c.MaxVideos = 3
+		}
+		c.MaxVideoSeconds = min(c.MaxVideoSeconds, m.VideoReference.MaxDurationSeconds)
 	}
 	return c
 }
@@ -38,8 +52,16 @@ func validateCanvasOptions(m Model, r CanvasRequest) error {
 		return nil
 	}
 	c := CanvasCapabilitiesFor(m)
-	if r.Kind == "video" && (r.Duration != 0 && (r.Duration < 4 || r.Duration > 15)) {
-		return ErrInvalid
+	if r.Kind == "video" && r.Duration != 0 {
+		minDuration, maxDuration := 4, 15
+		if m.Adapter == "toapis" {
+			if capability, ok := toapisModelCapabilities(m.UpstreamModel); ok {
+				minDuration, maxDuration = capability.minDuration, capability.maxDuration
+			}
+		}
+		if r.Duration < minDuration || r.Duration > maxDuration {
+			return ErrInvalid
+		}
 	}
 	if c == nil || r.ReferenceMode != "" && !slices.Contains(c.Modes, r.ReferenceMode) {
 		return ErrInvalid
