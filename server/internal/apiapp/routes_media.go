@@ -108,6 +108,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 	registerMediaAnalysisConfigRoutes(router, deps)
 	registerMediaSourceRoutes(router, deps)
 	registerCanvasGenerationRoutes(router, deps)
+	registerMediaAgentGenerationRoutes(router, deps)
 	// 供应商会用 HEAD 探测参考媒体；复用 GET 验签与资产检查，避免合法媒体被误判为不可达。
 	serveMediaBlob := func(c *gin.Context) {
 		team, id := c.Param("team"), c.Param("id")
@@ -181,6 +182,10 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		projects := []media.ProjectView{}
 		generations := []media.ProjectView{}
 		for _, p := range all {
+			// Agent 对话任务由独立接口按用户读取，不能混入团队级制作单或画布投影。
+			if p.Agent != nil {
+				continue
+			}
 			if p.TeamID == m.Team.ID {
 				if p.Canvas != nil {
 					generations = append(generations, p.View())
@@ -258,7 +263,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, e)
 			return
 		}
-		if p == nil {
+		if p == nil || p.Agent != nil {
 			c.Status(404)
 			return
 		}
@@ -288,6 +293,10 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		current, err := s.Repo.Get(c.Request.Context(), m.Team.ID, c.Param("id"))
 		if err != nil {
 			internalError(c, deps, err)
+			return
+		}
+		if current != nil && current.Agent != nil {
+			c.Status(http.StatusNotFound)
 			return
 		}
 		if current != nil && current.SourceChecksum != "" && (current.UserID != auth.User.ID || current.DeviceID != auth.Device.ID) {

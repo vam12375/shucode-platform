@@ -87,6 +87,15 @@ type UserRecord struct {
 	CreatedAt    time.Time
 }
 
+// AgentMediaPreferencesRecord is the account-level source of truth for chat
+// image/video defaults. Preferences contains a validated JSON object.
+type AgentMediaPreferencesRecord struct {
+	UserID      string
+	Preferences []byte
+	Version     int64
+	UpdatedAt   time.Time
+}
+
 type SessionRecord struct {
 	SecurityVersion string
 	TokenHash       string

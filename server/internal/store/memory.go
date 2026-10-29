@@ -29,38 +29,39 @@ type MemoryOptions struct {
 type memoryStore struct {
 	mu sync.Mutex
 
-	users              map[string]UserRecord
-	sessions           map[string]SessionRecord
-	teams              map[string]TeamRecord
-	teamAssets         map[string]map[string]TeamAssetRecord
-	teamAssetBlobIDs   map[string]map[string]string
-	teamAssetUsedBytes map[string]int64
-	teamAssetDeletions map[string]map[string]TeamAssetDeletionRecord
-	members            map[string]map[string]struct{} // teamID -> userIDs
-	memberRoles        map[string]TeamMemberRole      // "teamId:userId"
-	memberDisabled     map[string]*time.Time
-	memberBudgets      map[string]string
-	teamPolicies       map[string]TeamPolicyRecord
-	invitations        map[string]TeamInvitationRecord
-	quotaRequests      map[string]QuotaRequestRecord
-	memberJoinedAt     map[string]time.Time
-	deviceTokens       map[string]DeviceTokenRecord
-	flows              map[string]LoginFlowRecord
-	releases           map[int64]ReleaseRecord
-	models             map[string]PlatformModelRecord
-	providers          map[string]UpstreamProviderRecord
-	config             map[string][]byte
-	usage              []UsageRecord
-	auditLogs          []AdminAuditLogView
-	auditEventIDs      map[string]struct{}
-	quotaAdjusts       []quotaAdjustmentRow
-	upstreamRoutes     map[string]UpstreamRouteRecord
-	reservations       map[string]QuotaReservationRecord
-	backgroundJobs     map[string]BackgroundGenerationJob
-	pendingSettlements map[string]PendingSettlementRecord
-	gatewayAttempts    []GatewayAttemptRecord
-	alertRules         map[string]AlertRuleRecord
-	alertEvents        []AlertEventRecord
+	users                 map[string]UserRecord
+	sessions              map[string]SessionRecord
+	teams                 map[string]TeamRecord
+	teamAssets            map[string]map[string]TeamAssetRecord
+	teamAssetBlobIDs      map[string]map[string]string
+	teamAssetUsedBytes    map[string]int64
+	teamAssetDeletions    map[string]map[string]TeamAssetDeletionRecord
+	members               map[string]map[string]struct{} // teamID -> userIDs
+	memberRoles           map[string]TeamMemberRole      // "teamId:userId"
+	memberDisabled        map[string]*time.Time
+	memberBudgets         map[string]string
+	teamPolicies          map[string]TeamPolicyRecord
+	invitations           map[string]TeamInvitationRecord
+	quotaRequests         map[string]QuotaRequestRecord
+	memberJoinedAt        map[string]time.Time
+	deviceTokens          map[string]DeviceTokenRecord
+	flows                 map[string]LoginFlowRecord
+	releases              map[int64]ReleaseRecord
+	models                map[string]PlatformModelRecord
+	providers             map[string]UpstreamProviderRecord
+	config                map[string][]byte
+	agentMediaPreferences map[string]AgentMediaPreferencesRecord
+	usage                 []UsageRecord
+	auditLogs             []AdminAuditLogView
+	auditEventIDs         map[string]struct{}
+	quotaAdjusts          []quotaAdjustmentRow
+	upstreamRoutes        map[string]UpstreamRouteRecord
+	reservations          map[string]QuotaReservationRecord
+	backgroundJobs        map[string]BackgroundGenerationJob
+	pendingSettlements    map[string]PendingSettlementRecord
+	gatewayAttempts       []GatewayAttemptRecord
+	alertRules            map[string]AlertRuleRecord
+	alertEvents           []AlertEventRecord
 }
 
 type quotaAdjustmentRow struct {
@@ -71,33 +72,34 @@ type quotaAdjustmentRow struct {
 
 func NewMemoryStore(ctx context.Context, opts MemoryOptions) (*memoryStore, error) {
 	s := &memoryStore{
-		users:              map[string]UserRecord{},
-		sessions:           map[string]SessionRecord{},
-		teams:              map[string]TeamRecord{},
-		teamAssets:         map[string]map[string]TeamAssetRecord{},
-		teamAssetBlobIDs:   map[string]map[string]string{},
-		teamAssetUsedBytes: map[string]int64{},
-		teamAssetDeletions: map[string]map[string]TeamAssetDeletionRecord{},
-		members:            map[string]map[string]struct{}{},
-		memberRoles:        map[string]TeamMemberRole{},
-		memberJoinedAt:     map[string]time.Time{},
-		memberDisabled:     map[string]*time.Time{},
-		memberBudgets:      map[string]string{},
-		teamPolicies:       map[string]TeamPolicyRecord{},
-		invitations:        map[string]TeamInvitationRecord{},
-		quotaRequests:      map[string]QuotaRequestRecord{},
-		deviceTokens:       map[string]DeviceTokenRecord{},
-		flows:              map[string]LoginFlowRecord{},
-		releases:           map[int64]ReleaseRecord{},
-		models:             map[string]PlatformModelRecord{},
-		providers:          map[string]UpstreamProviderRecord{},
-		config:             map[string][]byte{},
-		auditEventIDs:      map[string]struct{}{},
-		upstreamRoutes:     map[string]UpstreamRouteRecord{},
-		reservations:       map[string]QuotaReservationRecord{},
-		backgroundJobs:     map[string]BackgroundGenerationJob{},
-		pendingSettlements: map[string]PendingSettlementRecord{},
-		alertRules:         map[string]AlertRuleRecord{},
+		users:                 map[string]UserRecord{},
+		sessions:              map[string]SessionRecord{},
+		teams:                 map[string]TeamRecord{},
+		teamAssets:            map[string]map[string]TeamAssetRecord{},
+		teamAssetBlobIDs:      map[string]map[string]string{},
+		teamAssetUsedBytes:    map[string]int64{},
+		teamAssetDeletions:    map[string]map[string]TeamAssetDeletionRecord{},
+		members:               map[string]map[string]struct{}{},
+		memberRoles:           map[string]TeamMemberRole{},
+		memberJoinedAt:        map[string]time.Time{},
+		memberDisabled:        map[string]*time.Time{},
+		memberBudgets:         map[string]string{},
+		teamPolicies:          map[string]TeamPolicyRecord{},
+		invitations:           map[string]TeamInvitationRecord{},
+		quotaRequests:         map[string]QuotaRequestRecord{},
+		deviceTokens:          map[string]DeviceTokenRecord{},
+		flows:                 map[string]LoginFlowRecord{},
+		releases:              map[int64]ReleaseRecord{},
+		models:                map[string]PlatformModelRecord{},
+		providers:             map[string]UpstreamProviderRecord{},
+		config:                map[string][]byte{},
+		agentMediaPreferences: map[string]AgentMediaPreferencesRecord{},
+		auditEventIDs:         map[string]struct{}{},
+		upstreamRoutes:        map[string]UpstreamRouteRecord{},
+		reservations:          map[string]QuotaReservationRecord{},
+		backgroundJobs:        map[string]BackgroundGenerationJob{},
+		pendingSettlements:    map[string]PendingSettlementRecord{},
+		alertRules:            map[string]AlertRuleRecord{},
 	}
 	if opts.DemoSeed {
 		if err := s.seedDemo(ctx); err != nil {

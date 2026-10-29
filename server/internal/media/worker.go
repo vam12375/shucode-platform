@@ -11,6 +11,7 @@ import (
 )
 
 func (s *Service) step(ctx context.Context, p *Project) error {
+	directRequest, isDirect := directGenerationRequest(*p)
 	index := -1
 	for i, shot := range p.Shots {
 		if shot.Status != "succeeded" {
@@ -23,7 +24,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			_, e := s.workerUpdate(ctx, p, func(v *Project) { v.Status = "cancelled" })
 			return e
 		}
-		if p.Canvas != nil {
+		if isDirect {
 			_, e := s.workerUpdate(ctx, p, func(v *Project) {
 				v.Status = "completed"
 				if len(v.Shots) > 0 {
@@ -174,12 +175,12 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		kind = "image"
 		modelID = p.Brief.ImageModel
 	}
-	if p.Canvas != nil {
-		kind = p.Canvas.Kind
-		modelID = p.Canvas.ModelID
+	if isDirect {
+		kind = directRequest.Kind
+		modelID = directRequest.ModelID
 	}
 	globalReferences := p.Canvas == nil && p.Brief.ReferenceMode == "multimodal"
-	if p.Canvas == nil && (shot.Status == "pending" || shot.Status == "image_ready") && ((kind == "image" && modelID == "") || (kind == "video" && shot.Plan.AssetID == "" && shot.ImageAssetID == "" && !globalReferences)) {
+	if !isDirect && (shot.Status == "pending" || shot.Status == "image_ready") && ((kind == "image" && modelID == "") || (kind == "video" && shot.Plan.AssetID == "" && shot.ImageAssetID == "" && !globalReferences)) {
 		// 旧快照可能绕过新计划校验；缺首帧必须在准入前失败，不能发送空图后误判为未知受理。
 		if shot.ReservationID != "" {
 			if e := s.Repo.Store.ReleaseReservationByID(ctx, shot.ReservationID, time.Now()); e != nil {
@@ -222,8 +223,8 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		if shot.Plan.AssetID != "" || shot.ImageAssetID != "" {
 			images = 1
 		}
-		if p.Canvas != nil {
-			request, images = *p.Canvas, len(p.Canvas.AssetIDs)
+		if isDirect {
+			request, images = directRequest, len(directRequest.AssetIDs)
 		}
 		if validateToAPIsImageInput(m, request, images) != nil {
 			// 旧快照也需在准入前校验冻结图片 SKU，确定性输入拒绝不能成为未知付费请求。
@@ -232,8 +233,8 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	}
 	if kind == "video" && m.Adapter == "toapis" && !isCanvasMultimodal(p) && (shot.Status == "pending" || shot.Status == "image_ready") {
 		resolution, ratio, images := p.Brief.Resolution, p.Brief.AspectRatio, 1
-		if p.Canvas != nil {
-			resolution, ratio, images = p.Canvas.Resolution, p.Canvas.AspectRatio, len(p.Canvas.AssetIDs)
+		if isDirect {
+			resolution, ratio, images = directRequest.Resolution, directRequest.AspectRatio, len(directRequest.AssetIDs)
 		} else if isWholeVideoReferenceExecution(p) {
 			images = len(wholeReferenceImageIDs(p, shot))
 		}
@@ -262,8 +263,8 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	var referenceVideoURL, referenceAudioURL string
 	if videoReferenceRequested(p) && !isCanvasMultimodal(p) {
 		videoModelID := p.Brief.VideoModel
-		if p.Canvas != nil {
-			videoModelID = p.Canvas.ModelID
+		if isDirect {
+			videoModelID = directRequest.ModelID
 		}
 		videoModel, findErr := FindModel(p.Models, videoModelID, "video")
 		if findErr != nil || videoModel.VideoReference == nil {
@@ -304,7 +305,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			ss.clearPending()
 			if shot.Status == "image_saved" {
 				ss.Status = "image_ready"
-				if p.Canvas != nil {
+				if isDirect {
 					ss.OutputAssetID = ss.ImageAssetID
 					ss.Status = "succeeded"
 				}
@@ -434,8 +435,8 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	amount := m.PriceMicro
 	if kind == "video" {
 		resolution, aspectRatio := p.Brief.Resolution, p.Brief.AspectRatio
-		if p.Canvas != nil {
-			resolution, aspectRatio = p.Canvas.Resolution, p.Canvas.AspectRatio
+		if isDirect {
+			resolution, aspectRatio = directRequest.Resolution, directRequest.AspectRatio
 		}
 		amount = mediaVideoQuoteMicro(m, resolution, aspectRatio, shot.Plan.Duration)
 		if videoReferenceRequested(p) {
@@ -444,8 +445,8 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 				return s.failVideoReference(ctx, p, index, shot, "video_reference_unsupported")
 			}
 			resolution, aspectRatio := p.Brief.Resolution, p.Brief.AspectRatio
-			if p.Canvas != nil {
-				resolution, aspectRatio = p.Canvas.Resolution, p.Canvas.AspectRatio
+			if isDirect {
+				resolution, aspectRatio = directRequest.Resolution, directRequest.AspectRatio
 			}
 			amount = mediaVideoReferenceQuoteMicro(videoModel, videoModel.VideoReference, resolution, aspectRatio, shot.Plan.Duration)
 		}
@@ -514,18 +515,18 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	if imageID != "" {
 		image = s.Blobs.URL(p.TeamID, imageID)
 	}
-	if p.Canvas != nil && len(p.Canvas.AssetIDs) > 0 {
-		image = s.Blobs.URL(p.TeamID, p.Canvas.AssetIDs[0])
+	if isDirect && len(directRequest.AssetIDs) > 0 {
+		image = s.Blobs.URL(p.TeamID, directRequest.AssetIDs[0])
 	}
 	if kind == "image" {
 		var submission ProviderImageSubmission
 		var e error
-		if p.Canvas != nil {
+		if isDirect {
 			images := []string{}
-			for _, id := range p.Canvas.AssetIDs {
+			for _, id := range directRequest.AssetIDs {
 				images = append(images, s.Blobs.URL(p.TeamID, id))
 			}
-			submission, e = provider.SubmitCanvasImage(ctx, m, *p.Canvas, images)
+			submission, e = provider.SubmitCanvasImage(ctx, m, directRequest, images)
 		} else {
 			submission, e = provider.SubmitImage(ctx, m, shot.Plan.ImagePrompt, image, p.Brief.AspectRatio)
 		}
@@ -545,9 +546,9 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		return nil
 	}
 	var id string
-	if p.Canvas != nil {
+	if isDirect {
 		images := []string{}
-		for _, id := range p.Canvas.AssetIDs {
+		for _, id := range directRequest.AssetIDs {
 			images = append(images, s.Blobs.URL(p.TeamID, id))
 		}
 		if isCanvasMultimodal(p) {
@@ -555,14 +556,14 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			for _, assetID := range shot.CanvasVideoAssetIDs {
 				videos = append(videos, s.Blobs.URL(p.TeamID, assetID))
 			}
-			for _, assetID := range p.Canvas.AudioAssetIDs {
+			for _, assetID := range directRequest.AudioAssetIDs {
 				audios = append(audios, s.Blobs.URL(p.TeamID, assetID))
 			}
-			id, e = provider.CanvasMultimodalVideo(ctx, m, *p.Canvas, images, videos, audios)
+			id, e = provider.CanvasMultimodalVideo(ctx, m, directRequest, images, videos, audios)
 		} else if referenceVideoURL != "" {
-			id, e = provider.CanvasVideo(ctx, m, *p.Canvas, images, referenceVideoURL)
+			id, e = provider.CanvasVideo(ctx, m, directRequest, images, referenceVideoURL)
 		} else {
-			id, e = provider.CanvasVideo(ctx, m, *p.Canvas, images)
+			id, e = provider.CanvasVideo(ctx, m, directRequest, images)
 		}
 	} else if replacementImageIDs != nil {
 		images := make([]string, 0, len(replacementImageIDs))

@@ -298,7 +298,7 @@ func (s *Service) action(ctx context.Context, team, id string, version int64, ac
 				}
 			}
 			budget := p.Brief.MaxCreditsMicro
-			if p.Canvas != nil {
+			if isDirectGeneration(*p) {
 				budget = p.QuoteMicro
 			}
 			if remaining+p.ChargedMicro > budget {

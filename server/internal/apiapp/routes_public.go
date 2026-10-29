@@ -16,6 +16,7 @@ import (
 	"github.com/vam12375/shucode-platform/server/internal/contracts"
 	"github.com/vam12375/shucode-platform/server/internal/credits"
 	"github.com/vam12375/shucode-platform/server/internal/crypto"
+	"github.com/vam12375/shucode-platform/server/internal/events"
 	"github.com/vam12375/shucode-platform/server/internal/store"
 )
 
@@ -26,6 +27,7 @@ func registerPublicRoutes(router *gin.Engine, deps *Deps) {
 	registerReleaseRoutes(router, deps)
 	registerPlatformAuthRoutes(router, deps)
 	registerUserConfigRoutes(router, deps)
+	registerAgentMediaPreferencesRoutes(router, deps)
 	registerClientCreditRoutes(router, deps)
 	registerClientEventRoutes(router, deps)
 }
@@ -340,12 +342,32 @@ func registerClientEventRoutes(router *gin.Engine, deps *Deps) {
 			case <-ticker.C:
 			}
 			if len(pending) > 0 {
-				payload, err := jsonMarshalNoHTML(map[string]any{"type": "config.changed", "domains": pending})
-				if err != nil {
-					return
+				configDomains := make([]string, 0, len(pending))
+				for _, domain := range pending {
+					if domain != events.DomainPreferences {
+						configDomains = append(configDomains, domain)
+					}
 				}
-				if _, err := c.Writer.WriteString("event: config.changed\ndata: " + string(payload) + "\n\n"); err != nil {
-					return
+				if len(configDomains) > 0 {
+					payload, err := jsonMarshalNoHTML(map[string]any{"type": "config.changed", "domains": configDomains})
+					if err != nil {
+						return
+					}
+					if _, err := c.Writer.WriteString("event: config.changed\ndata: " + string(payload) + "\n\n"); err != nil {
+						return
+					}
+				}
+				for _, domain := range pending {
+					if domain != events.DomainPreferences {
+						continue
+					}
+					payload, err := jsonMarshalNoHTML(map[string]any{"type": "preferences.changed", "domain": domain})
+					if err != nil {
+						return
+					}
+					if _, err := c.Writer.WriteString("event: preferences.changed\ndata: " + string(payload) + "\n\n"); err != nil {
+						return
+					}
 				}
 				c.Writer.Flush()
 				pending = []string{}

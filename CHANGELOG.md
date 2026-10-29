@@ -9,6 +9,29 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.67.0] - 2026-10-29
+
+### 新增(Agent 媒体生成与账号偏好)
+
+- 新增 Bearer 设备接口 `/api/v1/media/agent/generations/quote`、`/generations`、`:requestId`
+  与 `:requestId/cancel`；独立 `AgentGenerationRequest` 不构造 Canvas board/node，报价 token
+  绑定 team/user/device/requestId、请求摘要、金额与 5 分钟有效期。
+- 生成按 team+user+requestId 的稳定项目 ID 幂等，取消通过项目 CAS 设置；成功输出自动进入
+  团队资产归档，普通视频只归档最终成片，参考素材和中间帧不归档；`sourceArtifactUris` 明确拒绝。
+- 新增 `/api/v1/client/preferences/agent-media` GET/PUT：六个字符串字段白名单、ETag/If-Match
+  版本控制、409 返回权威值，写入后发送 `preferences.changed`，偏好按用户隔离且不影响团队/画布。
+- 新增迁移 `0032_user_agent_media_preferences.sql`；Canvas、Agent 与普通制作的成品归档统一，
+  尾帧仅 Canvas 明确请求时归档。
+- 回归测试：报价确认/过期/串用、跨用户、requestId 幂等、取消、无 Canvas 身份、归档边界、
+  偏好版本与未知字段。
+
+### 验证
+
+- `make -C server lint test`
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`（128 项）
+
 ## [0.66.0] - 2026-10-29
 
 ### 新增(ToAPIs Kling 4.0)

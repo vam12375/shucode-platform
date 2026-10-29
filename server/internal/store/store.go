@@ -149,6 +149,11 @@ type PlatformStore interface {
 	SetConfigValue(ctx context.Context, key string, value []byte) error
 	CompareAndSwapConfigValue(ctx context.Context, key string, expected, value []byte) (bool, error)
 
+	// ---- user preferences ----
+	// AgentMediaPreferences are account-scoped and independent of team/provider config.
+	GetAgentMediaPreferences(ctx context.Context, userID string) (*AgentMediaPreferencesRecord, error)
+	SaveAgentMediaPreferences(ctx context.Context, userID string, expectedVersion *int64, preferences []byte, at time.Time) (*AgentMediaPreferencesRecord, error)
+
 	// ---- usage ----
 	InsertUsage(ctx context.Context, record UsageRecord) error
 	ListUsage(ctx context.Context, filter UsageFilter) ([]UsageRecord, error)
@@ -240,28 +245,29 @@ type AllMembershipRow struct {
 // ---- 语义错误(两实现都必须等价返回;路由层翻译为响应) ----
 
 var (
-	ErrUserAlreadyInTeam       = errors.New("用户已属于其他团队")
-	ErrAmbiguousTeam           = errors.New("用户存在多个有效团队，请先修正团队归属")
-	ErrLastTeamAdmin           = errors.New("不能移除、停用或降级最后一位团队管理员")
-	ErrInvitationInvalid       = errors.New("邀请已失效、过期或被使用")
-	ErrInvitationEmailMismatch = errors.New("邀请邮箱与账号邮箱不匹配")
-	ErrEmailTaken              = errors.New("邮箱已存在")
-	ErrTeamNameTaken           = errors.New("团队名已存在")
-	ErrReleaseTaken            = errors.New("Release revision 已存在")
-	ErrProviderNameTaken       = errors.New("供应商名已存在")
-	ErrRootUserExists          = errors.New("超级管理员已存在")
-	ErrRootUserProtected       = errors.New("超级管理员不能被禁用或降级")
-	ErrReservationNotFound     = errors.New("额度预留不存在")
-	ErrCreditChargeCapped      = errors.New("实扣金额已按团队额度下限封顶")
-	ErrInvalidCreditCharge     = errors.New("credit 金额非法或超出存储范围")
-	ErrReservationMismatch     = errors.New("reservation owner mismatch")
-	ErrInvalidInput            = errors.New("invalid store input")
-	ErrDuplicate               = errors.New("duplicate store input")
-	ErrTeamAssetStorageLimit   = errors.New("team asset storage limit exceeded")
-	ErrTeamAssetConflict       = errors.New("team asset id conflicts with an existing upload")
-	ErrTeamAssetTeamNotFound   = errors.New("team asset team not found")
-	ErrTeamAssetNotFound       = errors.New("team asset or deletion request not found")
-	ErrTeamAssetForbidden      = errors.New("team asset operation forbidden")
+	ErrUserAlreadyInTeam         = errors.New("用户已属于其他团队")
+	ErrAmbiguousTeam             = errors.New("用户存在多个有效团队，请先修正团队归属")
+	ErrLastTeamAdmin             = errors.New("不能移除、停用或降级最后一位团队管理员")
+	ErrInvitationInvalid         = errors.New("邀请已失效、过期或被使用")
+	ErrInvitationEmailMismatch   = errors.New("邀请邮箱与账号邮箱不匹配")
+	ErrEmailTaken                = errors.New("邮箱已存在")
+	ErrTeamNameTaken             = errors.New("团队名已存在")
+	ErrReleaseTaken              = errors.New("Release revision 已存在")
+	ErrProviderNameTaken         = errors.New("供应商名已存在")
+	ErrRootUserExists            = errors.New("超级管理员已存在")
+	ErrRootUserProtected         = errors.New("超级管理员不能被禁用或降级")
+	ErrReservationNotFound       = errors.New("额度预留不存在")
+	ErrCreditChargeCapped        = errors.New("实扣金额已按团队额度下限封顶")
+	ErrInvalidCreditCharge       = errors.New("credit 金额非法或超出存储范围")
+	ErrReservationMismatch       = errors.New("reservation owner mismatch")
+	ErrInvalidInput              = errors.New("invalid store input")
+	ErrDuplicate                 = errors.New("duplicate store input")
+	ErrTeamAssetStorageLimit     = errors.New("team asset storage limit exceeded")
+	ErrTeamAssetConflict         = errors.New("team asset id conflicts with an existing upload")
+	ErrTeamAssetTeamNotFound     = errors.New("team asset team not found")
+	ErrTeamAssetNotFound         = errors.New("team asset or deletion request not found")
+	ErrTeamAssetForbidden        = errors.New("team asset operation forbidden")
+	ErrPreferenceVersionConflict = errors.New("user preference version conflict")
 )
 
 // ResolveUserTeam 显式拒绝既存多团队歧义，避免按列表顺序错误扣费。

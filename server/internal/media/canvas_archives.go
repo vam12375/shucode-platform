@@ -20,25 +20,34 @@ type CanvasArchiveInput struct {
 	Previous                  CanvasTeamAssetArchive
 }
 
-func canvasArchiveSources(p Project) []string {
+func generatedArchiveSources(p Project) []string {
 	var sources []string
-	for _, shot := range p.Shots[:min(len(p.Shots), 4)] {
-		if shot.Status != "succeeded" || shot.OutputAssetID == "" {
-			continue
-		}
-		// 返回尾帧也是已付费任务的真实产物，沿同一归档身份去重，不再新建生成流程。
-		for _, id := range []string{shot.OutputAssetID, shot.LastFrameAssetID} {
-			if id != "" && !slices.Contains(sources, id) {
-				sources = append(sources, id)
+	if isDirectGeneration(p) {
+		for _, shot := range p.Shots[:min(len(p.Shots), 4)] {
+			if shot.Status != "succeeded" || shot.OutputAssetID == "" {
+				continue
+			}
+			// 仅 Canvas 可明确请求尾帧；Agent 与普通制作的内部帧不归档。
+			ids := []string{shot.OutputAssetID}
+			if p.Canvas != nil {
+				ids = append(ids, shot.LastFrameAssetID)
+			}
+			for _, id := range ids {
+				if id != "" && !slices.Contains(sources, id) {
+					sources = append(sources, id)
+				}
 			}
 		}
+	} else if p.Status == "completed" && p.OutputAssetID != "" {
+		// 普通视频制作的成片是唯一公开交付物，镜头输出只用于服务端合成。
+		sources = append(sources, p.OutputAssetID)
 	}
 	return sources
 }
 
-func canvasCurrentArchives(p Project) []CanvasTeamAssetArchive {
+func currentGeneratedArchives(p Project) []CanvasTeamAssetArchive {
 	var out []CanvasTeamAssetArchive
-	for _, source := range canvasArchiveSources(p) {
+	for _, source := range generatedArchiveSources(p) {
 		for _, archive := range p.TeamAssetArchives {
 			if archive.SourceAssetID == source {
 				out = append(out, archive)
@@ -49,6 +58,9 @@ func canvasCurrentArchives(p Project) []CanvasTeamAssetArchive {
 	return out
 }
 
+// canvasCurrentArchives 保留旧测试与兼容调用名；状态现在覆盖所有平台最终生成物。
+func canvasCurrentArchives(p Project) []CanvasTeamAssetArchive { return currentGeneratedArchives(p) }
+
 func (s *Service) saveCanvasArchive(ctx context.Context, p Project, archive CanvasTeamAssetArchive, expected *CanvasTeamAssetArchive) (Project, error) {
 	for range 10 {
 		current, err := s.Repo.Get(ctx, p.TeamID, p.ID)
@@ -58,7 +70,7 @@ func (s *Service) saveCanvasArchive(ctx context.Context, p Project, archive Canv
 		if current == nil {
 			return p, ErrConflict
 		}
-		if !slices.Contains(canvasArchiveSources(*current), archive.SourceAssetID) {
+		if !slices.Contains(generatedArchiveSources(*current), archive.SourceAssetID) {
 			return *current, ErrConflict
 		}
 		index := -1
@@ -95,11 +107,11 @@ func (s *Service) saveCanvasArchive(ctx context.Context, p Project, archive Canv
 }
 
 func (s *Service) reconcileCanvasArchives(ctx context.Context, p Project) Project {
-	if p.Canvas == nil || s.ArchiveCanvasOutput == nil {
+	if s.ArchiveCanvasOutput == nil || len(generatedArchiveSources(p)) == 0 {
 		return p
 	}
 	// 回执仅对应当前成功输出；旧/损坏快照不能突破公共数组上限或误认失败输出。
-	if current := canvasCurrentArchives(p); !slices.Equal(current, p.TeamAssetArchives) {
+	if current := currentGeneratedArchives(p); !slices.Equal(current, p.TeamAssetArchives) {
 		next, err := s.Mutate(ctx, p.TeamID, p.ID, p.Version, func(v *Project) error {
 			v.TeamAssetArchives = current
 			return nil
@@ -117,7 +129,7 @@ func (s *Service) reconcileCanvasArchives(ctx context.Context, p Project) Projec
 	for _, asset := range assets {
 		sources[asset.ID] = asset
 	}
-	for _, sourceID := range canvasArchiveSources(p) {
+	for _, sourceID := range generatedArchiveSources(p) {
 		if ctx.Err() != nil {
 			break
 		}

@@ -44,8 +44,8 @@ func (s *Service) Reconcile(ctx context.Context, team, id string, r Reconciliati
 			}
 		case "image_task":
 			modelID := p.Brief.ImageModel
-			if p.Canvas != nil {
-				modelID = p.Canvas.ModelID
+			if directRequest, ok := directGenerationRequest(*p); ok {
+				modelID = directRequest.ModelID
 			}
 			model, modelErr := FindModel(p.Models, modelID, "image")
 			if shot.Stage != "image" || modelErr != nil || model.Adapter != "toapis" || validateToAPIsImageModel(model) != nil || providerTaskID(r.Value) == "" {

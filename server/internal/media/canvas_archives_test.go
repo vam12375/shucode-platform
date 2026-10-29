@@ -170,3 +170,54 @@ func TestCanvasArchiveProjectionPrunesObsoleteAndDuplicateSources(t *testing.T) 
 		t.Fatal("obsolete failed-shot receipt exposed")
 	}
 }
+
+func TestGeneratedArchiveSourcesUseOnlyPublicPlatformOutputs(t *testing.T) {
+	canvasOutput, canvasTail := uuid.NewString(), uuid.NewString()
+	canvas := Project{Canvas: &CanvasRequest{}, Shots: []Shot{{Status: "succeeded", OutputAssetID: canvasOutput, LastFrameAssetID: canvasTail}}}
+	if got := generatedArchiveSources(canvas); len(got) != 2 || got[0] != canvasOutput || got[1] != canvasTail {
+		t.Fatalf("Canvas outputs: %v", got)
+	}
+
+	agentOutput, agentTail := uuid.NewString(), uuid.NewString()
+	agent := Project{Agent: &AgentGenerationRequest{}, Shots: []Shot{{Status: "succeeded", OutputAssetID: agentOutput, LastFrameAssetID: agentTail}}}
+	if got := generatedArchiveSources(agent); len(got) != 1 || got[0] != agentOutput {
+		t.Fatalf("Agent must archive output only: %v", got)
+	}
+
+	finalOutput, intermediate, firstFrame := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	video := Project{Status: "completed", OutputAssetID: finalOutput, Shots: []Shot{{Status: "succeeded", OutputAssetID: intermediate, ImageAssetID: firstFrame}}}
+	if got := generatedArchiveSources(video); len(got) != 1 || got[0] != finalOutput {
+		t.Fatalf("video production must archive final output only: %v", got)
+	}
+	video.Status = "running"
+	if got := generatedArchiveSources(video); len(got) != 0 {
+		t.Fatalf("unfinished video production archived outputs: %v", got)
+	}
+}
+
+func TestOrdinaryVideoReconcileArchivesFinalCompositionOnly(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	finalOutput, intermediate := uuid.NewString(), uuid.NewString()
+	for _, id := range []string{finalOutput, intermediate} {
+		if err := f.s.Repo.AddAsset(ctx, f.team, Asset{ID: id, Name: id, Kind: "video", Mime: "video/mp4"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := &Project{ID: uuid.NewString(), TeamID: f.team, UserID: f.user, Status: "completed", Version: 1, OutputAssetID: finalOutput, Shots: []Shot{{Status: "succeeded", OutputAssetID: intermediate}}}
+	if err := f.s.Repo.Index(ctx, ProjectKey(f.team, p.ID)); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.Repo.Save(ctx, p, nil); err != nil {
+		t.Fatal(err)
+	}
+	var archived []string
+	f.s.ArchiveCanvasOutput = func(_ context.Context, input CanvasArchiveInput) CanvasTeamAssetArchive {
+		archived = append(archived, input.Source.ID)
+		return CanvasTeamAssetArchive{SourceAssetID: input.Source.ID, TeamAssetID: uuid.NewString(), Status: "saved"}
+	}
+	f.s.reconcileCanvasArchives(ctx, *p)
+	if len(archived) != 1 || archived[0] != finalOutput {
+		t.Fatalf("ordinary video archived intermediate output: %v", archived)
+	}
+}

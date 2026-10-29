@@ -704,6 +704,11 @@ func TestClientSSE(t *testing.T) {
 	if !strings.Contains(eventText, "models") || !strings.Contains(eventText, "providers") {
 		t.Fatalf("config.changed 缺合并 domains: %q", eventText)
 	}
+	f.bus.Emit(events.DomainPreferences)
+	preferencesEvent := reader.readUntil(t, "event: preferences.changed")
+	if strings.Contains(preferencesEvent, "event: config.changed") || !strings.Contains(preferencesEvent, `"domain":"preferences"`) {
+		t.Fatalf("Agent 媒体偏好应使用独立 SSE 事件: %q", preferencesEvent)
+	}
 }
 
 type sseReader struct {
@@ -718,8 +723,11 @@ func (r *sseReader) readUntil(t *testing.T, needle string) string {
 	deadline := time.Now().Add(5 * time.Second)
 	buf := make([]byte, 512)
 	for time.Now().Before(deadline) {
-		if strings.Contains(r.buffer, needle) {
-			return r.buffer
+		if frame, ok := r.nextFrame(); ok {
+			if strings.Contains(frame, needle) {
+				return frame
+			}
+			continue
 		}
 		n, err := r.body.Read(buf)
 		if n > 0 {
@@ -731,6 +739,21 @@ func (r *sseReader) readUntil(t *testing.T, needle string) string {
 	}
 	t.Fatalf("等待 %q 超时,已收到: %q", needle, r.buffer)
 	return ""
+}
+
+func (r *sseReader) nextFrame() (string, bool) {
+	separator := "\n\n"
+	separatorIndex := strings.Index(r.buffer, separator)
+	if crlfIndex := strings.Index(r.buffer, "\r\n\r\n"); crlfIndex >= 0 && (separatorIndex < 0 || crlfIndex < separatorIndex) {
+		separator = "\r\n\r\n"
+		separatorIndex = crlfIndex
+	}
+	if separatorIndex < 0 {
+		return "", false
+	}
+	frame := r.buffer[:separatorIndex+len(separator)]
+	r.buffer = r.buffer[len(frame):]
+	return frame, true
 }
 
 func TestRootSetup(t *testing.T) {

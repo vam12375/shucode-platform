@@ -58,6 +58,25 @@ func runSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 	t.Run("audit", func(t *testing.T) { testAudit(t, ctx, s) })
 	t.Run("audit-cursor-same-timestamp", func(t *testing.T) { testAuditCursorSameTimestamp(t, ctx, s) })
 	t.Run("config-kv", func(t *testing.T) { testConfigKV(t, ctx, s) })
+	t.Run("user-agent-media-preferences", func(t *testing.T) {
+		user := mustUser(t, ctx, s, "agent-preferences@test.local")
+		created, err := s.SaveAgentMediaPreferences(ctx, user.ID, ptr(int64(0)), []byte(`{"imageModelId":"sku-2k"}`), time.Now().UTC())
+		if err != nil || created == nil || created.Version != 1 {
+			t.Fatalf("initial versioned write: %+v %v", created, err)
+		}
+		created.Preferences[2] = 'x'
+		read, err := s.GetAgentMediaPreferences(ctx, user.ID)
+		if err != nil || read == nil || string(read.Preferences) != `{"imageModelId":"sku-2k"}` {
+			t.Fatalf("returned preference bytes must be isolated: %+v %v", read, err)
+		}
+		updated, err := s.SaveAgentMediaPreferences(ctx, user.ID, ptr(int64(1)), []byte(`{"imageResolution":"2K"}`), time.Now().UTC())
+		if err != nil || updated == nil || updated.Version != 2 {
+			t.Fatalf("versioned update: %+v %v", updated, err)
+		}
+		if _, err := s.SaveAgentMediaPreferences(ctx, user.ID, ptr(int64(1)), []byte(`{}`), time.Now().UTC()); !errors.Is(err, ErrPreferenceVersionConflict) {
+			t.Fatalf("stale preference write should conflict: %v", err)
+		}
+	})
 	t.Run("usage", func(t *testing.T) { testUsage(t, ctx, s) })
 	t.Run("usage-model-filter-pagination-export", func(t *testing.T) { testUsageModelFilterPaginationExport(t, ctx, s) })
 	t.Run("usage-price-snapshot", func(t *testing.T) { runUsageSnapshotSuite(t, ctx, s) })

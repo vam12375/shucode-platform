@@ -287,6 +287,22 @@ type Shot struct {
 	TokenRateMicroPerMillion int64 `json:"tokenRateMicroPerMillion,omitempty"`
 	TokenCostMicroPerMillion int64 `json:"tokenCostMicroPerMillion,omitempty"`
 }
+
+// AgentGenerationRequest 是对话入口的独立不可变快照，不包含 Canvas 身份字段。
+type AgentGenerationRequest struct {
+	RequestID          string   `json:"requestId"`
+	Intent             string   `json:"intent"`
+	Kind               string   `json:"kind"`
+	Prompt             string   `json:"prompt"`
+	AssetIDs           []string `json:"assetIds"`
+	ModelID            string   `json:"modelId"`
+	Resolution         string   `json:"resolution"`
+	AspectRatio        string   `json:"aspectRatio"`
+	Duration           int      `json:"duration"`
+	Count              int      `json:"count"`
+	ExpectedQuoteMicro int64    `json:"expectedQuoteMicro"`
+}
+
 type Project struct {
 	Narration            *NarrationState          `json:"narration,omitempty"`
 	SourceChecksum       string                   `json:"sourceChecksum,omitempty"`
@@ -294,6 +310,7 @@ type Project struct {
 	AnalysisFee          *FixedFee                `json:"analysisFee,omitempty"`
 	AnalysisChargedMicro int64                    `json:"analysisChargedMicro"`
 	Canvas               *CanvasRequest           `json:"canvas,omitempty"`
+	Agent                *AgentGenerationRequest  `json:"agentGeneration,omitempty"`
 	TeamAssetArchives    []CanvasTeamAssetArchive `json:"teamAssetArchives,omitempty"`
 	ID                   string                   `json:"id"`
 	Version              int64                    `json:"version"`
@@ -366,11 +383,23 @@ func (p Project) View() ProjectView {
 		}
 		shots = append(shots, ShotView{Plan: s.Plan, Status: s.Status, Attempt: s.Attempt, VideoTaskID: publicVideoTaskID(s.VideoTaskID), ImageAssetID: s.ImageAssetID, OutputAssetID: s.OutputAssetID, LastFrameAssetID: s.LastFrameAssetID, Error: s.Error, ProviderError: diagnostic, ChargedMicro: s.ChargedMicro, QuoteMicro: s.QuoteMicro})
 	}
-	var archives []CanvasTeamAssetArchive
-	if p.Canvas != nil {
-		archives = canvasCurrentArchives(p)
-	}
+	archives := currentGeneratedArchives(p)
 	return ProjectView{SourceAnalysis: cloneSourceAnalysis(p.SourceAnalysis), AnalysisChargedMicro: p.AnalysisChargedMicro, Canvas: p.Canvas, TeamAssetArchives: archives, ReservedMicro: 0, ReleasedMicro: 0, ID: p.ID, Version: p.Version, Status: p.Status, Brief: p.Brief, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Analysis: p.Analysis, Plan: p.Plan, Shots: shots, QuoteMicro: p.QuoteMicro, ChargedMicro: p.ChargedMicro, OutputAssetID: p.OutputAssetID, Error: p.Error, CancelRequested: p.CancelRequested}
+}
+
+func directGenerationRequest(p Project) (CanvasRequest, bool) {
+	if p.Canvas != nil {
+		return *p.Canvas, true
+	}
+	if p.Agent != nil {
+		r := p.Agent
+		return CanvasRequest{Kind: r.Kind, ModelID: r.ModelID, Prompt: r.Prompt, AssetIDs: slices.Clone(r.AssetIDs), Resolution: r.Resolution, AspectRatio: r.AspectRatio, Duration: r.Duration, Count: r.Count, ExpectedQuoteMicro: r.ExpectedQuoteMicro}, true
+	}
+	return CanvasRequest{}, false
+}
+
+func isDirectGeneration(p Project) bool {
+	return p.Canvas != nil || p.Agent != nil
 }
 
 // 阶段售价独立于余额占用；旧任务仍从持久化预留金额恢复，不能因取消预留而免费交付。

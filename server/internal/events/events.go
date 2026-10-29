@@ -21,6 +21,7 @@ const (
 	DomainDevices        = "devices"
 	DomainPlatformConfig = "platform-config"
 	DomainReleases       = "releases"
+	DomainPreferences    = "preferences"
 )
 
 const coalesceWindow = 300 * time.Millisecond
