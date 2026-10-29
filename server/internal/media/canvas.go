@@ -155,9 +155,9 @@ func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id strin
 	unit := m.PriceMicro
 	if r.Kind == "video" {
 		if videoReference != nil || r.ReferenceMode == "multimodal" && len(r.VideoReferences) > 0 {
-			unit = videoReferenceQuoteMicro(m.VideoReference, r.Resolution, r.AspectRatio, r.Duration)
+			unit = mediaVideoReferenceQuoteMicro(m, m.VideoReference, r.Resolution, r.AspectRatio, r.Duration)
 		} else {
-			unit *= int64(r.Duration)
+			unit = mediaVideoQuoteMicro(m, r.Resolution, r.AspectRatio, r.Duration)
 		}
 	}
 	total := unit * int64(r.Count)

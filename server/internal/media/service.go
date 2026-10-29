@@ -217,7 +217,7 @@ func (s *Service) FailAnalysis(ctx context.Context, team, id string, version int
 		return nil, ErrInvalid
 	}
 	switch code {
-	case "analysis_failed", "video_analysis_scope_invalid", "video_analysis_scope_budget_exhausted", "video_analysis_scope_unavailable", "source_timeline_invalid", "source_url_mismatch", "source_report_invalid", "video_reference_duration_unsupported", "model_not_configured", "duration_or_budget_exceeded", "video_reference_plan_invalid", "video_reference_prompt_limit", "video_reference_unsupported", "video_reference_image_limit", "first_frame_required", "video_source_changed", "video_plan_copy_invalid", "narration_empty", "narration_too_long", "narration_script_mismatch":
+	case "analysis_failed", "video_analysis_scope_invalid", "video_analysis_scope_budget_exhausted", "video_analysis_scope_unavailable", "source_timeline_invalid", "source_url_mismatch", "source_report_invalid", "video_reference_duration_unsupported", "model_not_configured", "duration_or_budget_exceeded", "video_reference_plan_invalid", "video_reference_prompt_limit", "video_reference_unsupported", "video_reference_image_limit", "first_frame_required", "reference_images_required", "video_source_changed", "video_plan_copy_invalid", "narration_empty", "narration_too_long", "narration_script_mismatch":
 	default:
 		return nil, ErrInvalid
 	}
@@ -464,19 +464,16 @@ func tokenRateString(microPerMillion int64) string {
 
 func (s *Service) usage(p *Project, shot Shot, m Model) store.UsageRecord {
 	record := store.UsageRecord{ID: shot.ReservationID, RequestID: "media:" + shot.ReservationID, UserID: p.UserID, TeamID: p.TeamID, DeviceTokenID: p.DeviceID, Model: "media:" + m.ID, UpstreamModel: m.UpstreamModel, ProviderID: m.ProviderID, CreditsMicro: shot.pendingCharge(), Status: store.UsageStatusOk, CreatedAt: time.Now().UTC()}
-	if m.Kind != "video" || !videoReferenceRequested(p) || m.VideoReference == nil || shot.ProviderUsageTokens <= 0 {
+	priceRate, costRate, tokenBilling := mediaVideoTokenRates(p, m)
+	if m.Kind != "video" || !tokenBilling || shot.ProviderUsageTokens <= 0 {
 		return mediaUnitUsage(record, p, shot, m)
 	}
 	rate := shot.TokenRateMicroPerMillion
 	if rate <= 0 {
-		rate = m.VideoReference.TokenPriceMicroPerMillion
+		rate = priceRate
 	}
-	if rate <= 0 {
-		return mediaUnitUsage(record, p, shot, m)
-	}
-	costRate := shot.TokenCostMicroPerMillion
-	if costRate <= 0 {
-		costRate = m.VideoReference.TokenCostMicroPerMillion
+	if shot.TokenCostMicroPerMillion > 0 {
+		costRate = shot.TokenCostMicroPerMillion
 	}
 	record.OutputTokens = shot.ProviderUsageTokens
 	record.CreditsMicro = shot.TokenChargeMicro
@@ -484,6 +481,8 @@ func (s *Service) usage(p *Project, shot Shot, m Model) store.UsageRecord {
 		record.CreditsMicro = videoTokenChargeMicro(shot.ProviderUsageTokens, rate)
 	}
 	sale := store.UsagePriceSnapshot{
+		Unit:              "token",
+		Quantity:          shot.ProviderUsageTokens,
 		InputPerMtok:      "0.000000",
 		OutputPerMtok:     tokenRateString(rate),
 		CacheReadPerMtok:  "0.000000",

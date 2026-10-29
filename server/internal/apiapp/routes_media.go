@@ -431,6 +431,7 @@ func publicMediaModels(models []media.Model) []gin.H {
 	out := make([]gin.H, 0, len(models))
 	groupNames := map[string]string{}
 	for _, m := range models {
+		m = media.NormalizeSeedanceDuration(m)
 		id, name := publicMediaModelGroupID(m), publicMediaModelGroupName(m)
 		// 名称不是身份；历史条目名称不一致时按稳定顺序选取一个公开组名。
 		if previous, exists := groupNames[id]; !exists || name < previous {
@@ -438,6 +439,7 @@ func publicMediaModels(models []media.Model) []gin.H {
 		}
 	}
 	for _, m := range models {
+		m = media.NormalizeSeedanceDuration(m)
 		resolutions := append([]string{}, m.Resolutions...)
 		if m.Kind == "image" {
 			resolutions = media.ImageResolutions(m)
@@ -456,6 +458,12 @@ func publicMediaModels(models []media.Model) []gin.H {
 		// 用户消耗用于客户端展示；供应商成本与内部价格版本只用于服务端计费及 root 控制台。
 		name := groupNames[publicMediaModelGroupID(m)]
 		model := gin.H{"id": m.ID, "name": name, "kind": m.Kind, "resolutions": resolutions, "maxReferenceImages": media.MaxReferenceImages(m), "durations": durations, "generateAudio": m.GenerateAudio, "priceMicro": m.PriceMicro}
+		if m.BillingUnit != "" {
+			model["billingUnit"] = m.BillingUnit
+		}
+		if m.TokenPriceMicroPerMillion > 0 {
+			model["tokenPriceMicroPerMillion"] = m.TokenPriceMicroPerMillion
+		}
 		groupID := publicMediaModelGroupID(m)
 		model["groupId"] = groupID
 		model["groupName"] = groupNames[groupID]

@@ -3,6 +3,7 @@ package media
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf16"
@@ -56,6 +57,56 @@ func referenceReviewPlan(project *Project, plan Plan) (Plan, error) {
 }
 
 type wholeReferenceSegment struct{ first, last int }
+
+func validateBriefReferenceMode(b Brief) error {
+	if b.ReferenceMode != "" && b.ReferenceMode != "frames" && b.ReferenceMode != "multimodal" {
+		return ErrInvalid
+	}
+	if b.ReferenceMode == "multimodal" && b.ImageModel != "" {
+		return ErrInvalid
+	}
+	return nil
+}
+
+func uniqueReferenceImageIDs(ids []string) []string {
+	images := make([]string, 0, len(ids))
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			images = append(images, id)
+		}
+	}
+	return images
+}
+
+func validateBriefReferenceImages(b Brief, m Model) error {
+	if b.ReferenceMode != "multimodal" {
+		return nil
+	}
+	caps := CanvasCapabilitiesFor(m)
+	if caps == nil || !slices.Contains(caps.Modes, "multimodal") {
+		return fmt.Errorf("video_reference_unsupported")
+	}
+	images := uniqueReferenceImageIDs(b.AssetIDs)
+	if len(images) == 0 {
+		return fmt.Errorf("reference_images_required")
+	}
+	references := len(images)
+	if b.GenerationMode == "video_reference" {
+		if m.VideoReference == nil || caps.MaxVideos < 1 {
+			return fmt.Errorf("video_reference_unsupported")
+		}
+		if len(images) > m.VideoReference.MaxImages {
+			return fmt.Errorf("video_reference_image_limit")
+		}
+		references++
+	}
+	if len(images) > caps.MaxImages || references > caps.MaxTotalReferences {
+		return fmt.Errorf("video_reference_image_limit")
+	}
+	return nil
+}
 
 func videoReferenceMaxSegments(capability *VideoReferenceCapability) int {
 	if capability == nil || capability.MaxSegments <= 1 {
@@ -197,6 +248,9 @@ func appendWholeReferenceScript(script *strings.Builder, shot ShotPlan) {
 
 // 审阅镜头保留原片边界；执行镜头按能力在事实边界派生最少连续参考段。
 func buildWholeReferenceExecution(b Brief, plan Plan, model Model, models []Model) ([]Shot, int64, error) {
+	if err := validateBriefReferenceImages(b, model); err != nil {
+		return nil, 0, err
+	}
 	segments, err := partitionWholeReference(plan.Shots, model.VideoReference)
 	if err != nil {
 		return nil, 0, err
@@ -223,8 +277,8 @@ func buildWholeReferenceExecution(b Brief, plan Plan, model Model, models []Mode
 		if b.ReplacementInstructions != "" {
 			script.WriteString("替换目标：" + b.ReplacementInstructions + "\n")
 		}
-		// 段首图的语义是执行段第一个事实镜头的起始画面。不能从段内后续镜头借图，
-		// 否则 Logo 或局部素材会被错误地提升为整段首帧，造成每个任务首帧重复。
+		// 旧 frames 绑定只表示段首起始画面；multimodal 使用制作单全局参考，
+		// 不能为了通过旧首帧校验把同一图片复制为每个执行段的首帧。
 		firstImage, firstImagePrompt, clipID, audioID := facts[0].AssetID, facts[0].ImagePrompt, "", ""
 		images := map[string]bool{}
 		boundClips, boundAudios := 0, 0
@@ -251,13 +305,16 @@ func buildWholeReferenceExecution(b Brief, plan Plan, model Model, models []Mode
 		if boundClips != 0 && boundClips != len(facts) || boundAudios != 0 && boundAudios != len(facts) {
 			return nil, 0, fmt.Errorf("video_reference_plan_invalid")
 		}
-		if b.ImageModel == "" && len(images) > model.VideoReference.MaxImages {
+		if b.ReferenceMode == "multimodal" {
+			firstImage = ""
+		}
+		if b.ReferenceMode != "multimodal" && b.ImageModel == "" && len(images) > model.VideoReference.MaxImages {
 			return nil, 0, fmt.Errorf("video_reference_image_limit")
 		}
 		if len(utf16.Encode([]rune(script.String()))) > 4000 {
 			return nil, 0, fmt.Errorf("video_reference_prompt_limit")
 		}
-		quote := videoReferenceQuoteMicro(model.VideoReference, b.Resolution, b.AspectRatio, duration)
+		quote := mediaVideoReferenceQuoteMicro(model, model.VideoReference, b.Resolution, b.AspectRatio, duration)
 		if b.ImageModel != "" {
 			if firstImagePrompt == "" {
 				return nil, 0, fmt.Errorf("first_frame_required")
@@ -267,7 +324,7 @@ func buildWholeReferenceExecution(b Brief, plan Plan, model Model, models []Mode
 				return nil, 0, findErr
 			}
 			quote += imageModel.PriceMicro
-		} else if firstImage == "" {
+		} else if b.ReferenceMode != "multimodal" && firstImage == "" {
 			return nil, 0, fmt.Errorf("first_frame_required")
 		}
 		execution := facts[0]

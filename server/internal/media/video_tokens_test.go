@@ -96,3 +96,39 @@ func TestUsageSnapshotUsesActualVideoTokens(t *testing.T) {
 		t.Fatalf("cost metadata = %+v", usage.PriceSnapshot.Cost)
 	}
 }
+
+func TestMediaVideoBillingUnitsQuoteIndependentOfDuration(t *testing.T) {
+	ext := Model{Kind: "video", BillingUnit: BillingUnitRequest, PriceMicro: 8_750_000}
+	if got := mediaVideoQuoteMicro(ext, "720p", "16:9", 4); got != ext.PriceMicro {
+		t.Fatalf("ext 4s quote=%d", got)
+	}
+	if got := mediaVideoQuoteMicro(ext, "720p", "16:9", 15); got != ext.PriceMicro {
+		t.Fatalf("ext 15s quote=%d", got)
+	}
+	ref := &VideoReferenceCapability{MaxDurationSeconds: 15, MaxImages: 8, PriceMicro: ext.PriceMicro}
+	if got := mediaVideoReferenceQuoteMicro(ext, ref, "720p", "16:9", 4); got != ext.PriceMicro {
+		t.Fatalf("ext reference 4s quote=%d", got)
+	}
+	if got := mediaVideoReferenceQuoteMicro(ext, ref, "720p", "16:9", 15); got != ext.PriceMicro {
+		t.Fatalf("ext reference 15s quote=%d", got)
+	}
+	standard := Model{Kind: "video", BillingUnit: BillingUnitToken, TokenPriceMicroPerMillion: 70_000_000}
+	if mediaVideoQuoteMicro(standard, "720p", "16:9", 4) >= mediaVideoQuoteMicro(standard, "720p", "16:9", 15) {
+		t.Fatal("token estimate should grow with duration")
+	}
+}
+
+func TestResultUsageTokensUsesTotalForToAPIsTokenBilling(t *testing.T) {
+	result := ProviderResult{}
+	result.Usage.CompletionTokens, result.Usage.TotalTokens = 100, 250
+	if got := resultUsageTokens(result, true); got != 250 {
+		t.Fatalf("total billing tokens=%d", got)
+	}
+	if got := resultUsageTokens(result, false); got != 100 {
+		t.Fatalf("completion billing tokens=%d", got)
+	}
+	result.Usage.TotalTokens = 0
+	if got := resultUsageTokens(result, true); got != 0 {
+		t.Fatalf("missing total must not fall back to completion: %d", got)
+	}
+}

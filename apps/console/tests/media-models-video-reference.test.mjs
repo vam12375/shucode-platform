@@ -116,6 +116,27 @@ test("legacy sparse duration lists retain their saved semantics on load and JSON
   assert.equal(rangeModel.durations, undefined);
 });
 
+test("Seedance legacy duration lists are normalized to the continuous 4–15 second range", () => {
+  const seedance = {
+    ...model,
+    upstreamModel: "doubao-seedance-2-0-mini-260615",
+    durations: [4, 5, 10, 15],
+  };
+  const draft = output.toDraft(seedance);
+  assert.equal(draft.minDuration, "4");
+  assert.equal(draft.maxDuration, "15");
+  assert.equal(draft.legacyDurations, undefined);
+  const saved = output.toApiModel(draft);
+  assert.equal(saved.durations, undefined);
+  assert.equal(saved.minDuration, 4);
+  assert.equal(saved.maxDuration, 15);
+
+  const imported = output.draftsFromJson(JSON.stringify([seedance]))[0];
+  assert.equal(imported.legacyDurations, undefined);
+  assert.equal(imported.minDuration, "4");
+  assert.equal(imported.maxDuration, "15");
+});
+
 test("video reference keeps shared token rates and mirrors legacy per-second prices", () => {
   const imported = output.draftsFromJson(
     JSON.stringify([{ ...model, videoReference: capability }]),
@@ -478,8 +499,9 @@ test("adding preset tiers inherits the existing family shared configuration", as
   const added = JSON.parse(text).find((tier) => tier.id === "seedance-2.0-mini-720p");
   assert.equal(added.priceVersion, "custom-version");
   assert.equal(added.generateAudio, false);
-  assert.deepEqual(added.durations, [4, 5, 10, 15]);
-  assert.equal(added.minDuration, undefined);
+  assert.equal(added.durations, undefined);
+  assert.equal(added.minDuration, 4);
+  assert.equal(added.maxDuration, 15);
   assert.equal(added.videoReference.maxImages, capability.maxImages);
   assert.equal(added.videoReference.tokenPriceMicroPerMillion, capability.tokenPriceMicroPerMillion);
 });
@@ -659,6 +681,68 @@ test("ToAPIs preset does not bind an unrelated Ark supplier", async () => {
   const tree = clickPreset(f, "ToAPIs Seedance 2.0");
   assert.equal(nodes(tree, (node) => node.type === "Select" && (node.props.ariaLabel ?? "").endsWith("适配器")).length, 1);
   assert.match(nodeText(tree), /1 个上游模型/);
+});
+
+test("ToAPIs Seedance 2.5 preset keeps resolution-specific token prices through save and JSON round trip", async () => {
+  const toapis = { ...provider, id: "toapis", name: "ToAPIs", baseUrl: "https://toapis.com/v1" };
+  const f = await mountModels([], [toapis]);
+  let tree = clickPreset(f, "ToAPIs Seedance 2.5");
+  const jsonButton = nodes(tree, (node) => node.type === "button" && nodeText(node) === "JSON 批量编辑")[0];
+  assert.ok(jsonButton);
+  jsonButton.props.onClick();
+  tree = f.render();
+  const json = nodes(tree, (node) => node.type === "textarea" && node.props["aria-label"] === "媒体模型 JSON")[0];
+  const initial = JSON.parse(json.props.value);
+  assert.equal(initial.length, 3);
+  assert.deepEqual(initial.map((item) => [item.upstreamModel, item.resolutions[0], item.billingUnit, item.tokenPriceMicroPerMillion]), [
+    ["seedance-2-5", "480p", "token", 70_000_000],
+    ["seedance-2-5", "720p", "token", 70_000_000],
+    ["seedance-2-5", "1080p", "token", 77_000_000],
+  ]);
+  assert.deepEqual(initial.map((item) => item.videoReference?.tokenPriceMicroPerMillion), [42_000_000, 42_000_000, 46_000_000]);
+
+  const save = nodes(tree, (node) => node.type === "button" && nodeText(node) === "保存配置")[0];
+  assert.equal(save.props.disabled, false);
+  save.props.onClick();
+  tree = await f.settle();
+  const saved = JSON.parse(f.calls.find((call) => call.options).options.body);
+  assert.deepEqual(saved.map((item) => [item.resolutions[0], item.billingUnit, item.priceMicro, item.tokenPriceMicroPerMillion]), [
+    ["480p", "token", 0, 70_000_000],
+    ["720p", "token", 0, 70_000_000],
+    ["1080p", "token", 0, 77_000_000],
+  ]);
+  assert.deepEqual(saved.map((item) => [item.tokenCostMicroPerMillion, item.tokenPriceMicroPerMillion]), [
+    [70_000_000, 70_000_000], [70_000_000, 70_000_000], [77_000_000, 77_000_000],
+  ]);
+  assert.deepEqual(saved.map((item) => [item.videoReference.tokenCostMicroPerMillion, item.videoReference.tokenPriceMicroPerMillion]), [
+    [42_000_000, 42_000_000], [42_000_000, 42_000_000], [46_000_000, 46_000_000],
+  ]);
+  const roundTripped = saved.map((item) => output.toApiModel(output.draftsFromJson(JSON.stringify([item]))[0]));
+  assert.deepEqual(roundTripped.map((item) => [item.id, item.billingUnit, item.tokenPriceMicroPerMillion, item.videoReference?.tokenPriceMicroPerMillion]), saved.map((item) => [item.id, item.billingUnit, item.tokenPriceMicroPerMillion, item.videoReference?.tokenPriceMicroPerMillion]));
+  assert.match(nodeText(tree), /配置已同步/);
+});
+
+test("ToAPIs Seedance 2.5 Ext preset uses the exact request model ID and fixed price", async () => {
+  const toapis = { ...provider, id: "toapis", name: "ToAPIs", baseUrl: "https://toapis.com/v1" };
+  const f = await mountModels([], [toapis]);
+  let tree = clickPreset(f, "ToAPIs Seedance 2.5 Ext");
+  const jsonButton = nodes(tree, (node) => node.type === "button" && nodeText(node) === "JSON 批量编辑")[0];
+  jsonButton.props.onClick();
+  tree = f.render();
+  const json = nodes(tree, (node) => node.type === "textarea" && node.props["aria-label"] === "媒体模型 JSON")[0];
+  const initial = JSON.parse(json.props.value);
+  assert.deepEqual(initial.map((item) => [item.id, item.upstreamModel, item.billingUnit, item.priceMicro]), [
+    ["toapis-seedance-2.5-ext-720p", "seedance-2.5-ext", "request", 8_750_000],
+  ]);
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "保存配置")[0].props.onClick();
+  tree = await f.settle();
+  const saved = JSON.parse(f.calls.find((call) => call.options).options.body);
+  assert.equal(saved[0].upstreamModel, "seedance-2.5-ext");
+  assert.equal(saved[0].billingUnit, "request");
+  assert.equal(saved[0].costMicro, 8_750_000);
+  assert.equal(saved[0].priceMicro, 8_750_000);
+  assert.equal(saved[0].videoReference?.priceMicro, 8_750_000);
+  assert.equal(output.toApiModel(output.draftsFromJson(JSON.stringify([saved[0]]))[0]).upstreamModel, "seedance-2.5-ext");
 });
 
 const minimaxModel = (upstreamModel = "MiniMax-H3") => ({

@@ -49,6 +49,45 @@ func videoTokenChargeMicro(tokens, rateMicroPerMillion int64) int64 {
 	return (tokens*rateMicroPerMillion + 999_999) / 1_000_000
 }
 
+// mediaVideoQuoteMicro 统一视频准入与报价：按次不依赖时长，Token 仅按输出时长估算上限。
+// 真正扣费仍使用供应商返回的 usage.total_tokens。
+func mediaVideoQuoteMicro(model Model, resolution, ratio string, duration int) int64 {
+	switch model.EffectiveBillingUnit() {
+	case BillingUnitRequest:
+		return model.PriceMicro
+	case BillingUnitToken:
+		return videoTokenChargeMicro(estimateVideoTokens(resolution, ratio, 0, float64(duration)), model.TokenPriceMicroPerMillion)
+	default:
+		return model.PriceMicro * int64(duration)
+	}
+}
+
+func mediaVideoReferenceQuoteMicro(model Model, reference *VideoReferenceCapability, resolution, ratio string, duration int) int64 {
+	if model.EffectiveBillingUnit() == BillingUnitRequest {
+		return model.PriceMicro
+	}
+	if reference != nil && reference.TokenPriceMicroPerMillion > 0 {
+		return videoReferenceQuoteMicro(reference, resolution, ratio, duration)
+	}
+	if model.EffectiveBillingUnit() == BillingUnitToken {
+		return videoTokenChargeMicro(estimateVideoTokens(resolution, ratio, 15, float64(duration)), model.TokenPriceMicroPerMillion)
+	}
+	if reference != nil {
+		return videoReferenceQuoteMicro(reference, resolution, ratio, duration)
+	}
+	return mediaVideoQuoteMicro(model, resolution, ratio, duration)
+}
+
+func mediaVideoTokenRates(p *Project, model Model) (price, cost int64, ok bool) {
+	if videoReferenceRequested(p) && model.VideoReference != nil && model.VideoReference.TokenPriceMicroPerMillion > 0 {
+		return model.VideoReference.TokenPriceMicroPerMillion, model.VideoReference.TokenCostMicroPerMillion, true
+	}
+	if model.EffectiveBillingUnit() == BillingUnitToken && model.TokenPriceMicroPerMillion > 0 {
+		return model.TokenPriceMicroPerMillion, model.TokenCostMicroPerMillion, true
+	}
+	return 0, 0, false
+}
+
 // videoReferenceQuoteMicro 使用 15 秒输入上限报价，覆盖 Ark 短输入最低 token 门槛；
 // 实际结算会按 completion_tokens 重算，通常低于这个上限。
 func videoReferenceQuoteMicro(ref *VideoReferenceCapability, resolution, ratio string, outputSeconds int) int64 {

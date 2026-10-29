@@ -43,7 +43,21 @@ func ValidateModels(models []Model) error {
 			return ErrInvalid
 		}
 		displayNames[group] = m.DisplayName
-		if strings.TrimSpace(m.ID) == "" || m.Name == "" || seen[m.ID] || m.ProviderID == "" || m.UpstreamModel == "" || (m.Adapter != "ark" && m.Adapter != "toapis") || m.PriceVersion == "" || m.PriceMicro <= 0 || m.PriceMicro > 100_000_000 || m.CostMicro < 0 || m.CostMicro > 100_000_000 {
+		unit := m.EffectiveBillingUnit()
+		priceMissing := m.PriceMicro <= 0 && !(m.Kind == "video" && unit == BillingUnitToken && m.TokenPriceMicroPerMillion > 0)
+		if strings.TrimSpace(m.ID) == "" || m.Name == "" || seen[m.ID] || m.ProviderID == "" || m.UpstreamModel == "" || (m.Adapter != "ark" && m.Adapter != "toapis") || m.PriceVersion == "" || m.PriceMicro < 0 || priceMissing || m.PriceMicro > 100_000_000 || m.CostMicro < 0 || m.CostMicro > 100_000_000 {
+			return ErrInvalid
+		}
+		if m.Kind == "image" && unit != "image" || m.Kind == "video" && unit != BillingUnitSecond && unit != BillingUnitRequest && unit != BillingUnitToken {
+			return ErrInvalid
+		}
+		if m.TokenPriceMicroPerMillion < 0 || m.TokenPriceMicroPerMillion > 1_000_000_000 || m.TokenCostMicroPerMillion < 0 || m.TokenCostMicroPerMillion > 1_000_000_000 {
+			return ErrInvalid
+		}
+		if unit != BillingUnitToken && (m.TokenPriceMicroPerMillion != 0 || m.TokenCostMicroPerMillion != 0) {
+			return ErrInvalid
+		}
+		if unit == BillingUnitRequest && m.PriceMicro <= 0 || unit == BillingUnitToken && m.TokenPriceMicroPerMillion <= 0 {
 			return ErrInvalid
 		}
 		if m.Adapter == "toapis" && validateToAPIsModel(m) != nil {
@@ -104,11 +118,14 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	if (b.Mode != "auto" && b.Mode != "replicate") || (b.GenerationMode != "" && b.GenerationMode != "storyboard" && b.GenerationMode != "video_reference") {
 		return ErrInvalid
 	}
+	if err := validateBriefReferenceMode(b); err != nil {
+		return err
+	}
 	if strings.TrimSpace(b.Product) == "" || utf8.RuneCountInString(b.Product) > 200 || utf8.RuneCountInString(b.SellingPoints) > 4000 || (!replica && len(b.AssetIDs) == 0) || len(b.AssetIDs) > 20 || len(b.ReferenceURLs) > 10 || b.MaxCreditsMicro <= 0 || b.MaxCreditsMicro > 1_000_000_000 || (!replica && b.Duration < 5) || b.Duration < 1 || b.Duration > 120 || utf8.RuneCountInString(b.ReplacementInstructions) > 4000 {
 		return ErrInvalid
 	}
 	if replica {
-		if b.Mode != "replicate" || !b.ReviewPlan || !finitePositive(b.ReferenceDurationSeconds) || b.ReferenceDurationSeconds > MaxReferenceSeconds || (len(b.AssetIDs) == 0 && b.ImageModel == "") {
+		if b.Mode != "replicate" || !b.ReviewPlan || !finitePositive(b.ReferenceDurationSeconds) || b.ReferenceDurationSeconds > MaxReferenceSeconds || (len(b.AssetIDs) == 0 && b.ImageModel == "" && b.ReferenceMode != "multimodal") {
 			return ErrInvalid
 		}
 		found := false
@@ -177,7 +194,9 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 		if m.VideoReference == nil {
 			return fmt.Errorf("video_reference_unsupported")
 		}
-		// 设置中的图片是候选池；实际供应商输入由审阅方案去重，或由显式生图阶段产出一张。
+	}
+	if err := validateBriefReferenceImages(b, m); err != nil {
+		return err
 	}
 	if !slices.Contains(m.Resolutions, b.Resolution) {
 		return ErrInvalid
@@ -218,6 +237,9 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	return nil
 }
 func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
+	if err := validateBriefReferenceMode(b); err != nil {
+		return nil, 0, err
+	}
 	if err := validateFinishingOptions(b); err != nil {
 		return nil, 0, err
 	}
@@ -247,6 +269,10 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 	if e != nil {
 		return nil, 0, e
 	}
+	if err := validateBriefReferenceImages(b, v); err != nil {
+		return nil, 0, err
+	}
+	globalReferences := b.ReferenceMode == "multimodal"
 	out := []Shot{}
 	var total int64
 	duration := 0
@@ -256,11 +282,11 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 			return nil, 0, ErrInvalid
 		}
 		validShotSource := refs[p.SourceURL] || (replica && p.SourceURL == "" && len(b.ReferenceURLs) == 0 && refs[""])
-		if !validShotSource || math.IsNaN(p.SourceStart) || math.IsInf(p.SourceStart, 0) || !finitePositive(p.SourceEnd) || p.SourceStart < 0 || p.SourceEnd <= p.SourceStart || (!wholeReference && !v.DurationSupported(p.Duration)) || (wholeReference && (p.Duration < 2 || p.Duration > 30)) || ((!replica || p.AssetID != "") && !slices.Contains(b.AssetIDs, p.AssetID)) || p.Prompt == "" || len(p.Prompt) > 12000 || len(p.Subtitle) > 900 || p.Framing == "" || p.Camera == "" || p.Action == "" || p.Purpose == "" {
+		if !validShotSource || math.IsNaN(p.SourceStart) || math.IsInf(p.SourceStart, 0) || !finitePositive(p.SourceEnd) || p.SourceStart < 0 || p.SourceEnd <= p.SourceStart || (!wholeReference && !v.DurationSupported(p.Duration)) || (wholeReference && (p.Duration < 2 || p.Duration > 30)) || ((!replica && !globalReferences || p.AssetID != "") && !slices.Contains(b.AssetIDs, p.AssetID)) || p.Prompt == "" || len(p.Prompt) > 12000 || len(p.Subtitle) > 900 || p.Framing == "" || p.Camera == "" || p.Action == "" || p.Purpose == "" {
 			return nil, 0, ErrInvalid
 		}
 		if replica {
-			if math.Abs(p.SourceStart-sourceEnd) > .001 || p.SourceEnd > b.ReferenceDurationSeconds+.001 || p.SourceEnd-p.SourceStart < 1.0/30 || (!wholeReference && p.SourceEnd-p.SourceStart > float64(p.Duration)+.001) || (!wholeReference && p.AssetID == "" && (b.ImageModel == "" || p.ImagePrompt == "")) || (p.Transition != "" && p.Transition != "cut" && p.Transition != "fade") || utf8.RuneCountInString(p.TransitionDescription) > 1000 || utf8.RuneCountInString(p.Subject) > 1000 || utf8.RuneCountInString(p.Scene) > 1000 || utf8.RuneCountInString(p.Sound) > 1000 {
+			if math.Abs(p.SourceStart-sourceEnd) > .001 || p.SourceEnd > b.ReferenceDurationSeconds+.001 || p.SourceEnd-p.SourceStart < 1.0/30 || (!wholeReference && p.SourceEnd-p.SourceStart > float64(p.Duration)+.001) || (!wholeReference && !globalReferences && p.AssetID == "" && (b.ImageModel == "" || p.ImagePrompt == "")) || (p.Transition != "" && p.Transition != "cut" && p.Transition != "fade") || utf8.RuneCountInString(p.TransitionDescription) > 1000 || utf8.RuneCountInString(p.Subject) > 1000 || utf8.RuneCountInString(p.Scene) > 1000 || utf8.RuneCountInString(p.Sound) > 1000 {
 				return nil, 0, ErrInvalid
 			}
 			if p.SourceURL != "" && len(b.ReferenceURLs) > 0 && !slices.Contains(b.ReferenceURLs, p.SourceURL) {
@@ -272,6 +298,10 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 			// 亚秒镜头属于审阅事实，供应商的输入限制只约束下方派生的完整原片。
 			continue
 		}
+		if globalReferences {
+			// 制作单的全局图片是参考集合；历史镜头文字或绑定不能重新开启首帧阶段。
+			p.AssetID, p.ImagePrompt = "", ""
+		}
 		var q int64
 		if b.GenerationMode == "video_reference" {
 			if v.VideoReference == nil {
@@ -280,9 +310,9 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 			if p.SourceEnd-p.SourceStart < float64(MinReferenceClipSeconds)-.001 || p.SourceEnd-p.SourceStart > float64(v.VideoReference.MaxDurationSeconds)+.001 {
 				return nil, 0, fmt.Errorf("video_reference_duration_unsupported")
 			}
-			q = videoReferenceQuoteMicro(v.VideoReference, b.Resolution, b.AspectRatio, p.Duration)
+			q = mediaVideoReferenceQuoteMicro(v, v.VideoReference, b.Resolution, b.AspectRatio, p.Duration)
 		} else {
-			q = v.PriceMicro * int64(p.Duration)
+			q = mediaVideoQuoteMicro(v, b.Resolution, b.AspectRatio, p.Duration)
 		}
 		if p.ImagePrompt != "" && b.ImageModel != "" {
 			im, e := FindModel(models, b.ImageModel, "image")

@@ -12,7 +12,7 @@ func TestMediaOverviewResearchPlatformsAreExplicitAndAuthenticated(t *testing.T)
 		t.Fatalf("overview=%d %s", response.Code, response.Body.String())
 	}
 	capabilities, ok := dataOf(t, response)["capabilities"].(map[string]any)
-	if !ok || !reflect.DeepEqual(capabilities["researchPlatforms"], []any{"douyin", "xiaohongshu", "bilibili"}) || capabilities["creativeBrief"] != true {
+	if !ok || !reflect.DeepEqual(capabilities["researchPlatforms"], []any{"douyin", "xiaohongshu", "bilibili"}) || capabilities["creativeBrief"] != true || capabilities["imageReferenceMode"] != true {
 		t.Fatalf("capability wire=%s", response.Body.String())
 	}
 	if response = sourceRequest(f, "", "GET", "/api/v1/media/overview", nil); response.Code != 401 {

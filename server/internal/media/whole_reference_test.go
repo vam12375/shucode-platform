@@ -27,6 +27,67 @@ func wholeReferenceFixture() (Brief, []Model, Plan) {
 	return brief, []Model{model}, plan
 }
 
+func TestWholeReferenceMultimodalUsesGlobalImagesWithoutFirstFrameBindings(t *testing.T) {
+	brief, models, plan := wholeReferenceFixture()
+	brief.ReferenceMode = "multimodal"
+	brief.AssetIDs = []string{"second", "replacement", "second"}
+	models[0].UpstreamModel = "doubao-seedance-2-0-mini-260615"
+	for i := range plan.Shots {
+		plan.Shots[i].AssetID = ""
+	}
+	shots, quote, err := BuildShots(brief, plan, models)
+	if err != nil || len(shots) != 1 || quote != 6_300_000 {
+		t.Fatalf("global images were rejected: shots=%+v quote=%d err=%v", shots, quote, err)
+	}
+	if shots[0].Plan.AssetID != "" || shots[0].Plan.ImagePrompt != "" {
+		t.Fatalf("global image became a first frame: %+v", shots[0].Plan)
+	}
+	project := &Project{Brief: brief, Plan: &plan, Shots: shots}
+	if got := wholeReferenceImageIDs(project, shots[0]); !reflect.DeepEqual(got, []string{"second", "replacement"}) {
+		t.Fatalf("global reference order/dedup changed: %v", got)
+	}
+	for i := range plan.Shots {
+		plan.Shots[i].AssetID = "replacement"
+	}
+	if got := wholeReferenceImageIDs(project, shots[0]); !reflect.DeepEqual(got, []string{"second", "replacement"}) {
+		t.Fatalf("shot binding changed global references: %v", got)
+	}
+}
+
+func TestWholeReferenceReferenceModeRequiresCompatibleCapabilityAndInputs(t *testing.T) {
+	for name, mutate := range map[string]func(*Brief, []Model){
+		"unsupported-model":   func(_ *Brief, m []Model) { m[0].UpstreamModel = "unadapted-video" },
+		"unsupported-adapter": func(_ *Brief, m []Model) { m[0].Adapter = "toapis"; m[0].UpstreamModel = "MiniMax-H3" },
+		"image-limit":         func(b *Brief, _ []Model) { b.AssetIDs = []string{"replacement", "second", "third"} },
+		"empty-images":        func(b *Brief, _ []Model) { b.AssetIDs = nil },
+		"first-frame-model":   func(b *Brief, _ []Model) { b.ImageModel = "i" },
+		"invalid-mode":        func(b *Brief, _ []Model) { b.ReferenceMode = "reference_image" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			brief, models, plan := wholeReferenceFixture()
+			brief.ReferenceMode = "multimodal"
+			models[0].UpstreamModel = "doubao-seedance-2-0-mini-260615"
+			for i := range plan.Shots {
+				plan.Shots[i].AssetID = ""
+			}
+			mutate(&brief, models)
+			if _, _, err := BuildShots(brief, plan, models); err == nil {
+				t.Fatal("unsupported reference mode reached quote")
+			}
+		})
+	}
+	for _, mode := range []string{"", "frames"} {
+		t.Run("legacy-"+mode, func(t *testing.T) {
+			brief, models, plan := wholeReferenceFixture()
+			brief.ReferenceMode = mode
+			plan.Shots[0].AssetID = ""
+			if _, _, err := BuildShots(brief, plan, models); err == nil || err.Error() != "first_frame_required" {
+				t.Fatalf("legacy frames no longer require explicit first frame: %v", err)
+			}
+		})
+	}
+}
+
 func TestExplicitLegacyReviewSaveDropsOnlyUnstartedPerShotClipBindings(t *testing.T) {
 	for _, kind := range []string{"pending", "queued", "submitted", "diagnostic", "image", "admission", "provider", "charged", "attempt", "cancelled"} {
 		t.Run(kind, func(t *testing.T) {

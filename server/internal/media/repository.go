@@ -24,6 +24,9 @@ func (r Repository) Models(ctx context.Context) ([]Model, error) {
 	if len(raw) > 0 {
 		err = json.Unmarshal(raw, &models)
 	}
+	for index := range models {
+		models[index] = NormalizeSeedanceDuration(models[index])
+	}
 	return models, err
 }
 func (r Repository) Get(ctx context.Context, team, id string) (*Project, error) {

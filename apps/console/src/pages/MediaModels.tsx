@@ -19,6 +19,11 @@ const ADAPTER_OPTIONS = [
   { value: "ark", label: "Ark" },
   { value: "toapis", label: "ToAPIs" },
 ];
+const BILLING_UNIT_OPTIONS = [
+  { value: "second", label: "按秒" },
+  { value: "request", label: "按次" },
+  { value: "token", label: "按 Token" },
+];
 const RESOLUTIONS = ["480p", "720p", "1080p", "4k"];
 const DEFAULT_MIN_DURATION = 4;
 const DEFAULT_MAX_DURATION = 15;
@@ -64,6 +69,27 @@ const TOAPIS_SEEDANCE_PRESETS = SEEDANCE_PRESETS.map((preset) => ({
   upstreamModel: preset.key === "seedance-base" ? "seedance-2" : `seedance-2-${preset.key.slice("seedance-".length)}`,
   tiers: preset.tiers.map((tier) => ({ ...tier, id: `toapis-${tier.id}` })),
 }));
+
+type MediaBillingUnit = "second" | "request" | "token";
+
+const TOAPIS_SEEDANCE_25_PRESETS = [
+  {
+    upstreamModel: "seedance-2-5",
+    name: "ToAPIs Seedance 2.5",
+    billingUnit: "token" as const,
+    tiers: [
+      { resolution: "480p", tokenCostCredits: "70", tokenPriceCredits: "70", videoReferenceTokenCostCredits: "42", videoReferenceTokenPriceCredits: "42" },
+      { resolution: "720p", tokenCostCredits: "70", tokenPriceCredits: "70", videoReferenceTokenCostCredits: "42", videoReferenceTokenPriceCredits: "42" },
+      { resolution: "1080p", tokenCostCredits: "77", tokenPriceCredits: "77", videoReferenceTokenCostCredits: "46", videoReferenceTokenPriceCredits: "46" },
+    ].map((tier) => ({ ...tier, id: `toapis-seedance-2-5-${tier.resolution}` })),
+  },
+  {
+    upstreamModel: "seedance-2.5-ext",
+    name: "ToAPIs Seedance 2.5 Ext",
+    billingUnit: "request" as const,
+    tiers: [{ id: "toapis-seedance-2.5-ext-720p", resolution: "720p", costCredits: "8.75", priceCredits: "8.75", videoReferenceTokenCostCredits: "0", videoReferenceTokenPriceCredits: "0" }],
+  },
+] as const;
 
 const TOAPIS_MINIMAX_CAPABILITIES: Record<string, { resolutions: readonly string[]; minDuration: number; videoReference: boolean }> = {
   "MiniMax-H3": { resolutions: ["768p", "2K"], minDuration: 4, videoReference: true },
@@ -127,6 +153,9 @@ interface MediaModel {
   // 旧目录的枚举时长；仅显式转换后才改为连续区间。
   durations?: number[];
   costMicro: number;
+  billingUnit?: MediaBillingUnit;
+  tokenCostMicroPerMillion?: number;
+  tokenPriceMicroPerMillion?: number;
   generateAudio: boolean;
   priceMicro: number;
   priceVersion: string;
@@ -167,6 +196,9 @@ export interface MediaModelDraft {
   maxDuration: string;
   legacyDurations?: number[];
   costCredits: string;
+  billingUnit?: MediaBillingUnit;
+  tokenCostCredits?: string;
+  tokenPriceCredits?: string;
   generateAudio: boolean;
   priceCredits: string;
   priceVersion: string;
@@ -185,6 +217,12 @@ export interface MediaModelDraft {
 export interface MediaFamilyGroup {
   id: string;
   indexes: number[];
+}
+
+// Seedance 的 4–15 秒能力是连续整数区间。历史目录可能还带有 [4, 5, 10, 15]
+// 之类的旧枚举；加载和保存时统一成连续区间，避免控制台继续传播过时说法。
+function isSeedanceVideoModel(model: Pick<MediaModel, "kind" | "upstreamModel"> | Pick<MediaModelDraft, "kind" | "upstreamModel">): boolean {
+  return model.kind === "video" && model.upstreamModel.trim().toLowerCase().includes("seedance");
 }
 
 function errorMessage(error: unknown): string {
@@ -236,6 +274,8 @@ function modelResolutions(draft: MediaModelDraft): readonly string[] {
   if (draft.adapter === "toapis") {
     const minimax = minimaxCapability(draft.upstreamModel.trim());
     if (minimax) return minimax.resolutions;
+    const seedance25 = TOAPIS_SEEDANCE_25_PRESETS.find((preset) => preset.upstreamModel === draft.upstreamModel.trim());
+    if (seedance25) return seedance25.tiers.map((tier) => tier.resolution);
   }
   return draft.adapter === "toapis" && (draft.upstreamModel.trim() === "seedance-2-mini" || draft.upstreamModel.trim() === "seedance-2-fast")
     ? ["480p", "720p"]
@@ -304,6 +344,7 @@ function durationBounds(model: MediaModel): { min: number; max: number } {
 
 export function toDraft(model: MediaModel): MediaModelDraft {
   const bounds = durationBounds(model);
+  const seedanceContinuous = isSeedanceVideoModel(model);
   const hasRange = Boolean(
     model.minDuration && model.maxDuration && model.maxDuration >= model.minDuration,
   );
@@ -320,13 +361,16 @@ export function toDraft(model: MediaModel): MediaModelDraft {
     adapter: model.adapter ?? "ark",
     resolutions: [...(model.resolutions ?? [])],
     ...(model.aspectRatios?.length ? { supportedAspectRatios: [...model.aspectRatios] } : {}),
-    minDuration: String(bounds.min),
-    maxDuration: String(bounds.max),
-    // min/max 只是转换建议，不能把旧稀疏枚举在加载或修改价格时静默扩大为连续能力。
-    ...(model.kind === "video" && !hasRange && model.durations?.length
+    minDuration: String(seedanceContinuous ? DEFAULT_MIN_DURATION : bounds.min),
+    maxDuration: String(seedanceContinuous ? DEFAULT_MAX_DURATION : bounds.max),
+    // 非 Seedance 的旧稀疏枚举保留兼容；Seedance 已统一为连续 4–15 秒。
+    ...(model.kind === "video" && !seedanceContinuous && !hasRange && model.durations?.length
       ? { legacyDurations: [...model.durations] }
       : {}),
     costCredits: priceInputValue(model.costMicro ?? 0),
+    billingUnit: model.billingUnit ?? "second",
+    tokenCostCredits: priceInputValue(model.tokenCostMicroPerMillion ?? 0),
+    tokenPriceCredits: priceInputValue(model.tokenPriceMicroPerMillion ?? 0),
     generateAudio: model.generateAudio === true,
     priceCredits: priceInputValue(model.priceMicro),
     priceVersion: model.priceVersion,
@@ -352,8 +396,9 @@ export function toDraft(model: MediaModel): MediaModelDraft {
 export function toApiModel(draft: MediaModelDraft): MediaModel {
   const upstreamModel = draft.upstreamModel.trim();
   const costMicro = parseCreditsToMicro(draft.costCredits || "0");
-  const priceMicro = parseCreditsToMicro(draft.priceCredits);
+  const priceMicro = draft.priceCredits.trim() ? parseCreditsToMicro(draft.priceCredits) : 0;
   const isVideo = draft.kind === "video";
+  const seedanceContinuous = isSeedanceVideoModel({ ...draft, upstreamModel });
   return {
     // 平台模型 ID 默认等于上游模型；手动填写后才作为独立别名保存。
     id: draft.id.trim() || upstreamModel,
@@ -372,7 +417,9 @@ export function toApiModel(draft: MediaModelDraft): MediaModel {
     // GPT 图片按分辨率独立锁价，丢弃档位会把三个 SKU 都回退为默认清晰度。
     resolutions: hasResolutionTiers(draft) ? draft.resolutions : [],
     ...(isVideo
-      ? draft.legacyDurations !== undefined
+      ? seedanceContinuous
+        ? { minDuration: DEFAULT_MIN_DURATION, maxDuration: DEFAULT_MAX_DURATION }
+        : draft.legacyDurations !== undefined
         ? { durations: [...draft.legacyDurations] }
         : {
             minDuration: Number(draft.minDuration),
@@ -380,6 +427,13 @@ export function toApiModel(draft: MediaModelDraft): MediaModel {
           }
       : {}),
     costMicro,
+    ...(draft.billingUnit !== "second" ? { billingUnit: draft.billingUnit } : {}),
+    ...(draft.billingUnit === "token" || parseCreditsToMicro(draft.tokenCostCredits || "0") > 0 || parseCreditsToMicro(draft.tokenPriceCredits || "0") > 0
+      ? {
+          tokenCostMicroPerMillion: parseCreditsToMicro(draft.tokenCostCredits || "0"),
+          tokenPriceMicroPerMillion: parseCreditsToMicro(draft.tokenPriceCredits || "0"),
+        }
+      : {}),
     generateAudio: isVideo ? draft.generateAudio : false,
     priceMicro,
     priceVersion: draft.priceVersion.trim(),
@@ -409,24 +463,28 @@ export function toApiModel(draft: MediaModelDraft): MediaModel {
 
 // 共享字段只有卡片一个编辑入口；逐档副本仅用于兼容现有目录 API 和保留导入冲突证据。
 function sharedConfiguration(draft: MediaModelDraft): Partial<MediaModelDraft> {
+  const videoReference = draft.videoReference ? { ...draft.videoReference } : undefined;
   return {
     displayName: draft.displayName,
     kind: draft.kind,
     providerId: draft.providerId,
     upstreamModel: draft.upstreamModel,
     adapter: draft.adapter ?? "ark",
+    ...(draft.billingUnit !== undefined ? { billingUnit: draft.billingUnit } : {}),
+    ...(draft.billingUnit !== "token" && draft.tokenCostCredits !== undefined ? { tokenCostCredits: draft.tokenCostCredits } : {}),
+    ...(draft.billingUnit !== "token" && draft.tokenPriceCredits !== undefined ? { tokenPriceCredits: draft.tokenPriceCredits } : {}),
     priceVersion: draft.priceVersion,
     generateAudio: draft.generateAudio,
     minDuration: draft.minDuration,
     maxDuration: draft.maxDuration,
     legacyDurations: draft.legacyDurations ? [...draft.legacyDurations] : undefined,
-    videoReference: draft.videoReference ? { ...draft.videoReference } : undefined,
+    videoReference,
   };
 }
 
 function sharedFields(draft: MediaModelDraft): Record<string, unknown> {
   const vr = draft.videoReference?.enabled ? draft.videoReference : null;
-  return {
+  const fields: Record<string, unknown> = {
     类型: draft.kind,
     上游供应商: draft.providerId,
     上游模型: draft.upstreamModel.trim(),
@@ -440,9 +498,13 @@ function sharedFields(draft: MediaModelDraft): Record<string, unknown> {
     视频参考时长上限: vr?.maxDurationSeconds.trim() ?? null,
     视频参考图上限: vr?.maxImages.trim() ?? null,
     参考音频时长上限: vr ? (vr.maxAudioSeconds ?? "0").trim() : null,
-    "视频参考 token 成本": vr?.tokenCostCredits.trim() ?? null,
-    "视频参考 token 售价": vr?.tokenPriceCredits.trim() ?? null,
   };
+  // Legacy/Ark reference token rates remain shared. Seedance 2.5 rates are SKU-specific.
+  if (draft.billingUnit !== "token") {
+    fields["视频参考 token 成本"] = vr?.tokenCostCredits.trim() ?? null;
+    fields["视频参考 token 售价"] = vr?.tokenPriceCredits.trim() ?? null;
+  }
+  return fields;
 }
 
 function sharedConflicts(drafts: MediaModelDraft[]): string[] {
@@ -547,6 +609,9 @@ function tierProblem(
   if (!upstreamModel) return `「${label}」缺少上游模型 ID。`;
   const adapter = draft.adapter ?? "ark";
   if (adapter !== "ark" && adapter !== "toapis") return `「${label}」适配器不受支持。`;
+  if (draft.billingUnit !== "second" && draft.billingUnit !== "request" && draft.billingUnit !== "token") {
+    return `「${label}」计费单位不受支持。`;
+  }
   if (adapter === "toapis") {
     if (draft.kind === "image") {
       if (!isToapisGptImage(draft)) return `「${label}」ToAPIs 仅支持已接入的 GPT Image 2 / 2.5 图片模型。`;
@@ -556,8 +621,8 @@ function tierProblem(
       if (draft.generateAudio) return `「${label}」图片模型不支持生成音频。`;
     } else {
       const minimax = minimaxCapability(upstreamModel);
-      if (!minimax && !TOAPIS_SEEDANCE_PRESETS.some((preset) => preset.upstreamModel === upstreamModel)) {
-        return `「${label}」ToAPIs 仅支持已接入的 Seedance 2.0 和 MiniMax H3 系列视频模型。`;
+      if (!minimax && !TOAPIS_SEEDANCE_PRESETS.some((preset) => preset.upstreamModel === upstreamModel) && !TOAPIS_SEEDANCE_25_PRESETS.some((preset) => preset.upstreamModel === upstreamModel)) {
+        return `「${label}」ToAPIs 仅支持已接入的 Seedance 2.0 / 2.5 和 MiniMax H3 系列视频模型。`;
       }
       if (draft.resolutions.some((resolution) => !modelResolutions(draft).includes(resolution))) {
         return `「${label}」分辨率不受该 ToAPIs 模型支持。`;
@@ -568,11 +633,15 @@ function tierProblem(
       }
       if (minimax && draft.generateAudio) return `「${label}」MiniMax H3 音频由模型决定，不支持生成音频开关。`;
       if (minimax && !minimax.videoReference && draft.videoReference?.enabled) return `「${label}」MiniMax H3 Max Turbo 不支持视频参考。`;
-      if (draft.videoReference?.enabled && (
-        Number(draft.videoReference.maxDurationSeconds) > 15 ||
+      if (draft.videoReference?.enabled && Number(draft.videoReference.maxDurationSeconds) > 15) {
+        return `「${label}」ToAPIs 视频参考片段上限为 15 秒。`;
+      }
+      if (draft.videoReference?.enabled && draft.billingUnit !== "token" && (
         Number(draft.videoReference.tokenCostCredits || "0") !== 0 ||
         Number(draft.videoReference.tokenPriceCredits || "0") !== 0
-      )) return `「${label}」ToAPIs 视频参考上限为 15 秒，按输出秒数计费，不能配置 token 费率。`;
+      )) {
+        return `「${label}」ToAPIs 按秒或按次计费模型不能配置视频参考 token 费率。`;
+      }
     }
   }
   if (!draft.priceVersion.trim()) return `「${label}」缺少价格版本。`;
@@ -583,11 +652,23 @@ function tierProblem(
   if (costMicro < 0 || costMicro > 100_000_000) {
     return `「${label}」成本价需在 0–100 credit 之间。`;
   }
-  if (!/^\d+(\.\d{1,6})?$/.test(draft.priceCredits.trim())) {
+  if (draft.billingUnit === "token") {
+    for (const [field, rawValue] of [["Token 成本", draft.tokenCostCredits], ["Token 售价", draft.tokenPriceCredits]] as const) {
+      const value = rawValue ?? "";
+      if (!/^\d+(\.\d{1,6})?$/.test(value.trim())) {
+        return `「${label}」${field}格式不正确（credit/1M token，最多 6 位小数）。`;
+      }
+      const rate = parseCreditsToMicro(value);
+      if (rate < 0 || rate > 1_000_000_000 || field === "Token 售价" && rate <= 0) {
+        return `「${label}」${field}需在${field === "Token 售价" ? "大于 0 且" : ""}0–1000 credit/1M token 之间。`;
+      }
+    }
+  }
+  if (!/^\d+(\.\d{1,6})?$/.test(draft.priceCredits.trim()) && !(draft.billingUnit === "token" && draft.priceCredits.trim() === "")) {
     return `「${label}」单价格式不正确（credit，最多 6 位小数）。`;
   }
-  const micro = parseCreditsToMicro(draft.priceCredits);
-  if (micro <= 0 || micro > 100_000_000) {
+  const micro = draft.priceCredits.trim() ? parseCreditsToMicro(draft.priceCredits) : 0;
+  if ((micro <= 0 && draft.billingUnit !== "token") || micro > 100_000_000) {
     return `「${label}」单价需在 0–100 credit 之间。`;
   }
   if (draft.kind === "video") {
@@ -729,6 +810,8 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
     const kind =
       record.kind === "image" || record.kind === "video" ? record.kind : null;
     if (!kind) throw new Error(`第 ${index + 1} 项的 kind 必须是 image 或 video。`);
+    const upstreamModel = typeof record.upstreamModel === "string" ? record.upstreamModel : "";
+    const seedanceContinuous = isSeedanceVideoModel({ kind, upstreamModel });
     const priceMicro = Number(record.priceMicro);
     const costMicro = Number(record.costMicro);
     const legacyDurations = Array.isArray(record.durations)
@@ -737,13 +820,17 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
           .filter((item) => Number.isInteger(item) && item > 0)
       : [];
     const minDuration =
-      Number.isInteger(Number(record.minDuration)) && Number(record.minDuration) > 0
+      seedanceContinuous
+        ? DEFAULT_MIN_DURATION
+        : Number.isInteger(Number(record.minDuration)) && Number(record.minDuration) > 0
         ? Number(record.minDuration)
         : legacyDurations.length
           ? Math.min(...legacyDurations)
           : DEFAULT_MIN_DURATION;
     const maxDuration =
-      Number.isInteger(Number(record.maxDuration)) && Number(record.maxDuration) > 0
+      seedanceContinuous
+        ? DEFAULT_MAX_DURATION
+        : Number.isInteger(Number(record.maxDuration)) && Number(record.maxDuration) > 0
         ? Number(record.maxDuration)
         : legacyDurations.length
           ? Math.max(...legacyDurations)
@@ -789,8 +876,7 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
       kind,
       providerId: typeof record.providerId === "string" ? record.providerId : "",
       ...(record.routes !== undefined ? { routes: importedMediaRoutes(record.routes, index) } : {}),
-      upstreamModel:
-        typeof record.upstreamModel === "string" ? record.upstreamModel : "",
+      upstreamModel,
       adapter: typeof record.adapter === "string" ? record.adapter : "ark",
       resolutions: Array.isArray(record.resolutions)
         ? record.resolutions.filter(
@@ -799,11 +885,20 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
         : [],
       minDuration: String(minDuration),
       maxDuration: String(maxDuration),
-      ...(kind === "video" && !hasRange && legacyDurations.length ? { legacyDurations } : {}),
+      ...(kind === "video" && !seedanceContinuous && !hasRange && legacyDurations.length ? { legacyDurations } : {}),
       costCredits:
         Number.isFinite(costMicro) && costMicro >= 0
           ? priceInputValue(costMicro)
           : "0",
+      billingUnit: record.billingUnit === "request" || record.billingUnit === "token"
+        ? record.billingUnit
+        : "second",
+      tokenCostCredits: Number.isSafeInteger(Number(record.tokenCostMicroPerMillion)) && Number(record.tokenCostMicroPerMillion) >= 0
+        ? priceInputValue(Number(record.tokenCostMicroPerMillion))
+        : "0",
+      tokenPriceCredits: Number.isSafeInteger(Number(record.tokenPriceMicroPerMillion)) && Number(record.tokenPriceMicroPerMillion) >= 0
+        ? priceInputValue(Number(record.tokenPriceMicroPerMillion))
+        : "0",
       generateAudio: kind === "video" && record.generateAudio === true,
       priceCredits:
         Number.isFinite(priceMicro) && priceMicro > 0
@@ -997,7 +1092,21 @@ export function MediaModelsPage() {
     const target = new Set(indexes);
     setDrafts((previous) =>
       previous.map((draft, index) =>
-        target.has(index) ? { ...draft, ...patch } : draft,
+        target.has(index)
+          ? {
+              ...draft,
+              ...patch,
+              ...(patch.adapter === undefined && patch.videoReference?.enabled && draft.videoReference?.enabled
+                ? {
+                    videoReference: {
+                      ...patch.videoReference,
+                      tokenCostCredits: draft.videoReference.tokenCostCredits,
+                      tokenPriceCredits: draft.videoReference.tokenPriceCredits,
+                    },
+                  }
+                : {}),
+            }
+          : draft,
       ),
     );
     setDirty(true);
@@ -1071,9 +1180,11 @@ export function MediaModelsPage() {
         name: tierName(familyNameOf(lead), { ...lead, resolutions: [resolution] }),
         resolutions: [resolution],
         costCredits: "0",
+        tokenCostCredits: "0",
+        tokenPriceCredits: "",
         priceCredits: "",
         videoReference: lead.videoReference
-          ? { ...lead.videoReference, enabled: true }
+          ? { ...lead.videoReference, enabled: true, tokenCostCredits: "0", tokenPriceCredits: "0" }
           : undefined,
       };
       const copy = [...previous];
@@ -1138,6 +1249,9 @@ export function MediaModelsPage() {
         minDuration: String(DEFAULT_MIN_DURATION),
         maxDuration: String(DEFAULT_MAX_DURATION),
         costCredits: "0",
+        billingUnit: "second",
+        tokenCostCredits: "0",
+        tokenPriceCredits: "0",
         generateAudio: false,
         priceCredits: "",
         priceVersion: "v1",
@@ -1155,8 +1269,8 @@ export function MediaModelsPage() {
     return ark?.id ?? providers.find((provider) => provider.enabled)?.id ?? providers[0]?.id ?? "";
   };
 
-  const addVideoPresets = (adapter: "ark" | "toapis", family: "seedance" | "minimax" = "seedance"): void => {
-    const familyName = family === "minimax" ? "MiniMax H3" : "Seedance 2.0";
+  const addVideoPresets = (adapter: "ark" | "toapis", family: "seedance" | "minimax" | "seedance25" | "seedance25ext" = "seedance"): void => {
+    const familyName = family === "minimax" ? "MiniMax H3" : family === "seedance25" ? "Seedance 2.5" : family === "seedance25ext" ? "Seedance 2.5 Ext" : "Seedance 2.0";
     const toapisProvider = providers.find((provider) => {
       try {
         return provider.enabled && ["toapis.com", "toapis.cn"].includes(new URL(provider.baseUrl).hostname);
@@ -1176,7 +1290,14 @@ export function MediaModelsPage() {
     );
     const additions: MediaModelDraft[] = [];
     const touched: string[] = [];
-    for (const preset of family === "minimax" ? TOAPIS_MINIMAX_PRESETS : adapter === "toapis" ? TOAPIS_SEEDANCE_PRESETS : SEEDANCE_PRESETS) {
+    const presets = family === "minimax"
+      ? TOAPIS_MINIMAX_PRESETS
+      : family === "seedance25"
+        ? TOAPIS_SEEDANCE_25_PRESETS.filter((preset) => preset.upstreamModel === "seedance-2-5")
+        : family === "seedance25ext"
+          ? TOAPIS_SEEDANCE_25_PRESETS.filter((preset) => preset.upstreamModel === "seedance-2.5-ext")
+          : adapter === "toapis" ? TOAPIS_SEEDANCE_PRESETS : SEEDANCE_PRESETS;
+    for (const preset of presets) {
       const existingFamily = drafts.find(
         (draft) =>
           draft.kind === "video" &&
@@ -1188,6 +1309,14 @@ export function MediaModelsPage() {
       const before = additions.length;
       for (const tier of preset.tiers) {
         if (existing.has(tier.id)) continue;
+        const tierPricing = tier as typeof tier & {
+          costCredits?: string;
+          priceCredits?: string;
+          tokenCostCredits?: string;
+          tokenPriceCredits?: string;
+          videoReferenceTokenCostCredits?: string;
+          videoReferenceTokenPriceCredits?: string;
+        };
         additions.push({
           familyId,
           id: tier.id,
@@ -1199,12 +1328,38 @@ export function MediaModelsPage() {
           resolutions: [tier.resolution],
           minDuration: String(family === "minimax" ? TOAPIS_MINIMAX_CAPABILITIES[preset.upstreamModel]!.minDuration : DEFAULT_MIN_DURATION),
           maxDuration: String(DEFAULT_MAX_DURATION),
-          costCredits: "0",
+          costCredits: tierPricing.costCredits ?? "0",
+          billingUnit: "billingUnit" in preset ? preset.billingUnit : "second",
+          tokenCostCredits: tierPricing.tokenCostCredits ?? "0",
+          tokenPriceCredits: tierPricing.tokenPriceCredits ?? "0",
           generateAudio: family !== "minimax",
-          priceCredits: "",
+          priceCredits: tierPricing.priceCredits ?? "",
           priceVersion: "v1",
+          ...("videoReferenceTokenPriceCredits" in tierPricing ? {
+            videoReference: {
+              enabled: true,
+              maxDurationSeconds: "15",
+              maxImages: "8",
+              maxSegments: "1",
+              tokenCostCredits: tierPricing.videoReferenceTokenCostCredits ?? "0",
+              tokenPriceCredits: tierPricing.videoReferenceTokenPriceCredits ?? "0",
+            },
+          } : {}),
           // 补档必须继承卡片共享配置；默认值会与旧枚举、音频或价格版本冲突并阻塞保存。
           ...(existingFamily ? sharedConfiguration(existingFamily) : {}),
+          ...(existingFamily && "videoReferenceTokenPriceCredits" in tierPricing ? {
+            videoReference: {
+              ...(existingFamily.videoReference ?? {
+                enabled: true,
+                maxDurationSeconds: "15",
+                maxImages: "8",
+                maxSegments: "1",
+              }),
+              enabled: true,
+              tokenCostCredits: tierPricing.videoReferenceTokenCostCredits ?? "0",
+              tokenPriceCredits: tierPricing.videoReferenceTokenPriceCredits ?? "0",
+            },
+          } : {}),
         });
       }
       if (additions.length > before) touched.push(familyId);
@@ -1252,6 +1407,9 @@ export function MediaModelsPage() {
         minDuration: String(DEFAULT_MIN_DURATION),
         maxDuration: String(DEFAULT_MAX_DURATION),
         costCredits: "0",
+        billingUnit: "second" as const,
+        tokenCostCredits: "0",
+        tokenPriceCredits: "0",
         generateAudio: false,
         priceCredits: "",
         priceVersion: "v1",
@@ -1294,6 +1452,7 @@ export function MediaModelsPage() {
           providerId, upstreamModel: preset.upstreamModel, adapter: "toapis",
           resolutions: [resolution], minDuration: String(DEFAULT_MIN_DURATION),
           maxDuration: String(DEFAULT_MAX_DURATION), costCredits: "0", generateAudio: false,
+          billingUnit: "second" as const, tokenCostCredits: "0", tokenPriceCredits: "0",
           priceCredits: "", priceVersion: "v1",
           ...(existingFamily ? sharedConfiguration(existingFamily) : {}),
         });
@@ -1448,7 +1607,9 @@ export function MediaModelsPage() {
       const tiers = family.indexes.map((index) => drafts[index]);
       return [family.id, {
         tiers,
-        missing: tiers.filter((tier) => previewMicro(tier.priceCredits) <= 0).length,
+        missing: tiers.filter((tier) => tier.billingUnit === "token"
+          ? previewMicro(tier.tokenPriceCredits) <= 0
+          : previewMicro(tier.priceCredits) <= 0).length,
         conflicted: sharedConflicts(tiers).length > 0,
         change: familyChange(tiers, family.id, baseline),
       }] as const;
@@ -1505,6 +1666,16 @@ export function MediaModelsPage() {
       label: "ToAPIs Seedance 2.0",
       title: "加入 ToAPIs 的 mini / fast / 标准版八档，请确认供应商并填写价格",
       run: () => addVideoPresets("toapis"),
+    },
+    {
+      label: "ToAPIs Seedance 2.5",
+      title: "加入 Seedance 2.5 的 480p / 720p / 1080p token 计费档位",
+      run: () => addVideoPresets("toapis", "seedance25"),
+    },
+    {
+      label: "ToAPIs Seedance 2.5 Ext",
+      title: "加入 Seedance 2.5 Ext 720p 按次计费档位",
+      run: () => addVideoPresets("toapis", "seedance25ext"),
     },
     {
       label: "ToAPIs MiniMax H3",
@@ -1576,7 +1747,7 @@ export function MediaModelsPage() {
         hidden={section !== "models"}
       >
         <Notice k="计费口径">
-          一个上游模型一张卡：分辨率价格条目在卡内维护，镜头时长统一按连续 4–15 秒区间配置，共享配置只填一次。保存后仍按每个分辨率条目下发一条模型，视频按镜头秒、图片按张计价，1 credit = ¥1。Ark 视频参考可按 token 费率（Credit/1M token）结算；ToAPIs 视频参考按输出秒数和模型秒价结算。
+          一个上游模型一张卡：分辨率价格条目在卡内维护，镜头时长统一按连续 4–15 秒区间配置，共享配置只填一次。保存后仍按每个分辨率条目下发一条模型；视频按模型计费单位（按秒、按次或按 Token）结算，图片按张计价，1 credit = ¥1。Token 模型以供应商返回的实际 usage 结算，按次模型与输出时长无关。
         </Notice>
         {!loading && providers.length === 0 ? (
           <Notice
@@ -1965,8 +2136,13 @@ function MediaFamilyCard({
     ? (legacyDurations.includes(previewDuration) ? previewDuration : legacyDurations[0])
     : Math.min(maxDuration, Math.max(minDuration, previewDuration));
   const saleMicro = previewMicro(preview.priceCredits);
-  const total = saleMicro > 0 ? trimNumber((saleMicro * duration) / MICRO_CREDITS_PER_CREDIT) : "—";
-  const reference = lead.videoReference?.enabled ? lead.videoReference : null;
+  const tokenSaleMicro = previewMicro(preview.tokenPriceCredits);
+  const total = preview.billingUnit === "request"
+    ? (saleMicro > 0 ? trimNumber(saleMicro / MICRO_CREDITS_PER_CREDIT) : "—")
+    : preview.billingUnit === "token"
+      ? "按实际 Token 结算"
+      : (saleMicro > 0 ? trimNumber((saleMicro * duration) / MICRO_CREDITS_PER_CREDIT) : "—");
+  const reference = preview.videoReference?.enabled ? preview.videoReference : null;
   const referenceCost = previewMicro(reference?.tokenCostCredits);
   const referencePrice = previewMicro(reference?.tokenPriceCredits);
   const referenceMargin =
@@ -2006,16 +2182,20 @@ function MediaFamilyCard({
           <span className="media-summary-tiers">
             {hasTiers
               ? tiers.map((tier) => {
-                  const tierPrice = previewMicro(tier.priceCredits);
+                  const tierPrice = previewMicro(tier.billingUnit === "token" ? tier.tokenPriceCredits : tier.priceCredits);
+                  const tierPriceValue = tier.billingUnit === "token" ? tier.tokenPriceCredits : tier.priceCredits;
+                  const tierUnit = tier.billingUnit === "token"
+                    ? "1M token"
+                    : tier.billingUnit === "request" ? "req" : isVideo ? "秒" : "张";
                   const label = tier.resolutions[0] ?? "档位";
                   return (
                     <span
                       key={label}
                       className={"media-tier-pill" + (tierPrice > 0 ? "" : " is-missing")}
-                      title={tierPrice > 0 ? `${label}：售价 ${tier.priceCredits} credit/${isVideo ? "秒" : "张"}` : `${label} 档尚未配置售价`}
+                      title={tierPrice > 0 ? `${label}：售价 ${tierPriceValue} credit/${tierUnit}` : `${label} 档尚未配置售价`}
                     >
                       {label}
-                      <em>{tierPrice > 0 ? tier.priceCredits : "缺价"}</em>
+                      <em>{tierPrice > 0 ? `${tierPriceValue}/${tierUnit}` : "缺价"}</em>
                     </span>
                   );
                 })
@@ -2210,8 +2390,17 @@ function MediaFamilyCard({
               <th aria-label="预览档位" />
               <th>档位</th>
               <th>平台模型 ID</th>
-              <th className="num">成本（credit/{isVideo ? "秒" : "张"}）</th>
-              <th className="num">售价（credit/{isVideo ? "秒" : "张"}）</th>
+              <th>计费单位</th>
+              <th className="num">成本（credit/单位）</th>
+              <th className="num">售价 / 预算价（credit/单位）</th>
+              {tiers.some((tier) => tier.billingUnit === "token") ? <>
+                <th className="num">Token 成本 / 1M</th>
+                <th className="num">Token 售价 / 1M</th>
+              </> : null}
+              {tiers.some((tier) => tier.videoReference?.enabled) ? <>
+                <th className="num">输入视频 Token 成本 / 1M</th>
+                <th className="num">输入视频 Token 售价 / 1M</th>
+              </> : null}
               <th className="num">毛利</th>
               <th>状态</th>
               <th aria-label="操作" />
@@ -2224,6 +2413,10 @@ function MediaFamilyCard({
               const label = hasTiers ? (tier.resolutions[0] ?? `档位 ${row + 1}`) : "单张";
               const selected = (tier.resolutions[0] ?? "") === (preview.resolutions[0] ?? "");
               const price = previewMicro(tier.priceCredits);
+              const billingUnit = tier.billingUnit ?? "second";
+              const ratesPerToken = billingUnit === "token";
+              const videoReferenceEnabled = tier.videoReference?.enabled === true;
+              const billingUnitName = billingUnit === "token" ? "token" : billingUnit === "request" ? "次" : isVideo ? "秒" : "张";
               return (
                 <tr key={`${familyId}-${index}`} className={selected ? "is-preview" : ""}>
                   <td>
@@ -2262,6 +2455,15 @@ function MediaFamilyCard({
                       onChange={(event) => onUpdateTier(index, { id: event.target.value })}
                     />
                   </td>
+                  <td>
+                    <Select
+                      ariaLabel={`模型 ${name} ${label} 计费单位`}
+                      value={billingUnit}
+                      disabled={busy}
+                      onChange={(value) => onUpdateTier(index, { billingUnit: value as MediaBillingUnit })}
+                      options={BILLING_UNIT_OPTIONS}
+                    />
+                  </td>
                   <td className="num">
                     <input
                       className="media-price-input num"
@@ -2277,20 +2479,38 @@ function MediaFamilyCard({
                     <input
                       className="media-price-input num"
                       inputMode="decimal"
-                      aria-label={`模型 ${name} ${label} 售价`}
+                      aria-label={billingUnit === "second"
+                        ? `模型 ${name} ${label} 售价`
+                        : `模型 ${name} ${label} 售价或预算参考 credit/${billingUnitName}`}
                       value={tier.priceCredits}
                       onChange={(event) =>
                         onUpdateTier(index, { priceCredits: event.target.value })
                       }
                     />
                   </td>
+                  {tiers.some((item) => item.billingUnit === "token") ? <>
+                    <td className="num">
+                      {ratesPerToken ? <input className="media-price-input num" inputMode="decimal" aria-label={`模型 ${name} ${label} Token 成本 credit/1M token`} value={tier.tokenCostCredits} disabled={busy} onChange={(event) => onUpdateTier(index, { tokenCostCredits: event.target.value })} /> : <span className="readout">—</span>}
+                    </td>
+                    <td className="num">
+                      {ratesPerToken ? <input className="media-price-input num" inputMode="decimal" aria-label={`模型 ${name} ${label} Token 售价 credit/1M token`} value={tier.tokenPriceCredits} disabled={busy} onChange={(event) => onUpdateTier(index, { tokenPriceCredits: event.target.value })} /> : <span className="readout">—</span>}
+                    </td>
+                  </> : null}
+                  {tiers.some((item) => item.videoReference?.enabled) ? <>
+                    <td className="num">
+                      {videoReferenceEnabled && (ratesPerToken || !isToapis) ? <input className="media-price-input num" inputMode="decimal" aria-label={`模型 ${name} ${label} 输入视频 Token 成本 credit/1M token`} value={tier.videoReference?.tokenCostCredits ?? "0"} disabled={busy} onChange={(event) => onUpdateTier(index, { videoReference: { ...tier.videoReference!, tokenCostCredits: event.target.value } })} /> : <span className="readout">—</span>}
+                    </td>
+                    <td className="num">
+                      {videoReferenceEnabled && (ratesPerToken || !isToapis) ? <input className="media-price-input num" inputMode="decimal" aria-label={`模型 ${name} ${label} 输入视频 Token 售价 credit/1M token`} value={tier.videoReference?.tokenPriceCredits ?? "0"} disabled={busy} onChange={(event) => onUpdateTier(index, { videoReference: { ...tier.videoReference!, tokenPriceCredits: event.target.value } })} /> : <span className="readout">—</span>}
+                    </td>
+                  </> : null}
                   <td className="num media-margin">
-                    {price > 0
+                    {price > 0 && billingUnit !== "token"
                       ? `${(((price - previewMicro(tier.costCredits)) / price) * 100).toFixed(1)}%`
                       : "—"}
                   </td>
                   <td>
-                    {price > 0 ? (
+                    {price > 0 || ratesPerToken && previewMicro(tier.tokenPriceCredits) > 0 ? (
                       <Chip tone="ok">已配置</Chip>
                     ) : (
                       <Chip tone="stop">缺价</Chip>
@@ -2450,14 +2670,17 @@ function MediaFamilyCard({
           </div>
           <div className="media-trial-total">
             <span className="readout">
-              {preview.resolutions[0] ?? "未设档位"} · {duration}s ·{" "}
-              {preview.priceCredits
-                ? `售价 ${preview.priceCredits} credit/秒`
-                : "尚未配置售价"}
+              {preview.resolutions[0] ?? "未设档位"} · {duration}s · {preview.billingUnit === "token"
+                ? tokenSaleMicro > 0
+                  ? `售价 ${preview.tokenPriceCredits} credit/1M token`
+                  : "尚未配置 Token 售价"
+                : preview.billingUnit === "request"
+                  ? preview.priceCredits ? `固定售价 ${preview.priceCredits} credit/req` : "尚未配置按次售价"
+                  : preview.priceCredits ? `预算售价 ${preview.priceCredits} credit/秒` : "尚未配置售价"}
             </span>
             <span className="media-total-line">
               <span className="media-total-num num">{total}</span>
-              <span className="media-total-unit">credit / 镜头</span>
+              <span className="media-total-unit">{preview.billingUnit === "request" ? "credit / request" : preview.billingUnit === "token" ? "" : "credit / 镜头"}</span>
             </span>
           </div>
         </div>
@@ -2496,7 +2719,13 @@ function MediaFamilyCard({
             <span>
               <strong>启用视频参考</strong>
               <span className="video-reference-note">
-                {" "}整卡共享 · 原片段 + 替换图 · {isToapis ? "按输出秒数、使用档位售价结算" : "按实际 usage token 幂等实扣，不按秒预估"}
+                {" "}整卡共享 · 原片段 + 替换图 · {isToapis
+                  ? preview.billingUnit === "request"
+                    ? "按每次请求固定价格结算"
+                    : preview.billingUnit === "token"
+                      ? "按实际 total_tokens 幂等结算"
+                      : "按输出秒数和档位售价结算"
+                  : "按实际 usage token 幂等实扣，不按秒预估"}
               </span>
             </span>
           </label>
@@ -2586,55 +2815,29 @@ function MediaFamilyCard({
                 </label> : null}
                 {!isToapis ? <label className="field">
                   <span className="field-label">Token 成本（Credit/1M token）</span>
-                  <input
-                    className="input num"
-                    inputMode="decimal"
-                    aria-label={`模型 ${name} 视频参考 token 成本`}
-                    value={reference.tokenCostCredits}
-                    disabled={busy}
-                    onChange={(event) =>
-                      onUpdateFamily(indexes, {
-                        videoReference: {
-                          ...reference,
-                          tokenCostCredits: event.target.value,
-                        },
-                      })
-                    }
-                  />
+                  <input className="input num" inputMode="decimal" aria-label={`模型 ${name} 视频参考 token 成本`} value={reference.tokenCostCredits} disabled={busy} onChange={(event) => onUpdateTier(indexes[0], { videoReference: { ...reference, tokenCostCredits: event.target.value } })} />
                 </label> : null}
                 {!isToapis ? <label className="field">
                   <span className="field-label">Token 售价（Credit/1M token）</span>
-                  <input
-                    className="input num"
-                    inputMode="decimal"
-                    aria-label={`模型 ${name} 视频参考 token 售价`}
-                    value={reference.tokenPriceCredits}
-                    disabled={busy}
-                    onChange={(event) =>
-                      onUpdateFamily(indexes, {
-                        videoReference: {
-                          ...reference,
-                          tokenPriceCredits: event.target.value,
-                        },
-                      })
-                    }
-                  />
+                  <input className="input num" inputMode="decimal" aria-label={`模型 ${name} 视频参考 token 售价`} value={reference.tokenPriceCredits} disabled={busy} onChange={(event) => onUpdateTier(indexes[0], { videoReference: { ...reference, tokenPriceCredits: event.target.value } })} />
                 </label> : null}
               </div>
               {isToapis ? (
                 <div role="group" aria-label={`模型 ${name} 视频参考价格`}>
                   <p className="video-reference-note">
-                    视频参考按输出秒数计费，与上方档位共用成本价和售价；可直接在此设置，修改后两处同步。
+                    {preview.billingUnit === "request"
+                      ? "无论镜头时长或是否输入视频，均按每次请求的固定价格结算。"
+                      : preview.billingUnit === "token"
+                        ? "输入视频的实际用量按本档输入视频 Token 费率结算；上方按秒价格仅作预算参考。"
+                        : "视频参考按输出秒数计费，与上方档位共用成本价和售价。"}
                   </p>
-                  {/* ToAPIs 不使用 token 费率，原只读摘要使启用后缺少就地定价入口。
-                      直接编辑各档草稿，保持同一价格来源，未填售价继续显示缺价。 */}
                   <div className="table-scroll">
                     <table className="table media-tier-table">
                       <thead>
                         <tr>
                           <th>档位</th>
-                          <th className="num">成本价（credit/秒）</th>
-                          <th className="num">售价（credit/秒）</th>
+                          <th className="num">{preview.billingUnit === "request" ? "成本价（credit/req）" : preview.billingUnit === "token" ? "成本价（credit/1M token）" : "成本价（credit/秒）"}</th>
+                          <th className="num">{preview.billingUnit === "request" ? "售价（credit/req）" : preview.billingUnit === "token" ? "输入视频参考价（credit/1M token）" : "售价（credit/秒）"}</th>
                           <th>状态</th>
                         </tr>
                       </thead>
@@ -2642,6 +2845,13 @@ function MediaFamilyCard({
                         {indexes.map((index) => {
                           const tier = drafts[index];
                           const label = tierLabel(tier);
+                          const tokenReference = tier.billingUnit === "token";
+                          const referenceCostValue = tokenReference
+                            ? tier.videoReference?.tokenCostCredits ?? "0"
+                            : tier.costCredits;
+                          const referencePriceValue = tokenReference
+                            ? tier.videoReference?.tokenPriceCredits ?? "0"
+                            : tier.priceCredits;
                           return (
                             <tr key={`${familyId}-reference-${index}`}>
                               <td>{label}</td>
@@ -2650,24 +2860,28 @@ function MediaFamilyCard({
                                   className="media-price-input num"
                                   inputMode="decimal"
                                   aria-label={`模型 ${name} 视频参考 ${label} 成本价`}
-                                  value={tier.costCredits}
+                                  value={referenceCostValue}
                                   disabled={busy}
-                                  onChange={(event) => onUpdateTier(index, { costCredits: event.target.value })}
+                                  onChange={(event) => onUpdateTier(index, tokenReference
+                                    ? { videoReference: { ...tier.videoReference!, tokenCostCredits: event.target.value } }
+                                    : { costCredits: event.target.value })}
                                 />
                               </td>
                               <td className="num">
                                 <input
                                   className="media-price-input num"
                                   inputMode="decimal"
-                                  aria-label={`模型 ${name} 视频参考 ${label} 售价`}
+                                  aria-label={`模型 ${name} 视频参考 ${label} ${tier.billingUnit === "token" ? "预算参考价" : "售价"}`}
                                   placeholder="待配置"
-                                  value={tier.priceCredits}
+                                  value={referencePriceValue}
                                   disabled={busy}
-                                  onChange={(event) => onUpdateTier(index, { priceCredits: event.target.value })}
+                                  onChange={(event) => onUpdateTier(index, tokenReference
+                                    ? { videoReference: { ...tier.videoReference!, tokenPriceCredits: event.target.value } }
+                                    : { priceCredits: event.target.value })}
                                 />
                               </td>
                               <td>
-                                {previewMicro(tier.priceCredits) > 0
+                                {previewMicro(referencePriceValue) > 0
                                   ? <Chip tone="ok">已配置</Chip>
                                   : <Chip tone="stop">缺价</Chip>}
                               </td>

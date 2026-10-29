@@ -9,6 +9,31 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.65.0] - 2026-10-29
+
+### 新增(媒体计费单位与 Seedance 2.5)
+
+- 媒体 `Model` 新增 `billingUnit`（`second`/`request`/`token`）与 token 每百万费率；缺省保持
+  视频按秒、图片按张。按次与输出时长无关；按 Token 以供应商实际 `total_tokens` 结算，
+  缺 usage 进入核对，不按秒或 `completion_tokens` 回退。
+- 准入、报价与用量快照按计费单位分派：request 固定价、second 乘输出秒、token 按估算上限准入并
+  冻结 token 费率；历史快照保留原单位与费率。
+- ToAPIs 新增 Seedance 2.5（480p/720p/1080p，按 Token）与 Seedance 2.5 Ext（720p，按次）
+  预设；H3-Max / Max-Turbo 统一连续 4–15 秒。公开目录下发 `billingUnit` 与 token 售价费率，
+  不暴露成本。
+- 自动、分镜与原片复刻新增 `referenceMode=multimodal` 全局参考集合：图片作为有序参考而非首帧，
+  支持纯图/图+视频，按真实能力校验并映射 Ark/ToAPIs 对应 role；旧 frames/复刻语义不变。
+- 控制台模型卡支持计费单位、Token 费率、Seedance 2.5 预设与多模态参考配置，分辨率价格条目
+  和校验同口径。
+- 补充按秒/按次/按 Token 报价与结算、缺 usage 核对、多模态参考边界与 ToAPIs 型号回归测试。
+
+### 验证
+
+- `make -C server lint test`
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`（128 项）
+
 ## [0.64.2] - 2026-10-29
 
 ### 修复(整片参考时长与连续档位)

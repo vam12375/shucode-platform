@@ -77,17 +77,19 @@ func TestCanvasPublicMediaUploadAcceptsProbedAudioAndVideo(t *testing.T) {
 	}
 }
 
-func TestCanvasPublicSeedanceDurationsUseConfiguredIntersection(t *testing.T) {
+func TestCanvasPublicSeedanceDurationsUseContinuousRange(t *testing.T) {
 	models := publicMediaModels([]media.Model{
 		{ID: "range", Kind: "video", Adapter: "ark", UpstreamModel: "doubao-seedance-2-0-fast-260128", MinDuration: 2, MaxDuration: 30},
-		{ID: "sparse", Kind: "video", Adapter: "toapis", UpstreamModel: "seedance-2-mini", Durations: []int{2, 5, 20}},
+		// Older ToAPIs entries used the former 4/5/10/15-second list. The
+		// public catalog must upgrade them to the current continuous range.
+		{ID: "sparse", Kind: "video", Adapter: "toapis", UpstreamModel: "seedance-2-mini", Durations: []int{4, 5, 10, 15}},
 		{ID: "legacy", Kind: "video", Adapter: "ark", UpstreamModel: "legacy", Durations: []int{2, 20}},
 	})
 	if models[0]["minDuration"] != 4 || models[0]["maxDuration"] != 15 || !reflect.DeepEqual(models[0]["durations"], []int{4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}) {
 		t.Fatal(models[0])
 	}
-	if !reflect.DeepEqual(models[1]["durations"], []int{5}) || models[1]["minDuration"] != nil {
-		t.Fatal("sparse configuration invented choices", models[1])
+	if models[1]["minDuration"] != 4 || models[1]["maxDuration"] != 15 || !reflect.DeepEqual(models[1]["durations"], []int{4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}) {
+		t.Fatal("Seedance duration list was not upgraded", models[1])
 	}
 	if !reflect.DeepEqual(models[2]["durations"], []int{2, 20}) {
 		t.Fatal("legacy directory changed", models[2])

@@ -20,6 +20,10 @@ func toapisModelCapabilities(upstream string) (toapisModelCapability, bool) {
 		return toapisModelCapability{[]string{"480p", "720p", "1080p", "4k"}, 4, true, true, 100 << 20}, true
 	case "seedance-2-fast", "seedance-2-mini":
 		return toapisModelCapability{[]string{"480p", "720p"}, 4, true, true, 100 << 20}, true
+	case "seedance-2.5-ext":
+		return toapisModelCapability{[]string{"720p"}, 4, true, true, 100 << 20}, true
+	case "seedance-2-5":
+		return toapisModelCapability{[]string{"480p", "720p", "1080p"}, 4, true, true, 100 << 20}, true
 	case "MiniMax-H3":
 		return toapisModelCapability{[]string{"768p", "2K"}, 4, true, false, 50_000_000}, true
 	case "MiniMax-H3-Max":

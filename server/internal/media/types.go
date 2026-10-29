@@ -20,14 +20,35 @@ type Model struct {
 	Routes        []ModelRoute `json:"routes,omitempty"`
 	// Durations 是旧版枚举时长；MinDuration/MaxDuration 是连续区间（秒）。
 	// 区间一旦配置即优先，Durations 仅作缺省时的兼容回退。
-	Durations      []int                     `json:"durations,omitempty"`
-	MinDuration    int                       `json:"minDuration,omitempty"`
-	MaxDuration    int                       `json:"maxDuration,omitempty"`
-	CostMicro      int64                     `json:"costMicro"`
-	GenerateAudio  bool                      `json:"generateAudio"`
-	PriceMicro     int64                     `json:"priceMicro"`
-	PriceVersion   string                    `json:"priceVersion"`
-	VideoReference *VideoReferenceCapability `json:"videoReference,omitempty"`
+	Durations     []int `json:"durations,omitempty"`
+	MinDuration   int   `json:"minDuration,omitempty"`
+	MaxDuration   int   `json:"maxDuration,omitempty"`
+	CostMicro     int64 `json:"costMicro"`
+	GenerateAudio bool  `json:"generateAudio"`
+	PriceMicro    int64 `json:"priceMicro"`
+	// BillingUnit 为空时保持历史视频按秒、图片按张的口径；request/token 用于 ToAPIs 新计费模型。
+	BillingUnit               string                    `json:"billingUnit,omitempty"`
+	TokenPriceMicroPerMillion int64                     `json:"tokenPriceMicroPerMillion,omitempty"`
+	TokenCostMicroPerMillion  int64                     `json:"tokenCostMicroPerMillion,omitempty"`
+	PriceVersion              string                    `json:"priceVersion"`
+	VideoReference            *VideoReferenceCapability `json:"videoReference,omitempty"`
+}
+
+const (
+	BillingUnitSecond  = "second"
+	BillingUnitRequest = "request"
+	BillingUnitToken   = "token"
+)
+
+// EffectiveBillingUnit 将旧目录映射到原有口径，避免历史快照改变结算语义。
+func (m Model) EffectiveBillingUnit() string {
+	if m.BillingUnit != "" {
+		return m.BillingUnit
+	}
+	if m.Kind == "image" {
+		return "image"
+	}
+	return BillingUnitSecond
 }
 
 // 媒体路由共用目录中的真实型号与能力，避免切换供应商后改变已报价的输入语义。
@@ -78,6 +99,38 @@ func (m Model) AllowedDurations() []int {
 	return m.Durations
 }
 
+// SeedanceDurationRange returns the verified continuous duration range for
+// Seedance 2.x models. Older catalog entries sometimes stored the provider's
+// former 4/5/10/15-second list; callers should normalize those entries before
+// exposing or executing them.
+func SeedanceDurationRange(m Model) (int, int, bool) {
+	adapter := m.Adapter
+	if adapter == "" {
+		adapter = "ark"
+	}
+	switch adapter {
+	case "ark":
+		if seedance20Model(m.UpstreamModel) {
+			return 4, 15, true
+		}
+	case "toapis":
+		if toapisSeedanceModel(m.UpstreamModel) {
+			return 4, 15, true
+		}
+	}
+	return 0, 0, false
+}
+
+// NormalizeSeedanceDuration upgrades a catalog entry to the current 4–15
+// second continuous contract while leaving unrelated legacy models untouched.
+func NormalizeSeedanceDuration(m Model) Model {
+	if minDuration, maxDuration, ok := SeedanceDurationRange(m); ok {
+		m.MinDuration, m.MaxDuration = minDuration, maxDuration
+		m.Durations = nil
+	}
+	return m
+}
+
 type VideoReferenceCapability struct {
 	MaxDurationSeconds int `json:"maxDurationSeconds"`
 	MaxImages          int `json:"maxImages"`
@@ -115,6 +168,7 @@ type Asset struct {
 type Brief struct {
 	SourceOnly               bool     `json:"sourceOnly,omitempty"`
 	GenerationMode           string   `json:"generationMode,omitempty"`
+	ReferenceMode            string   `json:"referenceMode,omitempty"`
 	Mode                     string   `json:"mode"`
 	Product                  string   `json:"product"`
 	SellingPoints            string   `json:"sellingPoints"`

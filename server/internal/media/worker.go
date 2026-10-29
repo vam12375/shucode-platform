@@ -166,7 +166,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	kind := "video"
 	modelID := p.Brief.VideoModel
 	// 首帧文本本身不是生图授权；历史方案也必须显式选择 imageModel 才能开启新的生图阶段。
-	if shot.Status == "pending" && p.Brief.ImageModel != "" && shot.Plan.ImagePrompt != "" && shot.ImageAssetID == "" {
+	if shot.Status == "pending" && p.Brief.ReferenceMode != "multimodal" && p.Brief.ImageModel != "" && shot.Plan.ImagePrompt != "" && shot.ImageAssetID == "" {
 		kind = "image"
 		modelID = p.Brief.ImageModel
 	}
@@ -178,7 +178,8 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		kind = p.Canvas.Kind
 		modelID = p.Canvas.ModelID
 	}
-	if p.Canvas == nil && (shot.Status == "pending" || shot.Status == "image_ready") && ((kind == "image" && modelID == "") || (kind == "video" && shot.Plan.AssetID == "" && shot.ImageAssetID == "")) {
+	globalReferences := p.Canvas == nil && p.Brief.ReferenceMode == "multimodal"
+	if p.Canvas == nil && (shot.Status == "pending" || shot.Status == "image_ready") && ((kind == "image" && modelID == "") || (kind == "video" && shot.Plan.AssetID == "" && shot.ImageAssetID == "" && !globalReferences)) {
 		// 旧快照可能绕过新计划校验；缺首帧必须在准入前失败，不能发送空图后误判为未知受理。
 		if shot.ReservationID != "" {
 			if e := s.Repo.Store.ReleaseReservationByID(ctx, shot.ReservationID, time.Now()); e != nil {
@@ -204,6 +205,12 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	}
 	submissionPlan := shot.Plan
 	if kind == "video" && (shot.Status == "pending" || shot.Status == "image_ready") {
+		if err := validateBriefReferenceMode(p.Brief); err != nil {
+			return s.failVideoReference(ctx, p, index, shot, "provider_input_unsupported")
+		}
+		if err := validateBriefReferenceImages(p.Brief, m); err != nil {
+			return s.failVideoReference(ctx, p, index, shot, err.Error())
+		}
 		submissionPlan, e = finishingGenerationPlan(p, shot.Plan)
 		if e != nil {
 			return s.failVideoReference(ctx, p, index, shot, e.Error())
@@ -230,7 +237,12 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		} else if isWholeVideoReferenceExecution(p) {
 			images = len(wholeReferenceImageIDs(p, shot))
 		}
-		if validateToAPIsInput(m, resolution, ratio, shot.Plan.Duration, images, videoReferenceRequested(p)) != nil {
+		video := videoReferenceRequested(p)
+		if globalReferences {
+			// 全局参考集合已按多模态能力校验；这里只检查真实输出参数，不能套用两图首尾帧上限。
+			images, video = 0, false
+		}
+		if validateToAPIsInput(m, resolution, ratio, shot.Plan.Duration, images, video) != nil {
 			// 历史或损坏快照也必须在准入前校验型号输入，不能把本地确定性拒绝误当未知上游受理。
 			return s.failVideoReference(ctx, p, index, shot, "provider_input_unsupported")
 		}
@@ -361,11 +373,10 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			}
 			return nil
 		case "succeeded":
-			tokenBilling := videoReferenceRequested(p) && m.Kind == "video" && m.VideoReference != nil && m.VideoReference.TokenPriceMicroPerMillion > 0
-			tokens := result.Usage.CompletionTokens
-			if tokens <= 0 {
-				tokens = result.Usage.TotalTokens
-			}
+			_, _, tokenBilling := mediaVideoTokenRates(p, m)
+			tokenBilling = tokenBilling && m.Kind == "video"
+			// ToAPIs Seedance 2.5 的销售口径是 total_tokens；Ark 旧参考模型仍沿用 completion_tokens。
+			tokens := resultUsageTokens(result, tokenBilling && m.Adapter == "toapis" && m.EffectiveBillingUnit() == BillingUnitToken)
 			if tokens <= 0 {
 				tokens = shot.ProviderUsageTokens
 			}
@@ -384,8 +395,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			}
 			charge, rate, costRate := int64(0), int64(0), int64(0)
 			if tokenBilling {
-				rate = m.VideoReference.TokenPriceMicroPerMillion
-				costRate = m.VideoReference.TokenCostMicroPerMillion
+				rate, costRate, _ = mediaVideoTokenRates(p, m)
 				charge = videoTokenChargeMicro(tokens, rate)
 			}
 			if update(func(v *Shot) {
@@ -412,7 +422,10 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		return fmt.Errorf("invalid_shot_state")
 	}
 	var replacementImageIDs []string
-	if kind == "video" && isWholeVideoReferenceExecution(p) {
+	if kind == "video" && globalReferences {
+		// auto、分镜和原片复刻复用同一组全局参考，不从镜头绑定推导首帧。
+		replacementImageIDs = uniqueReferenceImageIDs(p.Brief.AssetIDs)
+	} else if kind == "video" && isWholeVideoReferenceExecution(p) {
 		replacementImageIDs = wholeReferenceImageIDs(p, shot)
 		if len(replacementImageIDs) == 0 || len(replacementImageIDs) > m.VideoReference.MaxImages {
 			return s.failVideoReference(ctx, p, index, shot, "video_reference_unsupported")
@@ -420,7 +433,11 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	}
 	amount := m.PriceMicro
 	if kind == "video" {
-		amount *= int64(shot.Plan.Duration)
+		resolution, aspectRatio := p.Brief.Resolution, p.Brief.AspectRatio
+		if p.Canvas != nil {
+			resolution, aspectRatio = p.Canvas.Resolution, p.Canvas.AspectRatio
+		}
+		amount = mediaVideoQuoteMicro(m, resolution, aspectRatio, shot.Plan.Duration)
 		if videoReferenceRequested(p) {
 			videoModel, findErr := FindModel(p.Models, modelID, "video")
 			if findErr != nil || videoModel.VideoReference == nil {
@@ -430,7 +447,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			if p.Canvas != nil {
 				resolution, aspectRatio = p.Canvas.Resolution, p.Canvas.AspectRatio
 			}
-			amount = videoReferenceQuoteMicro(videoModel.VideoReference, resolution, aspectRatio, shot.Plan.Duration)
+			amount = mediaVideoReferenceQuoteMicro(videoModel, videoModel.VideoReference, resolution, aspectRatio, shot.Plan.Duration)
 		}
 	}
 	if shot.ReservationID == "" {
@@ -565,6 +582,16 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	return nil
 }
 
+func resultUsageTokens(result ProviderResult, totalOnly bool) int64 {
+	if totalOnly {
+		return result.Usage.TotalTokens
+	}
+	if result.Usage.CompletionTokens > 0 {
+		return result.Usage.CompletionTokens
+	}
+	return result.Usage.TotalTokens
+}
+
 func videoReferenceRequested(p *Project) bool {
 	return (p.Canvas != nil && len(p.Canvas.VideoReferences) > 0) || p.Brief.GenerationMode == "video_reference"
 }
@@ -584,6 +611,10 @@ func isWholeVideoReferenceExecution(p *Project) bool {
 }
 
 func wholeReferenceImageIDs(p *Project, shot Shot) []string {
+	if p.Brief.ReferenceMode == "multimodal" {
+		// 全局图片参考独立于镜头首帧；每段复用制作单冻结顺序，不借用后续镜头绑定。
+		return uniqueReferenceImageIDs(p.Brief.AssetIDs)
+	}
 	if shot.ImageAssetID != "" {
 		return []string{shot.ImageAssetID}
 	}

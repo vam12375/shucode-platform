@@ -44,3 +44,26 @@ func TestUsageSnapshotForVideoReferenceUsesFrozenReferenceRates(t *testing.T) {
 		t.Fatalf("reference cost snapshot = %+v", usage.PriceSnapshot.Cost)
 	}
 }
+
+func TestUsageSnapshotForRequestAndTokenModels(t *testing.T) {
+	s := &Service{}
+	p := &Project{UserID: "u", TeamID: "t"}
+	request := s.usage(p, Shot{ReservationID: "request", PendingChargeMicro: 8_750_000, Plan: ShotPlan{Duration: 15}}, Model{
+		ID: "ext", Kind: "video", BillingUnit: BillingUnitRequest, PriceMicro: 8_750_000, CostMicro: 0, PriceVersion: "media-v1",
+	})
+	if request.PriceSnapshot == nil || request.PriceSnapshot.Sale.Unit != "request" || request.PriceSnapshot.Sale.PerRequest != "8.750000" || request.PriceSnapshot.Sale.Quantity != 1 {
+		t.Fatalf("request snapshot = %+v", request.PriceSnapshot)
+	}
+	if request.PriceSnapshot.Cost.EstimatedMicro == nil || *request.PriceSnapshot.Cost.EstimatedMicro != 0 {
+		t.Fatalf("request cost = %+v", request.PriceSnapshot.Cost)
+	}
+	token := s.usage(p, Shot{ReservationID: "token", PendingChargeMicro: 8_400_000, ProviderUsageTokens: 120_000, TokenRateMicroPerMillion: 70_000_000, TokenCostMicroPerMillion: 42_000_000, Plan: ShotPlan{Duration: 5}}, Model{
+		ID: "standard", Kind: "video", BillingUnit: BillingUnitToken, TokenPriceMicroPerMillion: 70_000_000, TokenCostMicroPerMillion: 42_000_000, PriceVersion: "media-v1",
+	})
+	if token.PriceSnapshot == nil || token.PriceSnapshot.Sale.Unit != "token" || token.PriceSnapshot.Sale.OutputPerMtok != "70.000000" || token.OutputTokens != 120_000 {
+		t.Fatalf("token snapshot = %+v", token.PriceSnapshot)
+	}
+	if token.PriceSnapshot.Cost.EstimatedMicro == nil || *token.PriceSnapshot.Cost.EstimatedMicro != 5_040_000 {
+		t.Fatalf("token cost = %+v", token.PriceSnapshot.Cost)
+	}
+}

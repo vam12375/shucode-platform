@@ -348,6 +348,8 @@ func Capabilities() map[string]bool {
 	return map[string]bool{
 		// 创作意图（受众/语气/钩子/行动号召/禁用表述/脚本/旁白语言）已由 Brief 接收。
 		"creativeBrief": true,
+		// 复刻显式区分全局图片参考与历史首帧绑定，客户端据此门控新增 Brief 字段。
+		"imageReferenceMode": true,
 		// 配音、配乐、字幕样式与多方案变体尚未实现，禁止提前置真。
 		"planVariants":  false,
 		"voiceover":     false,

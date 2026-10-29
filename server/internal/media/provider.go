@@ -143,16 +143,36 @@ func (p Provider) SubmitWithReference(ctx context.Context, m Model, b Brief, s S
 }
 
 func (p Provider) SubmitWithReferenceImages(ctx context.Context, m Model, b Brief, s ShotPlan, images []string, referenceVideo string, referenceAudio ...string) (string, error) {
+	missingImage := "first_frame_required"
+	if b.ReferenceMode == "multimodal" {
+		missingImage = "reference_images_required"
+	}
 	if len(images) == 0 {
-		return "", fmt.Errorf("first_frame_required")
+		return "", fmt.Errorf("%s", missingImage)
 	}
 	for _, image := range images {
 		if image == "" {
-			return "", fmt.Errorf("first_frame_required")
+			return "", fmt.Errorf("%s", missingImage)
 		}
 	}
 	if referenceVideo != "" && (m.VideoReference == nil || len(images) > m.VideoReference.MaxImages) {
 		return "", fmt.Errorf("video_reference_unsupported")
+	}
+	if b.ReferenceMode == "multimodal" {
+		// 单张图片也属于参考集合；原 videoContent 按有无参考视频选择角色，会误把纯图请求写成首尾帧。
+		r := CanvasRequest{Kind: "video", ReferenceMode: "multimodal", Prompt: s.Prompt, Resolution: b.Resolution, AspectRatio: b.AspectRatio, Duration: s.Duration, AssetIDs: uniqueReferenceImageIDs(b.AssetIDs)}
+		videos, audios := []string{}, []string{}
+		if referenceVideo != "" {
+			videos = append(videos, referenceVideo)
+		}
+		if len(referenceAudio) > 0 && referenceAudio[0] != "" {
+			audios = append(audios, referenceAudio[0])
+		}
+		if b.Finishing != nil {
+			disabled := false
+			r.GenerateAudio = &disabled
+		}
+		return p.CanvasMultimodalVideo(ctx, m, r, images, videos, audios)
 	}
 	if p.Adapter == "toapis" {
 		// ToAPIs 的多模态协议没有参考音频槽位，目录校验已拒绝该能力声明。

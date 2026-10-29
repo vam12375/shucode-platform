@@ -24,14 +24,25 @@ func toapisModel() Model {
 }
 
 func TestToAPIsModelCapabilitiesAndLimits(t *testing.T) {
-	for _, upstream := range []string{"seedance-2", "seedance-2-fast", "seedance-2-mini"} {
+	for _, upstream := range []string{"seedance-2", "seedance-2-fast", "seedance-2-mini", "seedance-2.5-ext", "seedance-2-5"} {
 		m := toapisModel()
 		m.UpstreamModel = upstream
 		m.Resolutions = []string{"480p", "720p"}
 		if upstream == "seedance-2" {
 			m.Resolutions = append(m.Resolutions, "1080p", "4k")
 		}
-		m.VideoReference = &VideoReferenceCapability{MaxDurationSeconds: 15, MaxImages: 8, PriceMicro: 100_000}
+		if upstream == "seedance-2.5-ext" {
+			m.Resolutions = []string{"720p"}
+			m.BillingUnit = BillingUnitRequest
+		}
+		if upstream == "seedance-2-5" {
+			m.Resolutions = []string{"480p", "720p", "1080p"}
+			m.BillingUnit, m.PriceMicro, m.TokenPriceMicroPerMillion = BillingUnitToken, 0, 70_000_000
+			m.VideoReference = &VideoReferenceCapability{MaxDurationSeconds: 15, MaxImages: 8, PriceMicro: 0, TokenPriceMicroPerMillion: 42_000_000}
+		}
+		if upstream != "seedance-2-5" {
+			m.VideoReference = &VideoReferenceCapability{MaxDurationSeconds: 15, MaxImages: 8, PriceMicro: 100_000}
+		}
 		if err := ValidateModels([]Model{m}); err != nil {
 			t.Fatalf("%s rejected: %v", upstream, err)
 		}
@@ -40,10 +51,15 @@ func TestToAPIsModelCapabilitiesAndLimits(t *testing.T) {
 		}
 	}
 	for name, change := range map[string]func(*Model){
-		"unknown-model":      func(m *Model) { m.UpstreamModel = "seedance-2-global" },
-		"image":              func(m *Model) { m.Kind = "image"; m.Resolutions = nil },
-		"fast-4k":            func(m *Model) { m.UpstreamModel = "seedance-2-fast"; m.Resolutions = []string{"4k"} },
-		"mini-1080p":         func(m *Model) { m.Resolutions = []string{"1080p"} },
+		"unknown-model": func(m *Model) { m.UpstreamModel = "seedance-2-global" },
+		"image":         func(m *Model) { m.Kind = "image"; m.Resolutions = nil },
+		"fast-4k":       func(m *Model) { m.UpstreamModel = "seedance-2-fast"; m.Resolutions = []string{"4k"} },
+		"mini-1080p":    func(m *Model) { m.Resolutions = []string{"1080p"} },
+		"ext-480p": func(m *Model) {
+			m.UpstreamModel = "seedance-2.5-ext"
+			m.BillingUnit = BillingUnitRequest
+			m.Resolutions = []string{"480p"}
+		},
 		"short-range":        func(m *Model) { m.MinDuration = 3 },
 		"long-range":         func(m *Model) { m.MaxDuration = 16 },
 		"automatic-duration": func(m *Model) { m.MinDuration, m.MaxDuration, m.Durations = 0, 0, []int{0} },
@@ -65,6 +81,17 @@ func TestToAPIsModelCapabilitiesAndLimits(t *testing.T) {
 				t.Fatal("unsupported configuration accepted")
 			}
 		})
+	}
+}
+
+func TestToAPIsTokenQueryPreservesTotalUsage(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"id":"tsk_vid_fixture","status":"completed","result":{"type":"video","data":[{"url":"https://cdn.example.test/result.mp4"}]},"usage":{"completion_tokens":108900,"total_tokens":120000}}`))
+	}))
+	defer upstream.Close()
+	result, err := (Provider{BaseURL: upstream.URL, Adapter: "toapis", Client: upstream.Client()}).Query(context.Background(), "tsk_vid_fixture")
+	if err != nil || result.Status != "succeeded" || result.Usage.TotalTokens != 120000 || result.Usage.CompletionTokens != 108900 {
+		t.Fatalf("query=%+v err=%v", result, err)
 	}
 }
 
@@ -134,6 +161,30 @@ func TestToAPIsSubmitUsesDocumentedBodyAcrossInputs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestToAPIsMultimodalImageWithoutVideoUsesReferenceRole(t *testing.T) {
+	var body map[string]any
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/videos/generations" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte("{\"id\":\"tsk_vid_fixture\"}"))
+	}))
+	defer upstream.Close()
+	p := Provider{BaseURL: upstream.URL + "/v1/", Key: "fixture-key", Adapter: "toapis", Client: upstream.Client()}
+	m := toapisModel()
+	b := Brief{ReferenceMode: "multimodal", Resolution: "720p", AspectRatio: "16:9", AssetIDs: []string{"asset-a"}}
+	if _, err := p.SubmitWithReferenceImages(context.Background(), m, b, ShotPlan{Prompt: "保持主体", Duration: 5}, []string{"https://media.example.test/a.png"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	images, ok := body["image_with_roles"].([]any)
+	if !ok || len(images) != 1 || images[0].(map[string]any)["role"] != "reference_image" {
+		t.Fatalf("multimodal image was submitted as a frame: %#v", body)
 	}
 }
 

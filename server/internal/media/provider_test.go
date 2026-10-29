@@ -236,6 +236,34 @@ func TestProviderSubmitsMultipleReferenceImagesAndOneVideo(t *testing.T) {
 	}
 }
 
+func TestProviderMultimodalImagesUseReferenceRoleWithoutVideo(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/contents/generations/tasks" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": "task-multimodal"})
+	}))
+	defer server.Close()
+	p := Provider{BaseURL: server.URL, Client: server.Client()}
+	m := Model{Kind: "video", Adapter: "ark", UpstreamModel: "doubao-seedance-2-0-mini-260615", Resolutions: []string{"720p"}, MinDuration: 4, MaxDuration: 15}
+	b := Brief{ReferenceMode: "multimodal", Resolution: "720p", AspectRatio: "16:9", AssetIDs: []string{"asset-a"}}
+	if _, err := p.SubmitWithReferenceImages(context.Background(), m, b, ShotPlan{Prompt: "保持主体", Duration: 5}, []string{"https://example.test/a.png"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	content, ok := body["content"].([]any)
+	if !ok || len(content) != 2 {
+		t.Fatalf("unexpected multimodal content: %#v", body["content"])
+	}
+	image := content[1].(map[string]any)
+	if image["role"] != "reference_image" {
+		t.Fatalf("multimodal image was submitted as a frame: %#v", image)
+	}
+}
+
 func TestProviderRejectsReferenceImagesOutsideCapabilityBeforeRequest(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

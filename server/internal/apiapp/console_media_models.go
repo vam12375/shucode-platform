@@ -11,6 +11,7 @@ type consoleMediaModel struct {
 func consoleMediaModels(models []media.Model) []consoleMediaModel {
 	out := make([]consoleMediaModel, 0, len(models))
 	for _, model := range models {
+		model = media.NormalizeSeedanceDuration(model)
 		out = append(out, consoleMediaModel{Model: model, AspectRatios: media.ModelAspectRatios(model)})
 	}
 	return out

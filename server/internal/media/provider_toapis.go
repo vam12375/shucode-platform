@@ -6,7 +6,7 @@ import (
 )
 
 func toapisSeedanceModel(upstream string) bool {
-	return upstream == "seedance-2" || upstream == "seedance-2-fast" || upstream == "seedance-2-mini"
+	return upstream == "seedance-2" || upstream == "seedance-2-fast" || upstream == "seedance-2-mini" || upstream == "seedance-2.5-ext" || upstream == "seedance-2-5"
 }
 
 func validateToAPIsModel(m Model) error {
@@ -32,7 +32,23 @@ func validateToAPIsModel(m Model) error {
 			return ErrInvalid
 		}
 	}
-	if c := m.VideoReference; c != nil && (!capability.videoReference || c.MaxDurationSeconds > 15 || c.TokenCostMicroPerMillion != 0 || c.TokenPriceMicroPerMillion != 0) {
+	unit := m.EffectiveBillingUnit()
+	if unit != BillingUnitSecond && unit != BillingUnitRequest && unit != BillingUnitToken {
+		return ErrInvalid
+	}
+	if unit == BillingUnitRequest && m.PriceMicro <= 0 {
+		return ErrInvalid
+	}
+	if unit == BillingUnitToken && m.TokenPriceMicroPerMillion <= 0 {
+		return ErrInvalid
+	}
+	if m.TokenPriceMicroPerMillion < 0 || m.TokenPriceMicroPerMillion > 1_000_000_000 || m.TokenCostMicroPerMillion < 0 || m.TokenCostMicroPerMillion > 1_000_000_000 {
+		return ErrInvalid
+	}
+	if m.UpstreamModel == "seedance-2.5-ext" && unit != BillingUnitRequest || m.UpstreamModel == "seedance-2-5" && unit != BillingUnitToken {
+		return ErrInvalid
+	}
+	if c := m.VideoReference; c != nil && (!capability.videoReference || c.MaxDurationSeconds > 15 || (m.UpstreamModel != "seedance-2-5" && (c.TokenCostMicroPerMillion != 0 || c.TokenPriceMicroPerMillion != 0))) {
 		return ErrInvalid
 	}
 	return nil
@@ -105,6 +121,10 @@ func (p Provider) queryToAPIs(ctx context.Context, id string) (ProviderResult, e
 				URL string `json:"url"`
 			} `json:"data"`
 		} `json:"result"`
+		Usage struct {
+			CompletionTokens int64 `json:"completion_tokens"`
+			TotalTokens      int64 `json:"total_tokens"`
+		} `json:"usage"`
 	}
 	if err := p.request(ctx, "GET", "/v1/videos/generations/"+id, nil, &out); err != nil {
 		return result, err
@@ -113,6 +133,8 @@ func (p Provider) queryToAPIs(ctx context.Context, id string) (ProviderResult, e
 		return result, fmt.Errorf("provider_invalid_response")
 	}
 	result.Error = out.Error
+	result.Usage.CompletionTokens = out.Usage.CompletionTokens
+	result.Usage.TotalTokens = out.Usage.TotalTokens
 	switch out.Status {
 	case "queued", "failed":
 		result.Status = out.Status

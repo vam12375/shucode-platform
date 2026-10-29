@@ -216,6 +216,46 @@ func TestWholeReferenceWorkerSubmitsOrderedUniqueReplacementImages(t *testing.T)
 	}
 }
 
+func TestWholeReferenceMultimodalWorkerUsesGlobalImagesWithNoFirstFrame(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	p, clipID := wholeReferenceWorkerProject(t, f)
+	_, err := f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
+		v.Brief.ReferenceMode = "multimodal"
+		v.Brief.AssetIDs = []string{"c", "a", "c"}
+		v.Models[0].UpstreamModel = "doubao-seedance-2-0-mini-260615"
+		v.Shots[0].Plan.AssetID, v.Shots[0].Plan.ImagePrompt = "", ""
+		for i := range v.Plan.Shots {
+			v.Plan.Shots[i].AssetID = ""
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.s.Tick(ctx)
+	p = current(t, f, p)
+	if p.Shots[0].Status != "video_running" || p.Shots[0].Plan.AssetID != "" || p.Shots[0].ImageAssetID != "" || f.submits.Load() != 1 {
+		t.Fatalf("global references were treated as missing first frame: %+v submits=%d", p.Shots[0], f.submits.Load())
+	}
+	f.requestMu.Lock()
+	defer f.requestMu.Unlock()
+	content := f.requestBodies[0]["content"].([]any)
+	if len(content) != 4 {
+		t.Fatalf("expected text, two global images and one video: %#v", content)
+	}
+	for i, want := range []string{"c", "a"} {
+		image := content[i+1].(map[string]any)
+		if image["role"] != "reference_image" || submittedAssetID(t, image, "image_url") != want {
+			t.Fatalf("global reference %d: %#v", i, image)
+		}
+	}
+	video := content[3].(map[string]any)
+	if video["role"] != "reference_video" || submittedAssetID(t, video, "video_url") != clipID {
+		t.Fatalf("uploaded video reference lost: %#v", video)
+	}
+}
+
 func TestWholeReferenceWorkerGeneratesOnlyOneReplacementImage(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
