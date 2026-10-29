@@ -687,6 +687,11 @@ test("ToAPIs Seedance 2.5 preset keeps resolution-specific token prices through 
   const toapis = { ...provider, id: "toapis", name: "ToAPIs", baseUrl: "https://toapis.com/v1" };
   const f = await mountModels([], [toapis]);
   let tree = clickPreset(f, "ToAPIs Seedance 2.5");
+  // Token 档位的成本和售价当前按截图同价配置，毛利应显示 0.0%，不能退化为“—”。
+  assert.deepEqual(
+    nodes(tree, (node) => node.type === "td" && node.props?.className === "num media-margin").map(nodeText),
+    ["0.0%", "0.0%", "0.0%"],
+  );
   const jsonButton = nodes(tree, (node) => node.type === "button" && nodeText(node) === "JSON 批量编辑")[0];
   assert.ok(jsonButton);
   jsonButton.props.onClick();

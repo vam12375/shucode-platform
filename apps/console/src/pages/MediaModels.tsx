@@ -2412,9 +2412,12 @@ function MediaFamilyCard({
               if (!tier) return null;
               const label = hasTiers ? (tier.resolutions[0] ?? `档位 ${row + 1}`) : "单张";
               const selected = (tier.resolutions[0] ?? "") === (preview.resolutions[0] ?? "");
-              const price = previewMicro(tier.priceCredits);
               const billingUnit = tier.billingUnit ?? "second";
               const ratesPerToken = billingUnit === "token";
+              // 毛利率始终按当前实际结算口径计算：Token 模型使用 Token 售价/成本，
+              // 按秒和按次模型使用单位售价/成本。此前新增 Token 计费时误将其直接隐藏为“—”。
+              const price = previewMicro(ratesPerToken ? tier.tokenPriceCredits : tier.priceCredits);
+              const cost = previewMicro(ratesPerToken ? tier.tokenCostCredits : tier.costCredits);
               const videoReferenceEnabled = tier.videoReference?.enabled === true;
               const billingUnitName = billingUnit === "token" ? "token" : billingUnit === "request" ? "次" : isVideo ? "秒" : "张";
               return (
@@ -2505,8 +2508,8 @@ function MediaFamilyCard({
                     </td>
                   </> : null}
                   <td className="num media-margin">
-                    {price > 0 && billingUnit !== "token"
-                      ? `${(((price - previewMicro(tier.costCredits)) / price) * 100).toFixed(1)}%`
+                    {price > 0
+                      ? `${(((price - cost) / price) * 100).toFixed(1)}%`
                       : "—"}
                   </td>
                   <td>
