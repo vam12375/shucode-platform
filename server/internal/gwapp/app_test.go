@@ -659,7 +659,22 @@ func TestProviderProtocolMismatch(t *testing.T) {
 		ProvideUpstreamProviderID: true, UpstreamProviderID: provider.ID,
 	})
 	assertOpenAIError(t, f.do("POST", "/v1/chat/completions", f.token, `{"model":"claude-sonnet-4-5"}`), 404, "not_found_error")
-	// Responses 专用供应商不接受 chat。
+	chatProvider, _ := f.store.CreateUpstreamProvider(ctx, store.CreateUpstreamProviderInput{
+		Name: "chat-provider", BaseURL: f.upstream.URL, Protocol: store.ProtocolOpenAIChatCompletions,
+	})
+	_, _ = f.store.UpsertModel(ctx, store.UpsertModelInput{
+		ModelID: "claude-sonnet-4-5", DisplayName: "x", InputPricePerMtok: "3", OutputPricePerMtok: "15",
+		ProvideUpstreamProviderID: true, UpstreamProviderID: chatProvider.ID,
+	})
+	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(openAISuccessBody))
+	})
+	if rec := f.do("POST", "/v1/chat/completions", f.token, `{"model":"claude-sonnet-4-5"}`); rec.Code != 200 {
+		t.Fatalf("chat 供应商转发失败: %d %s", rec.Code, rec.Body.String())
+	}
+	assertOpenAIError(t, f.do("POST", "/v1/responses", f.token, `{"model":"claude-sonnet-4-5"}`), 404, "not_found_error")
+	// Responses 专用供应商不接受 chat，Chat 供应商也不能承接 Responses。
 	responsesProvider, _ := f.store.CreateUpstreamProvider(ctx, store.CreateUpstreamProviderInput{
 		Name: "responses-provider", BaseURL: f.upstream.URL, Protocol: store.ProtocolOpenAIResponses,
 	})

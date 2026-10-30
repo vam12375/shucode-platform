@@ -60,10 +60,9 @@ function testKindLabel(kind: string | null): string {
 }
 
 function protocolLabel(protocol: ProviderRow["protocol"]): string {
-  if (protocol === "anthropic-messages") return "anthropic · /messages";
-  if (protocol === "openai-responses") return "openai responses · /responses（专用）";
-  // OpenAI 兼容家族：chat 与 responses 两个端点都透传给该供应商。
-  return "openai · /chat/completions · /responses";
+  if (protocol === "anthropic-messages") return "Anthropic Messages · /v1/messages";
+  if (protocol === "openai-responses") return "OpenAI Responses · /v1/responses";
+  return "OpenAI 兼容 · /v1/chat/completions";
 }
 
 export function ProvidersPage() {
@@ -291,9 +290,9 @@ export function ProvidersPage() {
               value={form.protocol}
               onChange={(value) => setForm({ ...form, protocol: value as ProviderRow["protocol"] })}
               options={[
-                { value: "openai-chat-completions", label: "OpenAI 兼容（/chat/completions · /responses）" },
-                { value: "openai-responses", label: "OpenAI Responses（/responses 专用）" },
-                { value: "anthropic-messages", label: "Anthropic（/messages）" },
+                { value: "openai-chat-completions", label: "OpenAI 兼容（/v1/chat/completions）" },
+                { value: "openai-responses", label: "OpenAI Responses（/v1/responses）" },
+                { value: "anthropic-messages", label: "Anthropic Messages（/v1/messages）" },
               ]}
             />
             <input

@@ -45,8 +45,15 @@ func providerCompatible(provider *store.UpstreamProviderRecord, spec protocolSpe
 	if providerFamily(provider.Protocol) != spec.family {
 		return false, "上游协议（" + string(provider.Protocol) + "）与请求协议（" + spec.family + "）不一致"
 	}
-	if provider.Protocol == store.ProtocolOpenAIResponses && spec.upstreamPath == "/v1/chat/completions" {
-		return false, "供应商按 Responses 协议接入，不支持 chat completions 请求"
+	// 旧逻辑只拦截 Responses 供应商处理 Chat 请求，漏掉了反向情况，导致 Chat 选项实际混入两个端点。
+	if provider.Protocol == store.ProtocolOpenAIChatCompletions && spec.upstreamPath != "/v1/chat/completions" {
+		return false, "供应商按 Chat Completions 协议接入，不支持该请求路径"
+	}
+	if provider.Protocol == store.ProtocolOpenAIResponses && spec.upstreamPath != "/v1/responses" {
+		return false, "供应商按 Responses 协议接入，不支持该请求路径"
+	}
+	if provider.Protocol == store.ProtocolAnthropicMessages && spec.upstreamPath != "/v1/messages" {
+		return false, "供应商按 Anthropic Messages 协议接入，不支持该请求路径"
 	}
 	return true, ""
 }

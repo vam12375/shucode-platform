@@ -9,6 +9,22 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.68.2] - 2026-10-30
+
+### 修复(网关协议路由)
+
+- Chat Completions 供应商此前只拦截了 Responses→Chat 的反向，导致 Chat 供应商仍可承接
+  Responses 请求；现在逐协议严格匹配 `/v1/chat/completions`、`/v1/responses`、`/v1/messages`。
+- 控制台供应商协议标签与实际端点一致，明确 OpenAI 兼容仅转发 `/v1/chat/completions`。
+- 补充 Chat 供应商可处理 Chat、但拒绝 Responses 的路由回归。
+
+### 验证
+
+- `make -C server lint test`
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`（136 项）
+
 ## [0.68.1] - 2026-10-30
 
 ### 文档(仓库定位)
