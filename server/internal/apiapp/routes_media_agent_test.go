@@ -242,3 +242,75 @@ func TestMediaAgentGenerationRouteRejectsSourceArtifactUris(t *testing.T) {
 		t.Fatalf("source artifact must be rejected: %d %s", response.Code, response.Body.String())
 	}
 }
+
+func TestMediaAgentGenerationRouteStrictBodyDoesNotCreateOrCharge(t *testing.T) {
+	for _, kind := range []string{"image", "video"} {
+		t.Run(kind, func(t *testing.T) {
+			f, token, teamID := setupAgentRouteFixture(t)
+			ctx := context.Background()
+			request := agentRouteRequestBody()
+			if kind == "video" {
+				model := media.Model{
+					ID: "agent-video", Name: "Agent Video", Kind: kind, Adapter: "ark",
+					ProviderID: uuid.NewString(), UpstreamModel: "video",
+					Resolutions: []string{"720p"}, Durations: []int{4}, PriceMicro: 100000, PriceVersion: "v1",
+				}
+				raw, err := json.Marshal([]media.Model{model})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := f.store.SetConfigValue(ctx, media.ConfigKey, raw); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := f.store.SaveTeamPolicy(ctx, store.TeamPolicyRecord{TeamID: teamID, AllowedModelIDs: []string{model.ID}}); err != nil {
+					t.Fatal(err)
+				}
+				request["kind"], request["modelId"], request["resolution"], request["duration"] = kind, model.ID, "720p", 4
+			}
+			quote := agentRouteRequest(t, f, token, http.MethodPost, "/api/v1/media/agent/generations/quote", request)
+			var envelope struct {
+				Data struct {
+					Token string `json:"confirmationToken"`
+					Quote int64  `json:"quoteMicro"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(quote.Body.Bytes(), &envelope); err != nil || quote.Code != http.StatusOK || envelope.Data.Token == "" || envelope.Data.Quote <= 0 {
+				t.Fatalf("quote: %d %s %v", quote.Code, quote.Body.String(), err)
+			}
+			before, err := f.store.GetTeam(ctx, teamID)
+			if err != nil || before == nil {
+				t.Fatalf("team before submission: %v", err)
+			}
+			generate := map[string]any{"request": request, "confirmationToken": envelope.Data.Token, "expectedQuoteMicro": envelope.Data.Quote}
+			// 客户端曾多传预扣字段，导致报价成功但提交被严格解码拒绝；必须在创建任务和计费前拒绝未知字段。
+			for _, field := range []string{"settlementMode", "unknownField"} {
+				generate[field] = "reserve_on_confirmation"
+				rejected := agentRouteRequest(t, f, token, http.MethodPost, "/api/v1/media/agent/generations", generate)
+				if rejected.Code != http.StatusBadRequest {
+					t.Fatalf("unknown %s must reject: %d %s", field, rejected.Code, rejected.Body.String())
+				}
+				delete(generate, field)
+			}
+			if response := agentRouteRequest(t, f, token, http.MethodGet, "/api/v1/media/agent/generations/agent-route-1", nil); response.Code != http.StatusNotFound {
+				t.Fatalf("rejected submission must not create a task: %d %s", response.Code, response.Body.String())
+			}
+			after, err := f.store.GetTeam(ctx, teamID)
+			if err != nil || after == nil || after.UsedCredits != before.UsedCredits || after.ReservedCredits != before.ReservedCredits {
+				t.Fatalf("rejected submission must not change billing: before=%+v after=%+v err=%v", before, after, err)
+			}
+			if usage, err := f.store.ListUsage(ctx, store.UsageFilter{TeamID: teamID}); err != nil || len(usage) != 0 {
+				t.Fatalf("rejected submission must not record usage: %+v %v", usage, err)
+			}
+			if reservations, err := f.store.ListOpenReservations(ctx, 100); err != nil || len(reservations) != 0 {
+				t.Fatalf("rejected submission must not create billing identities: %+v %v", reservations, err)
+			}
+			// 撤回多余字段后沿用原报价确认，三字段请求可正常提交且重复提交保持幂等。
+			for range 2 {
+				created := agentRouteRequest(t, f, token, http.MethodPost, "/api/v1/media/agent/generations", generate)
+				if created.Code != http.StatusOK {
+					t.Fatalf("supported submission: %d %s", created.Code, created.Body.String())
+				}
+			}
+		})
+	}
+}

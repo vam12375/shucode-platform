@@ -9,6 +9,19 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.68.4] - 2026-10-30
+
+### 测试(Agent 媒体生成)
+
+- 补充 Agent 图片/视频生成的严格请求体回归：提交时多传 `settlementMode` 等未知字段必须在
+  创建任务和计费前返回 400，不产生任务、用量、预留或余额变化。
+- 覆盖撤回未知字段后沿用原报价确认可正常提交，重复提交保持幂等。
+
+### 验证
+
+- `go test -count=1 -run TestMediaAgentGenerationRouteStrictBodyDoesNotCreateOrCharge -v ./internal/apiapp`
+- `make -C server lint test`
+
 ## [0.68.3] - 2026-10-30
 
 ### 优化(控制台图标体系)
