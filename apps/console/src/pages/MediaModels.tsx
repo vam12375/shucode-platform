@@ -3,8 +3,10 @@ import {
   parseCreditsToMicro,
 } from "@shucode-platform/contracts/credits";
 import { useCallback, useEffect, useState } from "react";
+import { Clapperboard, FileJson, Plus } from "lucide-react";
 import { api } from "../api.js";
 import { toastErr, toastOk } from "../components/Feedback.js";
+import { Glyph, PageTitle } from "../components/Icon.js";
 import { Select } from "../components/Select.js";
 import { Chip, Notice } from "../components/StatusChip.js";
 import { MediaReconciliation } from "./MediaReconciliation.js";
@@ -1775,7 +1777,7 @@ export function MediaModelsPage() {
       <header className="page-head">
         <div>
           <p className="eyebrow">接入 / 媒体创作</p>
-          <h1>媒体模型</h1>
+          <PageTitle icon={Clapperboard}>媒体模型</PageTitle>
         </div>
         <span className="readout">
           {loading
@@ -1859,6 +1861,7 @@ export function MediaModelsPage() {
                 onClick={openJson}
                 disabled={loading || busy}
               >
+                <Glyph icon={FileJson} size={14} strokeWidth={2} />
                 {advancedOpen ? "收起 JSON" : "JSON 批量编辑"}
               </button>
               <button
@@ -1867,6 +1870,7 @@ export function MediaModelsPage() {
                 onClick={addModel}
                 disabled={loading || busy}
               >
+                <Glyph icon={Plus} size={14} strokeWidth={2} />
                 新增模型
               </button>
             </div>

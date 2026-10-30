@@ -1,6 +1,8 @@
 import { Fragment, useCallback, useEffect, useState, type FormEvent } from "react";
+import { CloudDownload, Pencil, Play, Plug, Plus, Save, Trash2, X } from "lucide-react";
 import { api } from "../api.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
+import { Glyph, PageTitle } from "../components/Icon.js";
 import { Select } from "../components/Select.js";
 import { Chip, Notice } from "../components/StatusChip.js";
 import { formatShanghaiTime } from "../time.js";
@@ -245,7 +247,7 @@ export function ProvidersPage() {
       <header className="page-head">
         <div>
           <p className="eyebrow">接入 / 上游</p>
-          <h1>上游供应商</h1>
+          <PageTitle icon={Plug}>上游供应商</PageTitle>
         </div>
         <span className="readout">{providers.filter((p) => p.enabled).length} 生效 · {providers.length} 家</span>
       </header>
@@ -315,10 +317,12 @@ export function ProvidersPage() {
               onChange={(event) => setForm({ ...form, timeoutMs: event.target.value })}
             />
             <button className="btn" type="submit" disabled={busy || !form.name.trim() || !form.baseUrl.trim()}>
+              <Glyph icon={editingId ? Save : Plus} size={14} strokeWidth={2} />
               {editingId ? "保存修改" : "创建供应商"}
             </button>
             {editingId ? (
               <button className="btn btn-ghost" type="button" disabled={busy} onClick={resetForm}>
+                <Glyph icon={X} size={14} strokeWidth={2} />
                 取消编辑
               </button>
             ) : null}
@@ -393,6 +397,7 @@ export function ProvidersPage() {
                           disabled={busy}
                           onClick={() => void testProvider(provider)}
                         >
+                          <Glyph icon={Play} size={13} strokeWidth={2} />
                           测试
                         </button>
                         <button
@@ -400,6 +405,7 @@ export function ProvidersPage() {
                           disabled={busy}
                           onClick={() => void fetchModels(provider)}
                         >
+                          <Glyph icon={CloudDownload} size={13} strokeWidth={2} />
                           获取模型列表
                         </button>
                         {provider.disabledMode === "auto" && !provider.enabled ? (
@@ -419,6 +425,7 @@ export function ProvidersPage() {
                           {provider.enabled ? "停用" : "启用"}
                         </button>
                         <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => startEdit(provider)}>
+                          <Glyph icon={Pencil} size={13} strokeWidth={2} />
                           编辑
                         </button>
                         <button
@@ -426,6 +433,7 @@ export function ProvidersPage() {
                           disabled={busy}
                           onClick={() => void remove(provider)}
                         >
+                          <Glyph icon={Trash2} size={13} strokeWidth={2} />
                           删除
                         </button>
                       </div>

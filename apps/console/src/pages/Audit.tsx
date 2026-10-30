@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, RefreshCw, ScrollText } from "lucide-react";
 import { useAuth } from "../auth.js";
+import { Glyph, PageTitle } from "../components/Icon.js";
 import { Select } from "../components/Select.js";
 import { api } from "../api.js";
 import { Notice } from "../components/StatusChip.js";
@@ -119,14 +121,14 @@ export function AuditPage() {
       <header className="page-head">
         <div>
           <p className="eyebrow">治理 / 审计</p>
-          <h1>审计日志</h1>
+          <PageTitle icon={ScrollText}>审计日志</PageTitle>
         </div>
         <span className="readout m0">管理动作留痕 · 不含凭据与请求正文</span>
       </header>
 
       {error ? (
         <Notice tone="stop" k="加载失败">
-          {error}{" "}<button className="btn btn-sm" type="button" disabled={loading} onClick={() => void load()}>重试</button>
+          {error}{" "}<button className="btn btn-sm" type="button" disabled={loading} onClick={() => void load()}><Glyph icon={RefreshCw} size={13} strokeWidth={2} />重试</button>
         </Notice>
       ) : null}
 
@@ -195,8 +197,8 @@ export function AuditPage() {
             <span className="readout" aria-live="polite">第 {currentPage ? pageIndex + 1 : 1} 页 · 本页 {logs.length} 条{loading ? " · 加载中…" : ""}</span>
           </div>
           <div className="form-row">
-            <button className="btn btn-ghost" type="button" aria-label="审计日志上一页" disabled={loading || !currentPage || pageIndex === 0} onClick={previousPage}>上一页</button>
-            <button className="btn btn-ghost" type="button" aria-label="审计日志下一页" disabled={loading || !currentPage || !nextCursor} onClick={nextPage}>下一页</button>
+            <button className="btn btn-ghost" type="button" aria-label="审计日志上一页" disabled={loading || !currentPage || pageIndex === 0} onClick={previousPage}><Glyph icon={ChevronLeft} size={14} strokeWidth={2} />上一页</button>
+            <button className="btn btn-ghost" type="button" aria-label="审计日志下一页" disabled={loading || !currentPage || !nextCursor} onClick={nextPage}>下一页<Glyph icon={ChevronRight} size={14} strokeWidth={2} /></button>
           </div>
         </nav>
       </section>

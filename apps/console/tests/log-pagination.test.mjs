@@ -88,6 +88,9 @@ async function mount(kind, loader, metadataLoader, seriesLoader) {
       if (name === "../components/Gauge.js") return { formatPct: String };
       if (name === "../components/Select.js") return { Select: "Select" };
       if (name === "../components/StatusChip.js") return { Chip: "Chip", Notice: "Notice" };
+      // 图标只做视觉强化：VM 测试按空组件桩渲染，不引入真实 SVG 输出。
+      if (name === "lucide-react") return new Proxy({}, { get: () => () => null });
+      if (name === "../components/Icon.js") return { Glyph: () => null, PageTitle: (props) => props.children };
       throw new Error(`Unexpected import ${name}`);
     },
   });

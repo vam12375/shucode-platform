@@ -1,10 +1,12 @@
 import { formatCreditsDisplay } from "@shucode-platform/contracts/credits";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Boxes, Building2, MailPlus, Settings2, ShieldCheck, UserCog, Users } from "lucide-react";
 import { api, navigate } from "../api.js";
 import { useAuth } from "../auth.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { MfaSettings } from "../components/MfaSettings.js";
 import { Gauge } from "../components/Gauge.js";
+import { PageTitle } from "../components/Icon.js";
 import { Chip, Notice, type ChipTone } from "../components/StatusChip.js";
 import type { ConsoleTeam, ConsoleUser } from "../permissions.js";
 import { formatShanghaiTime } from "../time.js";
@@ -137,12 +139,20 @@ export function TenantPage({ section }: { section: string }) {
         : section === "team-settings"
           ? "团队设置"
           : "团队概览";
+  const titleIcon =
+    section === "members"
+      ? Users
+      : section === "policy"
+        ? ShieldCheck
+        : section === "team-settings"
+          ? Settings2
+          : Building2;
   return (
     <div>
       <header className="page-head">
         <div>
           <p className="eyebrow">团队工作台 / {team?.name ?? "加载中"}</p>
-          <h1>{title}</h1>
+          <PageTitle icon={titleIcon}>{title}</PageTitle>
         </div>
         <span className="readout">仅当前团队 · {members.length} 位成员</span>
       </header>
@@ -885,7 +895,7 @@ export function CatalogPage() {
       <header className="page-head">
         <div>
           <p className="eyebrow">接入 / 模型目录</p>
-          <h1>可用模型</h1>
+          <PageTitle icon={Boxes}>可用模型</PageTitle>
         </div>
         <span className="readout">{models.length} 个模型 · 实测可用性</span>
       </header>
@@ -1046,7 +1056,7 @@ export function ProfilePage() {
       <header className="page-head">
         <div>
           <p className="eyebrow">账户 / 安全</p>
-          <h1>个人设置</h1>
+          <PageTitle icon={UserCog}>个人设置</PageTitle>
         </div>
       </header>
       <section className="pane">
@@ -1150,7 +1160,7 @@ export function InvitePage({
         onSubmit={(e) => void accept(e)}
       >
         <p className="eyebrow">MENDAO / 团队邀请</p>
-        <h1>接受团队邀请</h1>
+        <PageTitle icon={MailPlus}>接受团队邀请</PageTitle>
         {error ? <Notice tone="stop">{error}</Notice> : null}
         {!token ? (
           <Notice tone="stop">

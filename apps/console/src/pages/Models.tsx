@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
+import { Boxes, CloudDownload, Plus } from "lucide-react";
 import { api } from "../api.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { EditableCell } from "../components/EditableCell.js";
+import { Glyph, PageTitle } from "../components/Icon.js";
 import { ModelConfigDrawer } from "../components/ModelConfigDrawer.js";
 import {
   reasoningSummaryText,
@@ -299,7 +301,7 @@ export function ModelsPage() {
       <header className="page-head">
         <div>
           <p className="eyebrow">下发 / 价目</p>
-          <h1>模型目录</h1>
+          <PageTitle icon={Boxes}>模型目录</PageTitle>
         </div>
       </header>
 
@@ -320,6 +322,7 @@ export function ModelsPage() {
               onChange={(event) => setNewModelId(event.target.value)}
             />
             <button className="btn btn-ghost" type="button" disabled={busy || !newModelId.trim()} onClick={() => void addModel()}>
+              <Glyph icon={Plus} size={14} strokeWidth={2} />
               添加模型
             </button>
           </div>
@@ -352,6 +355,7 @@ export function ModelsPage() {
               disabled={importBusy || !importProviderId}
               onClick={() => void fetchUpstreamModels()}
             >
+              <Glyph icon={CloudDownload} size={14} strokeWidth={2} />
               {importBusy ? "拉取中…" : "拉取模型列表"}
             </button>
             {importModels ? (

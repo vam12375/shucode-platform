@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import {
   useEffect,
   useId,
@@ -6,6 +7,7 @@ import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import { Glyph } from "./Icon.js";
 
 export interface SelectOption {
   value: string;
@@ -173,16 +175,13 @@ export function Select({
         }}
       >
         <span className="label">{current?.label ?? "—"}</span>
-        <svg
+        <Glyph
+          icon={ChevronDown}
+          size={12}
+          strokeWidth={2}
           className="caret"
-          width="10"
-          height="6"
-          viewBox="0 0 10 6"
-          aria-hidden="true"
           style={{ transform: open ? "rotate(180deg)" : undefined }}
-        >
-          <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
+        />
       </button>
       {open && menuAnchor ? (
         <div

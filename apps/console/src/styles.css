@@ -81,6 +81,13 @@ a:hover {
   margin: 0;
 }
 
+/* 图标：客户端同款 lucide 线性图标，尺寸/描边由 Glyph 统一，颜色继承 currentColor。 */
+.glyph {
+  flex: none;
+  display: inline-block;
+  vertical-align: -0.15em;
+}
+
 .readout {
   font-family: var(--font-mono);
   font-size: 12.5px;
@@ -169,8 +176,15 @@ a:hover {
 }
 
 .read .label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 10.5px;
   letter-spacing: 0.16em;
+  color: var(--ink-soft);
+}
+
+.read .label .glyph {
   color: var(--ink-soft);
 }
 
@@ -302,12 +316,24 @@ a:hover {
 }
 
 a.nav-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 6px 10px;
   margin: 1px 0;
   border-radius: 3px;
   color: var(--ink);
   font-size: 13px;
+}
+
+a.nav-item .glyph {
+  color: var(--ink-soft);
+  transition: color 0.15s ease;
+}
+
+a.nav-item:hover .glyph,
+a.nav-item.active .glyph {
+  color: var(--ink);
 }
 
 a.nav-item:hover {
@@ -455,6 +481,17 @@ h1 {
   font-weight: 600;
   margin: 0;
   letter-spacing: 0.01em;
+}
+
+/* 页头标题：图标 + 标题（与客户端工作区头部同构）。 */
+.page-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.page-title .glyph {
+  color: var(--ink-soft);
 }
 
 h2 {
@@ -709,6 +746,20 @@ h2 {
   border-radius: 50%;
   background: var(--ink);
   flex: 0 0 auto;
+}
+
+/* 五级语义用客户端同款 lucide 图标替代色点：形状 + 颜色 + 文字三重编码。
+   缺省（无 tone）仍是墨点——它是与状态无关的通用标签。 */
+.chip .glyph {
+  color: currentColor;
+}
+
+.chip.ok::before,
+.chip.info::before,
+.chip.hot::before,
+.chip.stop::before,
+.chip.mute::before {
+  content: none;
 }
 
 .chip.ok {
@@ -1234,6 +1285,10 @@ textarea {
   color: var(--amber-text);
 }
 
+.notice > .glyph {
+  color: var(--amber-text);
+}
+
 .notice a {
   margin-left: auto;
   white-space: nowrap;
@@ -1245,6 +1300,10 @@ textarea {
 }
 
 .notice.stop .k {
+  color: var(--signal);
+}
+
+.notice.stop > .glyph {
   color: var(--signal);
 }
 
@@ -1286,6 +1345,19 @@ textarea {
 .toast .msg {
   flex: 1;
   word-break: break-word;
+}
+
+.toast > .glyph {
+  margin-top: 2px;
+  color: var(--ok);
+}
+
+.toast.warn > .glyph {
+  color: var(--amber-deep);
+}
+
+.toast.stop > .glyph {
+  color: var(--signal);
 }
 
 .toast.warn {
@@ -1352,9 +1424,16 @@ textarea {
 }
 
 .dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 2px 0 0;
   font-size: 16px;
   font-weight: 600;
+}
+
+.dialog-title .glyph {
+  color: var(--signal);
 }
 
 .dialog-desc {
@@ -2858,6 +2937,43 @@ textarea {
   margin: 0;
   font-size: 12px;
   color: var(--ink-soft);
+}
+
+/* ---- 组件库 · 图标清单 ---- */
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.icon-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  min-width: 0;
+}
+
+.icon-cell .glyph {
+  color: var(--ink);
+}
+
+.icon-cell-label {
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.icon-cell-where {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 团队权限下的工作台沿用计量台表面、刻度与数字口径。 */

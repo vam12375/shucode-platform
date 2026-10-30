@@ -142,6 +142,9 @@ async function mountProject(project) {
       if (name === "../components/StatusChip.js") return { Chip: "Chip", Notice: "Notice" };
       if (name === "../media-reconciliation.js") return reconciliation;
       if (name === "../time.js") return { formatShanghaiTime: (value) => value };
+      // 图标只做视觉强化：VM 测试按空组件桩渲染，不引入真实 SVG 输出。
+      if (name === "lucide-react") return new Proxy({}, { get: () => () => null });
+      if (name === "../components/Icon.js") return { Glyph: () => null, PageTitle: (props) => props.children };
       throw new Error(`Unexpected import ${name}`);
     },
   });

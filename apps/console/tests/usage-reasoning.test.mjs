@@ -25,7 +25,11 @@ function compile(source, imports = {}) {
   });
   return exports;
 }
-const chips = compile(chipSource);
+const icons = { Glyph: () => null, PageTitle: (props) => props.children };
+const chips = compile(chipSource, {
+  "./Icon.js": icons,
+  "lucide-react": new Proxy({}, { get: () => () => null }),
+});
 const { UsageModel } = compile(modelSource, {
   "../usage-reasoning.js": reasoning,
   "./StatusChip.js": chips,
@@ -127,6 +131,7 @@ async function mountUsage(records, isRoot = true, usageOptions = {}, providerOpt
     "../usage-costs.js": costs,
     "../usage-reasoning.js": reasoning,
     "../components/UsageModel.js": { UsageModel },
+    "../components/Icon.js": icons,
     "../components/charts.js": { ComposedTrendChart: "chart", ModelDonutChart: "donut" },
     "../components/Feedback.js": {},
     "../components/Gauge.js": { formatPct: String },

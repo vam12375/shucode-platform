@@ -1,6 +1,31 @@
 import { useState } from "react";
+import {
+  Activity,
+  Boxes,
+  Building2,
+  ChartColumn,
+  Clapperboard,
+  HandCoins,
+  LayoutGrid,
+  LogOut,
+  PackageCheck,
+  Palette,
+  Plug,
+  Plus,
+  RefreshCw,
+  ScrollText,
+  Settings2,
+  ShieldCheck,
+  SlidersHorizontal,
+  Smartphone,
+  Tags,
+  Trash2,
+  UserCog,
+  Users,
+} from "lucide-react";
 import { confirmDialog, showToast, toastErr, toastOk } from "../components/Feedback.js";
 import { Gauge } from "../components/Gauge.js";
+import { Glyph, PageTitle, type GlyphIcon } from "../components/Icon.js";
 import { Select } from "../components/Select.js";
 import { Chip, Notice, type ChipTone } from "../components/StatusChip.js";
 
@@ -100,6 +125,32 @@ const TONES: SwatchRow[] = [
   },
 ];
 
+/** 图标清单：全站真实使用的客户端同款 lucide 图标（新增页面图标先改 design.md §10）。 */
+const ICON_SAMPLES: Array<{ icon: GlyphIcon; label: string; where: string }> = [
+  { icon: Users, label: "团队与账号", where: "导航" },
+  { icon: ScrollText, label: "审计日志", where: "导航" },
+  { icon: HandCoins, label: "额度申请", where: "导航" },
+  { icon: ChartColumn, label: "用量", where: "导航" },
+  { icon: Activity, label: "运维大盘", where: "导航" },
+  { icon: PackageCheck, label: "内置配置发布", where: "导航" },
+  { icon: Boxes, label: "模型目录", where: "导航" },
+  { icon: Tags, label: "模型定价库", where: "导航" },
+  { icon: SlidersHorizontal, label: "平台配置", where: "导航" },
+  { icon: Plug, label: "上游供应商", where: "导航" },
+  { icon: Clapperboard, label: "媒体模型", where: "导航" },
+  { icon: LayoutGrid, label: "模型展示", where: "导航" },
+  { icon: Smartphone, label: "设备凭据", where: "导航" },
+  { icon: Building2, label: "团队概览", where: "导航" },
+  { icon: ShieldCheck, label: "预算与限制", where: "导航" },
+  { icon: Settings2, label: "团队设置", where: "导航" },
+  { icon: UserCog, label: "个人设置", where: "导航" },
+  { icon: Palette, label: "UI 组件库", where: "导航" },
+  { icon: RefreshCw, label: "刷新 / 重试", where: "按钮" },
+  { icon: Plus, label: "新增", where: "按钮" },
+  { icon: Trash2, label: "删除", where: "按钮" },
+  { icon: LogOut, label: "退出登录", where: "侧栏" },
+];
+
 function demoConfirmDialog(): void {
   void confirmDialog({
     k: "删除模型",
@@ -134,9 +185,9 @@ export function UiLibraryPage() {
       <header className="page-head">
         <div>
           <p className="eyebrow">参考 / 组件库</p>
-          <h1>UI 组件库</h1>
+          <PageTitle icon={Palette}>UI 组件库</PageTitle>
         </div>
-        <span className="readout m0">「计量台」视觉语言 · 纯 CSS 令牌 · 零新增依赖</span>
+        <span className="readout m0">「计量台」视觉语言 · lucide 图标（客户端同款）· 纯 CSS 令牌</span>
       </header>
 
       <section className="pane">
@@ -296,6 +347,27 @@ export function UiLibraryPage() {
               <i />
             </label>
           </div>
+        </div>
+      </section>
+
+      <section className="pane">
+        <div className="pane-h">
+          <h2>图标 · 客户端同款</h2>
+          <span className="readout">lucide-react 1.17 · 16px / 2 描边 · 颜色继承 currentColor</span>
+        </div>
+        <div className="pane-b">
+          <div className="icon-grid">
+            {ICON_SAMPLES.map((sample) => (
+              <div className="icon-cell" key={sample.label}>
+                <Glyph icon={sample.icon} size={18} />
+                <span className="icon-cell-label">{sample.label}</span>
+                <span className="icon-cell-where">{sample.where}</span>
+              </div>
+            ))}
+          </div>
+          <p className="lib-foot" style={{ marginTop: 12 }}>
+            图标只做语义强化，不替代文字：状态仍按「形状 + 颜色 + 文字」三重编码；不要用 unicode 字形或手写 SVG 代替。
+          </p>
         </div>
       </section>
 

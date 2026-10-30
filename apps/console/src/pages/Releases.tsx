@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { CircleCheck, PackageCheck, Rocket } from "lucide-react";
 import { api } from "../api.js";
 import { toastErr, toastOk } from "../components/Feedback.js";
+import { Glyph, PageTitle } from "../components/Icon.js";
 import { Chip, Notice } from "../components/StatusChip.js";
 import { formatShanghaiTime } from "../time.js";
 
@@ -73,7 +75,7 @@ export function ReleasesPage() {
       <header className="page-head">
         <div>
           <p className="eyebrow">下发 / 版本</p>
-          <h1>内置配置发布</h1>
+          <PageTitle icon={PackageCheck}>内置配置发布</PageTitle>
         </div>
         <span className="readout">
           内置配置版本 · {activeRevision == null ? "—" : `R${activeRevision}`}
@@ -105,6 +107,7 @@ export function ReleasesPage() {
           />
           <div className="form-row" style={{ marginTop: 10 }}>
             <button className="btn" disabled={busy || !content.trim()} onClick={() => void publish()}>
+              <Glyph icon={Rocket} size={14} strokeWidth={2} />
               {busy ? "发布中…" : "发布并生效"}
             </button>
           </div>
@@ -144,6 +147,7 @@ export function ReleasesPage() {
                           disabled={busy}
                           onClick={() => void activate(release.revision)}
                         >
+                          <Glyph icon={CircleCheck} size={13} strokeWidth={2} />
                           切换到此版本
                         </button>
                       )}

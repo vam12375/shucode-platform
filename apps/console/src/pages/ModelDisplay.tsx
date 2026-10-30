@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LayoutGrid, RefreshCw } from "lucide-react";
 import { useAuth } from "../auth.js";
 import { api } from "../api.js";
 import { toastOk } from "../components/Feedback.js";
+import { Glyph, PageTitle } from "../components/Icon.js";
 import { Chip, Notice } from "../components/StatusChip.js";
 
 type DisplayKind = "text" | "image" | "video";
@@ -97,15 +99,16 @@ export function ModelDisplayPage() {
       <header className="page-head">
         <div>
           <p className="eyebrow">下发 / 客户端目录</p>
-          <h1>模型展示</h1>
+          <PageTitle icon={LayoutGrid}>模型展示</PageTitle>
         </div>
         <button className="btn btn-ghost btn-sm" type="button" disabled={loading || Boolean(busyId)} onClick={() => void load(true)}>
+          <Glyph icon={RefreshCw} size={14} strokeWidth={2} />
           {loading ? "读取中…" : "刷新目录"}
         </button>
       </header>
       <p className="readout">设置 admin / user 在模型目录、创作工具和用量页面看到的名称。上游 ID、价格及已接受任务保持原样。</p>
       {error ? <Notice tone="stop" k={conflict ? "版本冲突" : "操作未完成"}>{error}</Notice> : null}
-      {conflict ? <button className="btn btn-sm" type="button" disabled={loading} onClick={() => void load(true)}>刷新目录并保留草稿</button> : null}
+      {conflict ? <button className="btn btn-sm" type="button" disabled={loading} onClick={() => void load(true)}><Glyph icon={RefreshCw} size={14} strokeWidth={2} />刷新目录并保留草稿</button> : null}
       {loading && entries.length === 0 ? <Notice k="模型展示">正在读取目录…</Notice> : null}
       {!loading && entries.length === 0 ? <Notice k="模型展示">目录中暂无可配置模型。</Notice> : null}
       <section className="pane d1" aria-label="模型显示字段">

@@ -44,6 +44,9 @@ function mount(width = 1440) {
         useId() { const i = cursor++; return `date-range-${i}`; },
         useEffect(effect, deps) { const i = cursor++; if (!(i in slots) || deps.some((dep, j) => dep !== slots[i].deps[j])) { slots[i]?.cleanup?.(); slots[i] = { deps }; effects.push(() => { slots[i].cleanup = effect(); }); } },
       };
+      // 图标只做视觉强化：VM 测试按空组件桩渲染，不引入真实 SVG 输出。
+      if (name === "lucide-react") return new Proxy({}, { get: () => () => null });
+      if (name === "../components/Icon.js") return { Glyph: () => null, PageTitle: (props) => props.children };
       throw new Error(`Unexpected import ${name}`);
     },
   });

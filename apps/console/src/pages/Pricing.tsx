@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { Tags, Upload } from "lucide-react";
 import { api, type ApiError } from "../api.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { EditableCell } from "../components/EditableCell.js";
+import { Glyph, PageTitle } from "../components/Icon.js";
 import { Notice } from "../components/StatusChip.js";
 
 /** 可点击编辑的单元格字段。 */
@@ -374,7 +376,7 @@ export function PricingPage() {
       <header className="page-head">
         <div>
           <p className="eyebrow">下发 / 参考</p>
-          <h1>模型定价库</h1>
+          <PageTitle icon={Tags}>模型定价库</PageTitle>
         </div>
         <span className="readout">
           {entries.length} 条 · 每 1M token 成本价（币种见条目）·{" "}
@@ -403,6 +405,7 @@ export function PricingPage() {
             disabled={busy}
             onClick={() => setPasteOpen((value) => !value)}
           >
+            <Glyph icon={Upload} size={14} strokeWidth={2} />
             {pasteOpen ? "收起粘贴导入" : "从 cc-switch JSON 粘贴导入"}
           </button>
         </div>

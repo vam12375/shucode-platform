@@ -12,6 +12,7 @@ import {
 } from "react";
 import { api, apiUrl } from "../api.js";
 import { useAuth } from "../auth.js";
+import { ChartColumn, ChevronLeft, ChevronRight, Download, RefreshCw } from "lucide-react";
 import {
   frozenCostRateText,
   historicalCostDisplay,
@@ -34,6 +35,7 @@ import {
 } from "../components/charts.js";
 import { showToast, toastErr } from "../components/Feedback.js";
 import { formatPct } from "../components/Gauge.js";
+import { Glyph, PageTitle } from "../components/Icon.js";
 import { Select } from "../components/Select.js";
 import { Chip, Notice, type ChipTone } from "../components/StatusChip.js";
 import {
@@ -722,7 +724,9 @@ export function UsagePage() {
       <header className="page-head">
         <div>
           <p className="eyebrow">计量 / 流水</p>
-          <h1>{isRoot ? "用量" : canManageTeam ? "用量与消费" : "我的用量"}</h1>
+          <PageTitle icon={ChartColumn}>
+            {isRoot ? "用量" : canManageTeam ? "用量与消费" : "我的用量"}
+          </PageTitle>
         </div>
         <p className="readout m0">
           {dataUnavailable
@@ -740,6 +744,7 @@ export function UsagePage() {
             disabled={loading}
             onClick={() => void load()}
           >
+            <Glyph icon={RefreshCw} size={13} strokeWidth={2} />
             重试
           </button>
         </Notice>
@@ -752,6 +757,7 @@ export function UsagePage() {
             type="button"
             onClick={() => setSeriesReloadKey((value) => value + 1)}
           >
+            <Glyph icon={RefreshCw} size={13} strokeWidth={2} />
             重试
           </button>
         </Notice>
@@ -963,6 +969,7 @@ export function UsagePage() {
               disabled={loading}
               onClick={() => void load()}
             >
+              <Glyph icon={RefreshCw} size={14} strokeWidth={2} />
               刷新
             </button>
             <button
@@ -970,6 +977,7 @@ export function UsagePage() {
               type="button"
               onClick={() => void exportUsage()}
             >
+              <Glyph icon={Download} size={14} strokeWidth={2} />
               导出 CSV
             </button>
           </div>
@@ -1445,8 +1453,8 @@ export function UsagePage() {
             <span className="readout" aria-live="polite">第 {currentPage ? pageIndex + 1 : 1} 页 · 本页 {records.length} 条{loading ? " · 加载中…" : ""}</span>
           </div>
           <div className="form-row">
-            <button className="btn btn-ghost" type="button" aria-label="最近请求上一页" disabled={loading || !currentPage || pageIndex === 0} onClick={previousPage}>上一页</button>
-            <button className="btn btn-ghost" type="button" aria-label="最近请求下一页" disabled={loading || !currentPage || !nextCursor} onClick={nextPage}>下一页</button>
+            <button className="btn btn-ghost" type="button" aria-label="最近请求上一页" disabled={loading || !currentPage || pageIndex === 0} onClick={previousPage}><Glyph icon={ChevronLeft} size={14} strokeWidth={2} />上一页</button>
+            <button className="btn btn-ghost" type="button" aria-label="最近请求下一页" disabled={loading || !currentPage || !nextCursor} onClick={nextPage}>下一页<Glyph icon={ChevronRight} size={14} strokeWidth={2} /></button>
           </div>
         </nav>
       </section>

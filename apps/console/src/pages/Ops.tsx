@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Activity, RefreshCw } from "lucide-react";
 import { api } from "../api.js";
 import {
   ChartFrame,
@@ -8,6 +9,7 @@ import {
 } from "../components/charts.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { formatPct } from "../components/Gauge.js";
+import { Glyph, PageTitle } from "../components/Icon.js";
 import { Select } from "../components/Select.js";
 import { Chip, Notice } from "../components/StatusChip.js";
 import { formatShanghaiTime } from "../time.js";
@@ -349,7 +351,7 @@ export function OpsPage() {
       <header className="page-head">
         <div>
           <p className="eyebrow">运维 / 实时读数</p>
-          <h1>运维大盘</h1>
+          <PageTitle icon={Activity}>运维大盘</PageTitle>
         </div>
         <div className="form-row" style={{ gap: 8 }}>
           <Select
@@ -360,6 +362,7 @@ export function OpsPage() {
             options={HOUR_OPTIONS}
           />
           <button className="btn btn-ghost" type="button" onClick={() => void load()}>
+            <Glyph icon={RefreshCw} size={14} strokeWidth={2} />
             刷新
           </button>
         </div>

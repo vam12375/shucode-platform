@@ -1,4 +1,5 @@
 import { formatCreditsDisplay } from "@shucode-platform/contracts/credits";
+import { Activity, Building2, Coins, MonitorSmartphone, Rocket, UserRound, Wallet } from "lucide-react";
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { useAuth } from "../auth.js";
 import { api } from "../api.js";
@@ -8,6 +9,7 @@ import {
   shanghaiDayStartUtc,
 } from "../time.js";
 import { useCountUp } from "./Gauge.js";
+import { Glyph } from "./Icon.js";
 import { Select } from "./Select.js";
 import { appVersion, versionText } from "../version.js";
 
@@ -169,7 +171,10 @@ export function ReadoutRail() {
       }
     >
       <div className="read scope">
-        <div className="label">{isRoot ? "查看范围" : "当前团队"}</div>
+        <div className="label">
+          <Glyph icon={Building2} size={12} strokeWidth={2} />
+          {isRoot ? "查看范围" : "当前团队"}
+        </div>
         {showScopeSelect ? (
           <Select
             ariaLabel={isRoot ? "切换查看范围" : "切换当前团队"}
@@ -199,7 +204,10 @@ export function ReadoutRail() {
         ) : null}
       </div>
       <div className="read" title="今日请求相对近 14 日均值">
-        <div className="label">今日请求</div>
+        <div className="label">
+          <Glyph icon={Activity} size={12} strokeWidth={2} />
+          今日请求
+        </div>
         <div className="value">
           {data ? (
             <>
@@ -219,7 +227,10 @@ export function ReadoutRail() {
         </div>
       </div>
       <div className="read" title="今日积分相对近 14 日均值">
-        <div className="label">今日积分</div>
+        <div className="label">
+          <Glyph icon={Coins} size={12} strokeWidth={2} />
+          今日积分
+        </div>
         <div className="value">
           {data ? (
             <>
@@ -239,7 +250,10 @@ export function ReadoutRail() {
         </div>
       </div>
       <div className="read" title="近 24 小时有调用且未吊销的设备数">
-        <div className="label">{isRoot ? "活跃设备" : "本人活跃设备"}</div>
+        <div className="label">
+          <Glyph icon={MonitorSmartphone} size={12} strokeWidth={2} />
+          {isRoot ? "活跃设备" : "本人活跃设备"}
+        </div>
         <div className="value">
           {data ? (
             <>
@@ -271,6 +285,11 @@ export function ReadoutRail() {
         }
       >
         <div className="label">
+          <Glyph
+            icon={isRoot ? Rocket : team ? Wallet : UserRound}
+            size={12}
+            strokeWidth={2}
+          />
           {isRoot ? "生效版本" : team ? "团队余额" : "当前账户"}
         </div>
         <div className="value">

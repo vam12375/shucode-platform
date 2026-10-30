@@ -1,8 +1,10 @@
 import { formatCreditsDisplay } from "@shucode-platform/contracts/credits";
 import { useCallback, useEffect, useState } from "react";
+import { HandCoins, RefreshCw, Send } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../auth.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
+import { Glyph, PageTitle } from "../components/Icon.js";
 import { Chip, Notice } from "../components/StatusChip.js";
 import { formatShanghaiTime } from "../time.js";
 
@@ -79,7 +81,7 @@ export function QuotaRequestsPage() {
       <header className="page-head">
         <div>
           <p className="eyebrow">额度 / 人工审批</p>
-          <h1>{isRoot ? "额度申请审批" : "额度申请"}</h1>
+          <PageTitle icon={HandCoins}>{isRoot ? "额度申请审批" : "额度申请"}</PageTitle>
         </div>
         <span className="readout">
           {requests.filter((item) => item.status === "pending").length} 项待处理
@@ -143,6 +145,7 @@ export function QuotaRequestsPage() {
               />
             </label>
             <button className="btn" disabled={busy}>
+              <Glyph icon={Send} size={14} strokeWidth={2} />
               {busy ? "提交中…" : "提交人工额度申请"}
             </button>
           </form>
@@ -156,6 +159,7 @@ export function QuotaRequestsPage() {
             disabled={busy}
             onClick={() => void load()}
           >
+            <Glyph icon={RefreshCw} size={14} strokeWidth={2} />
             刷新
           </button>
         </div>

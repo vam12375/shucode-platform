@@ -3,6 +3,7 @@ import {
   formatCreditsDisplay,
 } from "@shucode-platform/contracts/credits";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Plus, Users } from "lucide-react";
 import { api } from "../api.js";
 import {
   confirmDialog,
@@ -11,6 +12,7 @@ import {
   toastOk,
 } from "../components/Feedback.js";
 import { Gauge } from "../components/Gauge.js";
+import { Glyph, PageTitle } from "../components/Icon.js";
 import { Select } from "../components/Select.js";
 import { Chip, Notice, type ChipTone } from "../components/StatusChip.js";
 import { formatShanghaiDate, formatShanghaiTime } from "../time.js";
@@ -384,7 +386,7 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
       <header className="page-head">
         <div>
           <p className="eyebrow">组织 / 台账</p>
-          <h1>团队与账号</h1>
+          <PageTitle icon={Users}>团队与账号</PageTitle>
         </div>
         <div className="form-row">
           <button
@@ -395,7 +397,8 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
               setShowCreateAccount((value) => !value);
             }}
           >
-            {showCreateAccount ? "收起" : "+ 新建账号"}
+            <Glyph icon={Plus} size={14} strokeWidth={2} />
+            {showCreateAccount ? "收起" : "新建账号"}
           </button>
           <button
             className="btn btn-ghost"
@@ -405,7 +408,8 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
               setShowCreateTeam((value) => !value);
             }}
           >
-            {showCreateTeam ? "收起" : "+ 新建团队"}
+            <Glyph icon={Plus} size={14} strokeWidth={2} />
+            {showCreateTeam ? "收起" : "新建团队"}
           </button>
         </div>
       </header>
@@ -479,6 +483,7 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
                 options={teamOptions}
               />
               <button className="btn" type="submit" disabled={busy}>
+                <Glyph icon={Plus} size={14} strokeWidth={2} />
                 创建账号
               </button>
             </form>
@@ -521,6 +526,7 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
                 type="submit"
                 disabled={busy || !teamName.trim()}
               >
+                <Glyph icon={Plus} size={14} strokeWidth={2} />
                 新建团队
               </button>
             </form>

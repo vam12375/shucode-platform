@@ -27,6 +27,9 @@ runInNewContext(compiled, {
     if (name === "./MediaReconciliation.js") return { MediaReconciliation: "MediaReconciliation" };
     if (name === "./ReferencePricing.js") return { ReferencePricing: "ReferencePricing" };
     if (name === "./SourceParserStatus.js") return { SourceParserStatus: "SourceParserStatus" };
+    // 图标只做视觉强化：VM 测试按空组件桩渲染，不引入真实 SVG 输出。
+    if (name === "lucide-react") return new Proxy({}, { get: () => () => null });
+    if (name === "../components/Icon.js") return { Glyph: () => null, PageTitle: (props) => props.children };
     throw new Error(`Unexpected import ${name}`);
   },
 });
@@ -318,6 +321,9 @@ async function mountModels(models, providers = [provider]) {
       if (name === "./MediaReconciliation.js") return { MediaReconciliation: "MediaReconciliation" };
       if (name === "./ReferencePricing.js") return { ReferencePricing: "ReferencePricing" };
       if (name === "./SourceParserStatus.js") return { SourceParserStatus: "SourceParserStatus" };
+      // 图标只做视觉强化：VM 测试按空组件桩渲染，不引入真实 SVG 输出。
+      if (name === "lucide-react") return new Proxy({}, { get: () => () => null });
+      if (name === "../components/Icon.js") return { Glyph: () => null, PageTitle: (props) => props.children };
       throw new Error(`Unexpected import ${name}`);
     },
   });

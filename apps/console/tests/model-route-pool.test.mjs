@@ -45,6 +45,9 @@ function mount(options = {}) {
       if (name === "./Feedback.js") return { toastOk() {}, toastErr(value) { errors.push(value); }, confirmDialog: async () => ({ confirmed: true }) };
       if (name === "./Select.js") return { Select: "Select" };
       if (name === "./StatusChip.js") return { Chip: "Chip", Notice: "Notice" };
+      // 图标只做视觉强化：VM 测试按空组件桩渲染，不引入真实 SVG 输出。
+      if (name === "lucide-react") return new Proxy({}, { get: () => () => null });
+      if (name === "../components/Icon.js") return { Glyph: () => null, PageTitle: (props) => props.children };
       throw new Error(`Unexpected import ${name}`);
     },
   });

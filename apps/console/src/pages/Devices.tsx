@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { Smartphone } from "lucide-react";
 import { api } from "../api.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
+import { PageTitle } from "../components/Icon.js";
 import { Chip, Notice } from "../components/StatusChip.js";
 import { formatShanghaiTime } from "../time.js";
 
@@ -60,7 +62,7 @@ export function DevicesPage() {
       <header className="page-head">
         <div>
           <p className="eyebrow">接入 / 凭据</p>
-          <h1>设备凭据</h1>
+          <PageTitle icon={Smartphone}>设备凭据</PageTitle>
         </div>
         <span className="readout">
           {devices.filter((d) => !d.revokedAt).length} 有效 · {devices.length} 台

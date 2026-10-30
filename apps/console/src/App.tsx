@@ -1,4 +1,25 @@
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
+import {
+  Activity,
+  Boxes,
+  Building2,
+  ChartColumn,
+  Clapperboard,
+  HandCoins,
+  LayoutGrid,
+  LogOut,
+  PackageCheck,
+  Palette,
+  Plug,
+  ScrollText,
+  Settings2,
+  ShieldCheck,
+  SlidersHorizontal,
+  Smartphone,
+  Tags,
+  UserCog,
+  Users,
+} from "lucide-react";
 import { api, navigate, setApiTeamScope } from "./api.js";
 import { AuthProvider } from "./auth.js";
 import {
@@ -14,6 +35,7 @@ import { CatalogPage, InvitePage, ProfilePage, TenantPage } from "./pages/Tenant
 import { Notice } from "./components/StatusChip.js";
 import { DialogHost, ToastHost } from "./components/Feedback.js";
 import { MfaSettings } from "./components/MfaSettings.js";
+import { Glyph } from "./components/Icon.js";
 import { ReadoutRail } from "./components/ReadoutRail.js";
 import { AuditPage } from "./pages/Audit.js";
 import { ConfigPage } from "./pages/ConfigPage.js";
@@ -39,34 +61,34 @@ const NAV_GROUPS = [
   {
     label: "组织",
     items: [
-      { path: "/org", label: "团队与账号" },
-      { path: "/audit", label: "审计日志" },
-      { path: "/quota-requests", label: "额度申请审批" },
+      { path: "/org", label: "团队与账号", icon: Users },
+      { path: "/audit", label: "审计日志", icon: ScrollText },
+      { path: "/quota-requests", label: "额度申请审批", icon: HandCoins },
     ],
   },
   {
     label: "计量",
     items: [
-      { path: "/usage", label: "用量" },
-      { path: "/ops", label: "运维大盘" },
+      { path: "/usage", label: "用量", icon: ChartColumn },
+      { path: "/ops", label: "运维大盘", icon: Activity },
     ],
   },
   {
     label: "下发",
     items: [
-      { path: "/releases", label: "内置配置发布" },
-      { path: "/models", label: "模型目录" },
-      { path: "/pricing", label: "模型定价库" },
-      { path: "/config", label: "平台配置" },
+      { path: "/releases", label: "内置配置发布", icon: PackageCheck },
+      { path: "/models", label: "模型目录", icon: Boxes },
+      { path: "/pricing", label: "模型定价库", icon: Tags },
+      { path: "/config", label: "平台配置", icon: SlidersHorizontal },
     ],
   },
   {
     label: "接入",
     items: [
-      { path: "/providers", label: "上游供应商" },
-      { path: "/media-models", label: "媒体模型" },
-      { path: "/model-display", label: "模型展示" },
-      { path: "/devices", label: "设备凭据" },
+      { path: "/providers", label: "上游供应商", icon: Plug },
+      { path: "/media-models", label: "媒体模型", icon: Clapperboard },
+      { path: "/model-display", label: "模型展示", icon: LayoutGrid },
+      { path: "/devices", label: "设备凭据", icon: Smartphone },
     ],
   },
 ] as const;
@@ -272,21 +294,22 @@ export function App() {
           items: [
             ...(canManageTeam
               ? [
-                  { path: "/team", label: "团队概览" },
-                  { path: "/members", label: "成员管理" },
-                  { path: "/policy", label: "预算与限制" },
-                  { path: "/quota-requests", label: "额度申请" },
-                  { path: "/audit", label: "团队审计" },
-                  { path: "/team-settings", label: "团队设置" },
+                  { path: "/team", label: "团队概览", icon: Building2 },
+                  { path: "/members", label: "成员管理", icon: Users },
+                  { path: "/policy", label: "预算与限制", icon: ShieldCheck },
+                  { path: "/quota-requests", label: "额度申请", icon: HandCoins },
+                  { path: "/audit", label: "团队审计", icon: ScrollText },
+                  { path: "/team-settings", label: "团队设置", icon: Settings2 },
                 ]
               : []),
             {
               path: "/usage",
               label: canManageTeam ? "用量与消费" : "我的用量",
+              icon: ChartColumn,
             },
-            { path: "/catalog", label: "可用模型" },
-            { path: "/devices", label: "本人设备" },
-            { path: "/profile", label: "个人设置" },
+            { path: "/catalog", label: "可用模型", icon: Boxes },
+            { path: "/devices", label: "本人设备", icon: Smartphone },
+            { path: "/profile", label: "个人设置", icon: UserCog },
           ],
         },
       ];
@@ -408,7 +431,8 @@ export function App() {
                     href={`#${item.path}`}
                     className={section === item.path.slice(1) ? "nav-item active" : "nav-item"}
                   >
-                    {item.label}
+                    <Glyph icon={item.icon} />
+                    <span>{item.label}</span>
                   </a>
                 ))}
               </Fragment>
@@ -418,14 +442,16 @@ export function App() {
             <div className="side-ref">
               <p className="nav-group">参考</p>
               <a href="#/ui" className={section === "ui" ? "nav-item active" : "nav-item"}>
-                UI 组件库
+                <Glyph icon={Palette} />
+                <span>UI 组件库</span>
               </a>
             </div>
           ) : null}
           <div className="side-foot">
             {isRoot ? (
               <a href="#/profile" className="nav-item">
-                个人设置
+                <Glyph icon={UserCog} />
+                <span>个人设置</span>
               </a>
             ) : null}
             <div className="user-card">
@@ -444,21 +470,7 @@ export function App() {
                 </div>
               </div>
               <button className="logout" type="button" onClick={() => void logout()}>
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                  <polyline points="16 17 21 12 16 7" />
-                  <line x1="21" y1="12" x2="9" y2="12" />
-                </svg>
+                <Glyph icon={LogOut} size={13} strokeWidth={2} />
                 退出登录
               </button>
             </div>

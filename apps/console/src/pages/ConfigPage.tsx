@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Save, SlidersHorizontal } from "lucide-react";
 import { api } from "../api.js";
 import { toastErr, toastOk } from "../components/Feedback.js";
+import { Glyph, PageTitle } from "../components/Icon.js";
 import { Notice } from "../components/StatusChip.js";
 
 interface PlatformConfig {
@@ -90,7 +92,7 @@ export function ConfigPage() {
       <header className="page-head">
         <div>
           <p className="eyebrow">下发 / 平台参数</p>
-          <h1>平台配置</h1>
+          <PageTitle icon={SlidersHorizontal}>平台配置</PageTitle>
         </div>
       </header>
       <p className="readout" style={{ margin: 0, marginBottom: 18 }}>
@@ -176,6 +178,7 @@ export function ConfigPage() {
 
       <div className="form-row">
         <button className="btn" disabled={busy} onClick={() => void save()}>
+          <Glyph icon={Save} size={14} strokeWidth={2} />
           {busy ? "保存中…" : "保存"}
         </button>
       </div>

@@ -1,8 +1,10 @@
+import { CircleCheck, CircleX, TriangleAlert, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Glyph } from "./Icon.js";
 
 /**
  * 全局操作反馈：Toast（操作成功/失败提示）与确认弹窗（替代系统 confirm / prompt）。
- * 模块级状态 + Host 组件渲染，页面直接 import 函数调用，不经过 Context，零新增依赖。
+ * 模块级状态 + Host 组件渲染，页面直接 import 函数调用，不经过 Context，不引入状态库。
  * 样式走 styles.css 的「计量台」令牌（--surface / --line / --amber / --signal）。
  */
 
@@ -73,6 +75,17 @@ export function ToastHost() {
           key={item.id}
           className={item.tone === "ok" ? "toast" : `toast ${item.tone}`}
         >
+          <Glyph
+            icon={
+              item.tone === "ok"
+                ? CircleCheck
+                : item.tone === "warn"
+                  ? TriangleAlert
+                  : CircleX
+            }
+            size={15}
+            strokeWidth={2}
+          />
           {item.k ? <span className="k">{item.k}</span> : null}
           <span className="msg">{item.message}</span>
           <button
@@ -81,7 +94,7 @@ export function ToastHost() {
             aria-label="关闭提示"
             onClick={() => dismissToast(item.id)}
           >
-            ×
+            <Glyph icon={X} size={13} strokeWidth={2} />
           </button>
         </div>
       ))}
@@ -203,7 +216,10 @@ export function DialogHost() {
         onClick={(event) => event.stopPropagation()}
       >
         {options.k ? <p className="readout dialog-k">{options.k}</p> : null}
-        <h3 className="dialog-title">{options.title}</h3>
+        <h3 className="dialog-title">
+          {options.danger ? <Glyph icon={TriangleAlert} size={17} strokeWidth={2} /> : null}
+          {options.title}
+        </h3>
         {options.message ? <p className="dialog-desc">{options.message}</p> : null}
         <form
           onSubmit={(event) => {

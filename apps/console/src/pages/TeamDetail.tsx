@@ -3,11 +3,13 @@ import {
   formatCreditsDisplay,
 } from "@shucode-platform/contracts/credits";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowLeft, Building2, Users } from "lucide-react";
 import { useAuth } from "../auth.js";
 import { Select } from "../components/Select.js";
 import { api, navigate } from "../api.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { Gauge } from "../components/Gauge.js";
+import { Glyph, PageTitle } from "../components/Icon.js";
 import { Chip, Notice, type ChipTone } from "../components/StatusChip.js";
 import { formatShanghaiTime } from "../time.js";
 import { UsageModel } from "../components/UsageModel.js";
@@ -180,7 +182,10 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
     return (
       <div>
         <p className="eyebrow">
-          <a href="#/org">← 返回团队与账号</a>
+          <a href="#/org">
+            <Glyph icon={ArrowLeft} size={12} strokeWidth={2} />
+            返回团队与账号
+          </a>
         </p>
         {error ? (
           <Notice tone="stop" k="加载失败">
@@ -204,9 +209,12 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
       <header className="page-head">
         <div>
           <p className="eyebrow">
-            <a href="#/org">← 返回团队与账号</a>
+            <a href="#/org">
+              <Glyph icon={ArrowLeft} size={12} strokeWidth={2} />
+              返回团队与账号
+            </a>
           </p>
-          <h1>{team.name}</h1>
+          <PageTitle icon={Building2}>{team.name}</PageTitle>
         </div>
         <span className="readout m0">
           共 {totalRequests.toLocaleString("en-US")} 次请求 · {credits(totalCredits)} credit
@@ -459,6 +467,7 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
               navigate("/members");
             }}
           >
+            <Glyph icon={Users} size={14} strokeWidth={2} />
             团队工作台 · 邀请与预算
           </button>
           <span className="readout">{members.length} 人</span>
