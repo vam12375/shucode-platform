@@ -1,11 +1,13 @@
-# shucode-platform 开发规范
+# 门道后台管理系统（shucode-platform）开发规范
 
-本仓库是 Shucode 客户端的多租户 SaaS 平台：控制面 API 与模型网关（`server/`，Go）+ 管理控制台（`apps/console`，React）+ 跨端契约（`packages/contracts`）。独立仓库、独立部署（Docker 编排与服务器同一套）。后端已于 v0.20.0 完成 Go 全面重写，计划与兼容红线见 `specs/go-rewrite.md`（本地文档）。
+本仓库是**门道（Mendao）的后台管理系统**：平台控制面 API 与模型网关（`server/`，Go）+ 管理控制台（`apps/console`，React）+ 跨端契约（`packages/contracts`）。独立仓库、独立部署（Docker 编排与服务器同一套）。后端已于 v0.20.0 完成 Go 全面重写，计划与兼容红线见 `specs/go-rewrite.md`（本地文档）。
+
+门道客户端项目（Electron 桌面端 + CLI）在本机 `/Users/info/Desktop/mendao`；旧的 `/Users/info/Shucode` 仓库已停在 v0.23.4、不再维护，跨端契约同步与客户端实现核对都只认新路径。
 
 ## 权威契约（跨端，不可轻改）
 
-- 跨端接口契约以 `specs/multi-tenant-saas.md` 为准——它是 Shucode 客户端仓库 `specs/platform/multi-tenant-saas.md` 的镜像副本：平台侧契约演进在本副本上进行，客户端侧章节以客户端仓库为准；**任何跨端契约改动（provisioning 信封 schema、登录流、网关协议、公开配置信封、Release 清单）必须同步更新两边文件**。
-- 跨端 schema 的权威源在 Shucode 客户端仓库 `packages/shared/src/`（镜像副本见 specs）；服务端可执行镜像在 `server/internal/contracts`，与客户端 schema **必须同构**并受 `testdata/fixtures.json`（冻结对齐用例，随契约同步更新）测试夹紧。`packages/contracts` 现仅保留 console 消费的 `credits.ts`。
+- 跨端接口契约以 `specs/multi-tenant-saas.md` 为准——它是门道客户端仓库（`/Users/info/Desktop/mendao`）`specs/platform/multi-tenant-saas.md` 的镜像副本：平台侧契约演进在本副本上进行，客户端侧章节以客户端仓库为准；**任何跨端契约改动（provisioning 信封 schema、登录流、网关协议、公开配置信封、Release 清单）必须同步更新两边文件**。
+- 跨端 schema 的权威源在门道客户端仓库 `packages/shared/src/`（镜像副本见 specs）；服务端可执行镜像在 `server/internal/contracts`，与客户端 schema **必须同构**并受 `testdata/fixtures.json`（冻结对齐用例，随契约同步更新）测试夹紧。`packages/contracts` 现仅保留 console 消费的 `credits.ts`。
 - 网关设备 token 必须写入 provider 规则的 `config.access.apiKey`（Go: `withPlatformAccessToken`），credentials 保持空数组——客户端 Registry 完整校验要求 access 完整，缺 apiKey 时整个 Provider 被丢弃（provider-not-found → 信封回滚）。
 - 通用用户配置信封的 `defaultModelSelection` 只是"偏好"：客户端按模型当前合法能力初始化 reasoningLevel。参考原片与复刻改编分析是用户指定的例外：平台校验真实最终上游为 DeepSeek Flash 系列并公开支持 `high`，在两阶段预检和 scoped 信封中显式下发 `options.reasoningLevel: "high"`，原片额外要求视觉能力；scope 与网关实际请求共同强制，不支持时拒绝，不能继承 max/xhigh 或静默降档。
 - 平台用户级配置只拥有 `platform:gateway` 一个 provider，应用语义是合并（同名覆盖、其余保留），不是整份替换。
@@ -46,7 +48,7 @@ Node 版本以 `mise.toml` 为准（Node 24 / pnpm 10）；Go 版本 1.26（补�
 
 - 数据访问一律走 `server/internal/store` 的存储端口（`store.go`）；api/gateway 不直连 SQL。Postgres 与内存实现（`MEMORY_DB=1`）必须同语义，由 `conformance_test.go` 的统一套件与跨实现对比测试夹紧，尤其是配额临界区。
 - 内存实现的读写一律返回副本，禁止复刻旧 TS 内存库「get* 返回原地引用」的别名陷阱；「读旧值→改→写」逻辑先取标量快照。
-- 契约校验：跨端 schema 的 Go 镜像在 `server/internal/contracts`；契约演进时以客户端仓库 schema 为准同步 Go 镜像，并更新冻结的 `testdata/fixtures.json`/`vectors.json` 保证对齐测试绿。
+- 契约校验：跨端 schema 的 Go 镜像在 `server/internal/contracts`；契约演进时以门道客户端仓库 schema 为准同步 Go 镜像，并更新冻结的 `testdata/fixtures.json`/`vectors.json` 保证对齐测试绿。
 - Redis 只用于登录限流与配置事件总线（`REDIS_URL` 设置时）；配额与会话/设备 token 权威仍在 Postgres，**永不**用 Redis 做额度或凭据的真相源。
 - 有行为改动必须执行 `pnpm typecheck`、`pnpm test` 与 `make -C server lint test`，报告真实结果；不将已有失败写成通过。
 - 修复 bug 用中文注释说明根因与修复依据；发现设计缺陷先与用户对齐，不不断增加兜底分支掩盖问题。

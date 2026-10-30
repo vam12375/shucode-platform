@@ -5,9 +5,21 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-本仓库为独立平台服务（控制面 + 模型网关 + 管理控制台），与 Shucode 客户端仓库分开发布；客户端接入方案见 Shucode 仓库 `specs/platform/multi-tenant-saas.md`。
+本仓库为独立平台服务（控制面 + 模型网关 + 管理控制台），与门道客户端仓库分开发布；客户端接入方案见门道客户端仓库 `/Users/info/Desktop/mendao` 的 `specs/platform/multi-tenant-saas.md`。
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
+
+## [0.68.1] - 2026-10-30
+
+### 文档(仓库定位)
+
+- README 与 AGENTS 明确本仓库是门道后台管理系统，客户端项目路径改为
+  `/Users/info/Desktop/mendao`；旧 `/Users/info/Shucode` 已停在 v0.23.4、不再维护。
+- 跨端契约同步与客户端实现核对只认新路径；CHANGELOG 发布说明同步。
+
+### 验证
+
+- 未运行（仅文档改动，无运行时行为）
 
 ## [0.68.0] - 2026-10-30
 

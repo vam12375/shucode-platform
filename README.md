@@ -1,8 +1,8 @@
-# shucode-platform（Mendao 平台）
+# 门道后台管理系统（shucode-platform）
 
-Shucode 客户端的多租户 SaaS 平台：平台账号登录、管理员控制台、模型目录与**团队共享额度**（credit）、内置配置（Built-in Release）发布、模型网关。后端为 Go（Go 1.26 + Gin + pgx），控制台为 React + Vite。
+门道（Mendao）的后台管理系统，服务门道客户端（本机项目路径 `/Users/info/Desktop/mendao`；旧的 `/Users/info/Shucode` 仓库已停更）：平台账号登录、管理员控制台、模型目录与**团队共享额度**（credit）、内置配置（Built-in Release）发布、模型网关。后端为 Go（Go 1.26 + Gin + pgx），控制台为 React + Vite。
 
-客户端接入方案与验收场景见 [`specs/multi-tenant-saas.md`](specs/multi-tenant-saas.md)（从 Shucode 客户端仓库 `specs/platform/multi-tenant-saas.md` 镜像，权威源与同步规则见文件头）。
+客户端接入方案与验收场景见 [`specs/multi-tenant-saas.md`](specs/multi-tenant-saas.md)（从门道客户端仓库 `/Users/info/Desktop/mendao` 的 `specs/platform/multi-tenant-saas.md` 镜像，权威源与同步规则见文件头）。
 
 ## 组成
 
@@ -148,7 +148,7 @@ VITE_SHUCODE_BASE_URL=https://api.mendao.chat # Web 端
 
 ## 关键契约（不可轻改）
 
-- **用户级配置信封**与客户端 `ProviderProvisioningEnvelope` 同构；权威源在 Shucode 客户端仓库，Go 侧镜像在 `server/internal/contracts`，由冻结 fixtures 对齐测试保证。
+- **用户级配置信封**与客户端 `ProviderProvisioningEnvelope` 同构；权威源在门道客户端仓库（`/Users/info/Desktop/mendao`），Go 侧镜像在 `server/internal/contracts`，由冻结 fixtures 对齐测试保证。
 - **网关设备 token 必须写入 provider 规则的 `config.access.apiKey`**：客户端 Registry 完整校验要求 Provider access 完整，缺 apiKey 时 Provider 会被整份丢弃（provider-not-found → 信封回滚）。
 - **偏好默认模型**：`defaultModelSelection` 只作"偏好"，客户端应用前会剥离并由 Registry 档位事实补全。
 - **下发协议默认 OpenAI chat**（`GATEWAY_API_TYPE`，baseUrl 带 `/v1` 前缀）：网关三条协议路由（chat / messages / responses）共享鉴权与额度管道；**模型目录中的模型名必须与上游真实模型名一致**，或用控制台的 `upstreamModel` 字段映射。
