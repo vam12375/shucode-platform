@@ -68,7 +68,10 @@ const manualCapabilityConfig = `{
     "supportsNativeWebSearch": false,
     "supportsMidConversationSystem": false
   },
-  "optionSpecs": {"maxOutputTokens": {"max": 8000}}
+  "optionSpecs": {
+    "reasoningLevel": {"values": ["low", "high"], "map": "{\"reasoning_effort\": reasoningLevel}"},
+    "maxOutputTokens": {"max": 8000}
+  }
 }`
 
 func TestModelCapabilityAnalyzeAndConfigUpdate(t *testing.T) {
@@ -174,6 +177,11 @@ func TestUserConfigCarriesManualModelCapabilities(t *testing.T) {
 		optionSpecs["maxOutputTokens"].(map[string]any)["max"] != float64(8000) {
 		t.Fatalf("手动能力未进入信封: %v", ruleConfig)
 	}
+	reasoning := optionSpecs["reasoningLevel"].(map[string]any)
+	if len(reasoning["values"].([]any)) != 2 || reasoning["values"].([]any)[1] != "high" ||
+		reasoning["map"] != `{"reasoning_effort": reasoningLevel}` {
+		t.Fatalf("思考档位未进入信封: %v", optionSpecs)
+	}
 
 	if _, err := f.store.SetModelConfig(ctx, "model-a", "recommended", nil); err != nil {
 		t.Fatal(err)
@@ -201,6 +209,37 @@ func TestUserConfigCarriesManualModelCapabilities(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("信封缺少 model-a: %v", rules)
+	}
+}
+
+func TestManualModelCapabilityReasoningValidation(t *testing.T) {
+	config := func(reasoning string) json.RawMessage {
+		return json.RawMessage(`{"properties":{"contextWindow":128000},"optionSpecs":{"maxOutputTokens":{"max":32000}` + reasoning + `}}`)
+	}
+	parsed, err := parseManualModelCapabilityConfig(config(
+		`,"reasoningLevel":{"values":[" low ","high"],"map":"  {\"reasoning_effort\": reasoningLevel}  "}`,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reasoning := parsed.OptionSpecs.ReasoningLevel
+	if reasoning == nil || len(reasoning.Values) != 2 || reasoning.Values[0] != "low" ||
+		reasoning.Values[1] != "high" || reasoning.Map != `{"reasoning_effort": reasoningLevel}` {
+		t.Fatalf("思考档位未归一化: %+v", reasoning)
+	}
+	if parsed, err = parseManualModelCapabilityConfig(config("")); err != nil || parsed.OptionSpecs.ReasoningLevel != nil {
+		t.Fatalf("未提供思考档位应保持可继承: %+v %v", parsed, err)
+	}
+
+	for name, fragment := range map[string]string{
+		"空档位":  `,"reasoningLevel":{"values":[],"map":"{}"}`,
+		"空值":   `,"reasoningLevel":{"values":["low","  "],"map":"{}"}`,
+		"重复档位": `,"reasoningLevel":{"values":["low","low"],"map":"{}"}`,
+		"空映射":  `,"reasoningLevel":{"values":["low"],"map":"  "}`,
+	} {
+		if _, err := parseManualModelCapabilityConfig(config(fragment)); err == nil {
+			t.Fatalf("%s 应被拒绝", name)
+		}
 	}
 }
 

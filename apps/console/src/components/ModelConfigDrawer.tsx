@@ -1,110 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
+import {
+  REASONING_LEVEL_PRESETS,
+  configFromFields,
+  fieldsFromConfig,
+  reasoningConfigError,
+  reasoningLevelLabel,
+  reasoningSummaryText,
+  toggleReasoningLevel,
+  type ConfigFields,
+  type ModelCapabilityAnalysis,
+  type ModelConfigMode,
+  type ModelConfigTarget,
+} from "../model-config.js";
 import { toastErr, toastOk } from "./Feedback.js";
 import { Notice } from "./StatusChip.js";
 
-export type ModelConfigMode = "recommended" | "manual";
-
-export interface ModelInputFormat {
-  supportsText: boolean;
-  supportsImage: boolean;
-  supportsVideo: boolean;
-  supportsAudio: boolean;
-  supportsPdf: boolean;
-}
-
-export interface ModelCapabilityConfig {
-  properties: {
-    contextWindow: number;
-    inputFormat: ModelInputFormat;
-    outputFormat: { supportsText: boolean };
-    supportsToolCall: boolean;
-    supportsJsonSchemaOutput: boolean;
-    supportsNativeWebSearch: boolean;
-    supportsMidConversationSystem: boolean;
-    requiresMfjsToolSchema: boolean;
-  };
-  optionSpecs: {
-    maxOutputTokens: { max: number };
-  };
-}
-
-export interface ModelConfigTarget {
-  modelId: string;
-  displayName: string;
-  configMode?: ModelConfigMode;
-  config?: ModelCapabilityConfig | null;
-}
-
-export interface ModelCapabilityAnalysis {
-  modelId: string;
-  config: ModelCapabilityConfig;
-  matchedRules: number;
-  complete: boolean;
-  releaseRevision: number | null;
-}
-
-interface ConfigFields {
-  contextWindow: string;
-  maxOutputTokens: string;
-  supportsImage: boolean;
-  supportsVideo: boolean;
-  supportsAudio: boolean;
-  supportsPdf: boolean;
-  supportsToolCall: boolean;
-  supportsJsonSchemaOutput: boolean;
-  supportsNativeWebSearch: boolean;
-  supportsMidConversationSystem: boolean;
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "操作失败";
-}
-
-function fieldsFromConfig(config?: ModelCapabilityConfig | null): ConfigFields {
-  return {
-    contextWindow:
-      config && config.properties.contextWindow > 0
-        ? String(config.properties.contextWindow)
-        : "",
-    maxOutputTokens:
-      config && config.optionSpecs.maxOutputTokens.max > 0
-        ? String(config.optionSpecs.maxOutputTokens.max)
-        : "",
-    supportsImage: config?.properties.inputFormat.supportsImage ?? false,
-    supportsVideo: config?.properties.inputFormat.supportsVideo ?? false,
-    supportsAudio: config?.properties.inputFormat.supportsAudio ?? false,
-    supportsPdf: config?.properties.inputFormat.supportsPdf ?? false,
-    supportsToolCall: config?.properties.supportsToolCall ?? false,
-    supportsJsonSchemaOutput: config?.properties.supportsJsonSchemaOutput ?? false,
-    supportsNativeWebSearch: config?.properties.supportsNativeWebSearch ?? false,
-    supportsMidConversationSystem:
-      config?.properties.supportsMidConversationSystem ?? false,
-  };
-}
-
-function configFromFields(fields: ConfigFields): ModelCapabilityConfig {
-  return {
-    properties: {
-      contextWindow: Number.parseInt(fields.contextWindow, 10),
-      inputFormat: {
-        supportsText: true,
-        supportsImage: fields.supportsImage,
-        supportsVideo: fields.supportsVideo,
-        supportsAudio: fields.supportsAudio,
-        supportsPdf: fields.supportsPdf,
-      },
-      outputFormat: { supportsText: true },
-      supportsToolCall: fields.supportsToolCall,
-      supportsJsonSchemaOutput: fields.supportsJsonSchemaOutput,
-      supportsNativeWebSearch: fields.supportsNativeWebSearch,
-      supportsMidConversationSystem: fields.supportsMidConversationSystem,
-      requiresMfjsToolSchema: false,
-    },
-    optionSpecs: {
-      maxOutputTokens: { max: Number.parseInt(fields.maxOutputTokens, 10) },
-    },
-  };
 }
 
 function formatTokenCount(value: number): string {
@@ -211,6 +124,24 @@ export function ModelConfigDrawer({
     setError("");
   };
 
+  // 首次开启时用官方档位补齐，避免只打开开关却下发空档位。
+  const toggleReasoning = (enabled: boolean): void => {
+    setFields((previous) => {
+      if (!enabled) return { ...previous, reasoningEnabled: false };
+      const official = analysis?.config.optionSpecs.reasoningLevel;
+      return {
+        ...previous,
+        reasoningEnabled: true,
+        reasoningLevels:
+          previous.reasoningLevels.length > 0
+            ? previous.reasoningLevels
+            : (official?.values ?? []),
+        reasoningMap: previous.reasoningMap || official?.map || "",
+      };
+    });
+    setError("");
+  };
+
   const save = async (): Promise<void> => {
     let body: Record<string, unknown> = { mode };
     if (mode === "manual") {
@@ -222,6 +153,11 @@ export function ModelConfigDrawer({
       }
       if (!Number.isInteger(maxOutputTokens) || maxOutputTokens <= 0) {
         setError("最大输出 Token 必须是大于 0 的整数。");
+        return;
+      }
+      const reasoningError = reasoningConfigError(fields);
+      if (reasoningError) {
+        setError(reasoningError);
         return;
       }
       body = { mode, config: configFromFields(fields) };
@@ -426,6 +362,99 @@ export function ModelConfigDrawer({
                 </button>
               ))}
             </div>
+          </section>
+
+          <section className="drawer-sec">
+            <div className="config-switch-row">
+              <div>
+                <h4 className="drawer-sec-title">思考强度</h4>
+                <p className="readout config-hint">
+                  声明客户端可选的思考档位（按强度从低到高）及档位到上游参数的映射；关闭时不下发档位，客户端沿用官方规则。
+                </p>
+              </div>
+              <label className="switch" title="下发思考档位">
+                <input
+                  type="checkbox"
+                  aria-label="下发思考档位"
+                  checked={fields.reasoningEnabled}
+                  disabled={readOnly || busy}
+                  onChange={(event) => toggleReasoning(event.target.checked)}
+                />
+                <i />
+              </label>
+            </div>
+            {fields.reasoningEnabled ? (
+              <div className="form-stack" style={{ marginTop: 10 }}>
+                <div className="field">
+                  <span className="field-label">档位（从低到高）</span>
+                  <div className="choice-row">
+                    {[
+                      ...REASONING_LEVEL_PRESETS,
+                      ...fields.reasoningLevels
+                        .filter(
+                          (value) =>
+                            !REASONING_LEVEL_PRESETS.some(
+                              (preset) => preset.value === value,
+                            ),
+                        )
+                        .map((value) => ({ value, label: value })),
+                    ].map((option) => {
+                      const selected = fields.reasoningLevels.includes(option.value);
+                      return (
+                        <button
+                          key={option.value}
+                          className={"choice-chip" + (selected ? " selected" : "")}
+                          type="button"
+                          aria-pressed={selected}
+                          disabled={readOnly || busy}
+                          onClick={() =>
+                            updateField(
+                              "reasoningLevels",
+                              toggleReasoningLevel(
+                                fields.reasoningLevels,
+                                option.value,
+                                !selected,
+                              ),
+                            )
+                          }
+                        >
+                          {option.label}
+                          {option.label === option.value ? "" : ` · ${option.value}`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <span className="readout">
+                    {fields.reasoningLevels.length > 0
+                      ? `下发顺序：${fields.reasoningLevels.map(reasoningLevelLabel).join(" / ")}`
+                      : "至少选择一个档位。"}
+                  </span>
+                </div>
+                <label className="field">
+                  <span className="field-label">档位映射（CEL 表达式）</span>
+                  <textarea
+                    className="input"
+                    style={{ minHeight: 96 }}
+                    aria-label="思考档位映射"
+                    readOnly={readOnly}
+                    value={fields.reasoningMap}
+                    placeholder={'如 {"reasoning_effort": reasoningLevel}'}
+                    onChange={(event) =>
+                      updateField("reasoningMap", event.target.value)
+                    }
+                  />
+                  <span className="readout">
+                    变量为 reasoningLevel，必须返回 JSON 对象；官方规则通常给出上游字段映射。
+                  </span>
+                </label>
+              </div>
+            ) : (
+              <p className="readout config-hint" style={{ marginTop: 10 }}>
+                {reasoningSummaryText(analysis?.config)
+                  ? `官方档位：${reasoningSummaryText(analysis?.config)}`
+                  : "官方规则未声明档位；开启后需补齐档位与映射。"}
+              </p>
+            )}
           </section>
 
           {readOnly ? (

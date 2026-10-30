@@ -134,10 +134,43 @@ func parseManualModelCapabilityConfig(raw any) (*modelCapabilityConfig, error) {
 	if cfg.OptionSpecs.MaxOutputTokens.Max <= 0 || cfg.OptionSpecs.MaxOutputTokens.Max > 10_000_000 {
 		return nil, errors.New("最大输出 Token 必须大于 0 且不超过 10,000,000")
 	}
+	if err := normalizeReasoningLevel(cfg.OptionSpecs.ReasoningLevel); err != nil {
+		return nil, err
+	}
 	// 文本输入/输出是客户端完整配置的必要叶子；其余能力保持管理员的选择。
 	cfg.Properties.InputFormat.SupportsText = true
 	cfg.Properties.OutputFormat.SupportsText = true
 	return &cfg, nil
+}
+
+// normalizeReasoningLevel:客户端 schema 要求档位非空且不重复、映射可编译为 CEL 对象；
+// 服务端只做结构校验与首尾空白归一，表达式语义仍由客户端编译器负责。
+func normalizeReasoningLevel(level *modelReasoningLevel) error {
+	if level == nil {
+		return nil
+	}
+	if len(level.Values) == 0 {
+		return errors.New("思考强度至少需要一个档位")
+	}
+	seen := make(map[string]struct{}, len(level.Values))
+	values := make([]string, 0, len(level.Values))
+	for _, value := range level.Values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return errors.New("思考强度档位不能为空")
+		}
+		if _, exists := seen[trimmed]; exists {
+			return errors.New("思考强度档位不能重复")
+		}
+		seen[trimmed] = struct{}{}
+		values = append(values, trimmed)
+	}
+	if strings.TrimSpace(level.Map) == "" {
+		return errors.New("思考强度映射不能为空")
+	}
+	level.Values = values
+	level.Map = strings.TrimSpace(level.Map)
+	return nil
 }
 
 func analyzeModelCapabilities(ctx context.Context, deps *Deps, modelID string) (modelCapabilityAnalysis, error) {

@@ -2,12 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { EditableCell } from "../components/EditableCell.js";
+import { ModelConfigDrawer } from "../components/ModelConfigDrawer.js";
 import {
-  ModelConfigDrawer,
+  reasoningSummaryText,
   type ModelCapabilityConfig,
   type ModelConfigMode,
   type ModelConfigTarget,
-} from "../components/ModelConfigDrawer.js";
+} from "../model-config.js";
 import { Select } from "../components/Select.js";
 import { Notice } from "../components/StatusChip.js";
 import { ModelRoutePool } from "../components/ModelRoutePool.js";
@@ -513,7 +514,7 @@ export function ModelsPage() {
                     </span>
                     <span className="readout" style={{ margin: 0 }}>
                       {model.configMode === "manual" && model.config
-                        ? `手动 · 上下文 ${formatToken(model.config.properties.contextWindow)} · 最大输出 ${formatToken(model.config.optionSpecs.maxOutputTokens.max)}`
+                        ? `手动 · 上下文 ${formatToken(model.config.properties.contextWindow)} · 最大输出 ${formatToken(model.config.optionSpecs.maxOutputTokens.max)}${reasoningSummaryText(model.config) ? ` · 思考强度 ${reasoningSummaryText(model.config)}` : ""}`
                         : "智能配置 · 跟随官方规则"}
                     </span>
                     <button
