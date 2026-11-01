@@ -176,7 +176,10 @@ func (s *Service) renderFinishingComposition(ctx context.Context, p *Project, se
 			return err
 		}
 		if logo != "" {
-			filter := fmt.Sprintf("[0:v]subtitles=captions.ass[branded];[2:v]scale=%d:%d:force_original_aspect_ratio=decrease,format=rgba[logo];[branded][logo]overlay=x=(W-w)/2:y=H*0.15:enable='gte(n,%d)':shortest=1[delivery]", max(2, w/5), max(2, h/6), max(0, frames-30))
+			// overlay 的 enable 变量 n 在 ffmpeg 6.1/7.1 数的不是主输入帧，尾卡 Logo 会整段丢失；
+			// 与 ASS 尾卡一致改用秒级时间戳启用。
+			tailStart := float64(max(0, frames-30)) / 30
+			filter := fmt.Sprintf("[0:v]subtitles=captions.ass[branded];[2:v]scale=%d:%d:force_original_aspect_ratio=decrease,format=rgba[logo];[branded][logo]overlay=x=(W-w)/2:y=H*0.15:enable='gte(t,%.9f)':shortest=1[delivery]", max(2, w/5), max(2, h/6), tailStart)
 			args = append(args, "-filter_complex", filter, "-map", "[delivery]")
 		} else {
 			args = append(args, "-map", "0:v:0", "-vf", "subtitles=captions.ass")
@@ -257,26 +260,35 @@ func (s *Service) finishingMusicBed(ctx context.Context, dir string, duration fl
 	if count > 160 {
 		return "", fmt.Errorf("background_music_unavailable")
 	}
-	filter := fmt.Sprintf("[0:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,atrim=duration=%.9f,asetpts=PTS-STARTPTS", seconds)
-	if count == 1 {
-		filter += "[bed]"
-	} else {
-		filter += fmt.Sprintf(",asplit=%d", count)
-		for i := range count {
-			filter += fmt.Sprintf("[part%d]", i)
-		}
-		current := "part0"
-		for i := 1; i < count; i++ {
-			next := fmt.Sprintf("loop%d", i)
-			if i == count-1 {
-				next = "bed"
-			}
-			filter += fmt.Sprintf(";[%s][part%d]acrossfade=d=%.9f:c1=qsin:c2=qsin[%s]", current, i, overlap, next)
-			current = next
-		}
-	}
+	// asplit 扇出喂链式 acrossfade 在 ffmpeg 6.1/7.1 会逐级丢失前段输出（4 级链直接得到空文件，
+	// 生产容器同为 6.x 会整条配乐静音）；改为多路同文件输入 + adelay 错峰 + qsin 交叠淡入淡出 +
+	// amix 的星形拓扑，6.1/7.1/8.x 行为一致，循环点不再重新起播。
 	path := filepath.Join(dir, "music.wav")
-	if err = runFinishingCommand(ctx, dir, "audio_mix_failed", "-protocol_whitelist", "file,pipe", "-filter_complex_threads", "1", "-i", s.BackgroundMusicPath, "-filter_complex", filter, "-map", "[bed]", "-t", fmt.Sprintf("%.9f", duration), "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", path); err != nil {
+	args := []string{"-protocol_whitelist", "file,pipe", "-filter_complex_threads", "1"}
+	step := seconds - overlap
+	chains := make([]string, count)
+	for i := range count {
+		start := float64(i) * step
+		chain := fmt.Sprintf("[%d:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,atrim=duration=%.9f,asetpts=PTS-STARTPTS", i, seconds)
+		if i > 0 {
+			chain += fmt.Sprintf(",adelay=%d:all=1,afade=t=in:st=%.9f:d=%.9f:curve=qsin", int(math.Round(start*1000)), start, overlap)
+		}
+		if i < count-1 {
+			chain += fmt.Sprintf(",afade=t=out:st=%.9f:d=%.9f:curve=qsin", start+seconds-overlap, overlap)
+		}
+		chain += fmt.Sprintf("[c%d]", i)
+		chains[i] = chain
+	}
+	labels := make([]string, count)
+	for i := range count {
+		labels[i] = fmt.Sprintf("[c%d]", i)
+	}
+	filter := strings.Join(chains, ";") + ";" + strings.Join(labels, "") + fmt.Sprintf("amix=inputs=%d:duration=longest:normalize=0[bed]", count)
+	for range count {
+		args = append(args, "-i", s.BackgroundMusicPath)
+	}
+	args = append(args, "-filter_complex", filter, "-map", "[bed]", "-t", fmt.Sprintf("%.9f", duration), "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", path)
+	if err = runFinishingCommand(ctx, dir, "audio_mix_failed", args...); err != nil {
 		return "", err
 	}
 	return path, nil

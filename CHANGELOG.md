@@ -9,6 +9,23 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.71.1] - 2026-11-01
+
+### 修复(后期渲染 ffmpeg 兼容性)
+
+- 音乐床改为多路同文件输入 + `adelay` 错峰 + `qsin` 交叠淡入淡出 + `amix` 的星形拓扑：
+  `asplit` 扇出喂链式 `acrossfade` 在 ffmpeg 6.1/7.1 会逐级丢弃前段输出（4 级链输出为空），
+  生产容器同为 6.x，会让整条配乐静音；6.1/7.1/8.x 现已行为一致。
+- 尾卡 Logo overlay 改按时间戳 `gte(t,…)` 启用：ffmpeg 6.1/7.1 上 `enable` 的 `n` 不数
+  主输入帧，Logo 整段丢失。
+- 裁剪归一化在 `tpad` 后补回恒定 30fps，避免 xfade 收到 1/0 帧率。
+- ffmpeg 失败错误附带真实 stderr，便于定位滤镜问题。
+
+### 验证
+
+- `go test -race -count=1 -run "TestFinishingRealFFmpegMusicLoopsContinuouslyAndDucksUnderNarration|TestBrandRealFFmpegRecipesRenderLogoAndKeepTailInsideTotalFrames" -v ./internal/media`
+- `make -C server lint test`
+
 ## [0.71.0] - 2026-11-01
 
 ### 新增(DeepSeek 网页工具配置与成本语义)
@@ -49,7 +66,7 @@
 - 共享素材发布改用原子 no-replace 链接：两个 worker 同时写同一稳定 ID 时输家复用胜者字节，
   不再覆盖已交付成片或质检关键帧。
 - 修复无原生声音模型被后期开关强制覆盖、品牌 Logo 混入商品参考图，以及旧交付清理误删新版本
-  等问题；裁剪归一化后补回恒定 30fps，避免 `tpad` 让 xfade 收到 1/0 帧率。
+  等问题。
 - CI check 安装 ffmpeg、fontconfig 与 Noto CJK 字体，真实执行后期渲染和品牌质检用例；
   本地缺少依赖时按既有约定跳过真实渲染，保留纯校验用例。
 
