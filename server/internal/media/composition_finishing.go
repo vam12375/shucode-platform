@@ -1,11 +1,11 @@
 package media
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"math"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -46,7 +46,11 @@ func hasCinematicFinishing(p *Project) bool {
 }
 
 func finishingOverlapFrames(p *Project, segments []compositionSegment, index int) int {
-	if !hasCinematicFinishing(p) || index+1 >= len(segments) || p.Shots[index+1].Plan.Transition != "fade" {
+	if !hasCinematicFinishing(p) || index+1 >= len(segments) {
+		return 0
+	}
+	next := finishingSourceClip(p, index+1)
+	if p.Shots[next.SourceShotIndex].Plan.Transition != "fade" {
 		return 0
 	}
 	return min(9, segments[index].frames/4, segments[index+1].frames/4)
@@ -87,8 +91,10 @@ func finishingNarrationRate(duration, target float64) (float64, error) {
 func runFinishingCommand(ctx context.Context, dir, code string, args ...string) error {
 	cmd := exec.CommandContext(ctx, "ffmpeg", append([]string{"-nostdin", "-hide_banner", "-loglevel", "error", "-y"}, args...)...)
 	cmd.Dir = dir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s: %w", code, err)
+		return fmt.Errorf("%s: %w: %s", code, err, strings.TrimSpace(stderr.String()))
 	}
 	return nil
 }
@@ -97,27 +103,44 @@ func (s *Service) renderFinishingComposition(ctx context.Context, p *Project, se
 	if !FinishingCompositionAvailable() {
 		return fmt.Errorf("composition_dependencies_missing")
 	}
-	frames := 0
-	for _, segment := range segments {
-		frames += segment.frames
-	}
+	options := effectiveFinishingOptions(p)
+	frames := compositionTotalFrames(segments)
 	duration := float64(frames) / 30
 	narration := ""
-	if p.Brief.Finishing.Voiceover {
+	if options.Voiceover {
 		var err error
-		narration, err = s.prepareNarration(ctx, p, dir)
+		if p.Composition != nil {
+			// 重合成只能复用真实ready音轨；未知旧请求不得被一次编辑隐式重发。
+			if p.Narration == nil || p.Narration.Status != "ready" || p.Narration.AssetID == "" {
+				return fmt.Errorf("composition_narration_unavailable")
+			}
+			narration = s.Blobs.Path(p.TeamID, p.Narration.AssetID)
+		} else {
+			narration, err = s.prepareNarration(ctx, p, dir)
+		}
 		if err != nil {
 			return err
 		}
 	}
 	pictureArgs := []string{"-protocol_whitelist", "file,pipe", "-filter_complex_threads", "1"}
-	for i, shot := range p.Shots {
+	for i := range segments {
+		clip := finishingSourceClip(p, i)
+		if clip.SourceShotIndex < 0 || clip.SourceShotIndex >= len(p.Shots) {
+			return fmt.Errorf("composition_source_invalid")
+		}
+		shot := p.Shots[clip.SourceShotIndex]
 		segment := segments[i]
 		input := s.Blobs.Path(p.TeamID, shot.OutputAssetID)
 		raw, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-protocol_whitelist", "file,pipe", "-show_entries", "format=duration", "-of", "csv=p=0", input).Output()
 		length, parseErr := strconv.ParseFloat(strings.TrimSpace(string(raw)), 64)
-		if err != nil || parseErr != nil || math.IsNaN(length) || math.IsInf(length, 0) || (length < segment.seconds()-.2 && !isWholeVideoReferenceExecution(p)) {
+		if err != nil || parseErr != nil || math.IsNaN(length) || math.IsInf(length, 0) || (length < float64(clip.OutFrame)/30-.2 && !isWholeVideoReferenceExecution(p)) {
 			return fmt.Errorf("video_result_too_short")
+		}
+		if p.Composition != nil {
+			actualFrames, err := probeCompositionSourceFrames(ctx, input)
+			if err != nil || clip.OutFrame > actualFrames {
+				return fmt.Errorf("composition_source_invalid")
+			}
 		}
 		tail := finishingOverlapFrames(p, segments, i)
 		clipFrames := segment.frames + tail
@@ -125,7 +148,8 @@ func (s *Service) renderFinishingComposition(ctx context.Context, p *Project, se
 		name := fmt.Sprintf("clip-%03d.mp4", i)
 		// 自动生成统一满幅；旧的 decrease+pad 会把横版素材嵌入竖片，留下明显黑边。
 		shortfall := max(0, segment.seconds()-length)
-		filter := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,setsar=1,fps=30,trim=duration=%.9f,setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=%.9f", w, h, w, h, segment.seconds(), max(float64(tail)/30, shortfall))
+		// tpad 之后帧率元数据会变成 1/0，xfade 要求恒定帧率；最后再强制一次 30fps。
+		filter := fmt.Sprintf("fps=30,trim=start_frame=%d:end_frame=%d,setpts=(PTS-STARTPTS)/%.9f,scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,setsar=1,fps=30,tpad=stop_mode=clone:stop_duration=%.9f,fps=30", clip.InFrame, clip.OutFrame, clip.Speed, w, h, w, h, max(float64(tail)/30, shortfall))
 		if err = runFinishingCommand(ctx, dir, "clip_normalization_failed", "-protocol_whitelist", "file,pipe", "-i", input, "-an", "-sn", "-dn", "-vf", filter, "-t", fmt.Sprintf("%.9f", clipDuration), "-frames:v", strconv.Itoa(clipFrames), "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", name); err != nil {
 			return err
 		}
@@ -139,16 +163,29 @@ func (s *Service) renderFinishingComposition(ctx context.Context, p *Project, se
 	if err != nil {
 		return err
 	}
-	args := []string{"-protocol_whitelist", "file,pipe", "-i", "picture.mp4", "-i", master, "-map", "0:v:0", "-map", "1:a:0"}
-	if p.Brief.Finishing.Subtitles == "short" {
+	args := []string{"-protocol_whitelist", "file,pipe", "-filter_complex_threads", "1", "-i", "picture.mp4", "-i", master}
+	logo, err := s.prepareCompositionBrandLogo(ctx, p, options.Brand, dir, w, h)
+	if err != nil {
+		return err
+	}
+	if logo != "" {
+		args = append(args, "-loop", "1", "-i", logo)
+	}
+	if options.Subtitles == "short" || compositionHasTail(options.Brand) {
 		if err = writeFinishingCaptions(p, segments, dir, w, h); err != nil {
 			return err
 		}
-		args = append(args, "-vf", "subtitles=captions.ass", "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p")
+		if logo != "" {
+			filter := fmt.Sprintf("[0:v]subtitles=captions.ass[branded];[2:v]scale=%d:%d:force_original_aspect_ratio=decrease,format=rgba[logo];[branded][logo]overlay=x=(W-w)/2:y=H*0.15:enable='gte(n,%d)':shortest=1[delivery]", max(2, w/5), max(2, h/6), max(0, frames-30))
+			args = append(args, "-filter_complex", filter, "-map", "[delivery]")
+		} else {
+			args = append(args, "-map", "0:v:0", "-vf", "subtitles=captions.ass")
+		}
+		args = append(args, "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p")
 	} else {
-		args = append(args, "-c:v", "copy")
+		args = append(args, "-map", "0:v:0", "-c:v", "copy")
 	}
-	args = append(args, "-t", fmt.Sprintf("%.9f", duration), "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", "final.mp4")
+	args = append(args, "-map", "1:a:0", "-t", fmt.Sprintf("%.9f", duration), "-frames:v", strconv.Itoa(frames), "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", "final.mp4")
 	if err = runFinishingCommand(ctx, dir, "composition_failed", args...); err != nil {
 		return err
 	}
@@ -159,7 +196,11 @@ func (s *Service) finishingMasterAudio(ctx context.Context, p *Project, dir stri
 	args := []string{"-protocol_whitelist", "file,pipe", "-filter_complex_threads", "1"}
 	filters := []string{}
 	index := 0
-	voice, music := narration != "", p.Brief.Finishing.Music
+	voice, music := narration != "", effectiveFinishingOptions(p).Music
+	musicVolume := 1.0
+	if p.Composition != nil && p.Composition.Edit.MusicVolume != nil {
+		musicVolume = *p.Composition.Edit.MusicVolume
+	}
 	if voice {
 		seconds, err := probeFinishingAudio(ctx, narration)
 		if err != nil {
@@ -179,7 +220,7 @@ func (s *Service) finishingMasterAudio(ctx context.Context, p *Project, dir stri
 			return "", err
 		}
 		args = append(args, "-i", bed)
-		filters = append(filters, fmt.Sprintf("[%d:a]loudnorm=I=-26:TP=-3:LRA=9,aresample=48000,afade=t=in:st=0:d=%.9f,afade=t=out:st=%.9f:d=%.9f[music]", index, min(.5, duration/4), duration-min(1.2, duration/4), min(1.2, duration/4)))
+		filters = append(filters, fmt.Sprintf("[%d:a]loudnorm=I=-26:TP=-3:LRA=9,aresample=48000,volume=%.9f,afade=t=in:st=0:d=%.9f,afade=t=out:st=%.9f:d=%.9f[music]", index, musicVolume, min(.5, duration/4), duration-min(1.2, duration/4), min(1.2, duration/4)))
 	}
 	switch {
 	case voice && music:
@@ -242,15 +283,7 @@ func (s *Service) finishingMusicBed(ctx context.Context, dir string, duration fl
 }
 
 func writeFinishingCaptions(p *Project, segments []compositionSegment, dir string, w, h int) error {
-	fontSize, marginLR, marginV := subtitleMetrics(w, h)
-	// 新后期默认无字幕；显式 short 仅显示短句，不能假装是按旁白逐词对齐。
-	ass := fmt.Sprintf("[Script Info]\nScriptType: v4.00+\nPlayResX: %d\nPlayResY: %d\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Noto Sans CJK SC,%d,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,1,0,2,%d,%d,%d,1\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n", w, h, max(20, fontSize*3/4), marginLR, marginLR, marginV)
-	for i, shot := range p.Shots {
-		if shot.Plan.Subtitle != "" {
-			ass += fmt.Sprintf("Dialogue: 0,%s,%s,Default,,0,0,0,,%s\n", subtitleTime(segments[i].start+.15), subtitleTime(segments[i].end-.15), assText(shot.Plan.Subtitle))
-		}
-	}
-	return os.WriteFile(filepath.Join(dir, "captions.ass"), []byte(ass), 0600)
+	return writeCompositionCaptions(p, segments, dir, w, h)
 }
 
 func validateFinishingOutput(ctx context.Context, path string, frames int) error {

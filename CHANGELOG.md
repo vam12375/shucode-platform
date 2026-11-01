@@ -9,6 +9,34 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.70.0] - 2026-11-01
+
+### 新增(可编辑后期、品牌包装与成片质检)
+
+- 新增 `POST /api/v1/media/projects/:id/recompose`：只复用同一制作单已成功镜头，按
+  `requestId` 与编辑签名幂等；不重新准入、不增加 `chargedMicro`，旧成片在新版本通过质检并
+  CAS 提交前保持可见。
+- Project/ProjectView 新增 `composition`、`qualityReport`、`narrationAvailable`，支持 30fps
+  帧级裁剪、0.5–2 倍速、字幕覆盖、音乐音量、旁白/音乐开关及品牌 Logo/尾卡。
+- 品牌包装支持 clean/editorial/bold 预设、三种颜色、sans/serif 字体、已冻结图片 Logo 与
+  尾卡标题/副标题；Logo 只用于后期绘制，不进入商品参考图或供应商生成提示。
+- 成片质检覆盖容器、尺寸、帧率、解码、黑帧、静音、字幕/尾卡可读性，并为每个镜头提取 3 张
+  关键帧；技术检查通过仍保留 `visualReview=unverified`，关键帧只对同团队制作单鉴权展示。
+- 共享素材发布改用原子 no-replace 链接：两个 worker 同时写同一稳定 ID 时输家复用胜者字节，
+  不再覆盖已交付成片或质检关键帧。
+- 修复无原生声音模型被后期开关强制覆盖、品牌 Logo 混入商品参考图，以及旧交付清理误删新版本
+  等问题；裁剪归一化后补回恒定 30fps，避免 `tpad` 让 xfade 收到 1/0 帧率。
+- CI check 安装 ffmpeg、fontconfig 与 Noto CJK 字体，真实执行后期渲染和品牌质检用例；
+  本地缺少依赖时按既有约定跳过真实渲染，保留纯校验用例。
+
+### 验证
+
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`（154 项）
+- `pnpm --filter @shucode-platform/console build`
+- `make -C server lint test`
+
 ## [0.69.1] - 2026-10-30
 
 ### 新增(控制台模板审核页)

@@ -160,7 +160,7 @@ func (p Provider) SubmitWithReferenceImages(ctx context.Context, m Model, b Brie
 	}
 	if b.ReferenceMode == "multimodal" {
 		// 单张图片也属于参考集合；原 videoContent 按有无参考视频选择角色，会误把纯图请求写成首尾帧。
-		r := CanvasRequest{Kind: "video", ReferenceMode: "multimodal", Prompt: s.Prompt, Resolution: b.Resolution, AspectRatio: b.AspectRatio, Duration: s.Duration, AssetIDs: uniqueReferenceImageIDs(b.AssetIDs)}
+		r := CanvasRequest{Kind: "video", ReferenceMode: "multimodal", Prompt: s.Prompt, Resolution: b.Resolution, AspectRatio: b.AspectRatio, Duration: s.Duration, AssetIDs: uniqueReferenceImageIDs(videoProductAssetIDs(b))}
 		videos, audios := []string{}, []string{}
 		if referenceVideo != "" {
 			videos = append(videos, referenceVideo)
@@ -168,7 +168,8 @@ func (p Provider) SubmitWithReferenceImages(ctx context.Context, m Model, b Brie
 		if len(referenceAudio) > 0 && referenceAudio[0] != "" {
 			audios = append(audios, referenceAudio[0])
 		}
-		if b.Finishing != nil {
+		// 本身未启用原生声音的型号无需请求级覆盖；false指针仍会被能力校验视为音频开关请求。
+		if b.Finishing != nil && m.GenerateAudio {
 			disabled := false
 			r.GenerateAudio = &disabled
 		}

@@ -88,7 +88,7 @@ func validateBriefReferenceImages(b Brief, m Model) error {
 	if caps == nil || !slices.Contains(caps.Modes, "multimodal") {
 		return fmt.Errorf("video_reference_unsupported")
 	}
-	images := uniqueReferenceImageIDs(b.AssetIDs)
+	images := uniqueReferenceImageIDs(videoProductAssetIDs(b))
 	if len(images) == 0 {
 		return fmt.Errorf("reference_images_required")
 	}

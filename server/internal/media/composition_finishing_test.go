@@ -58,3 +58,20 @@ func TestFinishingGenerationGuardDoesNotMutateStoredPlan(t *testing.T) {
 		t.Fatal("oversize guarded prompt was silently truncated")
 	}
 }
+
+func TestBrandGenerationGuardKeepsProductColorsAndReservesExactArtForPost(t *testing.T) {
+	p := &Project{Brief: Brief{Mode: "auto", Finishing: &FinishingOptions{Brand: &VideoBrand{Preset: "clean", PrimaryColor: "#223344", BackgroundColor: "#556677", TextColor: "#FFFFFF", FontFamily: "sans", LogoAssetID: "brand-logo"}}}}
+	original := ShotPlan{Prompt: "红色包装商品，柔和侧光"}
+	guarded, err := finishingGenerationPlan(p, original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"#223344", "#556677", "不要改变商品", "Logo", "后期", original.Prompt} {
+		if !strings.Contains(guarded.Prompt, required) {
+			t.Fatalf("missing deterministic brand guard %q: %s", required, guarded.Prompt)
+		}
+	}
+	if original.Prompt != "红色包装商品，柔和侧光" {
+		t.Fatal("stored user prompt mutated")
+	}
+}

@@ -67,6 +67,7 @@ lint:
 	$(DOCKER_RUN) $(GO_IMAGE) sh -c 'test -z "$$(gofmt -l .)" || { gofmt -l .; exit 1; } && go vet ./...'
 
 test:
+	# 真实 ffmpeg/字体用例在缺少依赖时按既有约定跳过；CI check 安装依赖后实际执行。
 	# 全量 race 套件已超过 Go 默认 10 分钟，显式放宽避免被误杀。
 	$(DOCKER_WORUN) $(GO_IMAGE) go test -race -timeout 20m ./...
 

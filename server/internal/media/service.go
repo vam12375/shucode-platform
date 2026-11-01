@@ -95,6 +95,11 @@ func (s *Service) Create(ctx context.Context, team, user, device, id string, b B
 	if e = ValidateBrief(b, models, assets); e != nil {
 		return nil, e
 	}
+	if b.Finishing != nil {
+		if e = s.validateBrandAsset(ctx, &Project{TeamID: team, Brief: b}, b.Finishing.Brand); e != nil {
+			return nil, e
+		}
+	}
 	if e = s.validateTemplateBrief(ctx, b, models); e != nil {
 		return nil, e
 	}
@@ -234,6 +239,8 @@ func (s *Service) FailAnalysis(ctx context.Context, team, id string, version int
 }
 
 func (s *Service) action(ctx context.Context, team, id string, version int64, action, input, failureCode string) (*Project, error) {
+	discardedComposition := ""
+	var discardedCompositionState *Project
 	p, err := s.Mutate(ctx, team, id, version, func(p *Project) error {
 		switch action {
 		case "generate":
@@ -276,6 +283,22 @@ func (s *Service) action(ctx context.Context, team, id string, version int64, ac
 			if p.CancelRequested {
 				return ErrConflict
 			}
+			if p.Composition != nil {
+				if p.LeaseOwner != "" && p.LeaseUntil.After(time.Now()) {
+					return ErrConflict
+				}
+				// 已接受后期重试只读原片和缓存音轨；不能回到视频/TTS供应商准入。
+				if err := s.validateCompositionMedia(ctx, p, p.Composition.Edit); err != nil {
+					return err
+				}
+				discardedComposition = p.CompositionAssetID
+				previous := *p
+				discardedCompositionState = &previous
+				p.CompositionAssetID = ""
+				p.Status = "composing"
+				p.Error = ""
+				return nil
+			}
 			if e := s.validateFinishing(ctx, p.Brief); e != nil {
 				return e
 			}
@@ -289,6 +312,13 @@ func (s *Service) action(ctx context.Context, team, id string, version int64, ac
 				return s.retryReferencePreparation(ctx, p)
 			}
 			var remaining int64
+			if p.CompositionAssetID != "" && p.CompositionAssetID != p.OutputAssetID {
+				// 初次成片QA失败也要退休损坏稳定身份，否则显式重试会永远恢复同一坏文件。
+				discardedComposition = p.CompositionAssetID
+				previous := *p
+				discardedCompositionState = &previous
+				p.CompositionAssetID = ""
+			}
 			for i := range p.Shots {
 				shot := &p.Shots[i]
 				if shot.Status == "failed" {
@@ -328,6 +358,9 @@ func (s *Service) action(ctx context.Context, team, id string, version int64, ac
 	})
 	if err != nil {
 		return nil, err
+	}
+	if discardedComposition != "" && discardedComposition != p.OutputAssetID {
+		_ = s.cleanupRetiredComposition(ctx, discardedCompositionState, discardedComposition)
 	}
 	if (action == "cancel" || action == "analysis-failed") && p.AnalysisFee != nil && p.AnalysisChargedMicro == 0 && (p.Status == "cancelled" || p.Status == "analysis_failed") {
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)

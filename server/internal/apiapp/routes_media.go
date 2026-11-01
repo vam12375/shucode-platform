@@ -1,6 +1,7 @@
 package apiapp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,33 @@ import (
 	"strings"
 	"time"
 )
+
+type mediaRecomposeRequest struct {
+	Version   int64                      `json:"version"`
+	RequestID string                     `json:"requestId"`
+	Edit      media.VideoCompositionEdit `json:"edit"`
+}
+
+func (b *mediaRecomposeRequest) UnmarshalJSON(raw []byte) error {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil || len(fields) != 3 {
+		return media.ErrInvalid
+	}
+	for _, key := range []string{"version", "requestId", "edit"} {
+		if value, ok := fields[key]; !ok || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return media.ErrInvalid
+		}
+	}
+	type plain mediaRecomposeRequest
+	var value plain
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return err
+	}
+	*b = mediaRecomposeRequest(value)
+	return nil
+}
 
 func NewMediaService(deps *Deps) *media.Service {
 	root := os.Getenv("MEDIA_STORAGE_DIR")
@@ -165,9 +193,23 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, e)
 			return
 		}
-		visibleAssets := assets[:0]
+		all, e := s.Repo.All(ctx)
+		if e != nil {
+			internalError(c, deps, e)
+			return
+		}
+		// QA关键帧仅由同团队制作单显式引用；内部音轨和临时素材继续隔离。
+		evidenceIDs := map[string]bool{}
+		for _, p := range all {
+			if p.TeamID == m.Team.ID && p.Agent == nil && p.Canvas == nil && p.QualityReport != nil {
+				for _, frame := range p.QualityReport.Keyframes {
+					evidenceIDs[frame.AssetID] = true
+				}
+			}
+		}
+		visibleAssets := make([]media.Asset, 0, len(assets))
 		for _, asset := range assets {
-			if asset.Internal {
+			if asset.Internal && !(asset.Kind == "image" && evidenceIDs[asset.ID]) {
 				continue
 			}
 			asset.URL = s.Blobs.URL(m.Team.ID, asset.ID)
@@ -175,11 +217,6 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			visibleAssets = append(visibleAssets, asset)
 		}
 		assets = visibleAssets
-		all, e := s.Repo.All(ctx)
-		if e != nil {
-			internalError(c, deps, e)
-			return
-		}
 		projects := []media.ProjectView{}
 		generations := []media.ProjectView{}
 		for _, p := range all {
@@ -189,9 +226,9 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			}
 			if p.TeamID == m.Team.ID {
 				if p.Canvas != nil {
-					generations = append(generations, p.View())
+					generations = append(generations, s.ProjectView(ctx, &p))
 				} else {
-					projects = append(projects, p.View())
+					projects = append(projects, s.ProjectView(ctx, &p))
 				}
 			}
 		}
@@ -266,7 +303,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			mediaError(c, deps, e)
 			return
 		}
-		c.JSON(200, okData(p.View()))
+		c.JSON(200, okData(s.ProjectView(c.Request.Context(), p)))
 	})
 	router.GET("/api/v1/media/projects/:id", func(c *gin.Context) {
 		_, m, ok := mediaIdentity(c, deps)
@@ -282,11 +319,24 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			c.Status(404)
 			return
 		}
-		c.JSON(200, okData(p.View()))
+		c.JSON(200, okData(s.ProjectView(c.Request.Context(), p)))
 	})
 	router.POST("/api/v1/media/projects/:id/:action", func(c *gin.Context) {
 		auth, m, ok := mediaIdentity(c, deps)
 		if !ok {
+			return
+		}
+		if c.Param("action") == "recompose" {
+			var body mediaRecomposeRequest
+			if !mediaBody(c, &body) {
+				return
+			}
+			p, e := s.Recompose(c.Request.Context(), m.Team.ID, auth.User.ID, c.Param("id"), body.Version, body.RequestID, body.Edit)
+			if e != nil {
+				mediaError(c, deps, e)
+				return
+			}
+			c.JSON(200, okData(s.ProjectView(c.Request.Context(), p)))
 			return
 		}
 		var body struct {
@@ -348,7 +398,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			mediaError(c, deps, e)
 			return
 		}
-		c.JSON(200, okData(p.View()))
+		c.JSON(200, okData(s.ProjectView(c.Request.Context(), p)))
 	})
 	router.GET("/console/api/media/models", func(c *gin.Context) {
 		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {

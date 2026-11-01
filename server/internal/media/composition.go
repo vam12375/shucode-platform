@@ -84,6 +84,9 @@ type compositionSegment struct {
 func (s compositionSegment) seconds() float64 { return float64(s.frames) / 30 }
 
 func compositionTimeline(p *Project) ([]compositionSegment, error) {
+	if p.Composition != nil {
+		return editableCompositionTimeline(p)
+	}
 	segments := make([]compositionSegment, len(p.Shots))
 	offset, boundary := 0.0, 0
 	deliveryFrames := 0
@@ -142,10 +145,16 @@ func (s *Service) compose(ctx context.Context, p *Project) error {
 	}
 	// 读取 CAS 后的项目快照，确保下面的 blob 写入使用已持久化的稳定身份。
 	p = claimed
+	// 旧lease可能在新请求退休身份后才结束本地写入；退出时再次清理已退休且未交付的本轮产物。
+	defer func() { _ = s.cleanupRetiredComposition(ctx, p, p.CompositionAssetID) }()
 	if resumed, resumeErr := s.resumeComposition(ctx, p); resumed || resumeErr != nil {
 		return resumeErr
 	}
-	if err := s.validateFinishing(ctx, p.Brief); err != nil {
+	if p.Composition != nil {
+		if err := s.validateCompositionMedia(ctx, p, p.Composition.Edit); err != nil {
+			return err
+		}
+	} else if err := s.validateFinishing(ctx, p.Brief); err != nil {
 		return err
 	}
 	if !CompositionAvailable() {
@@ -178,6 +187,13 @@ func (s *Service) compose(ctx context.Context, p *Project) error {
 	if e != nil {
 		return e
 	}
+	var quality *VideoQualityReport
+	if hasCinematicFinishing(p) {
+		quality, e = s.inspectCompositionQuality(runCtx, p, filepath.Join(dir, "final.mp4"), segments, w, h)
+		if e != nil {
+			return e
+		}
+	}
 	f, e := os.Open(filepath.Join(dir, "final.mp4"))
 	if e != nil {
 		return e
@@ -191,10 +207,10 @@ func (s *Service) compose(ctx context.Context, p *Project) error {
 	if e = s.Repo.AddAsset(ctx, p.TeamID, a); e != nil {
 		return e
 	}
-	return s.finishComposition(ctx, p, id)
+	return s.finishComposition(ctx, p, id, quality)
 }
 
-// resumeComposition closes the crash window after the atomic blob rename. Once
+// resumeComposition closes the crash window after atomic no-replace blob publication. Once
 // the stable output ID has a complete blob, the render itself is durable and
 // recovery only needs to idempotently register the asset and finish the project.
 func (s *Service) resumeComposition(ctx context.Context, p *Project) (bool, error) {
@@ -211,26 +227,98 @@ func (s *Service) resumeComposition(ctx context.Context, p *Project) (bool, erro
 	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > MaxVideo {
 		return true, fmt.Errorf("composition_output_invalid")
 	}
+	var quality *VideoQualityReport
+	if hasCinematicFinishing(p) {
+		// 稳定文件身份不代表字节已验收；崩溃恢复仍对真实成片做同样QA再交付。
+		segments, timelineErr := compositionTimeline(p)
+		if timelineErr != nil {
+			return true, timelineErr
+		}
+		w, h, sizeErr := s.compositionOutputSize(ctx, p)
+		if sizeErr != nil {
+			return true, sizeErr
+		}
+		quality, err = s.inspectCompositionQuality(ctx, p, s.Blobs.Path(p.TeamID, p.CompositionAssetID), segments, w, h)
+		if err != nil {
+			return true, err
+		}
+	}
 	a := Asset{ID: p.CompositionAssetID, Name: p.Brief.Product + ".mp4", Kind: "video", Mime: "video/mp4", Size: info.Size(), CreatedAt: time.Now().UTC()}
 	if err = s.Repo.AddAsset(ctx, p.TeamID, a); err != nil {
 		return true, err
 	}
-	return true, s.finishComposition(ctx, p, p.CompositionAssetID)
+	return true, s.finishComposition(ctx, p, p.CompositionAssetID, quality)
 }
 
-func (s *Service) finishComposition(ctx context.Context, p *Project, id string) error {
+func (s *Service) finishComposition(ctx context.Context, p *Project, id string, reports ...*VideoQualityReport) error {
+	cleanupStale := func() {
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		_ = s.cleanupRetiredComposition(cleanup, p, id)
+	}
+	bound := false
 	_, e := s.workerUpdate(ctx, p, func(v *Project) {
+		bound = false
+		// 后期新版本和本轮稳定资产必须一起匹配，旧worker不能覆盖后来的编辑或交付。
+		if v.CompositionAssetID != id || !sameCompositionState(v.Composition, p.Composition) {
+			return
+		}
 		// 合成期间取消由平台事实决定，不能让旧 worker 快照把 cancelled 覆盖为 completed。
 		if v.CancelRequested {
 			v.Status = "cancelled"
+			bound = true
 			return
 		}
 		v.OutputAssetID = id
+		if len(reports) > 0 {
+			v.QualityReport = reports[0]
+		}
 		v.CompositionAssetID = ""
 		v.Status = "completed"
 		v.Error = ""
+		bound = true
 	})
+	if e == nil && !bound {
+		cleanupStale()
+		return ErrConflict
+	}
+	if e != nil {
+		cleanupStale()
+	}
 	return e
+}
+
+func sameCompositionState(a, b *VideoCompositionState) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.RequestID == b.RequestID && a.SourceVersion == b.SourceVersion
+}
+
+func (s *Service) cleanupRetiredComposition(ctx context.Context, p *Project, id string) error {
+	if p == nil || id == "" || p.CompositionAssetID != id || p.OutputAssetID == id {
+		return nil
+	}
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	latest, err := s.Repo.Get(cleanup, p.TeamID, p.ID)
+	if err != nil || latest == nil {
+		return err
+	}
+	if latest.CompositionAssetID == id || latest.OutputAssetID == id {
+		return nil
+	}
+	// 只有CAS已退休的失败attempt才清理，旧交付及当前worker恢复身份始终受保护。
+	if err = s.cleanupUnboundCompositionQuality(cleanup, p, id); err != nil {
+		return err
+	}
+	if err = s.Repo.RemoveAsset(cleanup, p.TeamID, id); err != nil {
+		return err
+	}
+	if err = os.Remove(s.Blobs.Path(p.TeamID, id)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func (s *Service) cleanupCancelledComposition(ctx context.Context, p *Project) error {
@@ -246,12 +334,15 @@ func (s *Service) cleanupCancelledComposition(ctx context.Context, p *Project) e
 	if latest.CompositionAssetID != id || latest.Status != "cancelled" {
 		return nil
 	}
-	if latest.OutputAssetID != "" {
+	if latest.OutputAssetID == id {
 		_, err = s.workerUpdate(ctx, latest, func(v *Project) {
-			if v.OutputAssetID != "" && v.CompositionAssetID == id {
+			if v.OutputAssetID == id && v.CompositionAssetID == id {
 				v.CompositionAssetID = ""
 			}
 		})
+		return err
+	}
+	if err = s.cleanupCompositionQuality(ctx, latest, id); err != nil {
 		return err
 	}
 	if err = s.Repo.RemoveAsset(ctx, latest.TeamID, id); err != nil {
@@ -261,7 +352,7 @@ func (s *Service) cleanupCancelledComposition(ctx context.Context, p *Project) e
 		return err
 	}
 	_, err = s.workerUpdate(ctx, latest, func(v *Project) {
-		if v.Status != "cancelled" || v.OutputAssetID != "" || v.CompositionAssetID != id {
+		if v.Status != "cancelled" || v.OutputAssetID == id || v.CompositionAssetID != id {
 			return
 		}
 		v.CompositionAssetID = ""
@@ -346,7 +437,10 @@ func (s *Service) renderLegacyComposition(runCtx context.Context, p *Project, se
 // 不能为了界面提前打开，否则用户填写的意图会被静默丢弃或直接 400。
 func Capabilities() map[string]bool {
 	return map[string]bool{
-		"adaptiveResearch": true,
+		"adaptiveResearch":    true,
+		"brandComposition":    false,
+		"editableComposition": false,
+		"compositionQuality":  false,
 		// 创作意图（受众/语气/钩子/行动号召/禁用表述/脚本/旁白语言）已由 Brief 接收。
 		"creativeBrief": true,
 		// 复刻显式区分全局图片参考与历史首帧绑定，客户端据此门控新增 Brief 字段。

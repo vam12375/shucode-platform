@@ -165,7 +165,7 @@ func validateTemplateSelection(b Brief, templates []VideoTemplate) (VideoTemplat
 	if err != nil {
 		return VideoTemplate{}, err
 	}
-	if len(b.AssetIDs) < t.MinAssets || !slices.Contains(t.AspectRatios, b.AspectRatio) || b.Duration < t.DurationRange.Min || b.Duration > t.DurationRange.Max {
+	if len(videoProductAssetIDs(b)) < t.MinAssets || !slices.Contains(t.AspectRatios, b.AspectRatio) || b.Duration < t.DurationRange.Min || b.Duration > t.DurationRange.Max {
 		return VideoTemplate{}, adaptiveResearchError()
 	}
 	if !slices.Contains(t.VerifiedModelIDs, b.VideoModel) && !b.ReviewPlan {

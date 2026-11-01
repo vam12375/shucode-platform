@@ -50,7 +50,7 @@ func validateFinishingOptions(b Brief) error {
 	if b.Mode != "auto" || b.ReferenceAssetID != "" || b.SourceOnly || b.GenerationMode == "video_reference" || (b.Finishing.Subtitles != "none" && b.Finishing.Subtitles != "short") {
 		return ErrInvalid
 	}
-	return nil
+	return validateVideoBrand(b.Finishing.Brand)
 }
 
 // copyWidth 与客户端等效字宽一致，避免英文按字节计费式的过严限制。
@@ -176,6 +176,8 @@ func (s *Service) FinishingCapabilities(ctx context.Context) map[string]any {
 	capabilities["researchPlatforms"] = []string{"douyin", "xiaohongshu", "bilibili"}
 	available := FinishingCompositionAvailable()
 	capabilities["cinematicComposition"], capabilities["subtitleStyle"] = available, available
+	branded := BrandCompositionAvailable()
+	capabilities["brandComposition"], capabilities["editableComposition"], capabilities["compositionQuality"] = branded, branded, branded
 	capabilities["voiceover"] = available && s.Narration.Ready()
 	capabilities["bgm"] = available && s.validateFinishing(ctx, Brief{Mode: "auto", Finishing: &FinishingOptions{Music: true, Subtitles: "none"}}) == nil
 	return capabilities

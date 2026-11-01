@@ -64,8 +64,22 @@ func (b Blobs) PutWithID(team, id string, reader io.Reader, limit int64) (string
 	if n == 0 || n > limit {
 		return "", 0, fmt.Errorf("media_size_limit")
 	}
-	e = os.Rename(f.Name(), b.Path(team, id))
-	return id, n, e
+	// 两个lease可能都在开头看到文件不存在；Rename会覆盖先交付者，必须使用原子no-replace发布。
+	// 临时文件位于同目录，Link只在目标不存在时成功；输家复用胜者字节与大小，绝不回写稳定身份。
+	if e = os.Link(f.Name(), b.Path(team, id)); e == nil {
+		return id, n, nil
+	}
+	if !os.IsExist(e) {
+		return "", 0, e
+	}
+	info, e := os.Stat(b.Path(team, id))
+	if e != nil {
+		return "", 0, e
+	}
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > limit {
+		return "", 0, fmt.Errorf("media_size_limit")
+	}
+	return id, info.Size(), nil
 }
 func (b Blobs) signature(team, id, expires string) string {
 	m := hmac.New(sha256.New, []byte(b.SigningKey))

@@ -115,6 +115,11 @@ func ValidateModels(models []Model) error {
 	return nil
 }
 func ValidateBrief(b Brief, models []Model, assets []Asset) error {
+	if b.Finishing != nil {
+		if err := validateVideoBrand(b.Finishing.Brand); err != nil {
+			return err
+		}
+	}
 	if err := validateAdaptiveBrief(b); err != nil {
 		return err
 	}
@@ -128,7 +133,7 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	if err := validateBriefReferenceMode(b); err != nil {
 		return err
 	}
-	if strings.TrimSpace(b.Product) == "" || utf8.RuneCountInString(b.Product) > 200 || utf8.RuneCountInString(b.SellingPoints) > 4000 || (!replica && len(b.AssetIDs) == 0) || len(b.AssetIDs) > 20 || len(b.ReferenceURLs) > 10 || b.MaxCreditsMicro <= 0 || b.MaxCreditsMicro > 1_000_000_000 || (!replica && b.Duration < 5) || b.Duration < 1 || b.Duration > 120 || utf8.RuneCountInString(b.ReplacementInstructions) > 4000 {
+	if strings.TrimSpace(b.Product) == "" || utf8.RuneCountInString(b.Product) > 200 || utf8.RuneCountInString(b.SellingPoints) > 4000 || (!replica && len(videoProductAssetIDs(b)) == 0) || len(b.AssetIDs) > 20 || len(b.ReferenceURLs) > 10 || b.MaxCreditsMicro <= 0 || b.MaxCreditsMicro > 1_000_000_000 || (!replica && b.Duration < 5) || b.Duration < 1 || b.Duration > 120 || utf8.RuneCountInString(b.ReplacementInstructions) > 4000 {
 		return ErrInvalid
 	}
 	if replica {
@@ -294,7 +299,7 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 		}
 		validShotSource := !sourced || (p.hasCompleteSource() && (refs[p.SourceURL] || (replica && p.SourceURL == "" && len(b.ReferenceURLs) == 0 && refs[""])))
 		invalidSourceTime := sourced && (math.IsNaN(p.SourceStart) || math.IsInf(p.SourceStart, 0) || !finitePositive(p.SourceEnd) || p.SourceStart < 0 || p.SourceEnd <= p.SourceStart)
-		if !validShotSource || invalidSourceTime || (!wholeReference && !v.DurationSupported(p.Duration)) || (wholeReference && (p.Duration < 2 || p.Duration > 30)) || ((!replica && !globalReferences || p.AssetID != "") && !slices.Contains(b.AssetIDs, p.AssetID)) || p.Prompt == "" || len(p.Prompt) > 12000 || len(p.Subtitle) > 900 || p.Framing == "" || p.Camera == "" || p.Action == "" || p.Purpose == "" {
+		if !validShotSource || invalidSourceTime || (!wholeReference && !v.DurationSupported(p.Duration)) || (wholeReference && (p.Duration < 2 || p.Duration > 30)) || ((!replica && !globalReferences || p.AssetID != "") && !slices.Contains(videoProductAssetIDs(b), p.AssetID)) || p.Prompt == "" || len(p.Prompt) > 12000 || len(p.Subtitle) > 900 || p.Framing == "" || p.Camera == "" || p.Action == "" || p.Purpose == "" {
 			return nil, 0, ErrInvalid
 		}
 		if replica {

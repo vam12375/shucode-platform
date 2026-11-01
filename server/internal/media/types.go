@@ -204,9 +204,71 @@ type Brief struct {
 
 // FinishingOptions 只用于新自动制作；缺省保留历史片段原音与字幕语义。
 type FinishingOptions struct {
-	Voiceover bool   `json:"voiceover"`
-	Music     bool   `json:"music"`
-	Subtitles string `json:"subtitles"`
+	Voiceover bool        `json:"voiceover"`
+	Music     bool        `json:"music"`
+	Subtitles string      `json:"subtitles"`
+	Brand     *VideoBrand `json:"brand,omitempty"`
+}
+
+type VideoBrand struct {
+	Preset          string `json:"preset"`
+	PrimaryColor    string `json:"primaryColor"`
+	BackgroundColor string `json:"backgroundColor"`
+	TextColor       string `json:"textColor"`
+	FontFamily      string `json:"fontFamily"`
+	LogoAssetID     string `json:"logoAssetId,omitempty"`
+	EndTitle        string `json:"endTitle,omitempty"`
+	EndSubtitle     string `json:"endSubtitle,omitempty"`
+}
+type VideoCompositionClip struct {
+	SourceShotIndex int     `json:"sourceShotIndex"`
+	InFrame         int     `json:"inFrame"`
+	OutFrame        int     `json:"outFrame"`
+	Speed           float64 `json:"speed"`
+	Subtitle        *string `json:"subtitle,omitempty"`
+}
+type VideoCompositionEdit struct {
+	FPS         int                    `json:"fps"`
+	Clips       []VideoCompositionClip `json:"clips"`
+	Voiceover   bool                   `json:"voiceover"`
+	Music       bool                   `json:"music"`
+	Subtitles   string                 `json:"subtitles"`
+	MusicVolume *float64               `json:"musicVolume,omitempty"`
+	Brand       *VideoBrand            `json:"brand,omitempty"`
+}
+type VideoCompositionState struct {
+	RequestID     string               `json:"requestId"`
+	SourceVersion int64                `json:"sourceVersion"`
+	Edit          VideoCompositionEdit `json:"edit"`
+}
+type VideoQualityCheck struct {
+	Code   string `json:"code"`
+	Status string `json:"status"`
+	Frame  *int   `json:"frame,omitempty"`
+	Detail string `json:"detail,omitempty"`
+}
+type VideoQualityKeyframe struct {
+	Frame           int    `json:"frame"`
+	AssetID         string `json:"assetId"`
+	SourceShotIndex *int   `json:"sourceShotIndex,omitempty"`
+}
+type VideoQualityReport struct {
+	Version      int                    `json:"version"`
+	Status       string                 `json:"status"`
+	CheckedAt    time.Time              `json:"checkedAt"`
+	FPS          int                    `json:"fps"`
+	TotalFrames  int                    `json:"totalFrames"`
+	Width        int                    `json:"width"`
+	Height       int                    `json:"height"`
+	Checks       []VideoQualityCheck    `json:"checks"`
+	Keyframes    []VideoQualityKeyframe `json:"keyframes"`
+	VisualReview string                 `json:"visualReview"`
+}
+
+// 已接受的后期身份留在同一制作单，旧网络重试不能重新排队或改写后来编辑。
+type compositionReceipt struct {
+	Signature     string `json:"signature"`
+	SourceVersion int64  `json:"sourceVersion"`
 }
 
 // NarrationState 由同一媒体 worker 持久化，未知受理不得自动重新提交。
@@ -311,24 +373,27 @@ type AgentGenerationRequest struct {
 }
 
 type Project struct {
-	Narration            *NarrationState          `json:"narration,omitempty"`
-	SourceChecksum       string                   `json:"sourceChecksum,omitempty"`
-	SourceAnalysis       *SourceAnalysis          `json:"sourceAnalysis,omitempty"`
-	AnalysisFee          *FixedFee                `json:"analysisFee,omitempty"`
-	AnalysisChargedMicro int64                    `json:"analysisChargedMicro"`
-	Canvas               *CanvasRequest           `json:"canvas,omitempty"`
-	Agent                *AgentGenerationRequest  `json:"agentGeneration,omitempty"`
-	TeamAssetArchives    []CanvasTeamAssetArchive `json:"teamAssetArchives,omitempty"`
-	ID                   string                   `json:"id"`
-	Version              int64                    `json:"version"`
-	Status               string                   `json:"status"`
-	Brief                Brief                    `json:"brief"`
-	CreatedAt            time.Time                `json:"createdAt"`
-	UpdatedAt            time.Time                `json:"updatedAt"`
-	Analysis             *Analysis                `json:"analysis,omitempty"`
-	Plan                 *Plan                    `json:"plan,omitempty"`
-	Shots                []Shot                   `json:"shots"`
-	QuoteMicro           int64                    `json:"quoteMicro"`
+	Composition          *VideoCompositionState        `json:"composition,omitempty"`
+	QualityReport        *VideoQualityReport           `json:"qualityReport,omitempty"`
+	CompositionReceipts  map[string]compositionReceipt `json:"compositionReceipts,omitempty"`
+	Narration            *NarrationState               `json:"narration,omitempty"`
+	SourceChecksum       string                        `json:"sourceChecksum,omitempty"`
+	SourceAnalysis       *SourceAnalysis               `json:"sourceAnalysis,omitempty"`
+	AnalysisFee          *FixedFee                     `json:"analysisFee,omitempty"`
+	AnalysisChargedMicro int64                         `json:"analysisChargedMicro"`
+	Canvas               *CanvasRequest                `json:"canvas,omitempty"`
+	Agent                *AgentGenerationRequest       `json:"agentGeneration,omitempty"`
+	TeamAssetArchives    []CanvasTeamAssetArchive      `json:"teamAssetArchives,omitempty"`
+	ID                   string                        `json:"id"`
+	Version              int64                         `json:"version"`
+	Status               string                        `json:"status"`
+	Brief                Brief                         `json:"brief"`
+	CreatedAt            time.Time                     `json:"createdAt"`
+	UpdatedAt            time.Time                     `json:"updatedAt"`
+	Analysis             *Analysis                     `json:"analysis,omitempty"`
+	Plan                 *Plan                         `json:"plan,omitempty"`
+	Shots                []Shot                        `json:"shots"`
+	QuoteMicro           int64                         `json:"quoteMicro"`
 	// CompositionAssetID 在合成开始前持久化，跨 worker lease/进程恢复复用同一最终资产身份。
 	// 这是平台内部恢复事实，不进入 ProjectView；OutputAssetID 仍是已完成成片的公开事实。
 	CompositionAssetID string    `json:"compositionAssetId,omitempty"`
@@ -346,6 +411,9 @@ type Project struct {
 
 // 用户投影不携带供应商路由、准入身份、锁定售价或 worker lease；opaque task ID 仅用于受理证据与排查。
 type ProjectView struct {
+	Composition          *VideoCompositionState   `json:"composition,omitempty"`
+	QualityReport        *VideoQualityReport      `json:"qualityReport,omitempty"`
+	NarrationAvailable   bool                     `json:"narrationAvailable,omitempty"`
 	SourceAnalysis       *SourceAnalysis          `json:"sourceAnalysis,omitempty"`
 	AnalysisChargedMicro int64                    `json:"analysisChargedMicro"`
 	Canvas               *CanvasRequest           `json:"canvas,omitempty"`
@@ -391,7 +459,7 @@ func (p Project) View() ProjectView {
 		shots = append(shots, ShotView{Plan: s.Plan, Status: s.Status, Attempt: s.Attempt, VideoTaskID: publicVideoTaskID(s.VideoTaskID), ImageAssetID: s.ImageAssetID, OutputAssetID: s.OutputAssetID, LastFrameAssetID: s.LastFrameAssetID, Error: s.Error, ProviderError: diagnostic, ChargedMicro: s.ChargedMicro, QuoteMicro: s.QuoteMicro})
 	}
 	archives := currentGeneratedArchives(p)
-	return ProjectView{SourceAnalysis: cloneSourceAnalysis(p.SourceAnalysis), AnalysisChargedMicro: p.AnalysisChargedMicro, Canvas: p.Canvas, TeamAssetArchives: archives, ReservedMicro: 0, ReleasedMicro: 0, ID: p.ID, Version: p.Version, Status: p.Status, Brief: p.Brief, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Analysis: p.Analysis, Plan: p.Plan, Shots: shots, QuoteMicro: p.QuoteMicro, ChargedMicro: p.ChargedMicro, OutputAssetID: p.OutputAssetID, Error: p.Error, CancelRequested: p.CancelRequested}
+	return ProjectView{Composition: p.Composition, QualityReport: p.QualityReport, SourceAnalysis: cloneSourceAnalysis(p.SourceAnalysis), AnalysisChargedMicro: p.AnalysisChargedMicro, Canvas: p.Canvas, TeamAssetArchives: archives, ReservedMicro: 0, ReleasedMicro: 0, ID: p.ID, Version: p.Version, Status: p.Status, Brief: p.Brief, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Analysis: p.Analysis, Plan: p.Plan, Shots: shots, QuoteMicro: p.QuoteMicro, ChargedMicro: p.ChargedMicro, OutputAssetID: p.OutputAssetID, Error: p.Error, CancelRequested: p.CancelRequested}
 }
 
 func directGenerationRequest(p Project) (CanvasRequest, bool) {

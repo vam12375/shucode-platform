@@ -44,6 +44,12 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		if err := s.validateFinishing(ctx, p.Brief); err != nil {
 			return s.failVideoReference(ctx, p, index, shot, err.Error())
 		}
+		if p.Brief.Finishing != nil {
+			// Logo是后期必需的冻结素材；只在新付费阶段前复验，已受理镜头仍继续结算。
+			if err := s.validateBrandAsset(ctx, p, p.Brief.Finishing.Brand); err != nil {
+				return s.failVideoReference(ctx, p, index, shot, err.Error())
+			}
+		}
 		if hasCinematicFinishing(p) && p.Brief.Finishing.Voiceover {
 			// 整篇旁白先定真实长度，避免付完视频费用后才发现文案无法自然读完。
 			path, err := s.prepareNarration(ctx, p, "")
@@ -425,7 +431,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	var replacementImageIDs []string
 	if kind == "video" && globalReferences {
 		// auto、分镜和原片复刻复用同一组全局参考，不从镜头绑定推导首帧。
-		replacementImageIDs = uniqueReferenceImageIDs(p.Brief.AssetIDs)
+		replacementImageIDs = uniqueReferenceImageIDs(videoProductAssetIDs(p.Brief))
 	} else if kind == "video" && isWholeVideoReferenceExecution(p) {
 		replacementImageIDs = wholeReferenceImageIDs(p, shot)
 		if len(replacementImageIDs) == 0 || len(replacementImageIDs) > m.VideoReference.MaxImages {

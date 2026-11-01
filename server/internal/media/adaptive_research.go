@@ -116,7 +116,7 @@ func validateResearchPlan(b Brief, p Plan) error {
 	}
 	seen := map[string]bool{}
 	for _, a := range r.AssetObservations {
-		if !slices.Contains(b.AssetIDs, a.AssetID) || seen[a.AssetID] || !boundedNonempty(a.Description, 1000) {
+		if !slices.Contains(videoProductAssetIDs(b), a.AssetID) || seen[a.AssetID] || !boundedNonempty(a.Description, 1000) {
 			return adaptiveResearchError()
 		}
 		seen[a.AssetID] = true
