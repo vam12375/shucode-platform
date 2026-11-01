@@ -166,6 +166,11 @@ type Asset struct {
 	Internal        bool      `json:"internal,omitempty"`
 }
 type Brief struct {
+	ResearchPolicy           string   `json:"researchPolicy,omitempty"`
+	CreativeIntent           string   `json:"creativeIntent,omitempty"`
+	DistributionPlatform     string   `json:"distributionPlatform,omitempty"`
+	TemplateID               string   `json:"templateId,omitempty"`
+	TemplateVersion          string   `json:"templateVersion,omitempty"`
 	SourceOnly               bool     `json:"sourceOnly,omitempty"`
 	GenerationMode           string   `json:"generationMode,omitempty"`
 	ReferenceMode            string   `json:"referenceMode,omitempty"`
@@ -222,6 +227,7 @@ type Reference struct {
 	SelectionReason string    `json:"selectionReason"`
 }
 type ShotPlan struct {
+	sourceFields          uint8
 	SourceURL             string  `json:"sourceUrl"`
 	SourceStart           float64 `json:"sourceStart"`
 	SourceEnd             float64 `json:"sourceEnd"`
@@ -246,8 +252,9 @@ type ShotPlan struct {
 	Sound                 string `json:"sound,omitempty"`
 }
 type Plan struct {
-	References []Reference `json:"references"`
-	Shots      []ShotPlan  `json:"shots"`
+	Research   *ResearchDecision `json:"research,omitempty"`
+	References []Reference       `json:"references"`
+	Shots      []ShotPlan        `json:"shots"`
 }
 type Analysis struct {
 	Kind              string `json:"kind,omitempty"`

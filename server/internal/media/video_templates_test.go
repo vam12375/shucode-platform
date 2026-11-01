@@ -1,0 +1,194 @@
+package media
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"slices"
+	"testing"
+
+	"github.com/google/uuid"
+)
+
+func templateReviewFixture(t *testing.T) (*fixture, *Project, TemplateReviewInput) {
+	t.Helper()
+	f := setup(t)
+	ctx := context.Background()
+	templates, err := VideoTemplateDefinitions()
+	if err != nil || len(templates) < 32 {
+		t.Fatalf("catalog: count=%d err=%v", len(templates), err)
+	}
+	template := templates[0]
+	b, p, models := adaptivePlanFixture()
+	b.VideoModel = "v"
+	b.TemplateID = template.ID
+	b.TemplateVersion = template.Version
+	b.ReviewPlan = true
+	b.Duration = template.DurationRange.Min
+	p.Shots[0].Duration = b.Duration
+	p.Research.TemplateID = template.ID
+	p.Research.TemplateVersion = template.Version
+	models, err = f.s.Repo.Models(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := &Project{ID: uuid.NewString(), TeamID: f.team, UserID: f.user, Version: 1, Status: "completed", Brief: b, Plan: &p, Models: models, OutputAssetID: uuid.NewString(), Shots: []Shot{}}
+	if err = f.s.Repo.Save(ctx, project, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.s.Repo.AddAsset(ctx, f.team, Asset{ID: project.OutputAssetID, Kind: "video", Size: 7}); err != nil {
+		t.Fatal(err)
+	}
+	path := f.s.Blobs.Path(f.team, project.OutputAssetID)
+	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(path, []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return f, project, TemplateReviewInput{TemplateID: template.ID, TemplateVersion: template.Version, ProjectTeamID: f.team, ProjectID: project.ID, Score: 90, Approved: true, Note: "人工fixture仅证明审核约束，不证明成片质量"}
+}
+
+func TestTemplateReviewDerivesModelFromCompletedEvidenceAndCanRevoke(t *testing.T) {
+	f, p, input := templateReviewFixture(t)
+	ctx := context.Background()
+	templates, err := f.s.VideoTemplates(ctx)
+	if err != nil || len(templates[0].VerifiedModelIDs) != 0 {
+		t.Fatal("unreviewed catalog claims verification")
+	}
+	if err = f.s.validateAdaptivePlan(ctx, p.Brief, *p.Plan, p.Models); err != nil {
+		t.Fatal(err)
+	}
+	p.Plan.Research.Mode = "template"
+	if err = f.s.validateAdaptivePlan(ctx, p.Brief, *p.Plan, p.Models); err == nil {
+		t.Fatal("unreviewed template was accepted")
+	}
+	review, err := f.s.ReviewVideoTemplate(ctx, "root-fixture", input)
+	if err != nil || review.ModelID != p.Brief.VideoModel || review.OutputAssetID != p.OutputAssetID || review.ReviewerID != "root-fixture" {
+		t.Fatalf("review=%+v err=%v", review, err)
+	}
+	templates, err = f.s.VideoTemplates(ctx)
+	if err != nil || !slices.Contains(templates[0].VerifiedModelIDs, "v") {
+		t.Fatalf("review missing: %+v %v", templates[0], err)
+	}
+	if err = f.s.validateAdaptivePlan(ctx, p.Brief, *p.Plan, p.Models); err != nil {
+		t.Fatal(err)
+	}
+	input.Approved = false
+	input.Score = 70
+	if _, err = f.s.ReviewVideoTemplate(ctx, "root-fixture", input); err != nil {
+		t.Fatal(err)
+	}
+	templates, err = f.s.VideoTemplates(ctx)
+	if err != nil || len(templates[0].VerifiedModelIDs) != 0 {
+		t.Fatal("revoked template still verified")
+	}
+}
+
+func TestTemplateReviewRejectsMissingOutputAndChangedModelSnapshot(t *testing.T) {
+	f, p, input := templateReviewFixture(t)
+	ctx := context.Background()
+	if _, err := f.s.ReviewVideoTemplate(ctx, "root-fixture", input); err != nil {
+		t.Fatal(err)
+	}
+	models, err := f.s.Repo.Models(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	models[0].UpstreamModel = "changed-model"
+	raw, _ := json.Marshal(models)
+	if err = f.s.Repo.Store.SetConfigValue(ctx, ConfigKey, raw); err != nil {
+		t.Fatal(err)
+	}
+	templates, err := f.s.VideoTemplates(ctx)
+	if err != nil || len(templates[0].VerifiedModelIDs) != 0 {
+		t.Fatal("old evidence verified changed model")
+	}
+	if err = os.Remove(f.s.Blobs.Path(f.team, p.OutputAssetID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.s.ReviewVideoTemplate(ctx, "root-fixture", input); err == nil {
+		t.Fatal("missing real output accepted")
+	}
+	input.ProjectTeamID = uuid.NewString()
+	if _, err = f.s.ReviewVideoTemplate(ctx, "root-fixture", input); err == nil {
+		t.Fatal("cross-team fabricated evidence accepted")
+	}
+}
+
+func TestTemplateReviewForChangedModelCannotVerifyEarlierFrozenProject(t *testing.T) {
+	f, frozen, input := templateReviewFixture(t)
+	ctx := context.Background()
+	changed := slices.Clone(frozen.Models)
+	for i := range changed {
+		if changed[i].ID == frozen.Brief.VideoModel {
+			changed[i].UpstreamModel = "new-unreviewed-mapping"
+		}
+	}
+	raw, err := json.Marshal(changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.s.Repo.Store.SetConfigValue(ctx, ConfigKey, raw); err != nil {
+		t.Fatal(err)
+	}
+	evidence := *frozen
+	evidence.ID = uuid.NewString()
+	evidence.Models = changed
+	if err = f.s.Repo.Save(ctx, &evidence, nil); err != nil {
+		t.Fatal(err)
+	}
+	input.ProjectID = evidence.ID
+	if _, err = f.s.ReviewVideoTemplate(ctx, "root-fixture", input); err != nil {
+		t.Fatal(err)
+	}
+	templates, err := f.s.VideoTemplates(ctx)
+	if err != nil || !slices.Contains(templates[0].VerifiedModelIDs, frozen.Brief.VideoModel) {
+		t.Fatalf("current model B should be verified: %v", err)
+	}
+	plan := *frozen.Plan
+	decision := *plan.Research
+	decision.Mode = "template"
+	plan.Research = &decision
+	// 制作单已冻结旧映射A，不能借用同ID的新映射B的真实审核证据。
+	if err = f.s.validateAdaptivePlan(ctx, frozen.Brief, plan, frozen.Models); err == nil || err.Error() != "video_research_invalid" {
+		t.Fatal("model B approval incorrectly verified frozen model A")
+	}
+	if err = f.s.validateAdaptivePlan(ctx, evidence.Brief, plan, evidence.Models); err != nil {
+		t.Fatalf("approved frozen model B rejected: %v", err)
+	}
+	currentBrief := evidence.Brief
+	currentBrief.ReviewPlan = false
+	if err = f.s.validateTemplateBrief(ctx, currentBrief, changed); err != nil {
+		t.Fatalf("current model B creation selection rejected: %v", err)
+	}
+	for _, entry := range []string{"accept", "revise", "generate"} {
+		t.Run(entry, func(t *testing.T) {
+			project := *frozen
+			project.ID = uuid.NewString()
+			project.Status = "review"
+			project.Plan = &plan
+			if entry == "accept" {
+				project.Status = "analyzing"
+				project.Plan = nil
+				project.Analysis = &Analysis{TaskID: "task", InputID: "input", WorkspacePath: "/tmp"}
+			}
+			if err := f.s.Repo.Save(ctx, &project, nil); err != nil {
+				t.Fatal(err)
+			}
+			var err error
+			switch entry {
+			case "accept":
+				_, err = f.s.SetPlan(ctx, f.team, project.ID, project.Version, "input", plan)
+			case "revise":
+				_, err = f.s.Revise(ctx, f.team, project.ID, project.Version, plan)
+			case "generate":
+				_, err = f.s.action(ctx, f.team, project.ID, project.Version, "generate", "", "")
+			}
+			if err == nil || err.Error() != "video_research_invalid" {
+				t.Fatalf("%s used current B approval for frozen A: %v", entry, err)
+			}
+		})
+	}
+}

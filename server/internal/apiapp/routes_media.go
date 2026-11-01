@@ -109,6 +109,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 	registerMediaSourceRoutes(router, deps)
 	registerCanvasGenerationRoutes(router, deps)
 	registerMediaAgentGenerationRoutes(router, deps)
+	registerMediaTemplateRoutes(router, deps)
 	// 供应商会用 HEAD 探测参考媒体；复用 GET 验签与资产检查，避免合法媒体被误判为不可达。
 	serveMediaBlob := func(c *gin.Context) {
 		team, id := c.Param("team"), c.Param("id")
@@ -202,7 +203,21 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(503, fail(503, "reference_pricing_unavailable"))
 			return
 		}
-		c.JSON(200, okData(gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": quota - used, "reservedMicro": int64(0), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "assets": assets, "projects": projects, "generations": generations, "compositionAvailable": media.CompositionAvailable(), "referencePricing": pricing, "capabilities": s.FinishingCapabilities(ctx), "mediaOrigin": s.Blobs.Origin}))
+		templates, e := s.VideoTemplates(ctx)
+		if e != nil {
+			c.JSON(503, fail(503, "video_templates_unavailable"))
+			return
+		}
+		for i := range templates {
+			visible := []string{}
+			for _, id := range templates[i].VerifiedModelIDs {
+				if slices.ContainsFunc(models, func(model media.Model) bool { return model.ID == id }) {
+					visible = append(visible, id)
+				}
+			}
+			templates[i].VerifiedModelIDs = visible
+		}
+		c.JSON(200, okData(gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": quota - used, "reservedMicro": int64(0), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "videoTemplates": templates, "assets": assets, "projects": projects, "generations": generations, "compositionAvailable": media.CompositionAvailable(), "referencePricing": pricing, "capabilities": s.FinishingCapabilities(ctx), "mediaOrigin": s.Blobs.Origin}))
 	})
 	router.POST("/api/v1/media/assets", func(c *gin.Context) {
 		_, m, ok := mediaIdentity(c, deps)

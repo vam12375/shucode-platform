@@ -9,6 +9,32 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.69.0] - 2026-10-30
+
+### 新增(视频模板与自适应研究)
+
+- 新增 40 个视频模板配方（v1.1.0）：每个含 3 个镜头节拍、商品事实、素材要求、
+  适用/避用条件与 8–12 项质量检查；配方正文改写必须升版本并重新审核。
+- Brief 新增可选 `researchPolicy`、`creativeIntent`、`distributionPlatform`、
+  `templateId`/`templateVersion`；未发送 `researchPolicy` 时保持旧研究流程，开启后仅允许
+  auto 模式，并强制输出研究决策。
+- Plan 新增 `research` 决策（reference/template/original）及素材观察、创意缺口；模板/原创
+  分镜省略来源字段，显式来源字段存在性与零秒边界严格校验，旧 Plan 仍要求真实来源。
+- capabilities 增加 `adaptiveResearch`；`/api/v1/media/overview` 下发按当前团队可见模型
+  过滤的 `videoTemplates`，不暴露跨团队审核内容。
+- root 新增 `/console/api/media/templates` 与 `/media/templates/reviews` GET/POST；
+  审核只接受真实已完成成片的团队/制作单 ID，模型、模型签名、成片资产与审核人由服务端派生，
+  通过至少 85 分；模型配置变化自动失效，可追加未通过记录撤销验证。
+- 模板/模型验证状态按版本与完整模型快照签名派生，公开目录默认不宣称任何未审核验证。
+
+### 验证
+
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`（144 项）
+- `pnpm --filter @shucode-platform/console build`
+- `make -C server lint test`
+
 ## [0.68.4] - 2026-10-30
 
 ### 测试(Agent 媒体生成)

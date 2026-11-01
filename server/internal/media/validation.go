@@ -115,6 +115,9 @@ func ValidateModels(models []Model) error {
 	return nil
 }
 func ValidateBrief(b Brief, models []Model, assets []Asset) error {
+	if err := validateAdaptiveBrief(b); err != nil {
+		return err
+	}
 	replica := b.ReferenceAssetID != ""
 	if err := validateFinishingOptions(b); err != nil {
 		return err
@@ -150,7 +153,7 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 			return ErrInvalid
 		}
 	}
-	if !replica && len(b.Platforms) == 0 {
+	if !replica && !adaptiveResearch(b) && len(b.Platforms) == 0 {
 		return ErrInvalid
 	}
 	// 创作意图来自客户端可选字段：长度与枚举必须与共享 schema 一致，
@@ -241,6 +244,9 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	return nil
 }
 func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
+	if err := validateResearchPlan(b, plan); err != nil {
+		return nil, 0, err
+	}
 	if err := validateBriefReferenceMode(b); err != nil {
 		return nil, 0, err
 	}
@@ -255,7 +261,8 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 	}
 	replica := b.ReferenceAssetID != ""
 	wholeReference := replica && b.GenerationMode == "video_reference"
-	if len(plan.Shots) == 0 || len(plan.Shots) > 30 || len(plan.References) == 0 || len(plan.References) > 20 {
+	sourced := plan.Research == nil || plan.Research.Mode == "reference"
+	if len(plan.Shots) == 0 || len(plan.Shots) > 30 || sourced && len(plan.References) == 0 || len(plan.References) > 20 {
 		return nil, 0, ErrInvalid
 	}
 	refs := map[string]bool{}
@@ -285,8 +292,9 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 		if utf8.RuneCountInString(p.Prompt) > 4000 || utf8.RuneCountInString(p.ImagePrompt) > 4000 || utf8.RuneCountInString(p.Subtitle) > 300 || utf8.RuneCountInString(p.Narration) > 300 || utf8.RuneCountInString(p.Camera) > 500 || utf8.RuneCountInString(p.Framing) > 500 || utf8.RuneCountInString(p.Action) > 1000 || utf8.RuneCountInString(p.Purpose) > 500 {
 			return nil, 0, ErrInvalid
 		}
-		validShotSource := refs[p.SourceURL] || (replica && p.SourceURL == "" && len(b.ReferenceURLs) == 0 && refs[""])
-		if !validShotSource || math.IsNaN(p.SourceStart) || math.IsInf(p.SourceStart, 0) || !finitePositive(p.SourceEnd) || p.SourceStart < 0 || p.SourceEnd <= p.SourceStart || (!wholeReference && !v.DurationSupported(p.Duration)) || (wholeReference && (p.Duration < 2 || p.Duration > 30)) || ((!replica && !globalReferences || p.AssetID != "") && !slices.Contains(b.AssetIDs, p.AssetID)) || p.Prompt == "" || len(p.Prompt) > 12000 || len(p.Subtitle) > 900 || p.Framing == "" || p.Camera == "" || p.Action == "" || p.Purpose == "" {
+		validShotSource := !sourced || (p.hasCompleteSource() && (refs[p.SourceURL] || (replica && p.SourceURL == "" && len(b.ReferenceURLs) == 0 && refs[""])))
+		invalidSourceTime := sourced && (math.IsNaN(p.SourceStart) || math.IsInf(p.SourceStart, 0) || !finitePositive(p.SourceEnd) || p.SourceStart < 0 || p.SourceEnd <= p.SourceStart)
+		if !validShotSource || invalidSourceTime || (!wholeReference && !v.DurationSupported(p.Duration)) || (wholeReference && (p.Duration < 2 || p.Duration > 30)) || ((!replica && !globalReferences || p.AssetID != "") && !slices.Contains(b.AssetIDs, p.AssetID)) || p.Prompt == "" || len(p.Prompt) > 12000 || len(p.Subtitle) > 900 || p.Framing == "" || p.Camera == "" || p.Action == "" || p.Purpose == "" {
 			return nil, 0, ErrInvalid
 		}
 		if replica {

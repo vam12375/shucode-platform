@@ -346,6 +346,7 @@ func (s *Service) renderLegacyComposition(runCtx context.Context, p *Project, se
 // 不能为了界面提前打开，否则用户填写的意图会被静默丢弃或直接 400。
 func Capabilities() map[string]bool {
 	return map[string]bool{
+		"adaptiveResearch": true,
 		// 创作意图（受众/语气/钩子/行动号召/禁用表述/脚本/旁白语言）已由 Brief 接收。
 		"creativeBrief": true,
 		// 复刻显式区分全局图片参考与历史首帧绑定，客户端据此门控新增 Brief 字段。

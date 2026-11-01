@@ -145,6 +145,9 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 		if err := validateSourceBoundaries(v, plan); err != nil {
 			return err
 		}
+		if err := s.validateAdaptivePlan(ctx, v.Brief, plan, v.Models); err != nil {
+			return err
+		}
 		shots, total, err := BuildShots(v.Brief, plan, v.Models)
 		if err != nil {
 			return err
