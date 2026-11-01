@@ -98,6 +98,7 @@ func New(deps *Deps) *gin.Engine {
 	registerConsoleRoutes(router, deps)
 	registerTeamCreditRoutes(router, deps)
 	registerConsoleOpsRoutes(router, deps)
+	registerDeepSeekWebToolsConfigRoutes(router, deps)
 	registerConsoleOpsExtRoutes(router, deps)
 	registerTenantRoutes(router, deps)
 	registerQuotaRequestRoutes(router, deps)

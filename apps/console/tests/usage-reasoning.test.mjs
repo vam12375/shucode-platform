@@ -305,7 +305,7 @@ test("web tool details display request pricing without million-token procurement
   elements(ui.render(), "button").find((button) => button.props["aria-label"] === "查看请求详情 request-cost").props.onClick();
   const dialog = elements(ui.render(), "div").find((node) => node.props.role === "dialog");
   const rows = new Map(elements(dialog).filter((node) => node.props?.k).map((node) => [node.props.k, nodeText(node)]));
-  assert.equal(rows.get("计费单位"), "每次成功请求；失败及空结果不计费");
+  assert.equal(rows.get("计费单位"), "每次成功请求；用户失败及空结果不扣费");
   assert.equal(rows.get("用户实扣（credit）"), "0.005 credit");
   assert.equal(rows.get("供应商成本（估算）"), "CNY 0.005");
   assert.equal(rows.get("采购价 · 每次成功请求"), "CNY 0.005000 / 次成功请求");

@@ -1525,7 +1525,7 @@ export function UsagePage() {
                     </>
                   ) : null}
                   {requestPriced ? (
-                    <DetailRow k="计费单位">每次成功请求；失败及空结果不计费</DetailRow>
+                    <DetailRow k="计费单位">每次成功请求；用户失败及空结果不扣费</DetailRow>
                   ) : mediaPriced ? (
                     <>
                       <DetailRow k="计费单位">{mediaUnit === "image" ? "按张" : "按输出秒数"}</DetailRow>

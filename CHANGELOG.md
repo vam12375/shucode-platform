@@ -9,6 +9,30 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.71.0] - 2026-11-01
+
+### 新增(DeepSeek 网页工具配置与成本语义)
+
+- root 新增 `/console/api/deepseek-web-tools` GET/PUT/DELETE 与 `/test`：显式绑定已启用供应商、
+  复用其加密密钥与 Base URL，`expectedVersion` CAS 保存；停用写入 tombstone，不回退旧环境变量。
+- 控制台供应商页新增网页搜索/抓取面板：独立售价与采购成本（安全整数 micro）、单次毛利估算、
+  只读连通测试、密钥不回显，并明确停用与在途请求语义。
+- Gateway 新增认证 `GET /v1/tools/capabilities`，只返回 `schemaVersion`、总开关、Search/Fetch
+  开关与可选售价，不泄露成本、供应商、密钥或配置版本。
+- Search/Fetch 使用请求开始时的配置快照；成功才按次扣费，免费售价仍记录采购成本；超时、
+  传输中断或无效响应记为成本未知，明确空结果与非 HTTP 200 记零成本。
+- 工具请求复用团队 RPM/并发限流，不消耗 TPM；新增稳定工具错误码与 `x-request-id` 贯穿响应。
+- 用量页区分用户扣费与采购成本，新增工具结果未知/空结果/上游拒绝的原因说明；契约 fixtures
+  覆盖网页工具能力信封校验。
+
+### 验证
+
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`（154 项）
+- `pnpm --filter @shucode-platform/console build`
+- `make -C server lint test`
+
 ## [0.70.0] - 2026-11-01
 
 ### 新增(可编辑后期、品牌包装与成片质检)

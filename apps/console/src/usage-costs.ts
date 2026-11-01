@@ -39,6 +39,9 @@ const costReasons: Record<string, string> = {
   invalid_price: "请求时的采购价或倍率无效。",
   usage_unavailable: "缺少有效的上游用量，无法确定成本。",
   invalid_usage: "上游用量无效，无法计算成本。",
+  tool_outcome_unknown: "工具请求超时、传输中断或响应无效，无法确认供应商是否已计费；本次用户不扣费，采购成本待核对。",
+  tool_empty_result: "上游明确返回空结果或空正文，本次用户不扣费，采购成本按零记录。",
+  tool_upstream_rejected: "上游明确返回非 HTTP 200 状态，本次用户不扣费，采购成本按零记录。",
 };
 
 /** 用户实扣与采购成本是不同事实；历史成本只读冻结快照，缺失不能显示为零。 */
@@ -81,7 +84,7 @@ export function historicalCostDisplay(
     kind: "estimated",
     text: `${currency} ${whole}${fraction ? `.${fraction}` : ""}`,
     reason: cost.rates?.unit === "request"
-      ? "按成功请求次数与请求时的冻结采购价计算，失败及空结果不计费；供参考，非供应商最终账单。"
+      ? costReasons[cost.reason ?? ""] ?? "按成功请求次数与请求时的冻结采购价计算；用户失败及空结果不扣费，无法确认的采购结果另记为成本未知。供参考，非供应商最终账单。"
       : cost.rates?.unit === "image"
       ? "按实际生成张数与任务冻结采购价计算，供参考，非供应商最终账单。"
       : cost.rates?.unit === "second"

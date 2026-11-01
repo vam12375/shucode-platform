@@ -6,6 +6,7 @@ import { Glyph, PageTitle } from "../components/Icon.js";
 import { Select } from "../components/Select.js";
 import { Chip, Notice } from "../components/StatusChip.js";
 import { formatShanghaiTime } from "../time.js";
+import { DeepSeekWebToolsPanel } from "./DeepSeekWebTools.js";
 
 interface ProviderRow {
   id: string;
@@ -329,6 +330,8 @@ export function ProvidersPage() {
           </form>
         </div>
       </section>
+
+      <DeepSeekWebToolsPanel providers={providers} />
 
       <section className="pane d1">
         <div className="pane-h">

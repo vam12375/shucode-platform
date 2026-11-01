@@ -491,5 +491,167 @@
       "pendingCount": 0,
       "nextCursor": null
     }
+  ],
+  "webToolsCapabilities": [
+    {
+      "input": {
+        "schemaVersion": 1,
+        "enabled": true,
+        "searchEnabled": true,
+        "fetchEnabled": false,
+        "searchSaleMicro": 0,
+        "fetchSaleMicro": 5000
+      },
+      "ok": true
+    },
+    {
+      "input": {
+        "schemaVersion": 1,
+        "enabled": false,
+        "searchEnabled": false,
+        "fetchEnabled": false
+      },
+      "ok": true
+    },
+    {
+      "input": {
+        "schemaVersion": 1,
+        "enabled": true,
+        "searchEnabled": true,
+        "fetchEnabled": false,
+        "searchSaleMicro": 9007199254740991,
+        "fetchSaleMicro": 5000
+      },
+      "ok": true
+    },
+    {
+      "input": {
+        "schemaVersion": 2,
+        "enabled": true,
+        "searchEnabled": true,
+        "fetchEnabled": false,
+        "searchSaleMicro": 0,
+        "fetchSaleMicro": 5000
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "schemaVersion": 1,
+        "enabled": true,
+        "searchEnabled": true,
+        "fetchEnabled": false,
+        "searchSaleMicro": -1,
+        "fetchSaleMicro": 5000
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "schemaVersion": 1,
+        "enabled": true,
+        "searchEnabled": true,
+        "fetchEnabled": false,
+        "searchSaleMicro": 0.5,
+        "fetchSaleMicro": 5000
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "schemaVersion": 1,
+        "enabled": true,
+        "searchEnabled": true,
+        "fetchEnabled": false,
+        "searchSaleMicro": 9007199254740992,
+        "fetchSaleMicro": 5000
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "schemaVersion": 1,
+        "enabled": true,
+        "searchEnabled": true,
+        "fetchEnabled": false,
+        "searchSaleMicro": null,
+        "fetchSaleMicro": 5000
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "schemaVersion": 1,
+        "enabled": false,
+        "searchEnabled": true,
+        "fetchEnabled": false,
+        "searchSaleMicro": 0,
+        "fetchSaleMicro": 5000
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "schemaVersion": 1,
+        "enabled": true,
+        "searchEnabled": true,
+        "fetchEnabled": false,
+        "searchSaleMicro": 0,
+        "fetchSaleMicro": 5000,
+        "apiKey": "must-not-be-accepted"
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "schemaVersion": 1,
+        "enabled": true,
+        "searchEnabled": "true",
+        "fetchEnabled": false,
+        "searchSaleMicro": 0,
+        "fetchSaleMicro": 5000
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "enabled": true,
+        "searchEnabled": true,
+        "fetchEnabled": false,
+        "searchSaleMicro": 0,
+        "fetchSaleMicro": 5000
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "schemaVersion": 1,
+        "searchEnabled": true,
+        "fetchEnabled": false,
+        "searchSaleMicro": 0,
+        "fetchSaleMicro": 5000
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "schemaVersion": 1,
+        "enabled": true,
+        "fetchEnabled": false,
+        "searchSaleMicro": 0,
+        "fetchSaleMicro": 5000
+      },
+      "ok": false
+    },
+    {
+      "input": {
+        "schemaVersion": 1,
+        "enabled": true,
+        "searchEnabled": true,
+        "searchSaleMicro": 0,
+        "fetchSaleMicro": 5000
+      },
+      "ok": false
+    }
   ]
 }

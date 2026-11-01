@@ -19,7 +19,7 @@ type Env struct {
 	MemoryDB        bool
 	UpstreamBaseURL string
 	UpstreamAPIKey  string
-	// DeepSeekTools* 为网页搜索/抓取的独立上游与按次价格；API key 只从运行时环境读取。
+	// DeepSeekTools* 仅在后台从未保存工具配置时兼容旧部署，存在后台配置后不再回退。
 	DeepSeekToolsBaseURL         string
 	DeepSeekToolsAPIKey          string
 	DeepSeekSearchFeeMicro       int64

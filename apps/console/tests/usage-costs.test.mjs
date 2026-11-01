@@ -140,6 +140,25 @@ test("web tools freeze per-request prices and never describe their costs as toke
   assert.equal(costs.usageModelName("deepseek:web-fetch"), "网页抓取");
 });
 
+test("uncertain tool supplier outcomes stay unknown while confirmed empty results keep known zero", () => {
+  const uncertain = record("CNY", undefined, 0).priceSnapshot;
+  uncertain.cost.status = "unknown";
+  uncertain.cost.reason = "tool_outcome_unknown";
+  const display = costs.historicalCostDisplay(uncertain);
+  assert.equal(display.kind, "unknown");
+  assert.match(display.reason, /无法确认供应商是否已计费/);
+  assert.match(display.reason, /用户不扣费/);
+  for (const reason of ["tool_empty_result", "tool_upstream_rejected"]) {
+    const snapshot = record("CNY", 0, 0).priceSnapshot;
+    snapshot.cost.rates = { currency: "CNY", unit: "request", perRequest: "0.005000" };
+    snapshot.cost.reason = reason;
+    const zero = costs.historicalCostDisplay(snapshot);
+    assert.equal(zero.kind, "estimated");
+    assert.equal(zero.text, "CNY 0");
+    assert.match(zero.reason, /采购成本按零记录/);
+  }
+});
+
 test("media cost snapshots keep frozen image and output-second units", () => {
   for (const [unit, quantity, unitText, reason] of [
     ["image", 2, "张", /实际生成张数/],

@@ -172,8 +172,16 @@ func TestDeepSeekFetchBlankBodyAndTimeoutAreFree(t *testing.T) {
 			})
 			response := f.do("POST", deepSeekFetchPath, f.token, `{"url":"https://example.com/article"}`)
 			rows := f.usageRecords()
-			if len(rows) != 1 || rows[0].CreditsMicro != 0 || rows[0].PriceSnapshot.Cost.EstimatedMicro == nil || *rows[0].PriceSnapshot.Cost.EstimatedMicro != 0 || f.team().UsedCredits != "0.000000" {
+			if len(rows) != 1 || rows[0].CreditsMicro != 0 || f.team().UsedCredits != "0.000000" {
 				t.Fatalf("%s must be free: status=%d rows=%+v team=%s", mode, response.Code, rows, f.team().UsedCredits)
+			}
+			cost := rows[0].PriceSnapshot.Cost
+			if mode == "timeout" {
+				if cost.Status != "unknown" || cost.EstimatedMicro != nil || cost.Reason != "tool_outcome_unknown" {
+					t.Fatalf("timeout cannot invent zero supplier cost: %+v", cost)
+				}
+			} else if cost.Status != "estimated" || cost.EstimatedMicro == nil || *cost.EstimatedMicro != 0 || cost.Reason != "tool_empty_result" {
+				t.Fatalf("blank content has known zero cost: %+v", cost)
 			}
 		})
 	}
