@@ -113,6 +113,53 @@ func TestFinishingRealFFmpegPreservesFramesReplacesAudioAndOmitsCaptions(t *test
 	}
 }
 
+func TestFinishingRealFFmpegKeepsNativeAudioWhenRequested(t *testing.T) {
+	if !FinishingCompositionAvailable() {
+		t.Skip("finishing ffmpeg unavailable")
+	}
+	f := setup(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	p := &Project{TeamID: f.team, Brief: Brief{Mode: "auto", Duration: 4, Finishing: &FinishingOptions{Subtitles: "none", NativeAudio: true}}}
+	// 第一镜带 880Hz 原声，第二镜没有音轨：保留原声时前半段应听到原声，后半段补静音而不是失败。
+	for i, color := range []string{"red", "blue"} {
+		input := filepath.Join(dir, fmt.Sprintf("input%d.mp4", i))
+		if i == 0 {
+			finishingFFmpegFixture(t, "-f", "lavfi", "-i", "color=c="+color+":s=90x160:r=30", "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000", "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", input)
+		} else {
+			finishingFFmpegFixture(t, "-f", "lavfi", "-i", "color=c="+color+":s=90x160:r=30", "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p", input)
+		}
+		raw, err := os.ReadFile(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, _, err := f.s.Blobs.Put(f.team, bytes.NewReader(raw), MaxVideo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p.Shots = append(p.Shots, Shot{OutputAssetID: id, Plan: ShotPlan{Duration: 2, Transition: "cut"}})
+	}
+	segments, err := compositionTimeline(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.s.renderFinishingComposition(ctx, p, segments, dir, 160, 90); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(dir, "final.mp4")
+	if err = validateFinishingOutput(ctx, output, 120); err != nil {
+		t.Fatal(err)
+	}
+	if amplitude := finishingAmplitude(finishingSamples(t, output, .3, 1), 880); amplitude < .05 {
+		t.Fatalf("native audio was dropped: amplitude=%v", amplitude)
+	}
+	for _, value := range finishingSamples(t, output, 2.3, 1) {
+		if math.Abs(value) > .01 {
+			t.Fatalf("shot without audio must be silent, got %v", value)
+		}
+	}
+}
+
 func TestFinishingRealFFmpegMusicLoopsContinuouslyAndDucksUnderNarration(t *testing.T) {
 	if !FinishingCompositionAvailable() {
 		t.Skip("finishing ffmpeg unavailable")
@@ -124,7 +171,7 @@ func TestFinishingRealFFmpegMusicLoopsContinuouslyAndDucksUnderNarration(t *test
 	finishingFFmpegFixture(t, "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000", "-af", "atrim=duration=1,apad", "-t", "4", "-c:a", "pcm_s16le", narration)
 	f.s.BackgroundMusicPath = music
 	p := &Project{Brief: Brief{Mode: "auto", Finishing: &FinishingOptions{Voiceover: true, Music: true, Subtitles: "none"}}}
-	master, err := f.s.finishingMasterAudio(context.Background(), p, dir, 4, narration)
+	master, err := f.s.finishingMasterAudio(context.Background(), p, dir, 4, narration, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

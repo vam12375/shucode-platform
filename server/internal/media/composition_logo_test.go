@@ -17,7 +17,7 @@ func testVideoBrand(logo string) *VideoBrand {
 
 func TestBrandLogoCannotReplaceProductEvidenceOrFirstFrame(t *testing.T) {
 	m := fixtureVideoModel()
-	b := Brief{Mode: "auto", Product: "fixture", AssetIDs: []string{"logo"}, Platforms: []string{"douyin"}, VideoModel: m.ID, Resolution: "720p", AspectRatio: "16:9", Duration: 5, MaxCreditsMicro: 10000000, Finishing: &FinishingOptions{Subtitles: "none", Brand: testVideoBrand("logo")}}
+	b := Brief{Mode: "auto", Product: "fixture", AssetIDs: []string{"logo"}, Platforms: []string{"douyin"}, VideoModel: m.ID, Resolution: "720p", AspectRatio: "16:9", Duration: 10, MaxCreditsMicro: 10000000, Finishing: &FinishingOptions{Subtitles: "none", Brand: testVideoBrand("logo")}}
 	assets := []Asset{{ID: "logo", Kind: "image"}, {ID: "product", Kind: "image"}}
 	if err := ValidateBrief(b, []Model{m}, assets); err == nil {
 		t.Fatal("logo-only project accepted as product evidence")
@@ -26,7 +26,7 @@ func TestBrandLogoCannotReplaceProductEvidenceOrFirstFrame(t *testing.T) {
 	if err := ValidateBrief(b, []Model{m}, assets); err != nil {
 		t.Fatal("product plus post-only logo rejected", err)
 	}
-	plan := Plan{References: []Reference{{URL: "https://example.test/ref", Title: "fixture", Evidence: "observed", SelectionReason: "related", CapturedAt: time.Now()}}, Shots: []ShotPlan{{SourceURL: "https://example.test/ref", SourceEnd: 5, Duration: 5, Framing: "close", Camera: "push", Action: "show", Purpose: "sell", Prompt: "product", AssetID: "logo"}}}
+	plan := Plan{References: []Reference{{URL: "https://example.test/ref", Title: "fixture", Evidence: "observed", SelectionReason: "related", CapturedAt: time.Now()}}, Shots: []ShotPlan{{SourceURL: "https://example.test/ref", SourceEnd: 5, Duration: 10, Framing: "close", Camera: "push", Action: "show", Purpose: "sell", Prompt: "product", AssetID: "logo"}}}
 	if _, _, err := BuildShots(b, plan, []Model{m}); err == nil {
 		t.Fatal("branding logo accepted as generated first frame")
 	}

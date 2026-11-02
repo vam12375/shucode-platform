@@ -114,6 +114,14 @@ func ValidateModels(models []Model) error {
 	}
 	return nil
 }
+
+// 一键生成制作单总时长：最短 10 秒、最长 5 分钟，与客户端共享常量 VIDEO_BRIEF_DURATION_LIMITS 对齐。
+// 复刻模式的总时长跟随参考视频，只受上限约束；30 镜 × 15 秒的镜头合同足以覆盖 300 秒。
+const (
+	MinAutoBriefSeconds = 10
+	MaxBriefSeconds     = 300
+)
+
 func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	if b.Finishing != nil {
 		if err := validateVideoBrand(b.Finishing.Brand); err != nil {
@@ -133,7 +141,7 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	if err := validateBriefReferenceMode(b); err != nil {
 		return err
 	}
-	if strings.TrimSpace(b.Product) == "" || utf8.RuneCountInString(b.Product) > 200 || utf8.RuneCountInString(b.SellingPoints) > 4000 || (!replica && len(videoProductAssetIDs(b)) == 0) || len(b.AssetIDs) > 20 || len(b.ReferenceURLs) > 10 || b.MaxCreditsMicro <= 0 || b.MaxCreditsMicro > 1_000_000_000 || (!replica && b.Duration < 5) || b.Duration < 1 || b.Duration > 120 || utf8.RuneCountInString(b.ReplacementInstructions) > 4000 {
+	if strings.TrimSpace(b.Product) == "" || utf8.RuneCountInString(b.Product) > 200 || utf8.RuneCountInString(b.SellingPoints) > 4000 || (!replica && len(videoProductAssetIDs(b)) == 0) || len(b.AssetIDs) > 20 || len(b.ReferenceURLs) > 10 || b.MaxCreditsMicro <= 0 || b.MaxCreditsMicro > 1_000_000_000 || (!replica && b.Duration < MinAutoBriefSeconds) || b.Duration < 1 || b.Duration > MaxBriefSeconds || utf8.RuneCountInString(b.ReplacementInstructions) > 4000 {
 		return ErrInvalid
 	}
 	if replica {
@@ -193,6 +201,10 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 		return e
 	}
 	if m.Adapter == "toapis" && validateToAPIsModel(m) != nil {
+		return ErrInvalid
+	}
+	// 原声只能来自声明了 generateAudio 的模型；客户端禁用开关，平台仍拒绝越权请求。
+	if b.Finishing != nil && b.Finishing.NativeAudio && !m.GenerateAudio {
 		return ErrInvalid
 	}
 	// 多镜头合成必须有固定画幅；auto 仅允许画布直接输出，不得落入默认竖屏分支。

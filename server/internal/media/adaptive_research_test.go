@@ -9,8 +9,8 @@ import (
 
 func adaptivePlanFixture() (Brief, Plan, []Model) {
 	m := fixtureVideoModel()
-	b := Brief{Mode: "auto", ResearchPolicy: "auto", ReferenceMode: "multimodal", Product: "product", AssetIDs: []string{"a"}, Platforms: []string{}, ReferenceURLs: []string{}, VideoModel: m.ID, Resolution: "720p", AspectRatio: "16:9", Duration: 5, MaxCreditsMicro: 10_000_000}
-	p := Plan{References: []Reference{}, Research: &ResearchDecision{Mode: "original", Reason: "素材和需求足够", IntentSummary: "展示真实细节", AssetObservations: []AssetObservation{{AssetID: "a", Description: "白色完整商品"}}, CreativeGaps: []string{}}, Shots: []ShotPlan{{Duration: 5, Framing: "近景", Camera: "缓推", Action: "展示单一细节", Purpose: "证明", Prompt: "商品细节"}}}
+	b := Brief{Mode: "auto", ResearchPolicy: "auto", ReferenceMode: "multimodal", Product: "product", AssetIDs: []string{"a"}, Platforms: []string{}, ReferenceURLs: []string{}, VideoModel: m.ID, Resolution: "720p", AspectRatio: "16:9", Duration: 10, MaxCreditsMicro: 10_000_000}
+	p := Plan{References: []Reference{}, Research: &ResearchDecision{Mode: "original", Reason: "素材和需求足够", IntentSummary: "展示真实细节", AssetObservations: []AssetObservation{{AssetID: "a", Description: "白色完整商品"}}, CreativeGaps: []string{}}, Shots: []ShotPlan{{Duration: 10, Framing: "近景", Camera: "缓推", Action: "展示单一细节", Purpose: "证明", Prompt: "商品细节"}}}
 	return b, p, []Model{m}
 }
 
@@ -59,7 +59,7 @@ func TestAdaptiveResearchRejectsInvalidSourceAndMissingObservation(t *testing.T)
 	}
 	b, p, models := adaptivePlanFixture()
 	raw, _ := json.Marshal(p)
-	raw = []byte(strings.Replace(string(raw), "\"duration\":5", "\"duration\":5,\"sourceStart\":0", 1))
+	raw = []byte(strings.Replace(string(raw), "\"duration\":10", "\"duration\":10,\"sourceStart\":0", 1))
 	if err := json.Unmarshal(raw, &p); err != nil {
 		t.Fatal(err)
 	}

@@ -204,10 +204,12 @@ type Brief struct {
 
 // FinishingOptions 只用于新自动制作；缺省保留历史片段原音与字幕语义。
 type FinishingOptions struct {
-	Voiceover bool        `json:"voiceover"`
-	Music     bool        `json:"music"`
-	Subtitles string      `json:"subtitles"`
-	Brand     *VideoBrand `json:"brand,omitempty"`
+	Voiceover bool `json:"voiceover"`
+	Music     bool `json:"music"`
+	// NativeAudio 保留视频模型原声作为底轨；缺省 false 维持「逐镜原音全部排除」。
+	NativeAudio bool        `json:"nativeAudio,omitempty"`
+	Subtitles   string      `json:"subtitles"`
+	Brand       *VideoBrand `json:"brand,omitempty"`
 }
 
 type VideoBrand struct {

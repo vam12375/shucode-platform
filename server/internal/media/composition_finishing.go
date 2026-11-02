@@ -123,6 +123,7 @@ func (s *Service) renderFinishingComposition(ctx context.Context, p *Project, se
 		}
 	}
 	pictureArgs := []string{"-protocol_whitelist", "file,pipe", "-filter_complex_threads", "1"}
+	native := []string{}
 	for i := range segments {
 		clip := finishingSourceClip(p, i)
 		if clip.SourceShotIndex < 0 || clip.SourceShotIndex >= len(p.Shots) {
@@ -154,12 +155,20 @@ func (s *Service) renderFinishingComposition(ctx context.Context, p *Project, se
 			return err
 		}
 		pictureArgs = append(pictureArgs, "-i", name)
+		if options.NativeAudio {
+			// 原声按交付段长度（不含叠化尾帧）切出并对齐源片入出帧与变速；供应商未返回音轨时用静音占位，保持时间轴不漂移。
+			audioName := fmt.Sprintf("clip-%03d.wav", i)
+			if err = s.extractFinishingNativeAudio(ctx, dir, input, audioName, clip, segment.seconds()); err != nil {
+				return err
+			}
+			native = append(native, audioName)
+		}
 	}
 	pictureArgs = append(pictureArgs, "-filter_complex", finishingPictureFilter(p, segments), "-map", "[picture]", "-an", "-t", fmt.Sprintf("%.9f", duration), "-frames:v", strconv.Itoa(frames), "-r", "30", "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", "picture.mp4")
 	if err := runFinishingCommand(ctx, dir, "composition_failed", pictureArgs...); err != nil {
 		return err
 	}
-	master, err := s.finishingMasterAudio(ctx, p, dir, duration, narration)
+	master, err := s.finishingMasterAudio(ctx, p, dir, duration, narration, native)
 	if err != nil {
 		return err
 	}
@@ -195,7 +204,22 @@ func (s *Service) renderFinishingComposition(ctx context.Context, p *Project, se
 	return validateFinishingOutput(ctx, filepath.Join(dir, "final.mp4"), frames)
 }
 
-func (s *Service) finishingMasterAudio(ctx context.Context, p *Project, dir string, duration float64, narration string) (string, error) {
+// extractFinishingNativeAudio 把单个镜头的原声切到交付段：入出帧与变速和画面同源，缺音轨时补静音。
+func (s *Service) extractFinishingNativeAudio(ctx context.Context, dir, input, name string, clip VideoCompositionClip, seconds float64) error {
+	raw, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-protocol_whitelist", "file,pipe", "-select_streams", "a:0", "-show_entries", "stream=codec_type", "-of", "csv=p=0", input).Output()
+	hasAudio := err == nil && strings.Contains(string(raw), "audio")
+	args := []string{"-protocol_whitelist", "file,pipe"}
+	if hasAudio {
+		filter := fmt.Sprintf("atrim=start=%.9f:end=%.9f,asetpts=PTS-STARTPTS,atempo=%.9f,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,apad,atrim=duration=%.9f", float64(clip.InFrame)/30, float64(clip.OutFrame)/30, clip.Speed, seconds)
+		args = append(args, "-i", input, "-vn", "-sn", "-dn", "-af", filter)
+	} else {
+		args = append(args, "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-af", fmt.Sprintf("atrim=duration=%.9f", seconds))
+	}
+	args = append(args, "-t", fmt.Sprintf("%.9f", seconds), "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", name)
+	return runFinishingCommand(ctx, dir, "native_audio_failed", args...)
+}
+
+func (s *Service) finishingMasterAudio(ctx context.Context, p *Project, dir string, duration float64, narration string, native []string) (string, error) {
 	args := []string{"-protocol_whitelist", "file,pipe", "-filter_complex_threads", "1"}
 	filters := []string{}
 	index := 0
@@ -224,15 +248,47 @@ func (s *Service) finishingMasterAudio(ctx context.Context, p *Project, dir stri
 		}
 		args = append(args, "-i", bed)
 		filters = append(filters, fmt.Sprintf("[%d:a]loudnorm=I=-26:TP=-3:LRA=9,aresample=48000,volume=%.9f,afade=t=in:st=0:d=%.9f,afade=t=out:st=%.9f:d=%.9f[music]", index, musicVolume, min(.5, duration/4), duration-min(1.2, duration/4), min(1.2, duration/4)))
+		index++
+	}
+	if len(native) > 0 {
+		// 原声底轨：各段按交付顺序直接拼接（已与画面同入出帧），统一响度后再参与压低与混音。
+		labels := make([]string, 0, len(native))
+		for i, name := range native {
+			args = append(args, "-i", name)
+			label := fmt.Sprintf("n%d", i)
+			filters = append(filters, fmt.Sprintf("[%d:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[%s]", index, label))
+			labels = append(labels, "["+label+"]")
+			index++
+		}
+		filters = append(filters, fmt.Sprintf("%sconcat=n=%d:v=0:a=1,loudnorm=I=-20:TP=-2:LRA=9,aresample=48000,apad,atrim=duration=%.9f,asetpts=PTS-STARTPTS[native]", strings.Join(labels, ""), len(native), duration))
+	}
+	beds := []string{}
+	if len(native) > 0 {
+		beds = append(beds, "native")
+	}
+	if music {
+		beds = append(beds, "music")
 	}
 	switch {
-	case voice && music:
-		// 旁白和单条配乐只在全片主时间轴混合一次，音乐不会因切镜重新起播。
-		filters = append(filters, "[voice]asplit=2[spoken][sidechain]", "[music][sidechain]sidechaincompress=threshold=0.025:ratio=6:attack=20:release=450[ducked]", "[spoken][ducked]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.95:level=false:latency=true[mixed]")
+	case voice && len(beds) > 0:
+		// 旁白只在全片主时间轴混合一次；每条底轨都按旁白压低，音乐不会因切镜重新起播。
+		splits := "[spoken]"
+		mixInputs := "[spoken]"
+		for _, bed := range beds {
+			splits += fmt.Sprintf("[side_%s]", bed)
+		}
+		filters = append(filters, fmt.Sprintf("[voice]asplit=%d%s", len(beds)+1, splits))
+		for _, bed := range beds {
+			filters = append(filters, fmt.Sprintf("[%s][side_%s]sidechaincompress=threshold=0.025:ratio=6:attack=20:release=450[ducked_%s]", bed, bed, bed))
+			mixInputs += fmt.Sprintf("[ducked_%s]", bed)
+		}
+		filters = append(filters, fmt.Sprintf("%samix=inputs=%d:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.95:level=false:latency=true[mixed]", mixInputs, len(beds)+1))
 	case voice:
 		filters = append(filters, "[voice]alimiter=limit=0.95:level=false:latency=true[mixed]")
-	case music:
-		filters = append(filters, "[music]alimiter=limit=0.95:level=false:latency=true[mixed]")
+	case len(beds) == 2:
+		filters = append(filters, "[native][music]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.95:level=false:latency=true[mixed]")
+	case len(beds) == 1:
+		filters = append(filters, fmt.Sprintf("[%s]alimiter=limit=0.95:level=false:latency=true[mixed]", beds[0]))
 	default:
 		args = append(args, "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo")
 		filters = append(filters, fmt.Sprintf("[0:a]atrim=duration=%.9f[mixed]", duration))

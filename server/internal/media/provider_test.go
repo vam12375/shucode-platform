@@ -328,3 +328,17 @@ func TestVideoSubmitBodyGenerateAudio(t *testing.T) {
 		t.Fatal("generate_audio must be omitted when the model switch is off")
 	}
 }
+
+func TestVideoSubmitBodyNativeAudioFollowsFinishing(t *testing.T) {
+	m := Model{UpstreamModel: "doubao-seedance-2-0-mini-260615", GenerateAudio: true}
+	s := ShotPlan{Prompt: "商品展示", Duration: 5}
+	// 新后期默认替换原声：必须显式关掉；用户保留原声时才请求 true。
+	off := videoSubmitBody(m, Brief{Resolution: "720p", AspectRatio: "16:9", Finishing: &FinishingOptions{Subtitles: "none"}}, s, "https://example.test/frame.png")
+	if off["generate_audio"] != false {
+		t.Fatalf("generate_audio = %v, want false when finishing drops native audio", off["generate_audio"])
+	}
+	on := videoSubmitBody(m, Brief{Resolution: "720p", AspectRatio: "16:9", Finishing: &FinishingOptions{Subtitles: "none", NativeAudio: true}}, s, "https://example.test/frame.png")
+	if on["generate_audio"] != true {
+		t.Fatalf("generate_audio = %v, want true when the user keeps native audio", on["generate_audio"])
+	}
+}

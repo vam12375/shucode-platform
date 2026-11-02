@@ -128,10 +128,15 @@ func videoSubmitBodyWithImages(m Model, b Brief, s ShotPlan, images []string, re
 	body := map[string]any{"model": m.UpstreamModel, "content": videoContent(s.Prompt, images, referenceVideo, referenceAudio...), "resolution": b.Resolution, "ratio": providerVideoRatio(b.AspectRatio), "duration": s.Duration, "watermark": false}
 	// 只在模型显式开启时下发；Seedance 1.0 等不支持该参数的模型保持原请求不变。
 	if m.GenerateAudio {
-		// 新后期拥有唯一声音主轨；支持原生音频的模型必须显式关掉，省略会沿用上游默认。
-		body["generate_audio"] = b.Finishing == nil
+		// 新后期拥有唯一声音主轨；除非用户保留原声，支持原生音频的模型必须显式关掉，省略会沿用上游默认。
+		body["generate_audio"] = finishingWantsNativeAudio(b)
 	}
 	return body
+}
+
+// finishingWantsNativeAudio：旧制作单沿用模型默认原声；新后期只有用户显式保留时才请求原声。
+func finishingWantsNativeAudio(b Brief) bool {
+	return b.Finishing == nil || b.Finishing.NativeAudio
 }
 
 func (p Provider) Submit(ctx context.Context, m Model, b Brief, s ShotPlan, image string) (string, error) {
@@ -169,7 +174,7 @@ func (p Provider) SubmitWithReferenceImages(ctx context.Context, m Model, b Brie
 			audios = append(audios, referenceAudio[0])
 		}
 		// 本身未启用原生声音的型号无需请求级覆盖；false指针仍会被能力校验视为音频开关请求。
-		if b.Finishing != nil && m.GenerateAudio {
+		if !finishingWantsNativeAudio(b) && m.GenerateAudio {
 			disabled := false
 			r.GenerateAudio = &disabled
 		}
@@ -177,7 +182,7 @@ func (p Provider) SubmitWithReferenceImages(ctx context.Context, m Model, b Brie
 	}
 	if p.Adapter == "toapis" {
 		// ToAPIs 的多模态协议没有参考音频槽位，目录校验已拒绝该能力声明。
-		if b.Finishing != nil {
+		if !finishingWantsNativeAudio(b) {
 			m.GenerateAudio = false
 		}
 		return p.submitToAPIs(ctx, m, CanvasRequest{Prompt: s.Prompt, Resolution: b.Resolution, AspectRatio: b.AspectRatio, Duration: s.Duration}, images, referenceVideo)

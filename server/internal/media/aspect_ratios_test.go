@@ -101,7 +101,7 @@ func TestBriefUsesFixedRatiosOfSelectedModel(t *testing.T) {
 	f := setup(t)
 	models, _ := f.s.Repo.Models(context.Background())
 	models[0].UpstreamModel = "doubao-seedance-2-0-mini-260615"
-	b := Brief{Mode: "auto", Product: "fixture", AssetIDs: []string{"a"}, Platforms: []string{"douyin"}, VideoModel: "v", Resolution: "720p", Duration: 5, MaxCreditsMicro: 1_000_000}
+	b := Brief{Mode: "auto", Product: "fixture", AssetIDs: []string{"a"}, Platforms: []string{"douyin"}, VideoModel: "v", Resolution: "720p", Duration: 10, MaxCreditsMicro: 1_000_000}
 	for _, ratio := range []string{"16:9", "4:3", "1:1", "3:4", "9:16", "21:9"} {
 		b.AspectRatio = ratio
 		if err := ValidateBrief(b, models, []Asset{{ID: "a", Kind: "image"}}); err != nil {

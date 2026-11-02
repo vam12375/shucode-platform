@@ -522,7 +522,7 @@ func TestToAPIsImageCanvasAdmissionAndLegacyBriefCompatibility(t *testing.T) {
 		}
 	}
 	models := []Model{fixtureVideoModel(), toapisImageModel("gpt-image-2", "4K")}
-	b := Brief{Mode: "auto", Product: "fixture", Platforms: []string{"douyin"}, AssetIDs: []string{"a"}, VideoModel: models[0].ID, ImageModel: "i", Duration: 5, Resolution: models[0].Resolutions[0], AspectRatio: "16:9", MaxCreditsMicro: 1_000_000}
+	b := Brief{Mode: "auto", Product: "fixture", Platforms: []string{"douyin"}, AssetIDs: []string{"a"}, VideoModel: models[0].ID, ImageModel: "i", Duration: 10, Resolution: models[0].Resolutions[0], AspectRatio: "16:9", MaxCreditsMicro: 1_000_000}
 	if err := ValidateBrief(b, models, []Asset{{ID: "a", Kind: "image"}}); err != nil {
 		t.Fatal(err)
 	}

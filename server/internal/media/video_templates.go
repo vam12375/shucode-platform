@@ -77,7 +77,7 @@ func VideoTemplateDefinitions() ([]VideoTemplate, error) {
 	seen := map[string]bool{}
 	for i := range out {
 		t := &out[i]
-		if !boundedNonempty(t.ID, 100) || !boundedNonempty(t.Version, 100) || seen[t.ID] || len(t.Beats) == 0 || t.MinAssets < 1 || t.DurationRange.Min < 5 || t.DurationRange.Max > 120 {
+		if !boundedNonempty(t.ID, 100) || !boundedNonempty(t.Version, 100) || seen[t.ID] || len(t.Beats) == 0 || t.MinAssets < 1 || t.DurationRange.Min < 5 || t.DurationRange.Max > MaxBriefSeconds {
 			return nil, fmt.Errorf("video_templates_unavailable")
 		}
 		seen[t.ID] = true

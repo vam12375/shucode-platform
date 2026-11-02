@@ -132,3 +132,42 @@ func TestValidateModelsRejectsInvalidDurationRange(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateBriefDurationBounds(t *testing.T) {
+	m := fixtureVideoModel()
+	base := Brief{Mode: "auto", ReferenceMode: "multimodal", Product: "产品", AssetIDs: []string{"asset-a"}, Platforms: []string{"douyin"}, VideoModel: m.ID, Resolution: "720p", AspectRatio: "16:9", Duration: 15, MaxCreditsMicro: 10_000_000}
+	assets := []Asset{{ID: "asset-a", Kind: "image"}}
+	// 以 15 秒为基线：范围内的时长结论必须与基线一致，范围外必须是 ErrInvalid。
+	baseline := ValidateBrief(base, []Model{m}, assets)
+	for _, d := range []int{MinAutoBriefSeconds, 123, MaxBriefSeconds} {
+		b := base
+		b.Duration = d
+		if got := ValidateBrief(b, []Model{m}, assets); got != baseline {
+			t.Fatalf("ValidateBrief(duration=%d) = %v, want baseline %v", d, got, baseline)
+		}
+	}
+	for _, d := range []int{0, 5, MinAutoBriefSeconds - 1, MaxBriefSeconds + 1} {
+		b := base
+		b.Duration = d
+		if got := ValidateBrief(b, []Model{m}, assets); got != ErrInvalid {
+			t.Fatalf("ValidateBrief(duration=%d) = %v, want ErrInvalid", d, got)
+		}
+	}
+}
+
+func TestValidateBriefNativeAudioRequiresModelCapability(t *testing.T) {
+	m := fixtureVideoModel()
+	assets := []Asset{{ID: "asset-a", Kind: "image"}}
+	base := Brief{Mode: "auto", ReferenceMode: "multimodal", Product: "产品", AssetIDs: []string{"asset-a"}, Platforms: []string{"douyin"}, VideoModel: m.ID, Resolution: "720p", AspectRatio: "16:9", Duration: 15, MaxCreditsMicro: 10_000_000, Finishing: &FinishingOptions{Subtitles: "none", NativeAudio: true}}
+	baseline := base
+	baseline.Finishing = &FinishingOptions{Subtitles: "none"}
+	want := ValidateBrief(baseline, []Model{m}, assets)
+	// 模型未声明原声时拒绝保留原声；声明后结论与不保留原声一致。
+	if got := ValidateBrief(base, []Model{m}, assets); got != ErrInvalid {
+		t.Fatalf("ValidateBrief(nativeAudio without capability) = %v, want ErrInvalid", got)
+	}
+	m.GenerateAudio = true
+	if got := ValidateBrief(base, []Model{m}, assets); got != want {
+		t.Fatalf("ValidateBrief(nativeAudio with capability) = %v, want %v", got, want)
+	}
+}
