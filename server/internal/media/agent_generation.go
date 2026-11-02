@@ -116,6 +116,7 @@ func (s *Service) CreateAgentGeneration(ctx context.Context, team, user, device 
 		Status: "queued", Agent: &request, Models: []Model{model}, Shots: shots,
 		QuoteMicro: quote, CreatedAt: now, UpdatedAt: now,
 	}
+	bindProjectIdentity(ctx, p)
 	if err = s.Repo.Index(ctx, ProjectKey(team, id)); err != nil {
 		return nil, err
 	}

@@ -108,7 +108,7 @@ func buildUserConfigEnvelope(input BuildUserConfigInput) map[string]any {
 			"modelId":    input.DefaultModelID,
 		}
 	}
-	return map[string]any{
+	result := map[string]any{
 		"schemaVersion":  1,
 		"syncId":         computeUserConfigSyncID(input),
 		"personalConfig": personalConfig,
@@ -118,6 +118,7 @@ func buildUserConfigEnvelope(input BuildUserConfigInput) map[string]any {
 		},
 		"credentials": []any{},
 	}
+	return result
 }
 
 // withPlatformAccessToken:把设备 token 写入网关 Provider 的 config.access.apiKey

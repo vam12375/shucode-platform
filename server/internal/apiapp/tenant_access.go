@@ -59,6 +59,18 @@ func consoleAccessGuard(deps *Deps) gin.HandlerFunc {
 			c.AbortWithStatusJSON(400, fail(400, "teamId 不合法"))
 			return
 		}
+		if strings.HasPrefix(path, "/teams/:id") && uuidShape(c.Param("id")) {
+			private, err := deps.Store.IsPersonalAccountTeam(c.Request.Context(), c.Param("id"))
+			if err != nil {
+				internalError(c, deps, err)
+				c.Abort()
+				return
+			}
+			if private {
+				c.AbortWithStatusJSON(404, fail(404, "团队不存在"))
+				return
+			}
+		}
 		if user.Role == store.RoleRoot {
 			// 启用 ROOT_MFA_REQUIRED 后，未绑定 TOTP 的 root 会话只能读取
 			// 自身资料、退出登录或访问 MFA 设置接口；其他业务接口一律 403，
@@ -87,7 +99,8 @@ func consoleAccessGuard(deps *Deps) gin.HandlerFunc {
 			return
 		}
 		read := c.Request.Method == "GET"
-		allowed := path == "/auth/me" || path == "/profile" ||
+		allowed := path == "/auth/me" || path == "/profile" || path == "/payments/account" ||
+			path == "/payments/orders" || path == "/payments/orders/:outTradeNo" || path == "/payments/orders/:outTradeNo/reconcile" ||
 			(read && (path == "/teams" || path == "/users" || path == "/models" || path == "/devices" || path == "/quota-requests" || strings.HasPrefix(path, "/usage"))) ||
 			path == "/models/:modelId/test" ||
 			path == "/devices/:id/revoke" || path == "/audit" || strings.HasPrefix(path, "/teams/:id")

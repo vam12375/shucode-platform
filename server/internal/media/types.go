@@ -406,6 +406,8 @@ type Project struct {
 	TeamID             string    `json:"teamId"`
 	UserID             string    `json:"userId"`
 	DeviceID           string    `json:"deviceId"`
+	BillingBindingID   string    `json:"billingBindingId,omitempty"`
+	BillingDeviceID    string    `json:"billingDeviceId,omitempty"`
 	Models             []Model   `json:"models"`
 	LeaseOwner         string    `json:"leaseOwner,omitempty"`
 	LeaseUntil         time.Time `json:"leaseUntil"`

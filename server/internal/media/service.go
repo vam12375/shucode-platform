@@ -105,6 +105,7 @@ func (s *Service) Create(ctx context.Context, team, user, device, id string, b B
 	}
 	now := time.Now().UTC()
 	p := &Project{ID: id, TeamID: team, UserID: user, DeviceID: device, Version: 1, Status: "draft", Brief: b, Shots: []Shot{}, Models: models, CreatedAt: now, UpdatedAt: now}
+	bindProjectIdentity(ctx, p)
 	if e = s.Repo.Index(ctx, ProjectKey(team, id)); e != nil {
 		return nil, e
 	}
@@ -511,7 +512,11 @@ func tokenRateString(microPerMillion int64) string {
 }
 
 func (s *Service) usage(p *Project, shot Shot, m Model) store.UsageRecord {
-	record := store.UsageRecord{ID: shot.ReservationID, RequestID: "media:" + shot.ReservationID, UserID: p.UserID, TeamID: p.TeamID, DeviceTokenID: p.DeviceID, Model: "media:" + m.ID, UpstreamModel: m.UpstreamModel, ProviderID: m.ProviderID, CreditsMicro: shot.pendingCharge(), Status: store.UsageStatusOk, CreatedAt: time.Now().UTC()}
+	deviceID := p.DeviceID
+	if p.BillingDeviceID != "" {
+		deviceID = p.BillingDeviceID
+	}
+	record := store.UsageRecord{ID: shot.ReservationID, RequestID: "media:" + shot.ReservationID, UserID: p.UserID, TeamID: p.TeamID, BillingBindingID: p.BillingBindingID, DeviceTokenID: deviceID, Model: "media:" + m.ID, UpstreamModel: m.UpstreamModel, ProviderID: m.ProviderID, CreditsMicro: shot.pendingCharge(), Status: store.UsageStatusOk, CreatedAt: time.Now().UTC()}
 	priceRate, costRate, tokenBilling := mediaVideoTokenRates(p, m)
 	if m.Kind != "video" || !tokenBilling || shot.ProviderUsageTokens <= 0 {
 		return mediaUnitUsage(record, p, shot, m)

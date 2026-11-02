@@ -82,6 +82,11 @@ type Env struct {
 	// ReleaseManifestEnabled:桌面更新清单已接入真实安装包分发；未启用时禁止强制更新。
 	ReleaseManifestEnabled bool
 	SnapAnyAPIKey          string
+	AlipayAppID            string
+	AlipaySellerID         string
+	AlipayPrivateKey       string
+	AlipayPublicKey        string
+	AlipayGateway          string
 }
 
 func LoadPlatformEnv() (*Env, error) {
@@ -239,6 +244,11 @@ func LoadPlatformEnv() (*Env, error) {
 		AuditOutboxDir:         platformenv.EnvOr("AUDIT_OUTBOX_DIR", "./data/audit-outbox"),
 		ReleaseManifestEnabled: platformenv.Truthy(os.Getenv("RELEASE_MANIFEST_ENABLED")),
 		SnapAnyAPIKey:          strings.TrimSpace(os.Getenv("SNAPANY_API_KEY")),
+		AlipayAppID:            strings.TrimSpace(os.Getenv("ALIPAY_APP_ID")),
+		AlipaySellerID:         strings.TrimSpace(os.Getenv("ALIPAY_SELLER_ID")),
+		AlipayPrivateKey:       strings.TrimSpace(os.Getenv("ALIPAY_PRIVATE_KEY")),
+		AlipayPublicKey:        strings.TrimSpace(os.Getenv("ALIPAY_PUBLIC_KEY")),
+		AlipayGateway:          strings.TrimSpace(os.Getenv("ALIPAY_GATEWAY")),
 	}, nil
 }
 

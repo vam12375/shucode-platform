@@ -155,7 +155,8 @@ func registerUserConfigRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(401, fail(401, "凭据无效或已吊销"))
 			return
 		}
-		membership, err := store.ResolveUserTeam(ctx, deps.Store, auth.User.ID)
+		// 配置与网关使用同一消费账户；个人模式不依赖组织成员关系。
+		membership, err := store.ResolveBillingAccount(ctx, deps.Store, auth.User.ID)
 		if errors.Is(err, store.ErrAmbiguousTeam) {
 			c.JSON(409, fail(409, "账号存在多个有效团队，请联系管理员明确团队归属"))
 			return
@@ -164,8 +165,8 @@ func registerUserConfigRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
-		if membership == nil {
-			c.JSON(403, fail(403, "账号没有有效团队或团队访问已停用，请联系团队管理员"))
+		if membership == nil || membership.Team.DisabledAt != nil {
+			c.JSON(403, fail(403, "当前消费账户不可用，请检查个人/团队消费归属"))
 			return
 		}
 		policy, err := deps.Store.GetTeamPolicy(ctx, membership.Team.ID)
@@ -232,7 +233,7 @@ func registerUserConfigRoutes(router *gin.Engine, deps *Deps) {
 
 // ---- client-credit ----
 
-// registerClientCreditRoutes:客户端模型菜单展示用的只读团队额度投影。
+// registerClientCreditRoutes:客户端模型菜单展示用的只读消费账户额度投影。
 // 额度执行点仍在网关；这里只把余额、预留和已用比例回给设备，不参与本地扣减。
 func registerClientCreditRoutes(router *gin.Engine, deps *Deps) {
 	router.GET("/api/v1/client/credit", func(c *gin.Context) {
@@ -246,7 +247,7 @@ func registerClientCreditRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(401, fail(401, "凭据无效或已吊销"))
 			return
 		}
-		membership, err := store.ResolveUserTeam(ctx, deps.Store, auth.User.ID)
+		membership, err := store.ResolveBillingAccount(ctx, deps.Store, auth.User.ID)
 		if errors.Is(err, store.ErrAmbiguousTeam) {
 			c.JSON(409, fail(409, "账号存在多个有效团队，请联系管理员明确团队归属"))
 			return
@@ -255,11 +256,19 @@ func registerClientCreditRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
-		if membership == nil {
-			c.JSON(403, fail(403, "账号没有有效团队或团队访问已停用，请联系团队管理员"))
+		if membership == nil || membership.Team.DisabledAt != nil {
+			c.JSON(403, fail(403, "当前消费账户不可用，请检查个人/团队消费归属"))
 			return
 		}
 		team := membership.Team
+		personal, err := deps.Store.IsPersonalAccountTeam(ctx, team.ID)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if personal {
+			team.Name = "个人余额"
+		}
 		quotaMicro, err := credits.ParseCreditsToMicro(team.QuotaCredits)
 		if err != nil {
 			internalError(c, deps, err)

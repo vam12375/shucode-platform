@@ -208,6 +208,7 @@ func handleDeepSeekTool(c *gin.Context, deps Deps, kind string) {
 	decision, err := deps.Store.AdmitUsage(c.Request.Context(), store.ReserveQuotaInput{
 		ID: reservationID, TeamID: membership.Team.ID, UserID: user.ID,
 		RequestID: requestID, Micro: fee, CreatedAt: createdAt,
+		BillingBindingID: strings.TrimSpace(c.GetHeader("x-mendao-billing-binding")), DeviceTokenID: device.ID,
 	})
 	if err != nil {
 		deps.Logger.Error("DeepSeek 工具额度准入失败", "error", err)
@@ -305,7 +306,7 @@ func settleDeepSeekToolUsage(c *gin.Context, deps Deps, snapshot webtools.Snapsh
 	}
 	usage := store.UsageRecord{
 		ID:        uuid.NewSHA1(uuid.NameSpaceOID, []byte("deepseek-tool-usage:"+reservationID)).String(),
-		RequestID: requestID, UserID: userID, TeamID: teamID, DeviceTokenID: deviceID,
+		RequestID: requestID, UserID: userID, TeamID: teamID, BillingBindingID: strings.TrimSpace(c.GetHeader("x-mendao-billing-binding")), DeviceTokenID: deviceID,
 		Model: modelID, UpstreamModel: "deepseek.com/" + kind, ProviderID: snapshot.ProviderID,
 		CreditsMicro: fee, Status: status, ErrorType: errorType, CreatedAt: createdAt,
 		PriceSnapshot: &store.UsagePricingSnapshot{SchemaVersion: 1, CapturedAt: createdAt,

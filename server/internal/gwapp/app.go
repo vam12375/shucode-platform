@@ -344,11 +344,36 @@ func authenticate(r *http.Request, deps Deps, errorResponse errorResponder, c *g
 	return device, user, true
 }
 
-// resolveGatewayTeam 同时检查团队与成员状态；历史多团队数据不能按列表顺序静默选取。
+// 消费账户由显式模式唯一解析；准入后 reservation 冻结账本，切换模式不能改写在途扣费归属。
 func resolveGatewayTeam(c *gin.Context, deps Deps, userID string, errorResponse errorResponder) (*store.TeamMembership, *store.TeamPolicyRecord, bool) {
-	membership, err := store.ResolveUserTeam(c.Request.Context(), deps.Store, userID)
+	membership, err := func() (*store.TeamMembership, error) {
+		bindingID := strings.TrimSpace(c.GetHeader("x-mendao-billing-binding"))
+		if bindingID == "" {
+			return store.ResolveBillingAccount(c.Request.Context(), deps.Store, userID)
+		}
+		token := readGatewayToken(c.Request)
+		if token == "" {
+			return nil, store.ErrBillingBindingForbidden
+		}
+		device, e := deps.Store.FindDeviceTokenByHash(c.Request.Context(), crypto.HashToken(token))
+		if e != nil || device == nil || device.UserID != userID {
+			if e != nil {
+				return nil, e
+			}
+			return nil, store.ErrBillingBindingForbidden
+		}
+		binding, e := deps.Store.ResolveBillingSessionBinding(c.Request.Context(), bindingID, userID, device.ID)
+		if e != nil {
+			return nil, e
+		}
+		return store.ResolveBillingBindingAccount(c.Request.Context(), deps.Store, binding)
+	}()
 	if errors.Is(err, store.ErrAmbiguousTeam) {
 		errorResponse(c, 409, "permission_error", "账号存在多个有效团队，请联系管理员明确团队归属")
+		return nil, nil, false
+	}
+	if errors.Is(err, store.ErrBillingBindingForbidden) || errors.Is(err, store.ErrBillingBindingNotFound) {
+		errorResponse(c, 403, "permission_error", "消费会话绑定无效或已失效")
 		return nil, nil, false
 	}
 	if err != nil {
@@ -356,8 +381,8 @@ func resolveGatewayTeam(c *gin.Context, deps Deps, userID string, errorResponse 
 		errorResponse(c, 500, "api_error", "网关内部错误")
 		return nil, nil, false
 	}
-	if membership == nil {
-		errorResponse(c, 403, "permission_error", "账号没有有效团队或团队访问已停用，请联系团队管理员")
+	if membership == nil || membership.Team.DisabledAt != nil {
+		errorResponse(c, 403, "permission_error", "当前消费账户不可用，请检查个人/团队消费归属")
 		return nil, nil, false
 	}
 	policy, err := deps.Store.GetTeamPolicy(c.Request.Context(), membership.Team.ID)
@@ -659,7 +684,7 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	requestCtx, cancelRequest := context.WithTimeout(ctx, requestLifetime)
 	defer cancelRequest()
 	reserveResult, err := deps.Store.AdmitUsage(requestCtx, store.ReserveQuotaInput{
-		ID: reservationID, TeamID: primary.ID, UserID: user.ID, RequestID: requestID,
+		ID: reservationID, TeamID: primary.ID, UserID: user.ID, RequestID: requestID, BillingBindingID: strings.TrimSpace(c.GetHeader("x-mendao-billing-binding")), DeviceTokenID: device.ID,
 		Micro: 0, TTL: deps.Env.ReservationTTL, CreatedAt: deps.Now(), RetainUntilSettled: true,
 	})
 	if err != nil {
@@ -739,13 +764,14 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	reasoningEffort, reasoningBudget := requestReasoning(spec, body)
 	buildUsageRecord := func(target upstreamTarget, usage UsageCounts, status store.UsageStatus, errorType string, micro int64) store.UsageRecord {
 		record := store.UsageRecord{
-			RequestID:       requestID,
-			UserID:          user.ID,
-			TeamID:          primary.ID,
-			DeviceTokenID:   device.ID,
-			Model:           model.ModelID,
-			UpstreamModel:   target.UpstreamModel,
-			ReasoningEffort: reasoningEffort, ReasoningBudgetTokens: reasoningBudget,
+			RequestID:        requestID,
+			UserID:           user.ID,
+			TeamID:           primary.ID,
+			BillingBindingID: strings.TrimSpace(c.GetHeader("x-mendao-billing-binding")),
+			DeviceTokenID:    device.ID,
+			Model:            model.ModelID,
+			UpstreamModel:    target.UpstreamModel,
+			ReasoningEffort:  reasoningEffort, ReasoningBudgetTokens: reasoningBudget,
 			InputTokens:     usage.InputTokens,
 			OutputTokens:    usage.OutputTokens,
 			CacheReadTokens: usage.CacheReadTokens, CacheCreationTokens: usage.CacheCreationTokens,

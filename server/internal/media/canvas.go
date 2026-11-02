@@ -176,6 +176,7 @@ func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id strin
 	}
 	now := time.Now().UTC()
 	p := &Project{ID: id, TeamID: team, UserID: user, DeviceID: device, Version: 1, Status: "queued", Canvas: &requestForProject, Models: []Model{m}, Shots: shots, QuoteMicro: total, CreatedAt: now, UpdatedAt: now}
+	bindProjectIdentity(ctx, p)
 	if err = s.Repo.Index(ctx, ProjectKey(team, id)); err != nil {
 		return nil, err
 	}

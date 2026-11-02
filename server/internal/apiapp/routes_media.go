@@ -106,13 +106,40 @@ func mediaIdentity(c *gin.Context, deps *Deps) (*AuthenticatedDevice, *store.Tea
 		c.JSON(401, fail(401, "请登录平台"))
 		return nil, nil, false
 	}
-	m, e := store.ResolveUserTeam(c.Request.Context(), deps.Store, a.User.ID)
-	if e != nil || m == nil {
-		c.JSON(403, fail(403, "账号没有唯一有效团队"))
+	// 会话绑定优先于当前默认 mode。Host 只通过受信 runtime header 注入 opaque binding；
+	// Renderer/body 中的 teamId 或 x-session-id 不能改变媒体账本。无 binding 的旧客户端
+	// 暂时沿用动态 mode 兼容路径，已绑定的新会话必须固定到创建时的钱包。
+	bindingID := strings.TrimSpace(c.GetHeader("x-mendao-billing-binding"))
+	var m *store.TeamMembership
+	if bindingID != "" {
+		binding, bindingErr := deps.Store.ResolveBillingSessionBinding(
+			c.Request.Context(), bindingID, a.User.ID, a.Device.ID,
+		)
+		if bindingErr != nil {
+			c.JSON(403, fail(403, "消费会话绑定无效或已失效"))
+			return nil, nil, false
+		}
+		m, e = store.ResolveBillingBindingAccount(c.Request.Context(), deps.Store, binding)
+	} else {
+		// 媒体制作单按消费账本隔离；切换模式不能读取另一账户的制作单或改变已冻结费用。
+		m, e = store.ResolveBillingAccount(c.Request.Context(), deps.Store, a.User.ID)
+	}
+	if e != nil || m == nil || m.Team.DisabledAt != nil {
+		c.JSON(403, fail(403, "当前消费账户不可用，请检查个人/团队消费归属"))
 		return nil, nil, false
+	}
+	c.Request = c.Request.WithContext(media.WithBillingIdentity(c.Request.Context(), media.BillingIdentity{BindingID: bindingID, DeviceID: a.Device.ID}))
+	personal, e := deps.Store.IsPersonalAccountTeam(c.Request.Context(), m.Team.ID)
+	if e != nil {
+		internalError(c, deps, e)
+		return nil, nil, false
+	}
+	if personal {
+		m.Team.Name = "个人余额"
 	}
 	return a, m, true
 }
+
 func mediaError(c *gin.Context, deps *Deps, e error) {
 	if errors.Is(e, media.ErrConflict) {
 		c.JSON(409, fail(409, "制作单已更新，请刷新"))

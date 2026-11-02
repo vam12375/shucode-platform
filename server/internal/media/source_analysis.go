@@ -115,6 +115,7 @@ func (s *Service) CreateReferenceAnalysis(ctx context.Context, team, user, devic
 	brief.AspectRatio = nearestFixedVideoRatio(source.Width, source.Height)
 	now := time.Now().UTC()
 	p := &Project{ID: id, Version: 1, Status: "draft", TeamID: team, UserID: user, DeviceID: device, Brief: brief, SourceChecksum: source.Checksum, Shots: []Shot{}, Models: []Model{}, CreatedAt: now, UpdatedAt: now}
+	bindProjectIdentity(ctx, p)
 	if err = s.Repo.Index(ctx, ProjectKey(team, id)); err != nil {
 		return nil, err
 	}

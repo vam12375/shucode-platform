@@ -14,11 +14,13 @@ const ReferenceAnalysisFeeMicro int64 = 1_000_000
 
 // FixedFee 随操作意图持久化；重放必须沿用同一身份和锁定金额。
 type FixedFee struct {
-	ID        string    `json:"id"`
-	RequestID string    `json:"requestId"`
-	Model     string    `json:"model"`
-	Micro     int64     `json:"micro"`
-	CreatedAt time.Time `json:"createdAt"`
+	BillingBindingID string    `json:"billingBindingId,omitempty"`
+	DeviceTokenID    string    `json:"deviceTokenId,omitempty"`
+	ID               string    `json:"id"`
+	RequestID        string    `json:"requestId"`
+	Model            string    `json:"model"`
+	Micro            int64     `json:"micro"`
+	CreatedAt        time.Time `json:"createdAt"`
 }
 
 func newFixedFee(team, user, requestID, model string, micro int64) FixedFee {
@@ -33,7 +35,7 @@ func (s *Service) fixedFeeIdentity(ctx context.Context, team, user string, fee F
 	if err != nil {
 		return nil, err
 	}
-	if identity != nil && (!identity.Postpaid || identity.TeamID != team || identity.UserID != user || identity.RequestID != fee.RequestID) {
+	if identity != nil && (!identity.Postpaid || identity.TeamID != team || identity.UserID != user || identity.RequestID != fee.RequestID || identity.BillingBindingID != fee.BillingBindingID || identity.DeviceTokenID != fee.DeviceTokenID) {
 		return nil, store.ErrReservationMismatch
 	}
 	return identity, nil
@@ -43,7 +45,7 @@ func (s *Service) admitFixedFee(ctx context.Context, team, user string, fee Fixe
 	if fee.Micro < 0 || fee.Model == "" || fee.RequestID == "" || fee.CreatedAt.IsZero() {
 		return ErrInvalid
 	}
-	result, err := s.Repo.Store.AdmitUsage(ctx, store.ReserveQuotaInput{ID: fee.ID, TeamID: team, UserID: user, RequestID: fee.RequestID, Micro: fee.Micro, CreatedAt: fee.CreatedAt})
+	result, err := s.Repo.Store.AdmitUsage(ctx, store.ReserveQuotaInput{ID: fee.ID, TeamID: team, UserID: user, RequestID: fee.RequestID, Micro: fee.Micro, CreatedAt: fee.CreatedAt, BillingBindingID: fee.BillingBindingID, DeviceTokenID: fee.DeviceTokenID})
 	if err != nil {
 		return err
 	}
@@ -72,6 +74,12 @@ func (s *Service) admitFixedFee(ctx context.Context, team, user string, fee Fixe
 }
 
 func (s *Service) settleFixedFee(ctx context.Context, team, user, device string, fee FixedFee) error {
+	if device == "" {
+		device = fee.DeviceTokenID
+	}
+	if fee.DeviceTokenID != "" && device != fee.DeviceTokenID {
+		return store.ErrReservationMismatch
+	}
 	identity, err := s.fixedFeeIdentity(ctx, team, user, fee)
 	if err != nil {
 		return err
@@ -86,7 +94,7 @@ func (s *Service) settleFixedFee(ctx context.Context, team, user, device string,
 	}
 	if err = s.Repo.Store.SettleReservation(ctx, fee.ID, store.UsageRecord{
 		ID: usageID, RequestID: fee.RequestID,
-		TeamID: team, UserID: user, DeviceTokenID: device, Model: fee.Model, UpstreamModel: fee.Model,
+		TeamID: team, UserID: user, BillingBindingID: fee.BillingBindingID, DeviceTokenID: device, Model: fee.Model, UpstreamModel: fee.Model,
 		CreditsMicro: fee.Micro, Status: store.UsageStatusOk, CreatedAt: fee.CreatedAt,
 	}); err != nil {
 		return err

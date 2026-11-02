@@ -69,6 +69,7 @@ func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int
 			return nil, err
 		}
 		value := newFixedFee(team, p.UserID, "media:reference-analysis:"+p.ID+":"+a.InputID, "media:reference-analysis", pricing.AnalysisMicro)
+		bindFixedFeeIdentity(ctx, &value)
 		fee = &value
 		if err := s.admitFixedFee(ctx, team, p.UserID, value); err != nil {
 			return nil, err

@@ -472,7 +472,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	}
 	// 请求身份和锁定售价必须可恢复，但进行中的生成不再占用账户余额。
 	amount = shot.pendingCharge()
-	r, e := s.Repo.Store.AdmitUsage(ctx, store.ReserveQuotaInput{HeldByTask: true, ID: shot.ReservationID, UserID: p.UserID, TeamID: p.TeamID, RequestID: "media:" + shot.ReservationID, Micro: amount, TTL: 24 * time.Hour, CreatedAt: time.Now()})
+	r, e := s.Repo.Store.AdmitUsage(ctx, store.ReserveQuotaInput{HeldByTask: true, ID: shot.ReservationID, UserID: p.UserID, TeamID: p.TeamID, RequestID: "media:" + shot.ReservationID, Micro: amount, TTL: 24 * time.Hour, CreatedAt: time.Now(), BillingBindingID: p.BillingBindingID, DeviceTokenID: p.BillingDeviceID})
 	if e != nil {
 		return e
 	}

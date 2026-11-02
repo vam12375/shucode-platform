@@ -43,7 +43,9 @@ type Deps struct {
 	Turnstile  TurnstileVerifier
 	Logger     *slog.Logger
 	HTTPClient *http.Client // 上游探测(模型列表/连通测试)
-	Trusted    netutil.TrustedProxies
+	// PaymentHTTPClient:支付宝查询专用客户端；禁止跟随重定向。
+	PaymentHTTPClient *http.Client
+	Trusted           netutil.TrustedProxies
 	// AuditSink:审计入库失败时的本地可靠 outbox；nil 时退回旧的最佳努力行为。
 	AuditSink *audit.Sink
 }

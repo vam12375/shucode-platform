@@ -311,6 +311,7 @@ func (s *Service) ImportReference(ctx context.Context, team, user, id, rawURL st
 		return Asset{}, err
 	}
 	fee := newFixedFee(team, user, "media:source-import:"+id, "media:source-import", pricing.SnapAnyImportMicro)
+	bindFixedFeeIdentity(ctx, &fee)
 	started, _ := json.Marshal(referenceOperation{Digest: digest, Status: "started", Fee: &fee})
 	claimed, err := s.Repo.Store.CompareAndSwapConfigValue(ctx, key, nil, started)
 	if err != nil {

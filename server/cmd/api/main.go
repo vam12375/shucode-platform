@@ -213,6 +213,15 @@ func main() {
 			},
 			Timeout: 60 * time.Second,
 		},
+		PaymentHTTPClient: &http.Client{
+			Timeout: 15 * time.Second,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return errors.New("支付宝请求重定向被禁止")
+			},
+		},
+	}
+	if err := apiapp.InitializePaymentConfiguration(ctx, deps); err != nil {
+		logger.Error("支付宝环境配置导入失败", "error", err)
 	}
 	if err := seed.EnsureSeedRelease(ctx, platformStore, *seedFile); err != nil {
 		logger.Error("种子失败", "error", err)
@@ -228,6 +237,7 @@ func main() {
 	apiapp.StartAlertEvaluator(runCtx, deps, time.Minute)
 	apiapp.StartReservationSweeper(runCtx, deps, time.Minute)
 	apiapp.StartLoginFlowSweeper(runCtx, deps, 10*time.Minute)
+	apiapp.StartPaymentReconciler(runCtx, deps, time.Minute)
 	compensation.NewSettlementCompensator(platformStore, env.PendingSettlementDir, logger, time.Now).
 		Run(runCtx, 30*time.Second)
 	deps.AuditSink.Run(runCtx, 30*time.Second)
