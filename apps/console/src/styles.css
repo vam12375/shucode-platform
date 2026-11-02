@@ -3282,3 +3282,53 @@ textarea {
     }
   }
 }
+.payments-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 16px;
+  align-items: end;
+}
+.payments-readouts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 20px;
+  margin-bottom: 24px;
+}
+.payments-readouts > div { display: grid; gap: 8px; }
+.payments-readouts strong { font-size: 28px; text-align: left; }
+.payments-readouts small { font-size: 12px; font-weight: 400; color: var(--ink-soft); }
+.payments-actions { justify-content: space-between; }
+.payments-test { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 16px; }
+.payments-test h3 { font-size: 14px; margin: 0 0 8px; }
+.payments-order-id { overflow-wrap: anywhere; }
+.payments-page .readout { overflow-wrap: anywhere; }
+.payments-page .field { min-width: 0; }
+.payments-page textarea { font-family: var(--font-mono); resize: vertical; }
+@media (max-width: 640px) {
+  .payments-page .page-head { align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+  .payments-actions { align-items: stretch; flex-direction: column; }
+  .payments-page .pane-h { flex-wrap: wrap; gap: 8px; }
+}
+.credit-packages-toolbar { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.credit-packages-table { min-width: 1260px; }
+.credit-packages-table .input { min-width: 92px; }
+.credit-packages-table .credit-packages-sku { min-width: 150px; font-family: var(--font-mono); }
+.credit-packages-name-fields { display: grid; gap: 6px; min-width: 190px; }
+.credit-packages-table .credit-packages-sort { min-width: 70px; width: 76px; }
+.credit-packages-recommended { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.credit-packages-preview-switch { display: flex; gap: 8px; margin-bottom: 16px; }
+.credit-packages-preview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.credit-package-preview { display: grid; gap: 8px; min-height: 190px; padding: 16px; border: 1px solid var(--line); background: var(--surface); }
+.credit-package-preview.published { border-color: color-mix(in srgb, var(--ok) 42%, var(--line)); }
+.credit-package-preview.archived { opacity: .65; }
+.credit-package-preview-head { display: flex; flex-wrap: wrap; gap: 6px; }
+.credit-package-preview h3 { margin: 4px 0 0; font-size: 17px; }
+.credit-package-preview-amount { font-size: 26px; line-height: 1; font-variant-numeric: tabular-nums; }
+.credit-package-preview-credit { font-weight: 600; color: var(--ok-text); }
+.credit-packages-conflicts { border-color: var(--amber); }
+.credit-packages-conflict { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(220px, 2fr) auto auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.credit-packages-empty { padding: 24px 0; }
+@media (max-width: 760px) {
+  .credit-packages-toolbar { justify-content: flex-start; }
+  .credit-packages-conflict { grid-template-columns: 1fr; align-items: stretch; }
+}

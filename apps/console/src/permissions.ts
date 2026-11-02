@@ -62,7 +62,8 @@ export function routeAllowed(
   canManageTeam: boolean,
 ): boolean {
   if (section === "model-display") return isRoot;
-  if (["usage", "devices", "profile", "invite", "catalog"].includes(section))
+  if (section === "credit-packages") return isRoot;
+  if (["usage", "devices", "profile", "invite", "catalog", "payments"].includes(section))
     return true;
   if (
     [

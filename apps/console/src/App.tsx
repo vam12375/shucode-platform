@@ -46,6 +46,8 @@ import { ModelDisplayPage } from "./pages/ModelDisplay.js";
 import { MediaModelsPage } from "./pages/MediaModels.js";
 import { OpsPage } from "./pages/Ops.js";
 import { OrgPage } from "./pages/Org.js";
+import { PaymentsPage } from "./pages/Payments.js";
+import { CreditPackagesPage } from "./pages/CreditPackages.js";
 import { QuotaRequestsPage } from "./pages/QuotaRequests.js";
 import { PricingPage } from "./pages/Pricing.js";
 import { ProvidersPage } from "./pages/Providers.js";
@@ -70,6 +72,8 @@ const NAV_GROUPS = [
     label: "计量",
     items: [
       { path: "/usage", label: "用量", icon: ChartColumn },
+      { path: "/payments", label: "充值与余额", icon: HandCoins },
+      { path: "/credit-packages", label: "充值套餐", icon: PackageCheck },
       { path: "/ops", label: "运维大盘", icon: Activity },
     ],
   },
@@ -308,6 +312,7 @@ export function App() {
               icon: ChartColumn,
             },
             { path: "/catalog", label: "可用模型", icon: Boxes },
+            { path: "/payments", label: "充值与余额", icon: HandCoins },
             { path: "/devices", label: "本人设备", icon: Smartphone },
             { path: "/profile", label: "个人设置", icon: UserCog },
           ],
@@ -315,6 +320,12 @@ export function App() {
       ];
   let page: ReactNode;
   switch (section) {
+    case "credit-packages":
+      page = <CreditPackagesPage />;
+      break;
+    case "payments":
+      page = <PaymentsPage />;
+      break;
     case "team":
     case "members":
     case "policy":

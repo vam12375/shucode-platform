@@ -40,6 +40,7 @@ test("team management follows active membership rather than global admin", () =>
 
 test("direct navigation cannot expose platform management to team admins", () => {
   for (const section of [
+    "credit-packages",
     "pricing",
     "models",
     "model-display",
@@ -65,8 +66,11 @@ test("direct navigation cannot expose platform management to team admins", () =>
     assert.equal(routeAllowed(section, false, false), false, section);
     assert.equal(routeAllowed(section, false, true), true, section);
   }
-  for (const section of ["usage", "devices", "profile", "catalog", "invite"])
+  for (const section of ["usage", "devices", "profile", "catalog", "invite", "payments"])
     assert.equal(routeAllowed(section, false, false), true);
+  assert.equal(routeAllowed("credit-packages", false, false), false);
+  assert.equal(routeAllowed("credit-packages", false, true), false);
+  assert.equal(routeAllowed("credit-packages", true, false), true);
 });
 
 test("scope covers usage, charts, CSV, audit and member lists without affecting authentication", () => {
