@@ -39,7 +39,15 @@ func TestPostpaidMigrationPreservesExecutionIdentity(t *testing.T) {
 	s, closeStore := newPostgresForTest(t, baseURL, previousDir)
 	defer closeStore()
 	ctx := context.Background()
-	team, user := postpaidFixture(t, ctx, s, "migration")
+	// 升级夹具必须按历史schema建关系，当前AddMember已依赖0034私有账本隔离表。
+	team, err := s.CreateTeam(ctx, CreateTeamInput{Name: "postpaid-migration", QuotaCredits: "1.000000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := mustUser(t, ctx, s, "postpaid-migration@store.test")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO team_members(team_id,user_id,role) VALUES($1::uuid,$2::uuid,'owner')`, team.ID, user.ID); err != nil {
+		t.Fatal(err)
+	}
 	at := time.Now().UTC().Truncate(time.Millisecond)
 	usageID := uuid.NewString()
 	// 根因：升级夹具只有 0024 表结构，不能调用依赖后续字段的当前写入接口；按历史列直接建数。

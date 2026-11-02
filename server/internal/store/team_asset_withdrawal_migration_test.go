@@ -44,7 +44,8 @@ func TestTeamAssetWithdrawalMigrationPreservesExistingRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 	author := mustUser(t, ctx, s, uuid.NewString()+"@withdraw-upgrade.test")
-	if err := s.AddMember(ctx, team.ID, author.ID, MemberRoleOwner); err != nil {
+	// 当前AddMember需要0034私有账本表；升级前夹具按已部署历史成员列建数。
+	if _, err := s.pool.Exec(ctx, `INSERT INTO team_members(team_id,user_id,role) VALUES($1::uuid,$2::uuid,'owner')`, team.ID, author.ID); err != nil {
 		t.Fatal(err)
 	}
 	at := time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC)

@@ -378,6 +378,7 @@ func (s *PostgresStore) ListTeams(ctx context.Context) ([]TeamWithUsage, error) 
 			t.rpm_limit, t.tpm_limit, t.concurrency_limit, t.created_at, t.disabled_at,
 			(SELECT count(*)::int FROM team_members m WHERE m.team_id = t.id) AS member_count
 		FROM teams t
+		WHERE NOT EXISTS (SELECT 1 FROM personal_accounts p WHERE p.team_id=t.id)
 		ORDER BY t.created_at ASC`)
 	if err != nil {
 		return nil, err

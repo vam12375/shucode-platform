@@ -251,6 +251,8 @@ const (
 )
 
 type ReserveQuotaInput struct {
+	BillingBindingID    string
+	DeviceTokenID       string
 	Postpaid            bool
 	ReserveAllAvailable bool
 	RetainUntilSettled  bool
@@ -279,6 +281,8 @@ type QuotaReservationRecord struct {
 	SettledAt          *time.Time
 	ReleasedAt         *time.Time
 	UsageID            string
+	BillingBindingID   string
+	DeviceTokenID      string
 }
 
 type UsageChargeRates struct {
@@ -388,6 +392,7 @@ type UsageRecord struct {
 	RequestID             string `json:"requestId"`
 	UserID                string `json:"userId"`
 	TeamID                string `json:"teamId"`
+	BillingBindingID      string `json:"billingBindingId,omitempty"`
 	DeviceTokenID         string `json:"deviceTokenId,omitempty"`
 	Model                 string `json:"model"`
 	UpstreamModel         string `json:"upstreamModel"`

@@ -28,6 +28,11 @@ type PlatformStore interface {
 	DeleteSessionsForUser(ctx context.Context, userID string) error
 
 	// ---- teams ----
+	EnsurePersonalAccount(ctx context.Context, userID string) (*TeamRecord, error)
+	GetPersonalAccount(ctx context.Context, userID string) (*TeamRecord, error)
+	IsPersonalAccountTeam(ctx context.Context, teamID string) (bool, error)
+	GetBillingMode(ctx context.Context, userID string) (string, error)
+	SetBillingMode(ctx context.Context, userID, mode string) error
 	CreateTeam(ctx context.Context, input CreateTeamInput) (*TeamRecord, error)
 	GetTeam(ctx context.Context, id string) (*TeamRecord, error)
 	ListTeams(ctx context.Context) ([]TeamWithUsage, error)
@@ -65,6 +70,18 @@ type PlatformStore interface {
 	// ListAllMemberships:跨团队列出全部成员关系(展平含团队名)，按加入时间升序。
 	// 供控制台账号列表一次性注入归属，避免按用户逐一查询。
 	ListAllMemberships(ctx context.Context) ([]AllMembershipRow, error)
+
+	// ---- payments: order, quota, ledger and audit share one transaction ----
+	CreatePaymentOrder(ctx context.Context, record PaymentOrderRecord) (*PaymentOrderRecord, error)
+	GetPaymentOrder(ctx context.Context, outTradeNo string) (*PaymentOrderRecord, error)
+	ListPaymentOrders(ctx context.Context, filter PaymentOrderFilter) ([]PaymentOrderRecord, error)
+	ClaimPaymentSuccess(ctx context.Context, input PaymentSuccessInput) (order *PaymentOrderRecord, alreadyApplied bool, err error)
+	ClosePaymentOrder(ctx context.Context, outTradeNo string, at time.Time) (*PaymentOrderRecord, error)
+	GetPaymentPackageCatalog(ctx context.Context) (*PaymentPackageCatalog, error)
+	SavePaymentPackageCatalog(ctx context.Context, expectedRevision string, catalog PaymentPackageCatalog) (*PaymentPackageCatalog, error)
+	CreatePlanPaymentOrder(ctx context.Context, record PaymentOrderRecord, catalogRevision, sku string) (*PaymentOrderRecord, error)
+	CreateBillingSessionBinding(ctx context.Context, input BillingSessionBindingInput) (*BillingSessionBinding, error)
+	ResolveBillingSessionBinding(ctx context.Context, bindingID, userID, deviceTokenID string) (*BillingSessionBinding, error)
 
 	// ---- manual quota requests ----
 	CreateQuotaRequest(ctx context.Context, record QuotaRequestRecord) error
@@ -268,6 +285,12 @@ var (
 	ErrTeamAssetNotFound         = errors.New("team asset or deletion request not found")
 	ErrTeamAssetForbidden        = errors.New("team asset operation forbidden")
 	ErrPreferenceVersionConflict = errors.New("user preference version conflict")
+	ErrBillingModeInvalid        = errors.New("invalid billing mode")
+	ErrPersonalAccountForbidden  = errors.New("personal billing account cannot be used as an organization")
+	ErrPaymentPackageConflict    = errors.New("payment package order conflicts with existing parameters")
+	ErrBillingBindingNotFound    = errors.New("billing session binding not found")
+	ErrBillingBindingForbidden   = errors.New("billing session binding forbidden")
+	ErrBillingBindingConflict    = errors.New("billing session binding conflicts with existing parameters")
 )
 
 // ResolveUserTeam 显式拒绝既存多团队歧义，避免按列表顺序错误扣费。
@@ -288,4 +311,21 @@ func ResolveUserTeam(ctx context.Context, st PlatformStore, userID string) (*Tea
 		selected = &copy
 	}
 	return selected, nil
+}
+
+// ResolveBillingAccount chooses the account used for model charging. Organization
+// authorization remains ResolveUserTeam and never treats a private account as a team.
+func ResolveBillingAccount(ctx context.Context, st PlatformStore, userID string) (*TeamMembership, error) {
+	mode, err := st.GetBillingMode(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if mode == "personal" {
+		team, err := st.GetPersonalAccount(ctx, userID)
+		if err != nil || team == nil {
+			return nil, err
+		}
+		return &TeamMembership{Team: *team, Role: MemberRoleOwner}, nil
+	}
+	return ResolveUserTeam(ctx, st, userID)
 }

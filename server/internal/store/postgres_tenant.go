@@ -32,6 +32,13 @@ func lockMemberUser(ctx context.Context, tx pgx.Tx, userID string) error {
 	return tx.QueryRow(ctx, `SELECT id::text FROM users WHERE id=$1::uuid FOR UPDATE`, userID).Scan(&id)
 }
 func checkSingleTeam(ctx context.Context, tx pgx.Tx, teamID, userID string) error {
+	owner, err := privateAccountOwner(ctx, tx, teamID)
+	if err != nil {
+		return err
+	}
+	if owner != "" {
+		return ErrPersonalAccountForbidden
+	}
 	var exists bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM team_members WHERE user_id=$1::uuid AND team_id<>$2::uuid)`, userID, teamID).Scan(&exists); err != nil {
 		return err
@@ -62,6 +69,13 @@ func (s *PostgresStore) AddMember(ctx context.Context, teamID, userID string, ro
 		return err
 	}
 	defer tx.Rollback(ctx)
+	var private bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM personal_accounts WHERE team_id=$1::uuid)`, teamID).Scan(&private); err != nil {
+		return err
+	}
+	if private {
+		return ErrPersonalAccountForbidden
+	}
 	ok, err := lockTeam(ctx, tx, teamID)
 	if err != nil {
 		return err
@@ -231,13 +245,20 @@ func scanInvitation(row pgx.Row) (*TeamInvitationRecord, error) {
 	return &record, nil
 }
 func (s *PostgresStore) CreateTeamInvitation(ctx context.Context, record TeamInvitationRecord) error {
+	owner, err := privateAccountOwner(ctx, s.pool, record.TeamID)
+	if err != nil {
+		return err
+	}
+	if owner != "" {
+		return ErrPersonalAccountForbidden
+	}
 	if record.ID == "" {
 		record.ID = newUUID()
 	}
 	if record.CreatedAt.IsZero() {
 		record.CreatedAt = time.Now()
 	}
-	_, err := s.pool.Exec(ctx, `INSERT INTO team_invitations(id,team_id,email,token_hash,created_by,created_at,expires_at,accepted_at,revoked_at) VALUES($1::uuid,$2::uuid,$3,$4,$5::uuid,$6,$7,$8,$9)`, record.ID, record.TeamID, strings.ToLower(strings.TrimSpace(record.Email)), record.TokenHash, record.CreatedBy, record.CreatedAt, record.ExpiresAt, record.AcceptedAt, record.RevokedAt)
+	_, err = s.pool.Exec(ctx, `INSERT INTO team_invitations(id,team_id,email,token_hash,created_by,created_at,expires_at,accepted_at,revoked_at) VALUES($1::uuid,$2::uuid,$3,$4,$5::uuid,$6,$7,$8,$9)`, record.ID, record.TeamID, strings.ToLower(strings.TrimSpace(record.Email)), record.TokenHash, record.CreatedBy, record.CreatedAt, record.ExpiresAt, record.AcceptedAt, record.RevokedAt)
 	return err
 }
 func (s *PostgresStore) ListTeamInvitations(ctx context.Context, teamID string) ([]TeamInvitationRecord, error) {
@@ -332,6 +353,23 @@ func (s *PostgresStore) AcceptTeamInvitation(ctx context.Context, tokenHash, use
 }
 
 func reservationBudgetAllowed(ctx context.Context, tx pgx.Tx, input ReserveQuotaInput, at time.Time) (ReserveResult, error) {
+	owner, err := privateAccountOwner(ctx, tx, input.TeamID)
+	if err != nil {
+		return "", err
+	}
+	if owner != "" {
+		if owner != input.UserID {
+			return ReserveDeniedInactive, nil
+		}
+		var active bool
+		if err := tx.QueryRow(ctx, `SELECT disabled_at IS NULL FROM users WHERE id=$1::uuid`, input.UserID).Scan(&active); err != nil {
+			return "", err
+		}
+		if !active {
+			return ReserveDeniedInactive, nil
+		}
+		return ReserveReserved, nil
+	}
 	var memberBudget string
 	if input.UserID != "" {
 		member, err := getTeamMember(ctx, tx, input.TeamID, input.UserID)

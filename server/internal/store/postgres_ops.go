@@ -168,15 +168,47 @@ func (s *PostgresStore) reserveQuota(ctx context.Context, input ReserveQuotaInpu
 	if err != nil {
 		return "", err
 	}
-	if !active {
-		return ReserveDeniedInactive, nil
+	if input.BillingBindingID != "" {
+		if input.DeviceTokenID == "" {
+			return ReserveDenied, ErrBillingBindingForbidden
+		}
+		var tokenUser string
+		var revokedAt *time.Time
+		err = tx.QueryRow(ctx, `SELECT user_id::text,revoked_at FROM device_tokens WHERE id=$1::uuid`, input.DeviceTokenID).Scan(&tokenUser, &revokedAt)
+		if errors.Is(err, pgx.ErrNoRows) || (err == nil && (tokenUser != input.UserID || revokedAt != nil)) {
+			return ReserveDenied, ErrBillingBindingForbidden
+		}
+		if err != nil {
+			return "", err
+		}
 	}
-	var duplicate bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM quota_reservations WHERE team_id=$1::uuid AND request_id=$2)`, input.TeamID, input.RequestID).Scan(&duplicate); err != nil {
+	if input.BillingBindingID != "" {
+		var actor, device, account string
+		err = tx.QueryRow(ctx, `SELECT actor_user_id::text,device_token_id::text,billing_account_id::text FROM billing_session_bindings WHERE id=$1::uuid`, input.BillingBindingID).Scan(&actor, &device, &account)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ReserveDenied, ErrBillingBindingNotFound
+		}
+		if err != nil {
+			return "", err
+		}
+		if input.DeviceTokenID == "" || actor != input.UserID || device != input.DeviceTokenID || account != input.TeamID {
+			return ReserveDenied, ErrBillingBindingForbidden
+		}
+	}
+	var existing QuotaReservationRecord
+	err = tx.QueryRow(ctx, `SELECT team_id::text,COALESCE(user_id::text,''),request_id,COALESCE(billing_binding_id::text,''),COALESCE(billing_device_token_id::text,'') FROM quota_reservations WHERE id=$1::uuid OR (team_id=$2::uuid AND request_id=$3) ORDER BY (id=$1::uuid) DESC LIMIT 1`, id, input.TeamID, input.RequestID).Scan(&existing.TeamID, &existing.UserID, &existing.RequestID, &existing.BillingBindingID, &existing.DeviceTokenID)
+	if err == nil {
+		if !sameReservationIdentityFields(existing.BillingBindingID, existing.DeviceTokenID, existing.TeamID, existing.UserID, existing.RequestID, input) {
+			return ReserveDenied, ErrReservationMismatch
+		}
+		return ReserveDuplicate, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
 		return "", err
 	}
-	if duplicate {
-		return ReserveDuplicate, nil
+	// 已受理身份重放不产生新费用；停用账本只阻止新准入，与内存实现顺序一致。
+	if !active {
+		return ReserveDeniedInactive, nil
 	}
 	if input.ReserveAllAvailable {
 		var available string
@@ -219,14 +251,22 @@ func (s *PostgresStore) reserveQuota(ctx context.Context, input ReserveQuotaInpu
 	}
 	var inserted string
 	err = tx.QueryRow(ctx, `
-		INSERT INTO quota_reservations (id, team_id, request_id, reserved_credits, status, created_at, expires_at, user_id, held_by_task, retain_until_settled, postpaid)
-		VALUES ($1::uuid, $2::uuid, $3, $4::numeric, 'reserved', $5::timestamptz, $6::timestamptz, $7::uuid, $8, $9, $10)
+		INSERT INTO quota_reservations (id, team_id, request_id, reserved_credits, status, created_at, expires_at, user_id, held_by_task, retain_until_settled, postpaid, billing_binding_id, billing_device_token_id)
+		VALUES ($1::uuid, $2::uuid, $3, $4::numeric, 'reserved', $5::timestamptz, $6::timestamptz, $7::uuid, $8, $9, $10, $11::uuid, $12::uuid)
 		ON CONFLICT DO NOTHING
 		RETURNING id::text`,
 		id, input.TeamID, input.RequestID, creditMicroString(reservedMicro),
-		createdAt, expiresAt, nullIfEmpty(input.UserID), input.HeldByTask, input.RetainUntilSettled, input.Postpaid).Scan(&inserted)
+		createdAt, expiresAt, nullIfEmpty(input.UserID), input.HeldByTask, input.RetainUntilSettled, input.Postpaid, nullIfEmpty(input.BillingBindingID), nullIfEmpty(input.DeviceTokenID)).Scan(&inserted)
 	if err != nil {
 		if err == pgx.ErrNoRows {
+			var existing QuotaReservationRecord
+			lookupErr := tx.QueryRow(ctx, `SELECT team_id::text,COALESCE(user_id::text,''),request_id,COALESCE(billing_binding_id::text,''),COALESCE(billing_device_token_id::text,'') FROM quota_reservations WHERE id=$1::uuid OR (team_id=$2::uuid AND request_id=$3) ORDER BY (id=$1::uuid) DESC LIMIT 1`, id, input.TeamID, input.RequestID).Scan(&existing.TeamID, &existing.UserID, &existing.RequestID, &existing.BillingBindingID, &existing.DeviceTokenID)
+			if lookupErr != nil {
+				return "", lookupErr
+			}
+			if !sameReservationIdentityFields(existing.BillingBindingID, existing.DeviceTokenID, existing.TeamID, existing.UserID, existing.RequestID, input) {
+				return ReserveDenied, ErrReservationMismatch
+			}
 			return ReserveDuplicate, nil
 		}
 		return "", err
@@ -262,10 +302,10 @@ func (s *PostgresStore) GetQuotaReservation(ctx context.Context, id string) (*Qu
 	var record QuotaReservationRecord
 	var reserved string
 	err := s.pool.QueryRow(ctx, `SELECT id::text,team_id::text,COALESCE(user_id::text,''),request_id,reserved_credits::text,status,
-		created_at,expires_at,settled_at,released_at,COALESCE(usage_id::text,''),held_by_task,retain_until_settled,postpaid
+		created_at,expires_at,settled_at,released_at,COALESCE(usage_id::text,''),held_by_task,retain_until_settled,postpaid,COALESCE(billing_binding_id::text,''),COALESCE(billing_device_token_id::text,'')
 		FROM quota_reservations WHERE id=$1::uuid`, id).Scan(&record.ID, &record.TeamID, &record.UserID, &record.RequestID,
 		&reserved, &record.Status, &record.CreatedAt, &record.ExpiresAt, &record.SettledAt, &record.ReleasedAt,
-		&record.UsageID, &record.HeldByTask, &record.RetainUntilSettled, &record.Postpaid)
+		&record.UsageID, &record.HeldByTask, &record.RetainUntilSettled, &record.Postpaid, &record.BillingBindingID, &record.DeviceTokenID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -295,11 +335,13 @@ func (s *PostgresStore) SettleReservation(ctx context.Context, reservationID str
 		status    string
 		requestID string
 		postpaid  bool
+		bindingID string
+		deviceID  string
 	)
 	err = tx.QueryRow(ctx, `
-		SELECT team_id::text, COALESCE(user_id::text,''), reserved_credits::text, status, request_id, postpaid
+		SELECT team_id::text, COALESCE(user_id::text,''), reserved_credits::text, status, request_id, postpaid, COALESCE(billing_binding_id::text,''), COALESCE(billing_device_token_id::text,'')
 		FROM quota_reservations WHERE id = $1::uuid FOR UPDATE`, reservationID).
-		Scan(&teamID, &userID, &reserved, &status, &requestID, &postpaid)
+		Scan(&teamID, &userID, &reserved, &status, &requestID, &postpaid, &bindingID, &deviceID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrReservationNotFound
@@ -307,6 +349,12 @@ func (s *PostgresStore) SettleReservation(ctx context.Context, reservationID str
 		return err
 	}
 	if record.TeamID != teamID || (userID != "" && record.UserID != userID) || (postpaid && record.RequestID != requestID) {
+		return ErrReservationMismatch
+	}
+	if bindingID != "" && record.BillingBindingID != bindingID {
+		return ErrReservationMismatch
+	}
+	if deviceID != "" && (record.DeviceTokenID == "" || record.DeviceTokenID != deviceID) {
 		return ErrReservationMismatch
 	}
 	if status == string(ReservationSettled) || status == string(ReservationReleased) {
@@ -475,7 +523,7 @@ func (s *PostgresStore) ListOpenReservations(ctx context.Context, limit int64) (
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT id::text, team_id::text, COALESCE(user_id::text,''), request_id, reserved_credits::text, status,
-			created_at, expires_at, settled_at, released_at, COALESCE(usage_id::text, ''), held_by_task, retain_until_settled, postpaid
+			created_at, expires_at, settled_at, released_at, COALESCE(usage_id::text, ''), held_by_task, retain_until_settled, postpaid, COALESCE(billing_binding_id::text, ''), COALESCE(billing_device_token_id::text, '')
 		FROM quota_reservations
 		WHERE status = 'reserved'
 		ORDER BY created_at ASC
@@ -492,7 +540,7 @@ func (s *PostgresStore) ListOpenReservations(ctx context.Context, limit int64) (
 			status   string
 		)
 		if err := rows.Scan(&r.ID, &r.TeamID, &r.UserID, &r.RequestID, &reserved, &status,
-			&r.CreatedAt, &r.ExpiresAt, &r.SettledAt, &r.ReleasedAt, &r.UsageID, &r.HeldByTask, &r.RetainUntilSettled, &r.Postpaid); err != nil {
+			&r.CreatedAt, &r.ExpiresAt, &r.SettledAt, &r.ReleasedAt, &r.UsageID, &r.HeldByTask, &r.RetainUntilSettled, &r.Postpaid, &r.BillingBindingID, &r.DeviceTokenID); err != nil {
 			return nil, err
 		}
 		r.ReservedMicro, _ = parseMicroString(reserved)
@@ -685,16 +733,16 @@ func (s *PostgresStore) EnqueuePendingSettlement(ctx context.Context, reservatio
 	}
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO pending_settlements (
-			reservation_id, request_id, user_id, team_id, device_token_id, model, upstream_model,
+			reservation_id, request_id, user_id, team_id, billing_binding_id, device_token_id, model, upstream_model,
 			provider_id, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
 			credits_micro, price_snapshot, usage_status, error_type, client_ip, latency_ms,
 			usage_created_at, reasoning_effort, reasoning_budget_tokens
 		) VALUES (
-			$1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6, $7,
-			$8::uuid, $9, $10, $11, $12, $13, $14::jsonb, $15, $16, $17, $18, $19::timestamptz, $20, $21
+			$1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6::uuid, $7, $8,
+			$9::uuid, $10, $11, $12, $13, $14, $15::jsonb, $16, $17, $18, $19, $20::timestamptz, $21, $22
 		)
 		ON CONFLICT (reservation_id) DO NOTHING`,
-		reservationID, record.RequestID, record.UserID, record.TeamID, nullIfEmpty(record.DeviceTokenID),
+		reservationID, record.RequestID, record.UserID, record.TeamID, nullIfEmpty(record.BillingBindingID), nullIfEmpty(record.DeviceTokenID),
 		record.Model, record.UpstreamModel, nullIfEmpty(record.ProviderID),
 		record.InputTokens, record.OutputTokens, record.CacheReadTokens, record.CacheCreationTokens,
 		record.CreditsMicro, nullableBytes(snapshotJSON), string(record.Status),
@@ -713,7 +761,7 @@ func (s *PostgresStore) ListPendingSettlements(ctx context.Context, filter Pendi
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT reservation_id::text, request_id, user_id::text, team_id::text,
-			COALESCE(device_token_id::text, ''), model, upstream_model,
+			COALESCE(billing_binding_id::text, ''), COALESCE(device_token_id::text, ''), model, upstream_model,
 			COALESCE(provider_id::text, ''), input_tokens, output_tokens,
 			cache_read_tokens, cache_creation_tokens, credits_micro, price_snapshot,
 			usage_status, COALESCE(error_type, ''), COALESCE(client_ip, ''), latency_ms,
@@ -738,7 +786,7 @@ func (s *PostgresStore) ListPendingSettlements(ctx context.Context, filter Pendi
 			usageState string
 		)
 		if err := rows.Scan(&item.ReservationID, &record.RequestID, &record.UserID, &record.TeamID,
-			&record.DeviceTokenID, &record.Model, &record.UpstreamModel, &record.ProviderID,
+			&record.BillingBindingID, &record.DeviceTokenID, &record.Model, &record.UpstreamModel, &record.ProviderID,
 			&record.InputTokens, &record.OutputTokens, &record.CacheReadTokens, &record.CacheCreationTokens,
 			&record.CreditsMicro, &snapshot, &usageState, &record.ErrorType, &record.ClientIP,
 			&record.LatencyMs, &record.CreatedAt, &status, &item.Attempts, &item.LastError,
@@ -847,15 +895,15 @@ func insertUsageExec(ctx context.Context, tx pgx.Tx, record UsageRecord) error {
 	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO usage_records (
-			id, request_id, user_id, team_id, device_token_id, model, upstream_model,
+			id, request_id, user_id, team_id, billing_binding_id, device_token_id, model, upstream_model,
 			input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
 			credits_micro, status, error_type, client_ip, latency_ms, provider_id, created_at, price_snapshot,
 			reasoning_effort, reasoning_budget_tokens
 		) VALUES (
-			$1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6, $7,
-			$8, $9, $10, $11, $12, $13, $14, $15, $16, $17::uuid, $18::timestamptz, $19::jsonb, $20, $21
+			$1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6::uuid, $7, $8,
+			$9, $10, $11, $12, $13, $14, $15, $16, $17, $18::uuid, $19::timestamptz, $20::jsonb, $21, $22
 		)`,
-		record.ID, record.RequestID, record.UserID, record.TeamID, nullIfEmpty(record.DeviceTokenID),
+		record.ID, record.RequestID, record.UserID, record.TeamID, nullIfEmpty(record.BillingBindingID), nullIfEmpty(record.DeviceTokenID),
 		record.Model, record.UpstreamModel, record.InputTokens, record.OutputTokens,
 		record.CacheReadTokens, record.CacheCreationTokens, record.CreditsMicro, string(record.Status),
 		emptyToNil(record.ErrorType), emptyToNil(record.ClientIP), record.LatencyMs,

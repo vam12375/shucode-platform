@@ -43,6 +43,10 @@ type memoryStore struct {
 	teamPolicies          map[string]TeamPolicyRecord
 	invitations           map[string]TeamInvitationRecord
 	quotaRequests         map[string]QuotaRequestRecord
+	personalAccounts      map[string]string
+	billingBindings       map[string]BillingSessionBinding
+	billingModes          map[string]string
+	paymentOrders         map[string]PaymentOrderRecord
 	memberJoinedAt        map[string]time.Time
 	deviceTokens          map[string]DeviceTokenRecord
 	flows                 map[string]LoginFlowRecord
@@ -87,6 +91,10 @@ func NewMemoryStore(ctx context.Context, opts MemoryOptions) (*memoryStore, erro
 		teamPolicies:          map[string]TeamPolicyRecord{},
 		invitations:           map[string]TeamInvitationRecord{},
 		quotaRequests:         map[string]QuotaRequestRecord{},
+		personalAccounts:      map[string]string{},
+		billingBindings:       map[string]BillingSessionBinding{},
+		billingModes:          map[string]string{},
+		paymentOrders:         map[string]PaymentOrderRecord{},
 		deviceTokens:          map[string]DeviceTokenRecord{},
 		flows:                 map[string]LoginFlowRecord{},
 		releases:              map[int64]ReleaseRecord{},
@@ -320,6 +328,9 @@ func (s *memoryStore) ListTeams(_ context.Context) ([]TeamWithUsage, error) {
 	defer s.mu.Unlock()
 	out := make([]TeamWithUsage, 0, len(s.teams))
 	for _, team := range s.teams {
+		if s.personalOwnerLocked(team.ID) != "" {
+			continue
+		}
 		count := int64(len(s.members[team.ID]))
 		out = append(out, TeamWithUsage{Team: *cloneTeam(&team), MemberCount: count})
 	}
@@ -454,6 +465,9 @@ func (s *memoryStore) ListMembers(_ context.Context, teamID string) ([]TeamMembe
 func (s *memoryStore) AddMember(_ context.Context, teamID, userID string, role TeamMemberRole) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.personalOwnerLocked(teamID) != "" {
+		return ErrPersonalAccountForbidden
+	}
 	return s.addMemberLocked(teamID, userID, role)
 }
 

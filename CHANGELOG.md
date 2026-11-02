@@ -9,6 +9,27 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.73.0] - 2026-11-02
+
+### 新增(支付、个人账户与计费会话存储)
+
+- 新增迁移 0033–0036：`payment_orders`（支付宝订单、配置与套餐快照）、`personal_accounts`
+  与 `user_billing_modes`、充值套餐目录（revision CAS）、`billing_session_bindings`，并为
+  `quota_reservations` 增加计费绑定列。
+- 存储接口新增订单创建/查询/列表、验签成功幂等入账（订单、额度、流水与审计同事务）、关单、
+  套餐目录 CAS、套餐订单与会话绑定解析；个人账户单例创建，私有账本禁止成员/邀请操作且只允许
+  本人准入。
+- 新增 `ResolveBillingAccount`：按显式 personal/team 模式选择消费账户，组织授权仍走
+  `ResolveUserTeam`；Postgres 与内存实现同语义，并纳入统一 conformance 套件。
+
+### 验证
+
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`（175 项）
+- `pnpm --filter @shucode-platform/console build`
+- `make -C server lint test`
+
 ## [0.72.0] - 2026-11-02
 
 ### 新增(后期保留模型原声与时长上限放宽)

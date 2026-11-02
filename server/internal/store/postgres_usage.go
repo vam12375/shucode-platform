@@ -249,7 +249,7 @@ func (s *PostgresStore) SetConfigValue(ctx context.Context, key string, value []
 
 // ---- usage ----
 
-const usageCols = `id::text, request_id, user_id::text, team_id::text, COALESCE(device_token_id::text, '') AS device_token_id,
+const usageCols = `id::text, request_id, user_id::text, team_id::text, COALESCE(billing_binding_id::text, '') AS billing_binding_id, COALESCE(device_token_id::text, '') AS device_token_id,
 	model, upstream_model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
 	credits_micro, status, error_type, client_ip, latency_ms, COALESCE(provider_id::text, '') AS provider_id, created_at, price_snapshot,
 	COALESCE(reasoning_effort, ''), reasoning_budget_tokens`
@@ -263,7 +263,7 @@ func scanUsage(rows pgx.Rows) (*UsageRecord, error) {
 		status        string
 		priceSnapshot []byte
 	)
-	if err := rows.Scan(&u.ID, &u.RequestID, &u.UserID, &u.TeamID, &u.DeviceTokenID,
+	if err := rows.Scan(&u.ID, &u.RequestID, &u.UserID, &u.TeamID, &u.BillingBindingID, &u.DeviceTokenID,
 		&u.Model, &u.UpstreamModel, &u.InputTokens, &u.OutputTokens, &u.CacheReadTokens, &u.CacheCreationTokens,
 		&u.CreditsMicro, &status, &errorType, &clientIP, &latency, &u.ProviderID, &u.CreatedAt, &priceSnapshot,
 		&u.ReasoningEffort, &u.ReasoningBudgetTokens); err != nil {

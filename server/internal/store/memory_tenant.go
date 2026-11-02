@@ -24,6 +24,9 @@ func (s *memoryStore) protectAdminLocked(teamID, userID string) error {
 }
 
 func (s *memoryStore) addMemberLocked(teamID, userID string, role TeamMemberRole) error {
+	if s.personalOwnerLocked(teamID) != "" {
+		return ErrPersonalAccountForbidden
+	}
 	if !IsTeamAdmin(role) && role != MemberRoleMember {
 		return fmt.Errorf("成员角色无效")
 	}
@@ -148,6 +151,9 @@ func cloneInvitation(record TeamInvitationRecord) TeamInvitationRecord {
 func (s *memoryStore) CreateTeamInvitation(_ context.Context, record TeamInvitationRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.personalOwnerLocked(record.TeamID) != "" {
+		return ErrPersonalAccountForbidden
+	}
 	if _, ok := s.teams[record.TeamID]; !ok {
 		return fmt.Errorf("团队不存在")
 	}
@@ -242,6 +248,13 @@ func (s *memoryStore) AcceptTeamInvitation(_ context.Context, tokenHash, userID 
 }
 
 func (s *memoryStore) reservationBudgetAllowedLocked(input ReserveQuotaInput, at time.Time) (ReserveResult, error) {
+	if owner := s.personalOwnerLocked(input.TeamID); owner != "" {
+		user, ok := s.users[input.UserID]
+		if !ok || owner != input.UserID || user.DisabledAt != nil {
+			return ReserveDeniedInactive, nil
+		}
+		return ReserveReserved, nil
+	}
 	var memberBudget string
 	if input.UserID != "" {
 		member := s.memberViewLocked(input.TeamID, input.UserID)

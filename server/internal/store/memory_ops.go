@@ -151,11 +151,31 @@ func (s *memoryStore) reserveQuota(_ context.Context, input ReserveQuotaInput) (
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, exists := s.reservations[input.ID]; input.ID != "" && exists {
+	if input.BillingBindingID != "" {
+		token, exists := s.deviceTokens[input.DeviceTokenID]
+		if !exists || token.UserID != input.UserID || token.RevokedAt != nil {
+			return ReserveDenied, ErrBillingBindingForbidden
+		}
+		// 先验证绑定授权，避免错误设备借重复身份分支绕过准入校验。
+		b, exists := s.billingBindings[input.BillingBindingID]
+		if !exists {
+			return ReserveDenied, ErrBillingBindingNotFound
+		}
+		if b.ActorUserID != input.UserID || b.DeviceTokenID != input.DeviceTokenID || b.BillingAccountID != input.TeamID {
+			return ReserveDenied, ErrBillingBindingForbidden
+		}
+	}
+	if existing, exists := s.reservations[input.ID]; input.ID != "" && exists {
+		if !sameReservationBillingIdentity(existing, input) {
+			return ReserveDenied, ErrReservationMismatch
+		}
 		return ReserveDuplicate, nil
 	}
 	for _, reservation := range s.reservations {
 		if reservation.TeamID == input.TeamID && reservation.RequestID == input.RequestID {
+			if !sameReservationBillingIdentity(reservation, input) {
+				return ReserveDenied, ErrReservationMismatch
+			}
 			return ReserveDuplicate, nil
 		}
 	}
@@ -209,7 +229,7 @@ func (s *memoryStore) reserveQuota(_ context.Context, input ReserveQuotaInput) (
 	}
 	reservation := QuotaReservationRecord{
 		ID: id, TeamID: input.TeamID, UserID: input.UserID, RequestID: input.RequestID,
-		Postpaid: input.Postpaid, ReservedMicro: reservedMicro, Status: ReservationReserved, HeldByTask: input.HeldByTask, RetainUntilSettled: input.RetainUntilSettled,
+		Postpaid: input.Postpaid, ReservedMicro: reservedMicro, Status: ReservationReserved, HeldByTask: input.HeldByTask, RetainUntilSettled: input.RetainUntilSettled, BillingBindingID: input.BillingBindingID, DeviceTokenID: input.DeviceTokenID,
 		CreatedAt: createdAt, ExpiresAt: createdAt.Add(ttl),
 	}
 	s.reservations[id] = reservation
@@ -219,6 +239,18 @@ func (s *memoryStore) reserveQuota(_ context.Context, input ReserveQuotaInput) (
 		s.teams[team.ID] = team
 	}
 	return ReserveReserved, nil
+}
+
+func sameReservationBillingIdentity(existing QuotaReservationRecord, input ReserveQuotaInput) bool {
+	return sameReservationIdentityFields(existing.BillingBindingID, existing.DeviceTokenID, existing.TeamID, existing.UserID, existing.RequestID, input)
+}
+
+func sameReservationIdentityFields(bindingID, deviceID, teamID, userID, requestID string, input ReserveQuotaInput) bool {
+	if bindingID != input.BillingBindingID && (bindingID != "" || input.BillingBindingID != "") {
+		return false
+	}
+	// 历史无绑定调用保留同 ID 的 duplicate 语义；已绑定身份必须保持完整归属。
+	return bindingID == "" || (deviceID == input.DeviceTokenID && teamID == input.TeamID && userID == input.UserID && requestID == input.RequestID)
 }
 
 func (s *memoryStore) GetQuotaReservation(_ context.Context, id string) (*QuotaReservationRecord, error) {
@@ -250,6 +282,12 @@ func (s *memoryStore) SettleReservation(_ context.Context, reservationID string,
 		return ErrReservationNotFound
 	}
 	if record.TeamID != reservation.TeamID || (reservation.UserID != "" && record.UserID != reservation.UserID) || (reservation.Postpaid && record.RequestID != reservation.RequestID) {
+		return ErrReservationMismatch
+	}
+	if reservation.BillingBindingID != "" && record.BillingBindingID != reservation.BillingBindingID {
+		return ErrReservationMismatch
+	}
+	if reservation.DeviceTokenID != "" && (record.DeviceTokenID == "" || record.DeviceTokenID != reservation.DeviceTokenID) {
 		return ErrReservationMismatch
 	}
 	if reservation.Status == ReservationSettled || reservation.Status == ReservationReleased {
