@@ -13,7 +13,7 @@ import (
 
 func TestModelAspectRatiosFollowVerifiedModelFamilies(t *testing.T) {
 	fixed := []string{"16:9", "4:3", "1:1", "3:4", "9:16", "21:9"}
-	for _, upstream := range []string{"doubao-seedance-2-0-260128", "doubao-seedance-2-0-mini-260615", "doubao-seedance-2-0-fast-260128"} {
+	for _, upstream := range []string{"doubao-seedance-2-0-260128", "doubao-seedance-2-0-mini-260615", "doubao-seedance-2-0-fast-260128", "doubao-seedance-2-5-pro-260128"} {
 		m := Model{Kind: "video", Adapter: "ark", UpstreamModel: upstream}
 		if got := ModelAspectRatios(m); !slices.Equal(got, append([]string{"auto"}, fixed...)) {
 			t.Fatalf("%s ratios = %v", upstream, got)
@@ -27,7 +27,6 @@ func TestModelAspectRatiosFollowVerifiedModelFamilies(t *testing.T) {
 	for _, m := range []Model{
 		{Kind: "video", Adapter: "ark", UpstreamModel: "unknown"},
 		{Kind: "video", Adapter: "future", UpstreamModel: "doubao-seedance-2-0-260128"},
-		{Kind: "video", Adapter: "ark", UpstreamModel: "doubao-seedance-2-5-pro-260128"},
 		{Kind: "video", Adapter: "ark", UpstreamModel: "doubao-seedance-1-0-unknown-250528"},
 		{Kind: "video", Adapter: "ark", UpstreamModel: "doubao-seedance-1-0-lite-t2v-250428"},
 		{Kind: "video", Adapter: "ark", UpstreamModel: "doubao-seedance-1-0-pro-not-a-date"},

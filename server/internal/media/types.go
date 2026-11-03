@@ -27,11 +27,22 @@ type Model struct {
 	GenerateAudio bool  `json:"generateAudio"`
 	PriceMicro    int64 `json:"priceMicro"`
 	// BillingUnit 为空时保持历史视频按秒、图片按张的口径；request/token 用于 ToAPIs 新计费模型。
-	BillingUnit               string                    `json:"billingUnit,omitempty"`
-	TokenPriceMicroPerMillion int64                     `json:"tokenPriceMicroPerMillion,omitempty"`
-	TokenCostMicroPerMillion  int64                     `json:"tokenCostMicroPerMillion,omitempty"`
-	PriceVersion              string                    `json:"priceVersion"`
-	VideoReference            *VideoReferenceCapability `json:"videoReference,omitempty"`
+	BillingUnit               string `json:"billingUnit,omitempty"`
+	TokenPriceMicroPerMillion int64  `json:"tokenPriceMicroPerMillion,omitempty"`
+	TokenCostMicroPerMillion  int64  `json:"tokenCostMicroPerMillion,omitempty"`
+	// RequestPriceTiers 是按次计费的时长分档价格；为空时整段时长沿用 PriceMicro。
+	// 档位必须有序、不重叠并覆盖模型全部可执行时长，避免未命中时静默回落基价。
+	RequestPriceTiers []RequestPriceTier        `json:"requestPriceTiers,omitempty"`
+	PriceVersion      string                    `json:"priceVersion"`
+	VideoReference    *VideoReferenceCapability `json:"videoReference,omitempty"`
+}
+
+// RequestPriceTier 是上游按时长分档的按次单价；成本只用于平台对账，不进入客户端目录。
+type RequestPriceTier struct {
+	MinDuration int   `json:"minDuration"`
+	MaxDuration int   `json:"maxDuration"`
+	PriceMicro  int64 `json:"priceMicro"`
+	CostMicro   int64 `json:"costMicro"`
 }
 
 const (
@@ -49,6 +60,17 @@ func (m Model) EffectiveBillingUnit() string {
 		return "image"
 	}
 	return BillingUnitSecond
+}
+
+// RequestRates 返回按次模型在指定输出时长下的售价与采购成本。
+// 分档由 ValidateModels 保证完整覆盖，未配置分档或非按次模型沿用基价。
+func (m Model) RequestRates(duration int) (priceMicro, costMicro int64) {
+	for _, tier := range m.RequestPriceTiers {
+		if duration >= tier.MinDuration && duration <= tier.MaxDuration {
+			return tier.PriceMicro, tier.CostMicro
+		}
+	}
+	return m.PriceMicro, m.CostMicro
 }
 
 // 媒体路由共用目录中的真实型号与能力，避免切换供应商后改变已报价的输入语义。
@@ -110,10 +132,18 @@ func SeedanceDurationRange(m Model) (int, int, bool) {
 	}
 	switch adapter {
 	case "ark":
+		// Ark Doubao-Seedance 2.5 支持单段 30 秒；2.0 仍是 4–15 秒。
+		if seedance25Model(m.UpstreamModel) {
+			return 4, 30, true
+		}
 		if seedance20Model(m.UpstreamModel) {
 			return 4, 15, true
 		}
 	case "toapis":
+		// ToAPIs 的 Seedance 2.5 标准版与 Ext 已开放 4–30 秒；2.0 仍是 4–15 秒。
+		if m.UpstreamModel == "seedance-2-5" || m.UpstreamModel == "seedance-2.5-ext" {
+			return 4, 30, true
+		}
 		if toapisSeedanceModel(m.UpstreamModel) {
 			return 4, 15, true
 		}
@@ -121,8 +151,9 @@ func SeedanceDurationRange(m Model) (int, int, bool) {
 	return 0, 0, false
 }
 
-// NormalizeSeedanceDuration upgrades a catalog entry to the current 4–15
-// second continuous contract while leaving unrelated legacy models untouched.
+// NormalizeSeedanceDuration upgrades a catalog entry to the model family's
+// current continuous duration contract while leaving unrelated legacy models
+// untouched: Seedance 2.0 is 4–15 seconds, Ark/ToAPIs Seedance 2.5 is 4–30.
 func NormalizeSeedanceDuration(m Model) Model {
 	if minDuration, maxDuration, ok := SeedanceDurationRange(m); ok {
 		m.MinDuration, m.MaxDuration = minDuration, maxDuration

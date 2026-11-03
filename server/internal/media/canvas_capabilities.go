@@ -21,25 +21,35 @@ func CanvasCapabilitiesFor(m Model) *CanvasCapabilities {
 		// 历史目录未写adapter时provider一直默认Ark，能力投影必须与真实执行协议一致。
 		adapter = "ark"
 	}
-	if m.Kind != "video" || !(adapter == "ark" && seedance20Model(m.UpstreamModel) || adapter == "toapis" && (toapisSeedanceModel(m.UpstreamModel) || m.UpstreamModel == "kling-4.0")) {
+	ark25 := adapter == "ark" && seedance25Model(m.UpstreamModel)
+	toapis25 := adapter == "toapis" && (m.UpstreamModel == "seedance-2-5" || m.UpstreamModel == "seedance-2.5-ext")
+	if m.Kind != "video" || !(adapter == "ark" && (seedance20Model(m.UpstreamModel) || ark25) || adapter == "toapis" && (toapisSeedanceModel(m.UpstreamModel) || m.UpstreamModel == "kling-4.0")) {
 		return nil
 	}
 	maxImages, maxVideos, maxAudios, maxVideoSeconds := 9, 0, 3, 15
+	maxTotalReferences := 12
+	if ark25 || toapis25 {
+		// Seedance 2.5：单次最多 50 个参考素材（30 图 + 10 视频 + 10 音频）。
+		maxImages, maxAudios, maxTotalReferences = 30, 10, 50
+	}
 	if adapter == "toapis" && m.UpstreamModel == "kling-4.0" {
 		if capability, ok := toapisModelCapabilities(m.UpstreamModel); ok {
 			maxImages, maxVideos, maxVideoSeconds = capability.maxImages, capability.maxVideos, capability.maxDuration
 			maxAudios = 0
 		}
 	}
-	maxTotalReferences := 12
 	c := &CanvasCapabilities{Modes: []string{"frames", "multimodal"}, MaxImages: maxImages, MaxAudios: maxAudios, MaxTotalReferences: maxTotalReferences, MaxVideoSeconds: maxVideoSeconds, MaxVideos: maxVideos, MaxAudioSeconds: 15, GenerateAudio: m.GenerateAudio, ReturnLastFrame: adapter == "ark"}
-	// 含视频报价必须有已配置的真实费率，不能只因供应商支持就向UI公开可计费入口。
-	if m.VideoReference != nil && (m.VideoReference.PriceMicro > 0 || m.VideoReference.TokenPriceMicroPerMillion > 0) {
-		if adapter == "toapis" && m.UpstreamModel == "kling-4.0" {
+	// 含视频报价必须有可用的计费口径：按次请求已含全部输入；按秒/Token 仍需配置参考费率。
+	referencePriced := m.VideoReference != nil && (m.VideoReference.PriceMicro > 0 || m.VideoReference.TokenPriceMicroPerMillion > 0 || m.EffectiveBillingUnit() == BillingUnitRequest)
+	if referencePriced {
+		switch {
+		case adapter == "toapis" && m.UpstreamModel == "kling-4.0":
 			if capability, ok := toapisModelCapabilities(m.UpstreamModel); ok {
 				c.MaxVideos = capability.maxVideos
 			}
-		} else {
+		case ark25 || toapis25:
+			c.MaxVideos = 10
+		default:
 			c.MaxVideos = 3
 		}
 		c.MaxVideoSeconds = min(c.MaxVideoSeconds, m.VideoReference.MaxDurationSeconds)
@@ -54,7 +64,9 @@ func validateCanvasOptions(m Model, r CanvasRequest) error {
 	c := CanvasCapabilitiesFor(m)
 	if r.Kind == "video" && r.Duration != 0 {
 		minDuration, maxDuration := 4, 15
-		if m.Adapter == "toapis" {
+		if minimum, maximum, ok := SeedanceDurationRange(m); ok {
+			minDuration, maxDuration = minimum, maximum
+		} else if m.Adapter == "toapis" {
 			if capability, ok := toapisModelCapabilities(m.UpstreamModel); ok {
 				minDuration, maxDuration = capability.minDuration, capability.maxDuration
 			}

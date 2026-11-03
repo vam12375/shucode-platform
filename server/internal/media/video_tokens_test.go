@@ -132,3 +132,20 @@ func TestResultUsageTokensUsesTotalForToAPIsTokenBilling(t *testing.T) {
 		t.Fatalf("missing total must not fall back to completion: %d", got)
 	}
 }
+
+func TestVideoQuoteUsesRequestDurationTiers(t *testing.T) {
+	model := seedance25ExtModel()
+	for _, test := range []struct {
+		duration int
+		want     int64
+	}{
+		{4, 8_750_000}, {14, 8_750_000}, {15, 17_500_000}, {30, 17_500_000},
+	} {
+		if got := mediaVideoQuoteMicro(model, "720p", "16:9", test.duration); got != test.want {
+			t.Fatalf("quote %ds = %d, want %d", test.duration, got, test.want)
+		}
+		if got := mediaVideoReferenceQuoteMicro(model, nil, "720p", "16:9", test.duration); got != test.want {
+			t.Fatalf("reference quote %ds = %d, want %d", test.duration, got, test.want)
+		}
+	}
+}

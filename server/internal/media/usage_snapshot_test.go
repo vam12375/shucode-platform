@@ -67,3 +67,16 @@ func TestUsageSnapshotForRequestAndTokenModels(t *testing.T) {
 		t.Fatalf("token cost = %+v", token.PriceSnapshot.Cost)
 	}
 }
+
+func TestUsageSnapshotForRequestTiersRecordsMatchedBand(t *testing.T) {
+	s := &Service{}
+	p := &Project{UserID: "u", TeamID: "t"}
+	model := seedance25ExtModel()
+	usage := s.usage(p, Shot{ReservationID: "request-tier", PendingChargeMicro: 17_500_000, Plan: ShotPlan{Duration: 20}}, model)
+	if usage.PriceSnapshot == nil || usage.PriceSnapshot.Sale.Unit != "request" || usage.PriceSnapshot.Sale.PerRequest != "17.500000" {
+		t.Fatalf("tier sale snapshot = %+v", usage.PriceSnapshot)
+	}
+	if usage.PriceSnapshot.Cost.EstimatedMicro == nil || *usage.PriceSnapshot.Cost.EstimatedMicro != 17_500_000 {
+		t.Fatalf("tier cost snapshot = %+v", usage.PriceSnapshot.Cost)
+	}
+}

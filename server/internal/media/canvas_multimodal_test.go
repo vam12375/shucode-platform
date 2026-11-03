@@ -297,3 +297,28 @@ func TestCanvasSeedanceLegacyArkAdapterCapabilities(t *testing.T) {
 		}
 	}
 }
+
+func TestCanvasSeedance25ReferenceLimitsAndDuration(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		model    Model
+		maxVideo int
+	}{
+		{"ark", Model{Kind: "video", Adapter: "ark", UpstreamModel: "doubao-seedance-2-5-pro-260128", GenerateAudio: true, VideoReference: &VideoReferenceCapability{MaxDurationSeconds: 15, MaxImages: 8, TokenPriceMicroPerMillion: 1}}, 10},
+		{"toapis-standard", Model{Kind: "video", Adapter: "toapis", UpstreamModel: "seedance-2-5", BillingUnit: BillingUnitToken, TokenPriceMicroPerMillion: 1, VideoReference: &VideoReferenceCapability{MaxDurationSeconds: 15, MaxImages: 8, TokenPriceMicroPerMillion: 1}}, 10},
+		{"toapis-ext", Model{Kind: "video", Adapter: "toapis", UpstreamModel: "seedance-2.5-ext", BillingUnit: BillingUnitRequest, PriceMicro: 1, VideoReference: &VideoReferenceCapability{MaxDurationSeconds: 15, MaxImages: 8}}, 10},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := CanvasCapabilitiesFor(test.model)
+			if c == nil || c.MaxImages != 30 || c.MaxVideos != test.maxVideo || c.MaxAudios != 10 || c.MaxTotalReferences != 50 {
+				t.Fatalf("caps = %+v", c)
+			}
+			if err := validateCanvasOptions(test.model, CanvasRequest{Kind: "video", ReferenceMode: "multimodal", Duration: 30, AssetIDs: make([]string, 30), VideoReferences: make([]CanvasVideoReference, 10), AudioAssetIDs: make([]string, 10)}); err != nil {
+				t.Fatalf("30 refs/duration rejected: %v", err)
+			}
+			if err := validateCanvasOptions(test.model, CanvasRequest{Kind: "video", ReferenceMode: "multimodal", Duration: 31}); err == nil {
+				t.Fatal("31s accepted")
+			}
+		})
+	}
+}

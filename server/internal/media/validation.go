@@ -60,6 +60,37 @@ func ValidateModels(models []Model) error {
 		if unit == BillingUnitRequest && m.PriceMicro <= 0 || unit == BillingUnitToken && m.TokenPriceMicroPerMillion <= 0 {
 			return ErrInvalid
 		}
+		if len(m.RequestPriceTiers) > 0 && (m.Kind != "video" || unit != BillingUnitRequest) {
+			return ErrInvalid
+		}
+		previousMax := 0
+		for _, tier := range m.RequestPriceTiers {
+			if tier.MinDuration < 2 || tier.MaxDuration > 30 || tier.MinDuration > tier.MaxDuration ||
+				tier.PriceMicro <= 0 || tier.PriceMicro > 100_000_000 || tier.CostMicro < 0 || tier.CostMicro > 100_000_000 ||
+				previousMax > 0 && tier.MinDuration != previousMax+1 {
+				return ErrInvalid
+			}
+			previousMax = tier.MaxDuration
+		}
+		if len(m.RequestPriceTiers) > 0 {
+			// 每个可执行时长都必须命中一个分档；否则 RequestRates 会静默回落基价。
+			for _, d := range m.AllowedDurations() {
+				covered := false
+				for _, tier := range m.RequestPriceTiers {
+					if d >= tier.MinDuration && d <= tier.MaxDuration {
+						covered = true
+						break
+					}
+				}
+				if !covered {
+					return ErrInvalid
+				}
+			}
+			if minimum, maximum, ok := m.DurationRange(); ok &&
+				(m.RequestPriceTiers[0].MinDuration != minimum || m.RequestPriceTiers[len(m.RequestPriceTiers)-1].MaxDuration != maximum) {
+				return ErrInvalid
+			}
+		}
 		if m.Adapter == "toapis" && validateToAPIsModel(m) != nil {
 			return ErrInvalid
 		}

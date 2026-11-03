@@ -24,9 +24,10 @@ func toapisModelCapabilities(upstream string) (toapisModelCapability, bool) {
 	case "seedance-2-fast", "seedance-2-mini":
 		return toapisModelCapability{resolutions: []string{"480p", "720p"}, minDuration: 4, maxDuration: 15, videoReference: true, nativeAudioToggle: true, referenceMaxBytes: 100 << 20, maxImages: 2, maxVideos: 3}, true
 	case "seedance-2.5-ext":
-		return toapisModelCapability{resolutions: []string{"720p"}, minDuration: 4, maxDuration: 15, videoReference: true, nativeAudioToggle: true, referenceMaxBytes: 100 << 20, maxImages: 2, maxVideos: 3}, true
+		// Seedance 2.5 家族开放连续 4–30 秒；视频参考片段仍按平台既有 15 秒上限。
+		return toapisModelCapability{resolutions: []string{"720p"}, minDuration: 4, maxDuration: 30, videoReference: true, nativeAudioToggle: true, referenceMaxBytes: 100 << 20, maxImages: 2, maxVideos: 3}, true
 	case "seedance-2-5":
-		return toapisModelCapability{resolutions: []string{"480p", "720p", "1080p"}, minDuration: 4, maxDuration: 15, videoReference: true, nativeAudioToggle: true, referenceMaxBytes: 100 << 20, maxImages: 2, maxVideos: 3}, true
+		return toapisModelCapability{resolutions: []string{"480p", "720p", "1080p"}, minDuration: 4, maxDuration: 30, videoReference: true, nativeAudioToggle: true, referenceMaxBytes: 100 << 20, maxImages: 2, maxVideos: 3}, true
 	case "kling-4.0":
 		// ToAPIs exposes Kling 4.0 as a generic video task.  It accepts
 		// 720p/1080p output, continuous 3–30 second durations and an optional

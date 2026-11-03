@@ -28,7 +28,7 @@ func ModelAspectRatios(m Model) []string {
 			return append([]string{"auto"}, fixedVideoRatios...)
 		}
 		if m.Adapter == "ark" {
-			if seedance20Model(upstream) {
+			if seedance20Model(upstream) || seedance25Model(upstream) {
 				return append([]string{"auto"}, fixedVideoRatios...)
 			}
 			if datedModelFamily(upstream, []string{"doubao-seedance-1-0-pro-fast-", "doubao-seedance-1-0-pro-"}) {
@@ -42,6 +42,28 @@ func ModelAspectRatios(m Model) []string {
 
 func seedance20Model(upstream string) bool {
 	return datedModelFamily(upstream, []string{"doubao-seedance-2-0-mini-", "doubao-seedance-2-0-fast-", "doubao-seedance-2-0-"})
+}
+
+// seedance25Model 识别 Ark 的 Seedance 2.5 家族（基础版及 pro/lite 等带日期的变体）。
+// 上游模型名以六位日期结尾；ToAPIs 的 seedance-2-5 不带 doubao 前缀，不会被误判。
+func seedance25Model(upstream string) bool {
+	upstream = strings.TrimSpace(upstream)
+	if !strings.HasPrefix(upstream, "doubao-seedance-2-5-") {
+		return false
+	}
+	suffix := strings.TrimPrefix(upstream, "doubao-seedance-2-5-")
+	if index := strings.LastIndexByte(suffix, '-'); index >= 0 {
+		suffix = suffix[index+1:]
+	}
+	if len(suffix) != 6 {
+		return false
+	}
+	for _, digit := range suffix {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func datedModelFamily(upstream string, prefixes []string) bool {

@@ -49,12 +49,14 @@ func videoTokenChargeMicro(tokens, rateMicroPerMillion int64) int64 {
 	return (tokens*rateMicroPerMillion + 999_999) / 1_000_000
 }
 
-// mediaVideoQuoteMicro 统一视频准入与报价：按次不依赖时长，Token 仅按输出时长估算上限。
+// mediaVideoQuoteMicro 统一视频准入与报价：按次默认固定价格，配置时长分档后
+// 按实际输出时长命中分档；Token 仅按输出时长估算上限。
 // 真正扣费仍使用供应商返回的 usage.total_tokens。
 func mediaVideoQuoteMicro(model Model, resolution, ratio string, duration int) int64 {
 	switch model.EffectiveBillingUnit() {
 	case BillingUnitRequest:
-		return model.PriceMicro
+		price, _ := model.RequestRates(duration)
+		return price
 	case BillingUnitToken:
 		return videoTokenChargeMicro(estimateVideoTokens(resolution, ratio, 0, float64(duration)), model.TokenPriceMicroPerMillion)
 	default:
@@ -64,7 +66,8 @@ func mediaVideoQuoteMicro(model Model, resolution, ratio string, duration int) i
 
 func mediaVideoReferenceQuoteMicro(model Model, reference *VideoReferenceCapability, resolution, ratio string, duration int) int64 {
 	if model.EffectiveBillingUnit() == BillingUnitRequest {
-		return model.PriceMicro
+		price, _ := model.RequestRates(duration)
+		return price
 	}
 	if reference != nil && reference.TokenPriceMicroPerMillion > 0 {
 		return videoReferenceQuoteMicro(reference, resolution, ratio, duration)

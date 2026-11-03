@@ -106,12 +106,15 @@ func TestAllowedDurationsExpandsContinuousRange(t *testing.T) {
 }
 
 func TestNormalizeSeedanceDurationUpgradesLegacyList(t *testing.T) {
-	for _, model := range []Model{
-		{Kind: "video", Adapter: "ark", UpstreamModel: "doubao-seedance-2-0-mini-260615", Durations: []int{4, 5, 10, 15}},
-		{Kind: "video", Adapter: "toapis", UpstreamModel: "seedance-2-5", Durations: []int{4, 5, 10, 15}},
+	for _, test := range []struct {
+		model Model
+		max   int
+	}{
+		{Model{Kind: "video", Adapter: "ark", UpstreamModel: "doubao-seedance-2-0-mini-260615", Durations: []int{4, 5, 10, 15}}, 15},
+		{Model{Kind: "video", Adapter: "toapis", UpstreamModel: "seedance-2-5", Durations: []int{4, 5, 10, 15}}, 30},
 	} {
-		got := NormalizeSeedanceDuration(model)
-		if got.MinDuration != 4 || got.MaxDuration != 15 || got.Durations != nil || !got.DurationSupported(7) {
+		got := NormalizeSeedanceDuration(test.model)
+		if got.MinDuration != 4 || got.MaxDuration != test.max || got.Durations != nil || !got.DurationSupported(7) {
 			t.Fatalf("normalized Seedance model = %+v", got)
 		}
 	}
@@ -169,5 +172,73 @@ func TestValidateBriefNativeAudioRequiresModelCapability(t *testing.T) {
 	m.GenerateAudio = true
 	if got := ValidateBrief(base, []Model{m}, assets); got != want {
 		t.Fatalf("ValidateBrief(nativeAudio with capability) = %v, want %v", got, want)
+	}
+}
+
+func seedance25ExtModel() Model {
+	return Model{
+		ID: "toapis-seedance-2.5-ext-720p", Name: "ToAPIs Seedance 2.5 Ext 720p", Kind: "video",
+		ProviderID: "toapis", UpstreamModel: "seedance-2.5-ext", Adapter: "toapis",
+		Resolutions: []string{"720p"}, MinDuration: 4, MaxDuration: 30,
+		BillingUnit: BillingUnitRequest, PriceMicro: 8_750_000, CostMicro: 8_750_000, PriceVersion: "v1",
+		RequestPriceTiers: []RequestPriceTier{
+			{MinDuration: 4, MaxDuration: 14, PriceMicro: 8_750_000, CostMicro: 8_750_000},
+			{MinDuration: 15, MaxDuration: 30, PriceMicro: 17_500_000, CostMicro: 17_500_000},
+		},
+	}
+}
+
+func TestValidateRequestPriceTiers(t *testing.T) {
+	m := seedance25ExtModel()
+	if err := ValidateModels([]Model{m}); err != nil {
+		t.Fatalf("valid request tiers rejected: %v", err)
+	}
+	for _, test := range []struct {
+		name string
+		edit func(*Model)
+	}{
+		{"gap", func(m *Model) { m.RequestPriceTiers[0].MaxDuration = 13 }},
+		{"overlap", func(m *Model) { m.RequestPriceTiers[1].MinDuration = 14 }},
+		{"incomplete", func(m *Model) { m.RequestPriceTiers = m.RequestPriceTiers[:1] }},
+		{"starts-late", func(m *Model) { m.RequestPriceTiers[0].MinDuration, m.RequestPriceTiers[0].MaxDuration = 5, 14 }},
+		{"zero-price", func(m *Model) { m.RequestPriceTiers[1].PriceMicro = 0 }},
+		{"token-unit", func(m *Model) {
+			m.BillingUnit = BillingUnitToken
+			m.TokenPriceMicroPerMillion = 70_000_000
+			m.PriceMicro = 0
+		}},
+		{"above-capability", func(m *Model) {
+			m.MinDuration, m.MaxDuration = 4, 31
+			m.RequestPriceTiers[1].MaxDuration = 31
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m := seedance25ExtModel()
+			test.edit(&m)
+			if ValidateModels([]Model{m}) == nil {
+				t.Fatal("invalid request tiers accepted")
+			}
+		})
+	}
+}
+
+func TestSeedance25DurationRangeIsThirtySeconds(t *testing.T) {
+	for _, test := range []struct {
+		adapter, upstream string
+	}{
+		{"toapis", "seedance-2-5"},
+		{"toapis", "seedance-2.5-ext"},
+		{"ark", "doubao-seedance-2-5-pro-260128"},
+		{"ark", "doubao-seedance-2-5-260128"},
+	} {
+		model := Model{Kind: "video", Adapter: test.adapter, UpstreamModel: test.upstream, Durations: []int{4, 5, 10, 15}}
+		got := NormalizeSeedanceDuration(model)
+		if got.MinDuration != 4 || got.MaxDuration != 30 || got.Durations != nil || !got.DurationSupported(20) {
+			t.Fatalf("%s normalized = %+v", test.upstream, got)
+		}
+	}
+	model := Model{Kind: "video", Adapter: "toapis", UpstreamModel: "seedance-2-mini", Durations: []int{4, 5, 10, 15}}
+	if got := NormalizeSeedanceDuration(model); got.MaxDuration != 15 {
+		t.Fatalf("Seedance 2.0 max = %d, want 15", got.MaxDuration)
 	}
 }

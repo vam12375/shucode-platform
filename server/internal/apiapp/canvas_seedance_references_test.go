@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/vam12375/shucode-platform/server/internal/media"
 )
 
@@ -93,5 +94,34 @@ func TestCanvasPublicSeedanceDurationsUseContinuousRange(t *testing.T) {
 	}
 	if !reflect.DeepEqual(models[2]["durations"], []int{2, 20}) {
 		t.Fatal("legacy directory changed", models[2])
+	}
+}
+
+func TestPublicSeedance25ModelsExposeThirtySecondsAndRequestTiers(t *testing.T) {
+	ext := media.Model{
+		ID: "ext", Name: "Ext 720p", Kind: "video", ProviderID: "p", Adapter: "toapis", UpstreamModel: "seedance-2.5-ext",
+		Resolutions: []string{"720p"}, MinDuration: 4, MaxDuration: 30,
+		BillingUnit: media.BillingUnitRequest, PriceMicro: 8_750_000, CostMicro: 8_750_000, PriceVersion: "v1",
+		RequestPriceTiers: []media.RequestPriceTier{
+			{MinDuration: 4, MaxDuration: 14, PriceMicro: 8_750_000, CostMicro: 8_750_000},
+			{MinDuration: 15, MaxDuration: 30, PriceMicro: 17_500_000, CostMicro: 17_500_000},
+		},
+	}
+	standard := media.Model{ID: "std", Name: "Standard 720p", Kind: "video", ProviderID: "p", Adapter: "toapis", UpstreamModel: "seedance-2-5", Resolutions: []string{"720p"}, MinDuration: 4, MaxDuration: 30, BillingUnit: media.BillingUnitToken, TokenPriceMicroPerMillion: 70_000_000, PriceMicro: 0, PriceVersion: "v1"}
+	public := publicMediaModels([]media.Model{ext, standard})
+	if public[0]["minDuration"] != 4 || public[0]["maxDuration"] != 30 || len(public[0]["durations"].([]int)) != 27 {
+		t.Fatalf("ext duration = %+v", public[0])
+	}
+	if public[1]["maxDuration"] != 30 {
+		t.Fatalf("standard max = %+v", public[1])
+	}
+	tiers, ok := public[0]["requestPriceTiers"].([]gin.H)
+	if !ok || len(tiers) != 2 || tiers[0]["priceMicro"] != int64(8_750_000) || tiers[1]["priceMicro"] != int64(17_500_000) {
+		t.Fatalf("request tiers = %+v", public[0]["requestPriceTiers"])
+	}
+	for _, tier := range tiers {
+		if _, leaked := tier["costMicro"]; leaked {
+			t.Fatal("request tier leaked cost")
+		}
 	}
 }

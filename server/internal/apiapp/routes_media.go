@@ -552,10 +552,6 @@ func publicMediaModels(models []media.Model) []gin.H {
 			durations = m.AllowedDurations()
 		}
 		canvasCapability := media.CanvasCapabilitiesFor(m)
-		if canvasCapability != nil {
-			// 旧2—30配置不代表2.0全能参考支持；公开管理员配置与已适配时长的交集。
-			durations = slices.DeleteFunc(durations, func(d int) bool { return d < 4 || d > 15 })
-		}
 		// 用户消耗用于客户端展示；供应商成本与内部价格版本只用于服务端计费及 root 控制台。
 		name := groupNames[publicMediaModelGroupID(m)]
 		model := gin.H{"id": m.ID, "name": name, "kind": m.Kind, "resolutions": resolutions, "maxReferenceImages": media.MaxReferenceImages(m), "durations": durations, "generateAudio": m.GenerateAudio, "priceMicro": m.PriceMicro}
@@ -565,6 +561,14 @@ func publicMediaModels(models []media.Model) []gin.H {
 		if m.TokenPriceMicroPerMillion > 0 {
 			model["tokenPriceMicroPerMillion"] = m.TokenPriceMicroPerMillion
 		}
+		if len(m.RequestPriceTiers) > 0 {
+			// 只公开用户售价；分档成本留在 root 控制台与用量快照。
+			tiers := make([]gin.H, 0, len(m.RequestPriceTiers))
+			for _, tier := range m.RequestPriceTiers {
+				tiers = append(tiers, gin.H{"minDuration": tier.MinDuration, "maxDuration": tier.MaxDuration, "priceMicro": tier.PriceMicro})
+			}
+			model["requestPriceTiers"] = tiers
+		}
 		groupID := publicMediaModelGroupID(m)
 		model["groupId"] = groupID
 		model["groupName"] = groupNames[groupID]
@@ -573,14 +577,8 @@ func publicMediaModels(models []media.Model) []gin.H {
 			model["canvasCapabilities"] = canvasCapability
 		}
 		if m.MinDuration > 0 && m.MaxDuration >= m.MinDuration {
-			minimum, maximum := m.MinDuration, m.MaxDuration
-			if canvasCapability != nil {
-				minimum, maximum = max(4, minimum), min(15, maximum)
-			}
-			if minimum <= maximum {
-				model["minDuration"] = minimum
-				model["maxDuration"] = maximum
-			}
+			model["minDuration"] = m.MinDuration
+			model["maxDuration"] = m.MaxDuration
 		}
 		if m.VideoReference != nil {
 			reference := gin.H{

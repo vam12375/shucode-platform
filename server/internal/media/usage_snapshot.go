@@ -28,6 +28,10 @@ func mediaUnitUsage(record store.UsageRecord, p *Project, shot Shot, model Model
 			unit = "token"
 			saleMicro, costMicro = model.TokenPriceMicroPerMillion, model.TokenCostMicroPerMillion
 		}
+		if unit == BillingUnitRequest {
+			// 快照必须记录本次时长实际命中的分档，不能只写基础单价。
+			saleMicro, costMicro = model.RequestRates(shot.Plan.Duration)
+		}
 		if videoReferenceRequested(p) && model.VideoReference != nil && unit != BillingUnitRequest {
 			if model.VideoReference.TokenPriceMicroPerMillion > 0 && shot.ProviderUsageTokens > 0 {
 				unit = "token"
