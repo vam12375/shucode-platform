@@ -161,6 +161,9 @@ func (s *memoryStore) ListQuotaAdjustments(_ context.Context, teamID string, lim
 		if row.TeamID != teamID {
 			continue
 		}
+		if row.Action == "initial_grant" {
+			continue
+		}
 		view := cloneQuotaView(&row.TeamQuotaAdjustmentView)
 		view.ActorEmail = s.actorEmailLocked(row.ActorUserID)
 		out = append(out, *view)

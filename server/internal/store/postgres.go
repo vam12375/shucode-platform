@@ -10,6 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/vam12375/shucode-platform/server/internal/credits"
 )
 
 // Postgres 实现:pgx 移植自 packages/db/src/postgres.ts。
@@ -337,7 +339,12 @@ func derefString2(p *string) string {
 }
 
 func (s *PostgresStore) CreateTeam(ctx context.Context, input CreateTeamInput) (*TeamRecord, error) {
-	rows, err := s.pool.Query(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	rows, err := tx.Query(ctx, `
 		INSERT INTO teams (name, quota_credits, unlimited)
 		VALUES (trim($1), $2::numeric, $3)
 		RETURNING `+teamCols, input.Name, input.QuotaCredits, input.Unlimited)
@@ -347,8 +354,8 @@ func (s *PostgresStore) CreateTeam(ctx context.Context, input CreateTeamInput) (
 		}
 		return nil, err
 	}
-	defer rows.Close()
 	if !rows.Next() {
+		rows.Close()
 		if err := rows.Err(); err != nil {
 			if uniqueViolation(err) {
 				return nil, fmt.Errorf("%w: %s", ErrTeamNameTaken, strings.TrimSpace(input.Name))
@@ -357,7 +364,22 @@ func (s *PostgresStore) CreateTeam(ctx context.Context, input CreateTeamInput) (
 		}
 		return nil, nil
 	}
-	return scanTeamTeamRow(rows)
+	team, err := scanTeamTeamRow(rows)
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	if micro, parseErr := credits.ParseCreditsToMicro(team.QuotaCredits); parseErr != nil {
+		return nil, ErrInvalidInput
+	} else if micro > 0 {
+		if _, err := tx.Exec(ctx, `INSERT INTO team_quota_adjustments (team_id, action, old_quota_credits, new_quota_credits, old_unlimited, new_unlimited, created_at) VALUES ($1::uuid, 'initial_grant', 0, $2::numeric, false, $3, $4)`, team.ID, team.QuotaCredits, team.Unlimited, team.CreatedAt); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return team, nil
 }
 
 func (s *PostgresStore) GetTeam(ctx context.Context, id string) (*TeamRecord, error) {
@@ -407,7 +429,8 @@ func (s *PostgresStore) UpdateTeam(ctx context.Context, id string, patch UpdateT
 	if patch.QuotaIncreaseMicro != nil {
 		return nil, ErrInvalidInput
 	}
-	rows, err := s.pool.Query(ctx, `
+	if patch.QuotaCredits == nil {
+		rows, err := s.pool.Query(ctx, `
 		UPDATE teams SET
 			name = COALESCE($2, name),
 			quota_credits = COALESCE($3::numeric, quota_credits),
@@ -418,16 +441,18 @@ func (s *PostgresStore) UpdateTeam(ctx context.Context, id string, patch UpdateT
 			disabled_at = CASE WHEN $5::boolean THEN $6::timestamptz ELSE disabled_at END
 		WHERE id = $1::uuid
 		RETURNING `+teamCols,
-		id, patch.Name, patch.QuotaCredits, patch.Unlimited, patch.HasDisabled, nullableTime(patch.DisabledAt),
-		patch.RPMLimit, patch.TPMLimit, patch.ConcurrencyLimit)
-	if err != nil {
-		return nil, err
+			id, patch.Name, patch.QuotaCredits, patch.Unlimited, patch.HasDisabled, nullableTime(patch.DisabledAt),
+			patch.RPMLimit, patch.TPMLimit, patch.ConcurrencyLimit)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		if !rows.Next() {
+			return nil, rows.Err()
+		}
+		return scanTeamTeamRow(rows)
 	}
-	defer rows.Close()
-	if !rows.Next() {
-		return nil, rows.Err()
-	}
-	return scanTeamTeamRow(rows)
+	return s.UpdateTeamWithAccounting(ctx, id, patch, "set_quota", nil)
 }
 
 // UpdateTeamWithAccounting:锁团队行 → 更新 → 额度流水/审计 → 提交。
@@ -465,6 +490,9 @@ func (s *PostgresStore) UpdateTeamWithAccounting(ctx context.Context, id string,
 	if err != nil {
 		return nil, err
 	}
+	if patch.QuotaCredits != nil && adjustmentAction == "" {
+		adjustmentAction = "set_quota"
+	}
 	rows, err := tx.Query(ctx, `
 		UPDATE teams SET
 			name = COALESCE($2, name),
@@ -490,7 +518,7 @@ func (s *PostgresStore) UpdateTeamWithAccounting(ctx context.Context, id string,
 	if err != nil {
 		return nil, err
 	}
-	if adjustmentAction != "" {
+	if adjustmentAction != "" && (team.QuotaCredits != oldQuota || team.Unlimited != oldUnlimited) {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO team_quota_adjustments (
 				team_id, actor_user_id, action,

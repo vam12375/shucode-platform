@@ -29,6 +29,7 @@ func registerPublicRoutes(router *gin.Engine, deps *Deps) {
 	registerUserConfigRoutes(router, deps)
 	registerAgentMediaPreferencesRoutes(router, deps)
 	registerClientCreditRoutes(router, deps)
+	registerClientCreditEntryRoutes(router, deps)
 	registerClientEventRoutes(router, deps)
 }
 

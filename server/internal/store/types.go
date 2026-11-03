@@ -626,6 +626,44 @@ type InsertQuotaAdjustmentInput struct {
 	NewUnlimited    bool
 }
 
+// CreditLedgerFilter 是账本授权边界已经由 API 确定后的只读查询条件。
+// UsageUserID 只约束消费记录；团队额度变化始终按 TeamID 全量可见。
+type CreditLedgerFilter struct {
+	TeamID          string
+	UsageUserID     string
+	From            *time.Time
+	To              *time.Time
+	CursorCreatedAt *time.Time
+	CursorSource    string
+	CursorID        string
+	Limit           int64
+}
+
+// CreditLedgerItem 使用原始来源 ID；API 应将公开 id 命名空间化为 source:id。
+// DeltaMicro 对消费为负，对额度变化为 new-old 的有符号 micro-credit。
+type CreditLedgerItem struct {
+	Source      string
+	ID          string
+	CreatedAt   time.Time
+	Usage       *UsageRecord
+	QuotaAction string
+	DeltaMicro  int64
+	ActorName   *string
+}
+
+type CreditLedgerSummary struct {
+	TotalCreditsInMicro  string
+	TotalCreditsOutMicro string
+	NetCreditsMicro      string
+	EntryCount           int64
+}
+
+type CreditLedgerPage struct {
+	Items   []CreditLedgerItem
+	HasMore bool
+	Summary CreditLedgerSummary
+}
+
 type UsageAggregateRow struct {
 	Model               string
 	Requests            int64

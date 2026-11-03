@@ -197,7 +197,7 @@ func (s *PostgresStore) ListQuotaAdjustments(ctx context.Context, teamID string,
 		SELECT q.id::text, q.action, q.old_quota_credits::text, q.new_quota_credits::text, q.old_unlimited, q.new_unlimited, q.created_at, u.email
 		FROM team_quota_adjustments q
 		LEFT JOIN users u ON u.id = q.actor_user_id
-		WHERE q.team_id = $1::uuid
+		WHERE q.team_id = $1::uuid AND q.action <> 'initial_grant'
 		ORDER BY q.created_at DESC
 		LIMIT $2`, teamID, limit)
 	if err != nil {

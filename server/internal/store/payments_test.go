@@ -160,8 +160,14 @@ func testPaymentOrders(t *testing.T, ctx context.Context, s PlatformStore) {
 	}
 	pending, _ := s.GetPaymentOrder(ctx, overflow.OutTradeNo)
 	flows, _ = s.ListQuotaAdjustments(ctx, team.ID, 100)
-	if pending.Status != PaymentPending || len(flows) != 2 {
-		t.Fatal("overflow partially committed")
+	setQuotaRecorded := false
+	for _, flow := range flows {
+		if flow.Action == "set_quota" && flow.NewQuotaCredits == ceiling {
+			setQuotaRecorded = true
+		}
+	}
+	if pending.Status != PaymentPending || len(flows) != 3 || !setQuotaRecorded {
+		t.Fatalf("overflow partially committed: status=%s flows=%+v", pending.Status, flows)
 	}
 	for label, invalid := range map[string]PaymentOrderRecord{"zero amount": func() PaymentOrderRecord { v := newOrder(0); return v }(), "mismatched credits": func() PaymentOrderRecord { v := newOrder(1); v.CreditMicro = 1; return v }(), "wrong team target": func() PaymentOrderRecord { v := newOrder(1); v.TargetID = other.ID; return v }(), "other personal target": func() PaymentOrderRecord { v := personal; v.UserID = uuid.NewString(); return v }()} {
 		if _, err = s.CreatePaymentOrder(ctx, invalid); !errors.Is(err, ErrInvalidInput) {

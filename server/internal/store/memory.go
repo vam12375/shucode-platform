@@ -307,10 +307,16 @@ func (s *memoryStore) CreateTeam(_ context.Context, input CreateTeamInput) (*Tea
 		UsedCredits:     "0.000000",
 		ReservedCredits: "0.000000",
 		Unlimited:       input.Unlimited,
-		CreatedAt:       time.Now(),
+		CreatedAt:       time.Now().UTC(),
 	}
 	s.teams[record.ID] = record
 	s.members[record.ID] = map[string]struct{}{}
+	if micro, err := credits.ParseCreditsToMicro(record.QuotaCredits); err == nil && micro > 0 {
+		s.quotaAdjusts = append(s.quotaAdjusts, quotaAdjustmentRow{TeamQuotaAdjustmentView: TeamQuotaAdjustmentView{
+			ID: uuid.NewString(), Action: "initial_grant", OldQuotaCredits: "0.000000", NewQuotaCredits: record.QuotaCredits,
+			OldUnlimited: false, NewUnlimited: record.Unlimited, CreatedAt: record.CreatedAt,
+		}, TeamID: record.ID})
+	}
 	return cloneTeam(&record), nil
 }
 
@@ -362,9 +368,12 @@ func applyTeamPatch(team *TeamRecord, patch UpdateTeamPatch) {
 	}
 }
 
-func (s *memoryStore) UpdateTeam(_ context.Context, id string, patch UpdateTeamPatch) (*TeamRecord, error) {
+func (s *memoryStore) UpdateTeam(ctx context.Context, id string, patch UpdateTeamPatch) (*TeamRecord, error) {
 	if patch.QuotaIncreaseMicro != nil {
 		return nil, ErrInvalidInput
+	}
+	if patch.QuotaCredits != nil {
+		return s.UpdateTeamWithAccounting(ctx, id, patch, "set_quota", nil)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -394,9 +403,12 @@ func (s *memoryStore) UpdateTeamWithAccounting(_ context.Context, id string, pat
 	if err != nil {
 		return nil, err
 	}
+	if patch.QuotaCredits != nil && adjustmentAction == "" {
+		adjustmentAction = "set_quota"
+	}
 	applyTeamPatch(&team, patch)
 	s.teams[id] = team
-	if adjustmentAction != "" {
+	if adjustmentAction != "" && (team.QuotaCredits != oldQuota || team.Unlimited != oldUnlimited) {
 		actorID := ""
 		if audit != nil {
 			actorID = audit.ActorUserID

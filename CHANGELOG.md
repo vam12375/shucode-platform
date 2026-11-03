@@ -9,6 +9,29 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.77.0] - 2026-11-02
+
+### 新增(点数流水账本与客户端明细)
+
+- 新增迁移 0037：创建团队带初始额度时写入 `initial_grant` 流水；所有额度变更统一走带账务的
+  更新路径，控制台额度调整列表隐藏该系统初始额度行。
+- Store 新增 `ListCreditLedger`：同一快照合并已结算的非零消费（debit）与非零额度变化
+  （初始额度、支付宝充值、管理员增减、额度申请批准），支持团队/成员过滤、时间范围、稳定
+  游标分页，以及仅统计调用者可见范围的汇总。
+- 新增设备鉴权 `GET /api/v1/client/credit/entries`：范围按上海自然日切分，消费类型映射为
+  chat/search/fetch/image/video/audio/analysis/import，金额用定点 micro 字符串；个人账本只
+  返回本人，团队账本要求有效成员关系，普通成员只看到本人消费但可见团队级额度入账。
+- 新增契约镜像 `server/internal/contracts/creditledger.go` 与冻结 fixtures，客户端共享
+  schema 保持权威。
+
+### 验证
+
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm test`（175 项）
+- `pnpm --filter @shucode-platform/console build`
+- `make -C server lint test`
+
 ## [0.76.0] - 2026-11-02
 
 ### 新增(控制台充值与充值套餐)

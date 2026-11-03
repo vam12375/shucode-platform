@@ -653,5 +653,4983 @@
       },
       "ok": false
     }
+  ],
+  "creditLedgerPages": [
+    {
+      "name": "settled_usage",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "empty_page_without_summary",
+      "input": {
+        "range": "all",
+        "entries": [],
+        "nextCursor": null,
+        "summary": null
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [],
+        "nextCursor": null,
+        "summary": null
+      }
+    },
+    {
+      "name": "opaque_next_cursor_and_range",
+      "input": {
+        "range": "30d",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": "opaque-cursor",
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "30d",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": "opaque-cursor",
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "seven_day_range",
+      "input": {
+        "range": "7d",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "7d",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "nullable_history_defaults",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": null,
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": null,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": null,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "all_nullable_measurements",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": null,
+            "actorName": null,
+            "sessionId": null,
+            "requestId": null,
+            "quantity": null,
+            "reasoningEffort": null,
+            "reasoningBudgetTokens": null,
+            "usage": {
+              "inputTokens": null,
+              "outputTokens": null,
+              "cachedInputTokens": null,
+              "cacheCreationTokens": null,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": null,
+            "actorName": null,
+            "sessionId": null,
+            "requestId": null,
+            "quantity": null,
+            "reasoningEffort": null,
+            "reasoningBudgetTokens": null,
+            "usage": {
+              "inputTokens": null,
+              "outputTokens": null,
+              "cachedInputTokens": null,
+              "cacheCreationTokens": null,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "null_usage",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": null
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": null
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "actor_name_trim",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "﻿  安全显示名 😀  ",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "安全显示名 😀",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "actor_name_unicode_limit",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "actor_name_unicode_over_limit",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "actor_name_blank",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": " \t﻿",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "reason_usage",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "reason_initial_grant",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "adjustment",
+            "changeReason": "initial_grant",
+            "direction": "credit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "adjustment",
+            "changeReason": "initial_grant",
+            "direction": "credit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "reason_alipay_recharge",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "topup",
+            "changeReason": "alipay_recharge",
+            "direction": "credit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "topup",
+            "changeReason": "alipay_recharge",
+            "direction": "credit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "reason_manual_add",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "adjustment",
+            "changeReason": "manual_add",
+            "direction": "credit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "adjustment",
+            "changeReason": "manual_add",
+            "direction": "credit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "reason_quota_request_approved",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "adjustment",
+            "changeReason": "quota_request_approved",
+            "direction": "credit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "adjustment",
+            "changeReason": "quota_request_approved",
+            "direction": "credit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "reason_quota_adjustment",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "adjustment",
+            "changeReason": "quota_adjustment",
+            "direction": "credit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "adjustment",
+            "changeReason": "quota_adjustment",
+            "direction": "credit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "reason_other_adjustment",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "adjustment",
+            "changeReason": "other_adjustment",
+            "direction": "credit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "adjustment",
+            "changeReason": "other_adjustment",
+            "direction": "credit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "kind_chat",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "kind_image",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "image",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "image",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "kind_video",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "video",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "video",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "kind_audio",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "audio",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "audio",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "kind_media",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "media",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "media",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "kind_search",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "search",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "search",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "kind_fetch",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "fetch",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "fetch",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "kind_analysis",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "analysis",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "analysis",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "kind_import",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "import",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "import",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "kind_topup",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "topup",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "topup",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "kind_adjustment",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "adjustment",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "adjustment",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "unknown_change_reason",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "refund",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "missing_change_reason",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "unknown_kind",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "embedding",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "unknown_direction",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "refund",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "status_pending",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "pending",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "status_failed",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "failed",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "status_released",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "released",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "status_refunded",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "refunded",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "invalid_credits_0",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "invalid_credits_0.000000",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.000000",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "invalid_credits_-1",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "-1",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "invalid_credits_+1",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "+1",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "invalid_credits_01",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "01",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "invalid_credits_1.1234567",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "1.1234567",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "invalid_credits_1e3",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "1e3",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "invalid_credits_1000000000000",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "1000000000000",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "numeric_credits_forbidden",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": 1,
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "smallest_nonzero",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.000001",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.000001",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "entry_decimal_maximum",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "999999999999.999999",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "999999999999.999999",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "forbidden_actorEmail",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            },
+            "actorEmail": "fixture-private"
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "forbidden_ActorName",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            },
+            "ActorName": "fixture-private"
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "forbidden_costMicro",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            },
+            "costMicro": "fixture-private"
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "forbidden_priceVersion",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            },
+            "priceVersion": "fixture-private"
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "forbidden_upstreamModel",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            },
+            "upstreamModel": "fixture-private"
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "forbidden_providerId",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            },
+            "providerId": "fixture-private"
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "forbidden_paymentOrderId",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            },
+            "paymentOrderId": "fixture-private"
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "forbidden_detail",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            },
+            "detail": "fixture-private"
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "case_sensitive_known_field",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            },
+            "ModelName": "Model Display"
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "unknown_usage_field",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null,
+              "totalTokens": 1500
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "unknown_page_field",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        },
+        "balance": "10"
+      },
+      "ok": false
+    },
+    {
+      "name": "unknown_summary_field",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2,
+          "balance": "10"
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "required_nullable_modelName",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "required_nullable_sessionId",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "required_nullable_requestId",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "required_nullable_quantity",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "required_nullable_reasoningEffort",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "required_nullable_usage",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "required_nullable_usage_measurement",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "negative_usage",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": -1,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "fractional_usage",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 1.5,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "safe_integer_usage_maximum",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 9007199254740991,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 9007199254740991,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "unsafe_integer_usage",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 9007199254740992,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "quantity_zero",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": 0,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "budget_zero",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 0,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "positive_quantity",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": 2,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": 2,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "empty_nullable_identifier",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "model_display_unicode_over_limit",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "reasoning_effort_over_limit",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "utc_timestamp",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T00:00:00Z",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T00:00:00Z",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "fractional_timestamp",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T00:00:00.123456789012Z",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T00:00:00.123456789012Z",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "leap_day_timestamp",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2024-02-29T00:00:00+23:59",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2024-02-29T00:00:00+23:59",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "invalid_datetime_2026-02-29T00:00:00Z",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-02-29T00:00:00Z",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "invalid_datetime_2026-11-02T00:00:00",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T00:00:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "invalid_datetime_2026-11-02T00:00Z",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T00:00Z",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "invalid_datetime_2026-11-02T24:00:00Z",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T24:00:00Z",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "invalid_datetime_2026-11-02T00:00:00+24:00",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T00:00:00+24:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "summary_large_exact_decimal",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "12345678901234567890.000001",
+          "totalCreditsOut": "12345678901234567891",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "12345678901234567890.000001",
+          "totalCreditsOut": "12345678901234567891",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "summary_100_digit_boundary",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.999999",
+          "totalCreditsOut": "11",
+          "netCredits": "-9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": true,
+      "output": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.999999",
+          "totalCreditsOut": "11",
+          "netCredits": "-9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.999999",
+          "entryCount": 2
+        }
+      }
+    },
+    {
+      "name": "summary_101_digit_rejected",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "summary_negative_in_rejected",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "-1",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "summary_negative_out_rejected",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "-1",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "summary_precision_rejected",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "0.1234567",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "summary_numeric_amount_rejected",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": 1,
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "summary_negative_count",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": -1
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "summary_fractional_count",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 1.5
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "empty_cursor_rejected",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": "",
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "missing_summary_rejected",
+      "input": {
+        "range": "all",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null
+      },
+      "ok": false
+    },
+    {
+      "name": "null_entries_rejected",
+      "input": {
+        "range": "all",
+        "entries": null,
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    },
+    {
+      "name": "unknown_range",
+      "input": {
+        "range": "90d",
+        "entries": [
+          {
+            "id": "ledger-fixture",
+            "createdAt": "2026-11-02T08:00:00+08:00",
+            "kind": "chat",
+            "changeReason": "usage",
+            "direction": "debit",
+            "status": "settled",
+            "credits": "0.012345",
+            "modelName": "Model Display",
+            "actorName": "Member",
+            "sessionId": "session-fixture",
+            "requestId": "request-fixture",
+            "quantity": null,
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": 4096,
+            "usage": {
+              "inputTokens": 1200,
+              "outputTokens": 300,
+              "cachedInputTokens": 900,
+              "cacheCreationTokens": 20,
+              "reasoningTokens": null
+            }
+          }
+        ],
+        "nextCursor": null,
+        "summary": {
+          "totalCreditsIn": "10.000001",
+          "totalCreditsOut": "11",
+          "netCredits": "-0.999999",
+          "entryCount": 2
+        }
+      },
+      "ok": false
+    }
   ]
 }

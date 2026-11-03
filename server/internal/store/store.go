@@ -160,6 +160,8 @@ type PlatformStore interface {
 	ListAuditLogs(ctx context.Context, filter AuditLogFilter) ([]AdminAuditLogView, error)
 	InsertQuotaAdjustment(ctx context.Context, entry InsertQuotaAdjustmentInput) error
 	ListQuotaAdjustments(ctx context.Context, teamID string, limit int64) ([]TeamQuotaAdjustmentView, error)
+	// ListCreditLedger:同一快照合并已结算消费与非零额度变化；用户过滤只作用于消费。
+	ListCreditLedger(ctx context.Context, filter CreditLedgerFilter) (CreditLedgerPage, error)
 
 	// ---- config kv ----
 	GetConfigValue(ctx context.Context, key string) ([]byte, error)
