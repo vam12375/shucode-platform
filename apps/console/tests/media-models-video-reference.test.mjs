@@ -500,7 +500,7 @@ test("adding preset tiers inherits the existing family shared configuration", as
     priceVersion: "custom-version",
     videoReference: capability,
   }]);
-  let tree = clickPreset(f, "Seedance 2.0 系列");
+  let tree = clickPreset(f, "Seedance 2.0 / 2.5");
   for (const input of nodes(tree, (node) => (node.props?.["aria-label"] ?? "").endsWith("售价") && node.props.value === "")) {
     input.props.onChange({ target: { value: "0.5" } });
   }
@@ -1060,4 +1060,79 @@ test("editing a media SKU route marks the catalog dirty and preserves other tier
   const saved = JSON.parse(f.calls.find((call) => call.options).options.body);
   assert.deepEqual(saved[0].routes, [{ providerId: provider.id, priority: 100, weight: 3, enabled: true }]);
   assert.deepEqual(saved[1].routes, models[1].routes);
+});
+
+test("Seedance 2.5 allows 30 seconds and the Ext preset carries request duration tiers", async () => {
+  const toapisProvider = { id: "toapis", name: "ToAPIs", baseUrl: "https://toapis.com/v1", enabled: true };
+  const standard = output.toDraft({
+    ...model,
+    id: "toapis-seedance-2-5-720p",
+    name: "ToAPIs Seedance 2.5 720p",
+    providerId: toapisProvider.id,
+    adapter: "toapis",
+    upstreamModel: "seedance-2-5",
+    minDuration: 4,
+    maxDuration: 30,
+    durations: undefined,
+    billingUnit: "token",
+    priceMicro: 0,
+    tokenPriceMicroPerMillion: 70_000_000,
+    generateAudio: true,
+  });
+  assert.equal(standard.maxDuration, "30");
+  assert.equal(output.validateDrafts([standard], [provider, toapisProvider]), null);
+
+  const f = await mountModels([], [provider, toapisProvider]);
+  let tree = clickPreset(f, "ToAPIs Seedance 2.5 Ext");
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "JSON 批量编辑")[0].props.onClick();
+  tree = f.render();
+  const text = nodes(tree, (node) => node.type === "textarea" && node.props["aria-label"] === "媒体模型 JSON")[0].props.value;
+  const ext = JSON.parse(text).find((tier) => tier.id === "toapis-seedance-2.5-ext-720p");
+  assert.equal(ext.minDuration, 4);
+  assert.equal(ext.maxDuration, 30);
+  assert.equal(ext.billingUnit, "request");
+  assert.deepEqual(ext.requestPriceTiers, [
+    { minDuration: 4, maxDuration: 14, costMicro: 8_750_000, priceMicro: 8_750_000 },
+    { minDuration: 15, maxDuration: 30, costMicro: 17_500_000, priceMicro: 17_500_000 },
+  ]);
+});
+
+test("Ext preset upgrades an existing fixed-price request SKU to duration tiers", async () => {
+  const toapisProvider = { id: "toapis", name: "ToAPIs", baseUrl: "https://toapis.com/v1", enabled: true };
+  const f = await mountModels([{
+    ...model,
+    id: "toapis-seedance-2.5-ext-720p",
+    name: "ToAPIs Seedance 2.5 Ext 720p",
+    providerId: toapisProvider.id,
+    adapter: "toapis",
+    upstreamModel: "seedance-2.5-ext",
+    resolutions: ["720p"],
+    minDuration: 4,
+    maxDuration: 15,
+    durations: undefined,
+    billingUnit: "request",
+    priceMicro: 8_750_000,
+    costMicro: 8_750_000,
+    priceVersion: "v1",
+    generateAudio: true,
+    videoReference: {
+      maxDurationSeconds: 15,
+      maxImages: 8,
+      costMicro: 8_750_000,
+      priceMicro: 8_750_000,
+      tokenCostMicroPerMillion: 0,
+      tokenPriceMicroPerMillion: 0,
+    },
+  }], [provider, toapisProvider]);
+  let tree = clickPreset(f, "ToAPIs Seedance 2.5 Ext");
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "JSON 批量编辑")[0].props.onClick();
+  tree = f.render();
+  const text = nodes(tree, (node) => node.type === "textarea" && node.props["aria-label"] === "媒体模型 JSON")[0].props.value;
+  const ext = JSON.parse(text).find((tier) => tier.id === "toapis-seedance-2.5-ext-720p");
+  assert.equal(ext.minDuration, 4);
+  assert.equal(ext.maxDuration, 30);
+  assert.deepEqual(ext.requestPriceTiers, [
+    { minDuration: 4, maxDuration: 14, costMicro: 8_750_000, priceMicro: 8_750_000 },
+    { minDuration: 15, maxDuration: 30, costMicro: 17_500_000, priceMicro: 17_500_000 },
+  ]);
 });
