@@ -44,6 +44,11 @@ func finishingSourceClip(p *Project, index int) VideoCompositionClip {
 	if p.Composition != nil {
 		return p.Composition.Edit.Clips[index]
 	}
+	if storyPlanning(p.Brief) && index < len(p.Shots) {
+		if creative := p.Shots[index].Plan.Creative; creative != nil {
+			return VideoCompositionClip{SourceShotIndex: index, InFrame: creative.InFrame, OutFrame: creative.OutFrame, Speed: 1}
+		}
+	}
 	return VideoCompositionClip{SourceShotIndex: index, InFrame: 0, OutFrame: p.Shots[index].Plan.Duration * 30, Speed: 1}
 }
 

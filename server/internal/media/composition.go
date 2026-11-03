@@ -87,6 +87,20 @@ func compositionTimeline(p *Project) ([]compositionSegment, error) {
 	if p.Composition != nil {
 		return editableCompositionTimeline(p)
 	}
+	// 故事化分镜按每镜真实入出帧决定交付骨架，生成秒数只影响供应商报价。
+	if storyPlanning(p.Brief) {
+		segments := make([]compositionSegment, len(p.Shots))
+		boundary := 0
+		for i, shot := range p.Shots {
+			frames := storyShotDeliveryFrames(shot)
+			if frames <= 0 {
+				return nil, fmt.Errorf("invalid_source_timeline")
+			}
+			segments[i] = compositionSegment{start: float64(boundary) / 30, end: float64(boundary+frames) / 30, frames: frames}
+			boundary += frames
+		}
+		return segments, nil
+	}
 	segments := make([]compositionSegment, len(p.Shots))
 	offset, boundary := 0.0, 0
 	deliveryFrames := 0
@@ -445,6 +459,7 @@ func Capabilities() map[string]bool {
 		"creativeBrief": true,
 		// 复刻显式区分全局图片参考与历史首帧绑定，客户端据此门控新增 Brief 字段。
 		"imageReferenceMode": true,
+		"storyPlanning":      true,
 		// 配音、配乐、字幕样式与多方案变体尚未实现，禁止提前置真。
 		"planVariants":  false,
 		"voiceover":     false,

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/vam12375/shucode-platform/server/internal/store"
@@ -80,6 +81,7 @@ func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int
 			return ErrConflict
 		}
 		v.Analysis = &a
+		v.PlanReview = nil
 		v.AnalysisFee = fee
 		v.Status = "analyzing"
 		v.Error = ""
@@ -112,6 +114,19 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 	}
 	if current == nil {
 		return nil, ErrInvalid
+	}
+	if current.Brief.CreativeExpansion != "" {
+		if current.PlanReview == nil || current.PlanReview.InputID != input || current.PlanReview.Status != "passed" && current.PlanReview.Status != "warning" {
+			return nil, fmt.Errorf("video_story_review_required")
+		}
+		hash, hashErr := candidatePlanHash(plan)
+		if hashErr != nil || hash != current.PlanReview.CandidateHash {
+			return nil, fmt.Errorf("video_story_review_conflict")
+		}
+		if plan.Story == nil {
+			return nil, fmt.Errorf("video_story_invalid")
+		}
+		plan.Story.Review = &StoryPlanReview{Status: current.PlanReview.Status, Issues: slices.Clone(current.PlanReview.Issues)}
 	}
 	if current.AnalysisFee != nil && current.Analysis != nil && current.Analysis.InputID == input && current.Plan != nil && equalAnalysisPlan(*current.Plan, plan) {
 		if current.Status == "analysis_settling" {
@@ -158,7 +173,7 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 		v.QuoteMicro = total
 		v.Error = ""
 		v.Status = "review"
-		if !v.Brief.ReviewPlan {
+		if !v.Brief.ReviewPlan && !storyNeedsReview(v.Brief, plan) {
 			v.Status = "queued"
 		}
 		if v.AnalysisFee != nil && v.Analysis.Kind != "adaptation" {

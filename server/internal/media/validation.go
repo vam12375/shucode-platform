@@ -131,6 +131,9 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	if err := validateAdaptiveBrief(b); err != nil {
 		return err
 	}
+	if err := validateStoryBrief(b); err != nil {
+		return err
+	}
 	replica := b.ReferenceAssetID != ""
 	if err := validateFinishingOptions(b); err != nil {
 		return err
@@ -264,6 +267,9 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 	if err := validateResearchPlan(b, plan); err != nil {
 		return nil, 0, err
 	}
+	if err := validateStoryPlan(b, plan); err != nil {
+		return nil, 0, err
+	}
 	if err := validateBriefReferenceMode(b); err != nil {
 		return nil, 0, err
 	}
@@ -279,6 +285,9 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 	replica := b.ReferenceAssetID != ""
 	wholeReference := replica && b.GenerationMode == "video_reference"
 	sourced := plan.Research == nil || plan.Research.Mode == "reference"
+	if storyPlanning(b) {
+		sourced = plan.Research != nil && plan.Research.Mode == "reference"
+	}
 	if len(plan.Shots) == 0 || len(plan.Shots) > 30 || sourced && len(plan.References) == 0 || len(plan.References) > 20 {
 		return nil, 0, ErrInvalid
 	}
@@ -297,13 +306,39 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 	if e != nil {
 		return nil, 0, e
 	}
-	if err := validateBriefReferenceImages(b, v); err != nil {
-		return nil, 0, err
+	if !storyPlanning(b) {
+		if err := validateBriefReferenceImages(b, v); err != nil {
+			return nil, 0, err
+		}
+	}
+	if storyPlanning(b) {
+		for _, shot := range plan.Shots {
+			creative := shot.Creative
+			if creative == nil {
+				return nil, 0, storyError()
+			}
+			if creative.Source == "generated" {
+				if v.Adapter == "toapis" && validateToAPIsInput(v, b.Resolution, b.AspectRatio, shot.Duration, 0, false) != nil {
+					return nil, 0, fmt.Errorf("video_story_text_generation_unsupported")
+				}
+				continue
+			}
+			shotBrief := storyShotBrief(b, shot)
+			if shotBrief.ReferenceMode == "multimodal" {
+				if err := validateBriefReferenceImages(shotBrief, v); err != nil {
+					return nil, 0, err
+				}
+			} else if len(creative.AssetIDs) > 1 {
+				// frames 协议只有首尾帧槽位；不把额外商品素材误发成另一类画面。
+				return nil, 0, fmt.Errorf("video_story_reference_mode_unsupported")
+			}
+		}
 	}
 	globalReferences := b.ReferenceMode == "multimodal"
 	out := []Shot{}
 	var total int64
 	duration := 0
+	deliveryFrames := 0
 	sourceEnd := float64(0)
 	for _, p := range plan.Shots {
 		if utf8.RuneCountInString(p.Prompt) > 4000 || utf8.RuneCountInString(p.ImagePrompt) > 4000 || utf8.RuneCountInString(p.Subtitle) > 300 || utf8.RuneCountInString(p.Narration) > 300 || utf8.RuneCountInString(p.Camera) > 500 || utf8.RuneCountInString(p.Framing) > 500 || utf8.RuneCountInString(p.Action) > 1000 || utf8.RuneCountInString(p.Purpose) > 500 {
@@ -326,6 +361,17 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 		if wholeReference {
 			// 亚秒镜头属于审阅事实，供应商的输入限制只约束下方派生的完整原片。
 			continue
+		}
+		if storyPlanning(b) {
+			if p.Creative == nil {
+				return nil, 0, storyError()
+			}
+			if p.Creative.Source == "generated" {
+				p.AssetID = ""
+				p.ImagePrompt = ""
+			} else if len(p.Creative.AssetIDs) > 0 && p.AssetID == "" {
+				p.AssetID = p.Creative.AssetIDs[0]
+			}
 		}
 		if globalReferences {
 			// 制作单的全局图片是参考集合；历史镜头文字或绑定不能重新开启首帧阶段。
@@ -352,6 +398,7 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 		}
 		total += q
 		duration += p.Duration
+		deliveryFrames += storyDeliveryFrames(p)
 		out = append(out, Shot{Plan: p, Status: "pending", Attempt: 1, QuoteMicro: q})
 	}
 	if wholeReference {
@@ -360,7 +407,7 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 		}
 		return buildWholeReferenceExecution(b, plan, v, models)
 	}
-	if (!replica && duration != b.Duration) || (replica && math.Abs(sourceEnd-b.ReferenceDurationSeconds) > .001) || total > b.MaxCreditsMicro {
+	if (!replica && ((!storyPlanning(b) && duration != b.Duration) || (storyPlanning(b) && deliveryFrames != b.Duration*30))) || (replica && math.Abs(sourceEnd-b.ReferenceDurationSeconds) > .001) || total > b.MaxCreditsMicro {
 		return nil, 0, fmt.Errorf("duration_or_budget_exceeded")
 	}
 	return out, total, nil

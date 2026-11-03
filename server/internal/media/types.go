@@ -166,6 +166,7 @@ type Asset struct {
 	Internal        bool      `json:"internal,omitempty"`
 }
 type Brief struct {
+	CreativeExpansion        string   `json:"creativeExpansion,omitempty"`
 	ResearchPolicy           string   `json:"researchPolicy,omitempty"`
 	CreativeIntent           string   `json:"creativeIntent,omitempty"`
 	DistributionPlatform     string   `json:"distributionPlatform,omitempty"`
@@ -267,6 +268,63 @@ type VideoQualityReport struct {
 	VisualReview string                 `json:"visualReview"`
 }
 
+type VideoMachineReview struct {
+	RequestID     string               `json:"requestId"`
+	OutputAssetID string               `json:"outputAssetId"`
+	SourceVersion int64                `json:"sourceVersion"`
+	Status        string               `json:"status"`
+	Summary       string               `json:"summary"`
+	Issues        []MachineReviewIssue `json:"issues"`
+	AudioReview   string               `json:"audioReview"`
+}
+type MachineReviewIssue struct {
+	ShotIndex *int   `json:"shotIndex,omitempty"`
+	Frame     *int   `json:"frame,omitempty"`
+	Code      string `json:"code"`
+	Detail    string `json:"detail"`
+	Repair    string `json:"repair"`
+}
+type MachineReviewResult struct {
+	Status      string               `json:"status"`
+	Summary     string               `json:"summary"`
+	Issues      []MachineReviewIssue `json:"issues"`
+	AudioReview string               `json:"audioReview"`
+}
+type MachineReviewRequest struct {
+	Version       int64                `json:"version"`
+	RequestID     string               `json:"requestId"`
+	OutputAssetID string               `json:"outputAssetId"`
+	Operation     string               `json:"operation"`
+	Review        *MachineReviewResult `json:"review,omitempty"`
+}
+type PlanReview struct {
+	RequestID     string   `json:"requestId"`
+	InputID       string   `json:"inputId"`
+	CandidateHash string   `json:"candidateHash"`
+	Status        string   `json:"status"`
+	Issues        []string `json:"issues"`
+}
+type PlanReviewResult struct {
+	Status string   `json:"status"`
+	Issues []string `json:"issues"`
+}
+type PlanReviewRequest struct {
+	Version       int64             `json:"version"`
+	RequestID     string            `json:"requestId"`
+	InputID       string            `json:"inputId"`
+	CandidateHash string            `json:"candidateHash"`
+	Operation     string            `json:"operation"`
+	Review        *PlanReviewResult `json:"review,omitempty"`
+}
+type PlanReviewStart struct {
+	Project ProjectView `json:"project"`
+	Started bool        `json:"started"`
+}
+type repairReceipt struct {
+	Signature string `json:"signature"`
+	Version   int64  `json:"version"`
+}
+
 // 已接受的后期身份留在同一制作单，旧网络重试不能重新排队或改写后来编辑。
 type compositionReceipt struct {
 	Signature     string `json:"signature"`
@@ -291,6 +349,7 @@ type Reference struct {
 	SelectionReason string    `json:"selectionReason"`
 }
 type ShotPlan struct {
+	Creative              *ShotCreative `json:"creative,omitempty"`
 	sourceFields          uint8
 	SourceURL             string  `json:"sourceUrl"`
 	SourceStart           float64 `json:"sourceStart"`
@@ -316,6 +375,7 @@ type ShotPlan struct {
 	Sound                 string `json:"sound,omitempty"`
 }
 type Plan struct {
+	Story      *StoryPlan        `json:"story,omitempty"`
 	Research   *ResearchDecision `json:"research,omitempty"`
 	References []Reference       `json:"references"`
 	Shots      []ShotPlan        `json:"shots"`
@@ -375,6 +435,9 @@ type AgentGenerationRequest struct {
 }
 
 type Project struct {
+	MachineReview        *VideoMachineReview           `json:"machineReview,omitempty"`
+	PlanReview           *PlanReview                   `json:"planReview,omitempty"`
+	RepairReceipts       map[string]repairReceipt      `json:"repairReceipts,omitempty"`
 	Composition          *VideoCompositionState        `json:"composition,omitempty"`
 	QualityReport        *VideoQualityReport           `json:"qualityReport,omitempty"`
 	CompositionReceipts  map[string]compositionReceipt `json:"compositionReceipts,omitempty"`
@@ -415,6 +478,8 @@ type Project struct {
 
 // 用户投影不携带供应商路由、准入身份、锁定售价或 worker lease；opaque task ID 仅用于受理证据与排查。
 type ProjectView struct {
+	MachineReview        *VideoMachineReview      `json:"machineReview,omitempty"`
+	PlanReview           *PlanReview              `json:"planReview,omitempty"`
 	Composition          *VideoCompositionState   `json:"composition,omitempty"`
 	QualityReport        *VideoQualityReport      `json:"qualityReport,omitempty"`
 	NarrationAvailable   bool                     `json:"narrationAvailable,omitempty"`
@@ -463,7 +528,7 @@ func (p Project) View() ProjectView {
 		shots = append(shots, ShotView{Plan: s.Plan, Status: s.Status, Attempt: s.Attempt, VideoTaskID: publicVideoTaskID(s.VideoTaskID), ImageAssetID: s.ImageAssetID, OutputAssetID: s.OutputAssetID, LastFrameAssetID: s.LastFrameAssetID, Error: s.Error, ProviderError: diagnostic, ChargedMicro: s.ChargedMicro, QuoteMicro: s.QuoteMicro})
 	}
 	archives := currentGeneratedArchives(p)
-	return ProjectView{Composition: p.Composition, QualityReport: p.QualityReport, SourceAnalysis: cloneSourceAnalysis(p.SourceAnalysis), AnalysisChargedMicro: p.AnalysisChargedMicro, Canvas: p.Canvas, TeamAssetArchives: archives, ReservedMicro: 0, ReleasedMicro: 0, ID: p.ID, Version: p.Version, Status: p.Status, Brief: p.Brief, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Analysis: p.Analysis, Plan: p.Plan, Shots: shots, QuoteMicro: p.QuoteMicro, ChargedMicro: p.ChargedMicro, OutputAssetID: p.OutputAssetID, Error: p.Error, CancelRequested: p.CancelRequested}
+	return ProjectView{MachineReview: p.MachineReview, PlanReview: p.PlanReview, Composition: p.Composition, QualityReport: p.QualityReport, SourceAnalysis: cloneSourceAnalysis(p.SourceAnalysis), AnalysisChargedMicro: p.AnalysisChargedMicro, Canvas: p.Canvas, TeamAssetArchives: archives, ReservedMicro: 0, ReleasedMicro: 0, ID: p.ID, Version: p.Version, Status: p.Status, Brief: p.Brief, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Analysis: p.Analysis, Plan: p.Plan, Shots: shots, QuoteMicro: p.QuoteMicro, ChargedMicro: p.ChargedMicro, OutputAssetID: p.OutputAssetID, Error: p.Error, CancelRequested: p.CancelRequested}
 }
 
 func directGenerationRequest(p Project) (CanvasRequest, bool) {

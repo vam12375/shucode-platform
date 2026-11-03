@@ -30,6 +30,9 @@ func (s *Service) Create(ctx context.Context, team, user, device, id string, b B
 	if err := validateAdaptiveBrief(b); err != nil {
 		return nil, err
 	}
+	if err := validateStoryBrief(b); err != nil {
+		return nil, err
+	}
 	if err := validateFinishingOptions(b); err != nil {
 		return nil, err
 	}
@@ -232,7 +235,7 @@ func (s *Service) FailAnalysis(ctx context.Context, team, id string, version int
 		return nil, ErrInvalid
 	}
 	switch code {
-	case "analysis_failed", "video_analysis_scope_invalid", "video_analysis_scope_budget_exhausted", "video_analysis_scope_unavailable", "source_timeline_invalid", "source_url_mismatch", "source_report_invalid", "video_reference_duration_unsupported", "model_not_configured", "duration_or_budget_exceeded", "video_reference_plan_invalid", "video_reference_prompt_limit", "video_reference_unsupported", "video_reference_image_limit", "first_frame_required", "reference_images_required", "video_source_changed", "video_plan_copy_invalid", "video_research_invalid", "narration_empty", "narration_too_long", "narration_script_mismatch":
+	case "analysis_failed", "video_analysis_scope_invalid", "video_analysis_scope_budget_exhausted", "video_analysis_scope_unavailable", "source_timeline_invalid", "source_url_mismatch", "source_report_invalid", "video_reference_duration_unsupported", "model_not_configured", "duration_or_budget_exceeded", "video_reference_plan_invalid", "video_reference_prompt_limit", "video_reference_unsupported", "video_reference_image_limit", "first_frame_required", "reference_images_required", "video_source_changed", "video_plan_copy_invalid", "video_research_invalid", "video_story_invalid", "video_story_review_required", "video_story_review_conflict", "narration_empty", "narration_too_long", "narration_script_mismatch":
 	default:
 		return nil, ErrInvalid
 	}
