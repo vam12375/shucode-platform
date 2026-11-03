@@ -9,6 +9,21 @@
 
 版本规则：自 `0.1.0` 起算——新模块 / 新功能递增 `Y`（`Z` 归零）；优化、修复、文档等小改动递增 `Z`；不兼容改动递增 `X`。每个功能模块提交对应一个版本 tag。
 
+## [0.78.1] - 2026-11-03
+
+### 修复(故事复核测试)
+
+- 修复 `TestPlanReviewBindsCandidateAndRetriesUnavailableOnlyWithNewRequest` 在 CI（装有 ffmpeg）失败：
+  用例候选计划沿用旧参考与镜头来源，Brief 切到 `ResearchPolicy=auto` 后被
+  `validateResearchPlan` 以 `video_research_invalid` 拒绝；候选计划改为原创研究并清空旧参考/来源字段。
+- 该用例本地因缺 ffmpeg 跳过、只有 CI 实际执行，本轮改用带 ffmpeg 的本地 Go 镜像复跑。
+
+### 验证
+
+- `docker run … codex-media-go-test:1.26.10-race go test -race -run 'TestPlanReviewBindsCandidate…' -v ./internal/media/`
+- `docker run … codex-media-go-test:1.26.10-race go test -race ./...`
+- `make -C server lint`
+
 ## [0.78.0] - 2026-11-02
 
 ### 新增(故事化制作与审阅)

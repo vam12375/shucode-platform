@@ -130,7 +130,13 @@ func TestPlanReviewBindsCandidateAndRetriesUnavailableOnlyWithNewRequest(t *test
 	plan := *p.Plan
 	plan.Shots = append([]ShotPlan(nil), p.Plan.Shots...)
 	plan.Story = &StoryPlan{Goal: "夜间茶饮", Progression: "灯影到茶饮", Ending: "茶饮落点", AssetRoles: []StoryAssetRole{{AssetID: "a", Role: "product", Facts: "杯中茶", Retain: "杯形", Allow: "近景"}}, Gaps: []StoryGap{}, Review: nil}
+	// 本用例依赖 ffmpeg，本地会跳过、只有 CI 真正执行；Brief 切到 ResearchPolicy=auto 后，
+	// 候选计划必须自证为同一来源模式：原创研究不允许保留旧参考与镜头来源字段，
+	// 否则 SetPlan 会先被 video_research_invalid 拒绝。
+	plan.Research = &ResearchDecision{Mode: "original", Reason: "素材足够，按原创执行", IntentSummary: "夜间茶饮氛围", AssetObservations: []AssetObservation{{AssetID: "a", Description: "杯中茶"}}, CreativeGaps: []string{}}
+	plan.References = []Reference{}
 	for i := range plan.Shots {
+		plan.Shots[i].SourceURL, plan.Shots[i].SourceStart, plan.Shots[i].SourceEnd = "", 0, 0
 		plan.Shots[i].Creative = &ShotCreative{Source: "asset", AssetIDs: []string{"a"}, Beat: "推进故事", Connection: "承接上镜", InFrame: 0, OutFrame: 150}
 	}
 	p, err := f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
