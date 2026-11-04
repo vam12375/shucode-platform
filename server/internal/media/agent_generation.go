@@ -20,12 +20,26 @@ func AgentGenerationProjectID(team, user, requestID string) string {
 
 func (s *Service) ValidateAgentGeneration(ctx context.Context, team string, request AgentGenerationRequest) (Model, int64, error) {
 	request.Prompt = strings.TrimSpace(request.Prompt)
+	if request.Entry != "" && request.Entry != "canvas" {
+		return Model{}, 0, ErrInvalid
+	}
 	if request.RequestID == "" || len(request.RequestID) > 200 ||
 		(request.Intent != "generate" && request.Intent != "edit") ||
 		(request.Kind != "image" && request.Kind != "video") ||
 		request.Prompt == "" || utf8.RuneCountInString(request.Prompt) > 4000 ||
 		request.Count < 1 || request.Count > 4 || len(request.AssetIDs) > 8 {
 		return Model{}, 0, ErrInvalid
+	}
+	var canvasPolicy *store.CanvasToolPolicyRecord
+	if request.Entry == "canvas" {
+		var err error
+		canvasPolicy, err = s.Repo.Store.GetCanvasToolPolicy(ctx, team)
+		if err != nil {
+			return Model{}, 0, err
+		}
+		if canvasPolicy == nil || !canvasPolicy.Enabled || !slices.Contains(canvasPolicy.AllowedOperations, store.CanvasToolOperationGenerateMedia) {
+			return Model{}, 0, ErrCanvasToolPolicyDenied
+		}
 	}
 	if request.AssetIDs == nil {
 		request.AssetIDs = []string{}
@@ -80,28 +94,36 @@ func (s *Service) ValidateAgentGeneration(ctx context.Context, team string, requ
 	if unit <= 0 || total <= 0 || total > 1_000_000_000 {
 		return Model{}, 0, ErrInvalid
 	}
+	if canvasPolicy != nil && canvasPolicy.MaxMediaQuoteMicroPerOperation != nil && total > *canvasPolicy.MaxMediaQuoteMicroPerOperation {
+		return Model{}, 0, ErrCanvasMediaQuoteLimit
+	}
 	return model, total, nil
 }
 
 func (s *Service) CreateAgentGeneration(ctx context.Context, team, user, device string, request AgentGenerationRequest) (*Project, error) {
-	model, quote, err := s.ValidateAgentGeneration(ctx, team, request)
-	if err != nil {
-		return nil, err
-	}
 	request.Prompt = strings.TrimSpace(request.Prompt)
 	if request.AssetIDs == nil {
 		request.AssetIDs = []string{}
 	}
 	id := AgentGenerationProjectID(team, user, request.RequestID)
-	request.ExpectedQuoteMicro = quote
 	if existing, err := s.Repo.Get(ctx, team, id); err != nil {
 		return nil, err
 	} else if existing != nil {
-		if existing.UserID != user || existing.Agent == nil || !reflect.DeepEqual(existing.Agent, &request) {
+		// kill switch 只阻止新准入；相同已受理请求的幂等恢复继续按原项目事实返回。
+		if existing.UserID != user || existing.Agent == nil {
+			return nil, ErrConflict
+		}
+		request.ExpectedQuoteMicro = existing.Agent.ExpectedQuoteMicro
+		if !reflect.DeepEqual(existing.Agent, &request) {
 			return nil, ErrConflict
 		}
 		return existing, nil
 	}
+	model, quote, err := s.ValidateAgentGeneration(ctx, team, request)
+	if err != nil {
+		return nil, err
+	}
+	request.ExpectedQuoteMicro = quote
 	shots := make([]Shot, request.Count)
 	for i := range shots {
 		shots[i] = Shot{
@@ -141,6 +163,17 @@ func (s *Service) GetAgentGeneration(ctx context.Context, team, user, requestID 
 	return p, nil
 }
 
+func (s *Service) GetAgentGenerationForEntry(ctx context.Context, team, user, requestID, entry string) (*Project, error) {
+	project, err := s.GetAgentGeneration(ctx, team, user, requestID)
+	if err != nil || project == nil {
+		return project, err
+	}
+	if project.Agent.Entry != entry {
+		return nil, nil
+	}
+	return project, nil
+}
+
 // CancelAgentGeneration 用制作单版本记录取消请求；worker 决定最终状态并按已受理的上游结果结算。
 func (s *Service) CancelAgentGeneration(ctx context.Context, team, user, requestID string) (*Project, error) {
 	if requestID == "" || len(requestID) > 200 {
@@ -164,6 +197,14 @@ func (s *Service) CancelAgentGeneration(ctx context.Context, team, user, request
 		}
 	}
 	return nil, ErrConflict
+}
+
+func (s *Service) CancelAgentGenerationForEntry(ctx context.Context, team, user, requestID, entry string) (*Project, error) {
+	project, err := s.GetAgentGenerationForEntry(ctx, team, user, requestID, entry)
+	if err != nil || project == nil {
+		return project, err
+	}
+	return s.CancelAgentGeneration(ctx, team, user, requestID)
 }
 
 func AgentGenerationCloudArchive(p Project) string {

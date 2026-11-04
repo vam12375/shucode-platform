@@ -234,6 +234,91 @@ func (s *PostgresStore) SaveTeamPolicy(ctx context.Context, record TeamPolicyRec
 	return &normalized, nil
 }
 
+func (s *PostgresStore) GetCanvasToolPolicy(ctx context.Context, teamID string) (*CanvasToolPolicyRecord, error) {
+	var record CanvasToolPolicyRecord
+	var operations []string
+	err := s.pool.QueryRow(ctx, `
+		SELECT t.id::text,COALESCE(p.canvas_tool_revision,0),COALESCE(p.canvas_tool_enabled,false),
+		       COALESCE(p.canvas_tool_allowed_operations,'{}'::text[]),
+		       p.canvas_tool_max_quote_micro,p.canvas_tool_max_operations_per_day,
+		       p.canvas_tool_max_concurrent_operations,COALESCE(p.canvas_tool_updated_at,t.created_at)
+		FROM teams t LEFT JOIN team_policies p ON p.team_id=t.id WHERE t.id=$1::uuid`, teamID).
+		Scan(&record.TeamID, &record.Revision, &record.Enabled, &operations,
+			&record.MaxMediaQuoteMicroPerOperation, &record.MaxMediaOperationsPerDay,
+			&record.MaxConcurrentMediaOperations, &record.UpdatedAt)
+	if queryErrNoRows(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	record.AllowedOperations = make([]CanvasToolOperation, 0, len(operations))
+	for _, operation := range operations {
+		record.AllowedOperations = append(record.AllowedOperations, CanvasToolOperation(operation))
+	}
+	record.RequireStructureConfirmation = true
+	record.RequireMediaConfirmation = true
+	copy := cloneCanvasToolPolicy(record)
+	return &copy, nil
+}
+
+func (s *PostgresStore) SaveCanvasToolPolicy(ctx context.Context, teamID string, expectedRevision int64, record CanvasToolPolicyRecord) (*CanvasToolPolicyRecord, error) {
+	if expectedRevision < 0 {
+		return nil, ErrCanvasToolPolicyRevisionConflict
+	}
+	record.TeamID = teamID
+	record.Revision = expectedRevision + 1
+	normalized, err := normalizeCanvasToolPolicy(record)
+	if err != nil {
+		return nil, err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	ok, err := lockTeam(ctx, tx, teamID)
+	if err != nil || !ok {
+		return nil, err
+	}
+	var currentRevision int64
+	err = tx.QueryRow(ctx, `SELECT canvas_tool_revision FROM team_policies WHERE team_id=$1::uuid FOR UPDATE`, teamID).Scan(&currentRevision)
+	if queryErrNoRows(err) {
+		currentRevision = 0
+	} else if err != nil {
+		return nil, err
+	}
+	if currentRevision != expectedRevision {
+		return nil, ErrCanvasToolPolicyRevisionConflict
+	}
+	operations := make([]string, 0, len(normalized.AllowedOperations))
+	for _, operation := range normalized.AllowedOperations {
+		operations = append(operations, string(operation))
+	}
+	normalized.UpdatedAt = time.Now().UTC()
+	_, err = tx.Exec(ctx, `
+		INSERT INTO team_policies(team_id,canvas_tool_revision,canvas_tool_enabled,canvas_tool_allowed_operations,
+			canvas_tool_max_quote_micro,canvas_tool_max_operations_per_day,canvas_tool_max_concurrent_operations,canvas_tool_updated_at)
+		VALUES($1::uuid,$2,$3,$4,$5,$6,$7,$8)
+		ON CONFLICT(team_id) DO UPDATE SET canvas_tool_revision=EXCLUDED.canvas_tool_revision,
+			canvas_tool_enabled=EXCLUDED.canvas_tool_enabled,canvas_tool_allowed_operations=EXCLUDED.canvas_tool_allowed_operations,
+			canvas_tool_max_quote_micro=EXCLUDED.canvas_tool_max_quote_micro,
+			canvas_tool_max_operations_per_day=EXCLUDED.canvas_tool_max_operations_per_day,
+			canvas_tool_max_concurrent_operations=EXCLUDED.canvas_tool_max_concurrent_operations,
+			canvas_tool_updated_at=EXCLUDED.canvas_tool_updated_at`,
+		normalized.TeamID, normalized.Revision, normalized.Enabled, operations,
+		normalized.MaxMediaQuoteMicroPerOperation, normalized.MaxMediaOperationsPerDay,
+		normalized.MaxConcurrentMediaOperations, normalized.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	copy := cloneCanvasToolPolicy(normalized)
+	return &copy, nil
+}
+
 const invitationCols = `id::text,team_id::text,email,token_hash,COALESCE(created_by::text,''),created_at,expires_at,accepted_at,revoked_at`
 
 func scanInvitation(row pgx.Row) (*TeamInvitationRecord, error) {

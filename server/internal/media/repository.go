@@ -10,6 +10,8 @@ import (
 
 var ErrConflict = errors.New("media_version_conflict")
 var ErrInvalid = errors.New("media_invalid_input")
+var ErrCanvasToolPolicyDenied = errors.New("canvas_tool_policy_denied")
+var ErrCanvasMediaQuoteLimit = errors.New("canvas_media_quote_exceeds_limit")
 
 type Repository struct{ Store store.PlatformStore }
 

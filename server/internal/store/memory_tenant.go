@@ -142,6 +142,48 @@ func (s *memoryStore) SaveTeamPolicy(_ context.Context, record TeamPolicyRecord)
 	return &normalized, nil
 }
 
+func (s *memoryStore) GetCanvasToolPolicy(_ context.Context, teamID string) (*CanvasToolPolicyRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	team, exists := s.teams[teamID]
+	if !exists {
+		return nil, nil
+	}
+	record, exists := s.canvasToolPolicies[teamID]
+	if !exists {
+		record = CanvasToolPolicyRecord{TeamID: teamID, UpdatedAt: team.CreatedAt}
+	}
+	record.RequireStructureConfirmation = true
+	record.RequireMediaConfirmation = true
+	copy := cloneCanvasToolPolicy(record)
+	return &copy, nil
+}
+
+func (s *memoryStore) SaveCanvasToolPolicy(_ context.Context, teamID string, expectedRevision int64, record CanvasToolPolicyRecord) (*CanvasToolPolicyRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.teams[teamID]; !exists {
+		return nil, nil
+	}
+	current, exists := s.canvasToolPolicies[teamID]
+	if !exists {
+		current = CanvasToolPolicyRecord{TeamID: teamID}
+	}
+	if expectedRevision < 0 || current.Revision != expectedRevision {
+		return nil, ErrCanvasToolPolicyRevisionConflict
+	}
+	record.TeamID = teamID
+	record.Revision = current.Revision + 1
+	normalized, err := normalizeCanvasToolPolicy(record)
+	if err != nil {
+		return nil, err
+	}
+	normalized.UpdatedAt = time.Now().UTC()
+	s.canvasToolPolicies[teamID] = cloneCanvasToolPolicy(normalized)
+	copy := cloneCanvasToolPolicy(normalized)
+	return &copy, nil
+}
+
 func cloneInvitation(record TeamInvitationRecord) TeamInvitationRecord {
 	record.AcceptedAt = copyTime(record.AcceptedAt)
 	record.RevokedAt = copyTime(record.RevokedAt)

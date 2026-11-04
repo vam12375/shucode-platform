@@ -67,7 +67,30 @@ type agentGenerationResponse struct {
 }
 
 func registerMediaAgentGenerationRoutes(router *gin.Engine, deps *Deps) {
-	router.POST("/api/v1/media/agent/generations/quote", func(c *gin.Context) {
+	router.GET("/api/v1/canvas/tool-policy", func(c *gin.Context) {
+		_, membership, ok := mediaIdentity(c, deps)
+		if !ok {
+			return
+		}
+		policy, err := deps.Store.GetCanvasToolPolicy(c.Request.Context(), membership.Team.ID)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if policy == nil {
+			c.JSON(http.StatusNotFound, fail(http.StatusNotFound, "team_not_found"))
+			return
+		}
+		c.Header("etag", canvasToolPolicyETag(policy.Revision))
+		c.Header("cache-control", "private, no-cache")
+		c.JSON(http.StatusOK, okData(policy))
+	})
+	registerAgentGenerationRoutes(router, deps, "/api/v1/media/agent/generations", "")
+	registerAgentGenerationRoutes(router, deps, "/api/v1/canvas/agent/generations", "canvas")
+}
+
+func registerAgentGenerationRoutes(router *gin.Engine, deps *Deps, basePath, entry string) {
+	router.POST(basePath+"/quote", func(c *gin.Context) {
 		a, membership, ok := mediaIdentity(c, deps)
 		if !ok {
 			return
@@ -84,7 +107,7 @@ func registerMediaAgentGenerationRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(http.StatusUnprocessableEntity, fail(http.StatusUnprocessableEntity, "media_source_artifact_unsupported"))
 			return
 		}
-		request := body.mediaRequest()
+		request := body.mediaRequest(entry)
 		model, quote, err := deps.Media.ValidateAgentGeneration(c.Request.Context(), membership.Team.ID, request)
 		if err != nil {
 			mediaError(c, deps, err)
@@ -121,7 +144,7 @@ func registerMediaAgentGenerationRoutes(router *gin.Engine, deps *Deps) {
 		}))
 	})
 
-	router.POST("/api/v1/media/agent/generations", func(c *gin.Context) {
+	router.POST(basePath, func(c *gin.Context) {
 		a, membership, ok := mediaIdentity(c, deps)
 		if !ok {
 			return
@@ -138,7 +161,7 @@ func registerMediaAgentGenerationRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(http.StatusUnprocessableEntity, fail(http.StatusUnprocessableEntity, "media_source_artifact_unsupported"))
 			return
 		}
-		request := body.Request.mediaRequest()
+		request := body.Request.mediaRequest(entry)
 		requestHash, err := agentGenerationRequestHash(request)
 		if err != nil {
 			internalError(c, deps, err)
@@ -154,14 +177,22 @@ func registerMediaAgentGenerationRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(http.StatusConflict, fail(http.StatusConflict, "media_confirmation_expired_or_changed"))
 			return
 		}
-		_, quote, err := deps.Media.ValidateAgentGeneration(c.Request.Context(), membership.Team.ID, request)
+		// 已存在的同一 requestId 是恢复读取，不是新准入；kill switch 不撤销已创建任务。
+		existing, err := deps.Media.GetAgentGenerationForEntry(c.Request.Context(), membership.Team.ID, a.User.ID, request.RequestID, entry)
 		if err != nil {
 			mediaError(c, deps, err)
 			return
 		}
-		if quote != claim.QuoteMicro {
-			c.JSON(http.StatusConflict, fail(http.StatusConflict, "generation_quote_changed"))
-			return
+		if existing == nil {
+			_, quote, validateErr := deps.Media.ValidateAgentGeneration(c.Request.Context(), membership.Team.ID, request)
+			if validateErr != nil {
+				mediaError(c, deps, validateErr)
+				return
+			}
+			if quote != claim.QuoteMicro {
+				c.JSON(http.StatusConflict, fail(http.StatusConflict, "generation_quote_changed"))
+				return
+			}
 		}
 		project, err := deps.Media.CreateAgentGeneration(c.Request.Context(), membership.Team.ID, a.User.ID, a.Device.ID, request)
 		if err != nil {
@@ -171,7 +202,7 @@ func registerMediaAgentGenerationRoutes(router *gin.Engine, deps *Deps) {
 		c.JSON(http.StatusOK, okData(agentGenerationProjection(c.Request.Context(), deps.Media, *project, request.RequestID)))
 	})
 
-	router.GET("/api/v1/media/agent/generations/:requestId", func(c *gin.Context) {
+	router.GET(basePath+"/:requestId", func(c *gin.Context) {
 		a, membership, ok := mediaIdentity(c, deps)
 		if !ok {
 			return
@@ -181,7 +212,7 @@ func registerMediaAgentGenerationRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(http.StatusBadRequest, fail(http.StatusBadRequest, "media_request_invalid"))
 			return
 		}
-		project, err := deps.Media.GetAgentGeneration(c.Request.Context(), membership.Team.ID, a.User.ID, requestID)
+		project, err := deps.Media.GetAgentGenerationForEntry(c.Request.Context(), membership.Team.ID, a.User.ID, requestID, entry)
 		if err != nil {
 			mediaError(c, deps, err)
 			return
@@ -193,7 +224,7 @@ func registerMediaAgentGenerationRoutes(router *gin.Engine, deps *Deps) {
 		c.JSON(http.StatusOK, okData(agentGenerationProjection(c.Request.Context(), deps.Media, *project, requestID)))
 	})
 
-	router.POST("/api/v1/media/agent/generations/:requestId/cancel", func(c *gin.Context) {
+	router.POST(basePath+"/:requestId/cancel", func(c *gin.Context) {
 		a, membership, ok := mediaIdentity(c, deps)
 		if !ok {
 			return
@@ -203,7 +234,7 @@ func registerMediaAgentGenerationRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(http.StatusBadRequest, fail(http.StatusBadRequest, "media_request_invalid"))
 			return
 		}
-		project, err := deps.Media.CancelAgentGeneration(c.Request.Context(), membership.Team.ID, a.User.ID, requestID)
+		project, err := deps.Media.CancelAgentGenerationForEntry(c.Request.Context(), membership.Team.ID, a.User.ID, requestID, entry)
 		if err != nil {
 			mediaError(c, deps, err)
 			return
@@ -216,9 +247,9 @@ func registerMediaAgentGenerationRoutes(router *gin.Engine, deps *Deps) {
 	})
 }
 
-func (body agentGenerationRequestBody) mediaRequest() media.AgentGenerationRequest {
+func (body agentGenerationRequestBody) mediaRequest(entry string) media.AgentGenerationRequest {
 	return media.AgentGenerationRequest{
-		RequestID: body.RequestID, Intent: body.Intent, Kind: body.Kind, Prompt: body.Prompt,
+		RequestID: body.RequestID, Entry: entry, Intent: body.Intent, Kind: body.Kind, Prompt: body.Prompt,
 		AssetIDs: body.AssetIDs, ModelID: body.ModelID, Resolution: body.Resolution,
 		AspectRatio: body.AspectRatio, Duration: body.Duration, Count: body.Count,
 	}

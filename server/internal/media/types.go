@@ -450,9 +450,10 @@ type Shot struct {
 	TokenCostMicroPerMillion int64 `json:"tokenCostMicroPerMillion,omitempty"`
 }
 
-// AgentGenerationRequest 是对话入口的独立不可变快照，不包含 Canvas 身份字段。
+// AgentGenerationRequest 是 Agent 媒体入口的独立不可变快照；entry=canvas 时受画布策略约束。
 type AgentGenerationRequest struct {
 	RequestID          string   `json:"requestId"`
+	Entry              string   `json:"entry,omitempty"`
 	Intent             string   `json:"intent"`
 	Kind               string   `json:"kind"`
 	Prompt             string   `json:"prompt"`

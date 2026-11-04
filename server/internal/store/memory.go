@@ -41,6 +41,7 @@ type memoryStore struct {
 	memberDisabled        map[string]*time.Time
 	memberBudgets         map[string]string
 	teamPolicies          map[string]TeamPolicyRecord
+	canvasToolPolicies    map[string]CanvasToolPolicyRecord
 	invitations           map[string]TeamInvitationRecord
 	quotaRequests         map[string]QuotaRequestRecord
 	personalAccounts      map[string]string
@@ -89,6 +90,7 @@ func NewMemoryStore(ctx context.Context, opts MemoryOptions) (*memoryStore, erro
 		memberDisabled:        map[string]*time.Time{},
 		memberBudgets:         map[string]string{},
 		teamPolicies:          map[string]TeamPolicyRecord{},
+		canvasToolPolicies:    map[string]CanvasToolPolicyRecord{},
 		invitations:           map[string]TeamInvitationRecord{},
 		quotaRequests:         map[string]QuotaRequestRecord{},
 		personalAccounts:      map[string]string{},

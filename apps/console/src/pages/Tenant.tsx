@@ -40,6 +40,17 @@ interface Policy {
   tpmLimit: number;
   concurrencyLimit: number;
 }
+interface CanvasToolPolicy {
+  teamId: string;
+  revision: number;
+  enabled: boolean;
+  allowedOperations: string[];
+  requireStructureConfirmation: boolean;
+  requireMediaConfirmation: boolean;
+  maxMediaQuoteMicroPerOperation: number | null;
+  maxMediaOperationsPerDay: number | null;
+  maxConcurrentMediaOperations: number | null;
+}
 const EMPTY_POLICY: Policy = {
   dailyBudgetCredits: "",
   monthlyBudgetCredits: "",
@@ -49,6 +60,26 @@ const EMPTY_POLICY: Policy = {
   tpmLimit: 0,
   concurrencyLimit: 0,
 };
+const EMPTY_CANVAS_TOOL_POLICY: CanvasToolPolicy = {
+  teamId: "",
+  revision: 0,
+  enabled: false,
+  allowedOperations: [],
+  requireStructureConfirmation: true,
+  requireMediaConfirmation: true,
+  maxMediaQuoteMicroPerOperation: null,
+  maxMediaOperationsPerDay: null,
+  maxConcurrentMediaOperations: null,
+};
+const CANVAS_TOOL_OPERATIONS = [
+  ["add_node", "新增节点"],
+  ["update_node", "编辑节点"],
+  ["move_node", "移动节点"],
+  ["connect", "建立连线"],
+  ["disconnect", "断开连线"],
+  ["remove_nodes", "删除节点"],
+  ["generate_media", "生成图片或视频"],
+] as const;
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "操作失败";
 }
@@ -63,6 +94,7 @@ export function TenantPage({ section }: { section: string }) {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [models, setModels] = useState<Model[]>([]);
   const [policy, setPolicy] = useState<Policy>(EMPTY_POLICY);
+  const [canvasPolicy, setCanvasPolicy] = useState<CanvasToolPolicy>(EMPTY_CANVAS_TOOL_POLICY);
   const [notifications, setNotifications] = useState<
     Array<{ kind: string; message: string; tone: string }>
   >([]);
@@ -75,7 +107,7 @@ export function TenantPage({ section }: { section: string }) {
   const load = useCallback(async () => {
     if (!teamId) return;
     try {
-      const [detail, invitationData, policyData, modelData, noticeData] =
+      const [detail, invitationData, policyData, modelData, noticeData, canvasPolicyData] =
         await Promise.all([
           api<{ team: ConsoleTeam; members: Member[] }>(`/teams/${teamId}`),
           api<{ invitations: Invitation[] }>(`/teams/${teamId}/invitations`),
@@ -88,6 +120,7 @@ export function TenantPage({ section }: { section: string }) {
               tone: string;
             }>;
           }>(`/teams/${teamId}/notifications`),
+          api<CanvasToolPolicy>(`/teams/${teamId}/canvas-tool-policy`),
         ]);
       setTeam(detail.team);
       setName(detail.team.name);
@@ -102,6 +135,7 @@ export function TenantPage({ section }: { section: string }) {
       );
       setInvitations(invitationData.invitations);
       setPolicy({ ...EMPTY_POLICY, ...policyData });
+      setCanvasPolicy({ ...EMPTY_CANVAS_TOOL_POLICY, ...canvasPolicyData });
       setModels(policyData.availableModels ?? modelData.models);
       setNotifications(noticeData.notifications);
       setError("");
@@ -524,6 +558,7 @@ export function TenantPage({ section }: { section: string }) {
         </>
       ) : null}
       {section === "policy" ? (
+        <>
         <section className="pane">
           <div className="pane-h">
             <h2>消费策略</h2>
@@ -671,6 +706,108 @@ export function TenantPage({ section }: { section: string }) {
             </button>
           </form>
         </section>
+        <section className="pane">
+          <div className="pane-h">
+            <h2>门道自然语言画布协作策略</h2>
+            <span className="readout">工具与单次报价限制已在服务端执行</span>
+          </div>
+          <form
+            className="pane-b tenant-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run(
+                () =>
+                  api(`/teams/${teamId}/canvas-tool-policy`, {
+                    method: "PUT",
+                    headers: { "if-match": `"canvas-tool-${canvasPolicy.revision}"` },
+                    body: JSON.stringify({
+                      enabled: canvasPolicy.enabled,
+                      allowedOperations: canvasPolicy.allowedOperations,
+                      maxMediaQuoteMicroPerOperation: canvasPolicy.maxMediaQuoteMicroPerOperation,
+                      maxMediaOperationsPerDay: canvasPolicy.maxMediaOperationsPerDay,
+                      maxConcurrentMediaOperations: canvasPolicy.maxConcurrentMediaOperations,
+                    }),
+                  }),
+                "门道协作策略已保存",
+              );
+            }}
+          >
+            <p className="readout" role="status">
+              启用状态、操作白名单和单次媒体报价上限会在门道自然语言画布协作触发媒体报价与生成时由服务端复核；手动 Canvas 生图仍走既有媒体规则。客户端还需读取策略以决定是否开放自然语言画布协作。每日操作数和并发上限目前只保存，尚未作为准入限制执行。
+            </p>
+            <label className="model-checkboxes">
+              <input
+                type="checkbox"
+                checked={canvasPolicy.enabled}
+                onChange={(event) =>
+                  setCanvasPolicy({ ...canvasPolicy, enabled: event.target.checked })
+                }
+              />
+              允许门道使用自然语言操作画布
+            </label>
+            <fieldset>
+              <legend>允许的操作</legend>
+              <p className="readout">服务端会复核自然语言工具触发的媒体生成；节点和连线操作由客户端 Host 校验。</p>
+              <div className="model-checkboxes">
+                {CANVAS_TOOL_OPERATIONS.map(([operation, label]) => (
+                  <label key={operation}>
+                    <input
+                      type="checkbox"
+                      checked={canvasPolicy.allowedOperations.includes(operation)}
+                      onChange={(event) =>
+                        setCanvasPolicy({
+                          ...canvasPolicy,
+                          allowedOperations: event.target.checked
+                            ? [...canvasPolicy.allowedOperations, operation]
+                            : canvasPolicy.allowedOperations.filter((item) => item !== operation),
+                        })
+                      }
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend>确认与媒体上限</legend>
+              <p className="readout">
+                结构修改和媒体生成始终需要用户确认，团队策略不能关闭。单次报价上限会在门道自然语言画布媒体入口执行；每日与并发上限尚未接入原子计数。
+              </p>
+              <div className="tenant-rate-limits">
+                {(
+                  [
+                    ["maxMediaQuoteMicroPerOperation", "单次媒体报价上限（微 credit）"],
+                    ["maxMediaOperationsPerDay", "每日媒体操作上限（暂不执行）"],
+                    ["maxConcurrentMediaOperations", "并发媒体操作上限（暂不执行）"],
+                  ] as const
+                ).map(([field, label]) => (
+                  <label key={field}>
+                    {label}
+                    <input
+                      className="input"
+                      type="number"
+                      min="0"
+                      max="1000000000000"
+                      step="1"
+                      placeholder="不额外限制"
+                      value={canvasPolicy[field] ?? ""}
+                      onChange={(event) =>
+                        setCanvasPolicy({
+                          ...canvasPolicy,
+                          [field]: event.target.value === "" ? null : Number(event.target.value),
+                        })
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <button className="btn" disabled={busy}>
+              {busy ? "保存中…" : "保存门道画布策略"}
+            </button>
+          </form>
+        </section>
+        </>
       ) : null}
       {section === "team-settings" ? (
         <section className="pane">

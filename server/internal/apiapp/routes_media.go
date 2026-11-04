@@ -141,6 +141,14 @@ func mediaIdentity(c *gin.Context, deps *Deps) (*AuthenticatedDevice, *store.Tea
 }
 
 func mediaError(c *gin.Context, deps *Deps, e error) {
+	if errors.Is(e, media.ErrCanvasToolPolicyDenied) {
+		c.JSON(403, fail(403, "canvas_tool_not_allowed"))
+		return
+	}
+	if errors.Is(e, media.ErrCanvasMediaQuoteLimit) {
+		c.JSON(403, fail(403, "canvas_media_quote_exceeds_limit"))
+		return
+	}
 	if errors.Is(e, media.ErrConflict) {
 		c.JSON(409, fail(409, "制作单已更新，请刷新"))
 		return

@@ -3,6 +3,8 @@ package apiapp
 import (
 	"context"
 	"errors"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -63,6 +65,94 @@ func parseBudget(raw any) (string, bool) {
 		return "", true
 	}
 	return parsePriceString(raw)
+}
+
+func canvasToolPolicyETag(revision int64) string {
+	return `"canvas-tool-` + strconv.FormatInt(revision, 10) + `"`
+}
+
+func parseCanvasToolPolicyIfMatch(value string) (int64, bool) {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, `"canvas-tool-`) || !strings.HasSuffix(value, `"`) {
+		return 0, false
+	}
+	raw := strings.TrimSuffix(strings.TrimPrefix(value, `"canvas-tool-`), `"`)
+	revision, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || revision < 0 {
+		return 0, false
+	}
+	return revision, true
+}
+
+func parseCanvasToolPolicyBody(c *gin.Context, body map[string]any) (store.CanvasToolPolicyRecord, []string, bool) {
+	allowedFields := []string{
+		"enabled", "allowedOperations", "maxMediaQuoteMicroPerOperation",
+		"maxMediaOperationsPerDay", "maxConcurrentMediaOperations",
+	}
+	if !rejectUnknownFields(c, body, allowedFields...) {
+		return store.CanvasToolPolicyRecord{}, nil, false
+	}
+	for _, field := range allowedFields {
+		if _, exists := body[field]; !exists {
+			c.JSON(400, fail(400, "请求参数不完整"))
+			return store.CanvasToolPolicyRecord{}, nil, false
+		}
+	}
+	enabled, ok := boolValue(body["enabled"])
+	if !ok {
+		c.JSON(400, fail(400, "enabled 必须是布尔值"))
+		return store.CanvasToolPolicyRecord{}, nil, false
+	}
+	rawOperations, ok := body["allowedOperations"].([]any)
+	if !ok || len(rawOperations) > len(store.CanvasToolOperations()) {
+		c.JSON(400, fail(400, "Canvas 操作白名单不合法"))
+		return store.CanvasToolPolicyRecord{}, nil, false
+	}
+	operations := make([]store.CanvasToolOperation, 0, len(rawOperations))
+	seen := make(map[store.CanvasToolOperation]struct{}, len(rawOperations))
+	for _, raw := range rawOperations {
+		text, valid := raw.(string)
+		operation := store.CanvasToolOperation(text)
+		if !valid || !store.IsCanvasToolOperation(operation) {
+			c.JSON(400, fail(400, "Canvas 操作白名单包含未知操作"))
+			return store.CanvasToolPolicyRecord{}, nil, false
+		}
+		if _, duplicate := seen[operation]; duplicate {
+			c.JSON(400, fail(400, "Canvas 操作白名单不能重复"))
+			return store.CanvasToolPolicyRecord{}, nil, false
+		}
+		seen[operation] = struct{}{}
+		operations = append(operations, operation)
+	}
+	record := store.CanvasToolPolicyRecord{
+		Enabled:                      enabled,
+		AllowedOperations:            operations,
+		RequireStructureConfirmation: true,
+		RequireMediaConfirmation:     true,
+	}
+	limitFields := []struct {
+		name   string
+		target **int64
+	}{
+		{name: "maxMediaQuoteMicroPerOperation", target: &record.MaxMediaQuoteMicroPerOperation},
+		{name: "maxMediaOperationsPerDay", target: &record.MaxMediaOperationsPerDay},
+		{name: "maxConcurrentMediaOperations", target: &record.MaxConcurrentMediaOperations},
+	}
+	for _, field := range limitFields {
+		raw := body[field.name]
+		if raw == nil {
+			continue
+		}
+		value, valid := intInRange(raw, 0, 1_000_000_000_000)
+		if !valid {
+			c.JSON(400, fail(400, field.name+" 必须是 0 到 1000000000000 的整数或 null"))
+			return store.CanvasToolPolicyRecord{}, nil, false
+		}
+		*field.target = &value
+	}
+	fields := append([]string{}, allowedFields...)
+	sort.Strings(fields)
+	return record, fields, true
 }
 
 func registerTenantRoutes(router *gin.Engine, deps *Deps) {
@@ -385,6 +475,82 @@ func registerTenantRoutes(router *gin.Engine, deps *Deps) {
 		}
 		writeTeamAudit(ctx, deps, actor, policy.TeamID, "policy.update", "team", policy.TeamID, map[string]any{"fields": fields})
 		deps.ConfigEvents.Emit(events.DomainTeams)
+		c.JSON(200, okData(updated))
+	})
+	group.GET("/teams/:id/canvas-tool-policy", func(c *gin.Context) {
+		membership, ok := requireTeamAccess(c, deps, c.Param("id"), true)
+		if !ok {
+			return
+		}
+		policy, err := deps.Store.GetCanvasToolPolicy(c.Request.Context(), membership.Team.ID)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if policy == nil {
+			c.JSON(404, fail(404, "团队不存在"))
+			return
+		}
+		c.Header("etag", canvasToolPolicyETag(policy.Revision))
+		c.Header("cache-control", "private, no-cache")
+		c.JSON(200, okData(policy))
+	})
+	group.PUT("/teams/:id/canvas-tool-policy", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		membership, ok := requireTeamAccess(c, deps, c.Param("id"), true)
+		if !ok {
+			return
+		}
+		actor, ok := requireConsoleUser(ctx, deps, c)
+		if !ok {
+			return
+		}
+		match := strings.TrimSpace(c.GetHeader("if-match"))
+		if match == "" {
+			c.JSON(428, fail(428, "更新 Canvas 策略必须提供 If-Match"))
+			return
+		}
+		expectedRevision, valid := parseCanvasToolPolicyIfMatch(match)
+		if !valid {
+			c.JSON(400, fail(400, "If-Match 无效"))
+			return
+		}
+		body, valid := readObjectBodyLimited(c, 16<<10)
+		if !valid {
+			c.JSON(400, fail(400, "请求参数不合法"))
+			return
+		}
+		policy, fields, valid := parseCanvasToolPolicyBody(c, body)
+		if !valid {
+			return
+		}
+		updated, err := deps.Store.SaveCanvasToolPolicy(ctx, membership.Team.ID, expectedRevision, policy)
+		if errors.Is(err, store.ErrCanvasToolPolicyRevisionConflict) {
+			current, getErr := deps.Store.GetCanvasToolPolicy(ctx, membership.Team.ID)
+			if getErr != nil {
+				internalError(c, deps, getErr)
+				return
+			}
+			if current != nil {
+				c.Header("etag", canvasToolPolicyETag(current.Revision))
+			}
+			c.JSON(409, gin.H{"code": 409, "msg": "Canvas 策略版本冲突，请重新读取", "data": current})
+			return
+		}
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		if updated == nil {
+			c.JSON(404, fail(404, "团队不存在"))
+			return
+		}
+		writeTeamAudit(ctx, deps, actor, membership.Team.ID, "team.canvas_tool_policy.update", "team", membership.Team.ID, map[string]any{
+			"fields": fields, "enabled": updated.Enabled, "revision": updated.Revision,
+		})
+		deps.ConfigEvents.Emit(events.DomainTeams)
+		c.Header("etag", canvasToolPolicyETag(updated.Revision))
+		c.Header("cache-control", "private, no-cache")
 		c.JSON(200, okData(updated))
 	})
 

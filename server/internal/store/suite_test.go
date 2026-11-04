@@ -85,6 +85,7 @@ func runSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 	t.Run("usage-model-filter-pagination-export", func(t *testing.T) { testUsageModelFilterPaginationExport(t, ctx, s) })
 	t.Run("usage-price-snapshot", func(t *testing.T) { runUsageSnapshotSuite(t, ctx, s) })
 	t.Run("team-policy-limits", func(t *testing.T) { testTeamPolicyLimits(t, ctx, s) })
+	t.Run("canvas-tool-policy", func(t *testing.T) { testCanvasToolPolicy(t, ctx, s) })
 	t.Run("budget-carry-active-reservations", func(t *testing.T) { testTenantBudgetCarriesActiveReservations(t, ctx, s) })
 	t.Run("tenant-permissions", func(t *testing.T) { runTenantSuite(t, ctx, s) })
 }

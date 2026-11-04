@@ -15,6 +15,14 @@ func copyTime(value *time.Time) *time.Time {
 	return &copy
 }
 
+func copyInt64(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
 func normalizeBudget(value string) (string, error) {
 	if value == "" {
 		return "", nil
@@ -49,6 +57,56 @@ func normalizeTeamPolicy(record TeamPolicyRecord) (TeamPolicyRecord, error) {
 	}
 	record.AllowedModelIDs = append([]string{}, record.AllowedModelIDs...)
 	record.UpdatedAt = time.Now()
+	return record, nil
+}
+
+func IsCanvasToolOperation(operation CanvasToolOperation) bool {
+	for _, allowed := range canvasToolOperations {
+		if operation == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func cloneCanvasToolPolicy(record CanvasToolPolicyRecord) CanvasToolPolicyRecord {
+	record.AllowedOperations = append([]CanvasToolOperation{}, record.AllowedOperations...)
+	record.MaxMediaQuoteMicroPerOperation = copyInt64(record.MaxMediaQuoteMicroPerOperation)
+	record.MaxMediaOperationsPerDay = copyInt64(record.MaxMediaOperationsPerDay)
+	record.MaxConcurrentMediaOperations = copyInt64(record.MaxConcurrentMediaOperations)
+	return record
+}
+
+func normalizeCanvasToolPolicy(record CanvasToolPolicyRecord) (CanvasToolPolicyRecord, error) {
+	if record.Revision < 0 {
+		return record, fmt.Errorf("Canvas 策略版本非法")
+	}
+	if len(record.AllowedOperations) > len(canvasToolOperations) {
+		return record, fmt.Errorf("Canvas 操作白名单数量超限")
+	}
+	seen := make(map[CanvasToolOperation]struct{}, len(record.AllowedOperations))
+	for _, operation := range record.AllowedOperations {
+		if !IsCanvasToolOperation(operation) {
+			return record, fmt.Errorf("Canvas 操作白名单包含未知操作")
+		}
+		if _, exists := seen[operation]; exists {
+			return record, fmt.Errorf("Canvas 操作白名单不能重复")
+		}
+		seen[operation] = struct{}{}
+	}
+	for _, limit := range []*int64{
+		record.MaxMediaQuoteMicroPerOperation,
+		record.MaxMediaOperationsPerDay,
+		record.MaxConcurrentMediaOperations,
+	} {
+		if limit != nil && (*limit < 0 || *limit > 1_000_000_000_000) {
+			return record, fmt.Errorf("Canvas 媒体限制必须在 0 到 1000000000000 之间")
+		}
+	}
+	record = cloneCanvasToolPolicy(record)
+	// 安全策略不能由团队设置放宽；字段固定为 true 供管理界面明确展示。
+	record.RequireStructureConfirmation = true
+	record.RequireMediaConfirmation = true
 	return record, nil
 }
 

@@ -205,6 +205,113 @@ func TestMediaAgentGenerationRouteStrictConfirmationAndIdempotency(t *testing.T)
 	}
 }
 
+func TestCanvasRuntimePolicyEndpointAndMediaAdmission(t *testing.T) {
+	f, token, teamID := setupAgentRouteFixture(t)
+	policyPath := "/api/v1/canvas/tool-policy"
+	initial := agentRouteRequest(t, f, token, http.MethodGet, policyPath, nil)
+	if initial.Code != http.StatusOK || initial.Header().Get("ETag") != `"canvas-tool-0"` {
+		t.Fatalf("device policy read: %d %s", initial.Code, initial.Body.String())
+	}
+	spoofedTeamRead := agentRouteRequest(t, f, token, http.MethodGet, policyPath+"?teamId="+uuid.NewString(), nil)
+	if spoofedTeamRead.Code != http.StatusOK || dataOf(t, spoofedTeamRead)["teamId"] != teamID {
+		t.Fatalf("policy identity must come from authenticated billing scope: %d %s", spoofedTeamRead.Code, spoofedTeamRead.Body.String())
+	}
+	defaultPolicy := dataOf(t, initial)
+	if defaultPolicy["enabled"] != false || len(defaultPolicy["allowedOperations"].([]any)) != 0 {
+		t.Fatalf("default runtime policy must fail closed: %+v", defaultPolicy)
+	}
+
+	ctx := context.Background()
+	limit := int64(50_000)
+	if _, err := f.store.SaveCanvasToolPolicy(ctx, teamID, 0, store.CanvasToolPolicyRecord{
+		Enabled:                        true,
+		AllowedOperations:              []store.CanvasToolOperation{store.CanvasToolOperationGenerateMedia},
+		MaxMediaQuoteMicroPerOperation: &limit,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	canvasRequest := agentRouteRequestBody()
+	canvasQuotePath := "/api/v1/canvas/agent/generations/quote"
+	denied := agentRouteRequest(t, f, token, http.MethodPost, canvasQuotePath, canvasRequest)
+	if denied.Code != http.StatusForbidden || !strings.Contains(denied.Body.String(), "canvas_media_quote_exceeds_limit") {
+		t.Fatalf("canvas quote without caller-supplied entry above policy limit must be denied: %d %s", denied.Code, denied.Body.String())
+	}
+	// Chat generation remains governed by the existing media policy, not the canvas-only switch.
+	chatQuote := agentRouteRequest(t, f, token, http.MethodPost, "/api/v1/media/agent/generations/quote", agentRouteRequestBody())
+	if chatQuote.Code != http.StatusOK {
+		t.Fatalf("chat media quote must remain available: %d %s", chatQuote.Code, chatQuote.Body.String())
+	}
+	spoofedCanvasRequest := agentRouteRequestBody()
+	spoofedCanvasRequest["entry"] = "canvas"
+	spoofed := agentRouteRequest(t, f, token, http.MethodPost, "/api/v1/media/agent/generations/quote", spoofedCanvasRequest)
+	if spoofed.Code != http.StatusBadRequest {
+		t.Fatalf("ordinary Agent route must reject caller-supplied entry: %d %s", spoofed.Code, spoofed.Body.String())
+	}
+
+	// Revoke the operation at policy level and verify quote admission rechecks current policy.
+	if _, err := f.store.SaveCanvasToolPolicy(ctx, teamID, 1, store.CanvasToolPolicyRecord{Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	denied = agentRouteRequest(t, f, token, http.MethodPost, canvasQuotePath, canvasRequest)
+	if denied.Code != http.StatusForbidden || !strings.Contains(denied.Body.String(), "canvas_tool_not_allowed") {
+		t.Fatalf("canvas operation outside allowlist must be denied: %d %s", denied.Code, denied.Body.String())
+	}
+}
+
+func TestCanvasKillSwitchBlocksNewMediaButKeepsAcceptedRequestReplayable(t *testing.T) {
+	f, token, teamID := setupAgentRouteFixture(t)
+	ctx := context.Background()
+	if _, err := f.store.SaveCanvasToolPolicy(ctx, teamID, 0, store.CanvasToolPolicyRecord{
+		Enabled:           true,
+		AllowedOperations: []store.CanvasToolOperation{store.CanvasToolOperationGenerateMedia},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	request := agentRouteRequestBody()
+	canvasGenerationPath := "/api/v1/canvas/agent/generations"
+	quote := agentRouteRequest(t, f, token, http.MethodPost, canvasGenerationPath+"/quote", request)
+	if quote.Code != http.StatusOK {
+		t.Fatalf("canvas quote: %d %s", quote.Code, quote.Body.String())
+	}
+	quoteData := dataOf(t, quote)
+	generate := map[string]any{
+		"request": request, "confirmationToken": quoteData["confirmationToken"], "expectedQuoteMicro": quoteData["quoteMicro"],
+	}
+	crossRoute := agentRouteRequest(t, f, token, http.MethodPost, "/api/v1/media/agent/generations", generate)
+	if crossRoute.Code != http.StatusConflict {
+		t.Fatalf("canvas quote token must not authorize ordinary Agent route: %d %s", crossRoute.Code, crossRoute.Body.String())
+	}
+	created := agentRouteRequest(t, f, token, http.MethodPost, canvasGenerationPath, generate)
+	if created.Code != http.StatusOK {
+		t.Fatalf("canvas generation: %d %s", created.Code, created.Body.String())
+	}
+
+	if _, err := f.store.SaveCanvasToolPolicy(ctx, teamID, 1, store.CanvasToolPolicyRecord{Enabled: false}); err != nil {
+		t.Fatal(err)
+	}
+	replay := agentRouteRequest(t, f, token, http.MethodPost, canvasGenerationPath, generate)
+	if replay.Code != http.StatusOK {
+		t.Fatalf("accepted generation replay must survive kill switch: %d %s", replay.Code, replay.Body.String())
+	}
+	newRequest := agentRouteRequestBody()
+	denied := agentRouteRequest(t, f, token, http.MethodPost, canvasGenerationPath+"/quote", newRequest)
+	if denied.Code != http.StatusForbidden || !strings.Contains(denied.Body.String(), "canvas_tool_not_allowed") {
+		t.Fatalf("kill switch must block new quote admission: %d %s", denied.Code, denied.Body.String())
+	}
+	canvasRead := agentRouteRequest(t, f, token, http.MethodGet, canvasGenerationPath+"/agent-route-1", nil)
+	if canvasRead.Code != http.StatusOK {
+		t.Fatalf("canvas generation replay read: %d %s", canvasRead.Code, canvasRead.Body.String())
+	}
+	ordinaryRead := agentRouteRequest(t, f, token, http.MethodGet, "/api/v1/media/agent/generations/agent-route-1", nil)
+	if ordinaryRead.Code != http.StatusNotFound {
+		t.Fatalf("ordinary route must not expose Canvas generation state: %d %s", ordinaryRead.Code, ordinaryRead.Body.String())
+	}
+	ordinaryCancel := agentRouteRequest(t, f, token, http.MethodPost, "/api/v1/media/agent/generations/agent-route-1/cancel", nil)
+	if ordinaryCancel.Code != http.StatusNotFound {
+		t.Fatalf("ordinary route must not cancel Canvas generation: %d %s", ordinaryCancel.Code, ordinaryCancel.Body.String())
+	}
+}
+
 func TestMediaAgentGenerationCancelRouteReturnsPlatformState(t *testing.T) {
 	f, token, _ := setupAgentRouteFixture(t)
 	quote := agentRouteRequest(t, f, token, http.MethodPost, "/api/v1/media/agent/generations/quote", agentRouteRequestBody())

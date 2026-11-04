@@ -746,6 +746,45 @@ type TeamPolicyRecord struct {
 	UpdatedAt            time.Time `json:"updatedAt"`
 }
 
+type CanvasToolOperation string
+
+const (
+	CanvasToolOperationAddNode       CanvasToolOperation = "add_node"
+	CanvasToolOperationUpdateNode    CanvasToolOperation = "update_node"
+	CanvasToolOperationMoveNode      CanvasToolOperation = "move_node"
+	CanvasToolOperationConnect       CanvasToolOperation = "connect"
+	CanvasToolOperationDisconnect    CanvasToolOperation = "disconnect"
+	CanvasToolOperationRemoveNodes   CanvasToolOperation = "remove_nodes"
+	CanvasToolOperationGenerateMedia CanvasToolOperation = "generate_media"
+)
+
+var canvasToolOperations = [...]CanvasToolOperation{
+	CanvasToolOperationAddNode,
+	CanvasToolOperationUpdateNode,
+	CanvasToolOperationMoveNode,
+	CanvasToolOperationConnect,
+	CanvasToolOperationDisconnect,
+	CanvasToolOperationRemoveNodes,
+	CanvasToolOperationGenerateMedia,
+}
+
+func CanvasToolOperations() []CanvasToolOperation {
+	return append([]CanvasToolOperation{}, canvasToolOperations[:]...)
+}
+
+type CanvasToolPolicyRecord struct {
+	TeamID                         string                `json:"teamId"`
+	Revision                       int64                 `json:"revision"`
+	Enabled                        bool                  `json:"enabled"`
+	AllowedOperations              []CanvasToolOperation `json:"allowedOperations"`
+	RequireStructureConfirmation   bool                  `json:"requireStructureConfirmation"`
+	RequireMediaConfirmation       bool                  `json:"requireMediaConfirmation"`
+	MaxMediaQuoteMicroPerOperation *int64                `json:"maxMediaQuoteMicroPerOperation"`
+	MaxMediaOperationsPerDay       *int64                `json:"maxMediaOperationsPerDay"`
+	MaxConcurrentMediaOperations   *int64                `json:"maxConcurrentMediaOperations"`
+	UpdatedAt                      time.Time             `json:"updatedAt"`
+}
+
 type TeamInvitationRecord struct {
 	ID         string
 	TeamID     string
