@@ -257,7 +257,7 @@ func main() {
 		logger.Info("Mendao 平台 API 已启动",
 			"listen", "http://"+addr,
 			"publicApiOrigin", env.PublicAPIOrigin,
-			"gatewayBaseUrl", env.GatewayBaseURL,
+			"gatewayBaseUrl", env.GatewayAPIBaseURL,
 			"memoryDb", env.MemoryDB)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("监听失败", "error", err)

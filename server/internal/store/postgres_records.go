@@ -641,8 +641,12 @@ func (s *PostgresStore) CreateUpstreamProvider(ctx context.Context, input Create
 	return scanProvider(rows)
 }
 
-func (s *PostgresStore) UpdateUpstreamProvider(ctx context.Context, id string, patch UpdateUpstreamProviderPatch) (*UpstreamProviderRecord, error) {
-	rows, err := s.pool.Query(ctx, `
+type upstreamProviderUpdateQuerier interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}
+
+func updateUpstreamProvider(ctx context.Context, query upstreamProviderUpdateQuerier, id string, patch UpdateUpstreamProviderPatch) (*UpstreamProviderRecord, error) {
+	rows, err := query.Query(ctx, `
 		UPDATE upstream_providers SET
 			name = COALESCE($2, name),
 			base_url = COALESCE($3, base_url),
@@ -667,6 +671,46 @@ func (s *PostgresStore) UpdateUpstreamProvider(ctx context.Context, id string, p
 		return nil, rows.Err()
 	}
 	return scanProvider(rows)
+}
+
+func (s *PostgresStore) UpdateUpstreamProvider(ctx context.Context, id string, patch UpdateUpstreamProviderPatch) (*UpstreamProviderRecord, error) {
+	if patch.Protocol == nil && (patch.Enabled == nil || !*patch.Enabled) {
+		return updateUpstreamProvider(ctx, s.pool, id, patch)
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	if err := lockUpstreamRouteProtocolPolicy(ctx, tx); err != nil {
+		return nil, err
+	}
+	var currentProtocol string
+	err = tx.QueryRow(ctx, `SELECT protocol FROM upstream_providers WHERE id = $1::uuid FOR UPDATE`, id).Scan(&currentProtocol)
+	if queryErrNoRows(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	protocol := UpstreamProtocol(currentProtocol)
+	if patch.Protocol != nil {
+		protocol = *patch.Protocol
+	}
+	if err := validateProviderRouteProtocolTx(ctx, tx, id, protocol); err != nil {
+		return nil, err
+	}
+	provider, err := updateUpstreamProvider(ctx, tx, id, patch)
+	if err != nil {
+		return nil, err
+	}
+	if provider == nil {
+		return nil, nil
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return provider, nil
 }
 
 func nullableProtocol(p *UpstreamProtocol) any {

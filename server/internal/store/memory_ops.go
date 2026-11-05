@@ -62,6 +62,11 @@ func (s *memoryStore) CreateUpstreamRoute(_ context.Context, input CreateUpstrea
 			return nil, errDuplicateRoute
 		}
 	}
+	if input.Enabled {
+		if err := s.validateRouteProtocolLocked(input.ModelID, s.providers[input.ProviderID].Protocol, ""); err != nil {
+			return nil, err
+		}
+	}
 	now := time.Now()
 	record := UpstreamRouteRecord{
 		ID: uuid.NewString(), ModelID: input.ModelID, ProviderID: input.ProviderID,
@@ -82,6 +87,17 @@ func (s *memoryStore) UpdateUpstreamRoute(_ context.Context, id string, patch Up
 	route, ok := s.upstreamRoutes[id]
 	if !ok {
 		return nil, nil
+	}
+	candidateEnabled := route.Enabled
+	if patch.Enabled != nil {
+		candidateEnabled = *patch.Enabled
+	}
+	if candidateEnabled {
+		if provider, exists := s.providers[route.ProviderID]; exists {
+			if err := s.validateRouteProtocolLocked(route.ModelID, provider.Protocol, route.ID); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if patch.UpstreamModel != nil {
 		route.UpstreamModel = *patch.UpstreamModel

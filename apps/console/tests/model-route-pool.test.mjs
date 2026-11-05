@@ -7,7 +7,11 @@ import ts from "typescript";
 const compiled = ts.transpileModule(await readFile(new URL("../src/components/ModelRoutePool.tsx", import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const providers = [{ id: "a", name: "供应商 A", enabled: true }, { id: "b", name: "供应商 B", enabled: false }];
+const providers = [
+  { id: "a", name: "供应商 A", enabled: true, protocol: "openai-chat-completions" },
+  { id: "b", name: "供应商 B", enabled: false, protocol: "openai-chat-completions" },
+  { id: "c", name: "供应商 C", enabled: true, protocol: "anthropic-messages" },
+];
 const existing = { id: "route-a", modelId: "model", providerId: "a", providerName: "供应商 A", providerEnabled: true, upstreamModel: "", priority: 100, weight: 1, enabled: true };
 function nodes(tree, predicate) {
   if (Array.isArray(tree)) return tree.flatMap((node) => nodes(node, predicate));
@@ -94,7 +98,27 @@ test("bound suppliers are excluded from additions and configured disabled pools 
   assert.match(nodeText(ui.render()), /不会回退到模型的单一供应商绑定/);
   assert.match(nodeText(ui.render()), /供应商已停用/);
   const choices = nodes(ui.render(), (node) => node.type === "Select")[0].props.options;
+  assert.deepEqual(Array.from(choices, (option) => option.value), ["", "b", "c"]);
+});
+
+test("enabled route protocol filters incompatible suppliers", async () => {
+  const ui = mount(); await ui.settle();
+  const choices = nodes(ui.render(), (node) => node.type === "Select")[0].props.options;
   assert.deepEqual(Array.from(choices, (option) => option.value), ["", "b"]);
+  assert.match(nodeText(ui.render()), /OpenAI Chat Completions/);
+  assert.equal(button(ui, "添加路由").props.disabled, true);
+});
+
+test("historical mixed protocol pools show an error and block additions until repaired", async () => {
+  const ui = mount({ load: () => Promise.resolve({ routes: [
+    existing,
+    { ...existing, id: "route-c", providerId: "c", providerName: "供应商 C", enabled: true },
+  ] }) });
+  await ui.settle();
+  assert.match(nodeText(ui.render()), /已有启用路由使用不同 API 协议/);
+  assert.match(nodeText(ui.render()), /修复前网关不会下发该模型/);
+  assert.deepEqual(Array.from(nodes(ui.render(), (node) => node.type === "Select")[0].props.options, (option) => option.value), [""]);
+  assert.equal(button(ui, "添加路由").props.disabled, true);
 });
 
 test("a late route load cannot replace a newer model's result", async () => {

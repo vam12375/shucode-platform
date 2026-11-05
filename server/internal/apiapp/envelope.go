@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"github.com/vam12375/shucode-platform/server/internal/store"
 	"sort"
 	"strings"
@@ -13,8 +14,9 @@ import (
 // 客户端按同一 schema 校验后写入 personal 层;出站前必须保持字段集合与语义完全一致。
 
 const (
-	platformProviderID   = "platform:gateway"
-	platformProviderName = "Mendao Platform"
+	platformProviderID          = "platform:gateway"
+	platformProviderName        = "Mendao Platform"
+	userConfigProjectionVersion = 2
 )
 
 type gatewayAPI struct {
@@ -32,170 +34,84 @@ type userConfigModel struct {
 	Config     []byte
 }
 
-type userConfigProtocolGroup struct {
-	ProviderID   string
-	ProviderName string
-	GatewayAPI   gatewayAPI
-	Models       []userConfigModel
-}
-
-func platformProviderIDForProtocol(protocol string) string {
-	switch protocol {
-	case string(store.ProtocolAnthropicMessages):
-		return platformProviderID + ":anthropic"
-	case string(store.ProtocolOpenAIResponses):
-		return platformProviderID + ":responses"
-	default:
-		return platformProviderID
-	}
-}
-
-func platformProviderNameForProtocol(protocol string) string {
-	switch protocol {
-	case string(store.ProtocolAnthropicMessages):
-		return platformProviderName + " · Anthropic"
-	case string(store.ProtocolOpenAIResponses):
-		return platformProviderName + " · Responses"
-	default:
-		return platformProviderName
-	}
-}
-
-func gatewayAPIForProtocol(baseURL, protocol string) gatewayAPI {
-	baseURL = strings.TrimRight(baseURL, "/")
-	if protocol == string(store.ProtocolAnthropicMessages) {
-		return gatewayAPI{Type: protocol, BaseURL: baseURL}
-	}
-	return gatewayAPI{Type: protocol, BaseURL: baseURL + "/v1"}
-}
-
 type BuildUserConfigInput struct {
 	UserID         string
 	TeamID         string
 	DeviceTokenID  string
-	GatewayBaseURL string
 	GatewayAPI     gatewayAPI
 	Models         []userConfigModel
 	DefaultModelID string
 	ProviderName   string
 }
 
-func groupUserConfigModels(input BuildUserConfigInput) []userConfigProtocolGroup {
-	groups := map[string]*userConfigProtocolGroup{}
-	order := []string{}
-	for _, model := range input.Models {
-		protocol := string(model.Protocol)
-		if protocol == "" {
-			protocol = input.GatewayAPI.Type
-		}
-		if protocol == "" {
-			protocol = string(store.ProtocolOpenAIChatCompletions)
-		}
-		group := groups[protocol]
-		if group == nil {
-			providerName := platformProviderNameForProtocol(protocol)
-			if input.ProviderName != "" && len(input.Models) == 1 {
-				providerName = input.ProviderName
-			}
-			group = &userConfigProtocolGroup{
-				ProviderID:   platformProviderIDForProtocol(protocol),
-				ProviderName: providerName,
-				GatewayAPI:   gatewayAPIForProtocol(input.GatewayBaseURL, protocol),
-			}
-			groups[protocol] = group
-			order = append(order, protocol)
-		}
-		group.Models = append(group.Models, model)
+func effectiveModelProtocol(model userConfigModel, defaultProtocol string) string {
+	if protocol := strings.TrimSpace(string(model.Protocol)); protocol != "" {
+		return protocol
 	}
-	out := make([]userConfigProtocolGroup, 0, len(order))
-	for _, protocol := range order {
-		out = append(out, *groups[protocol])
+	if protocol := strings.TrimSpace(defaultProtocol); protocol != "" {
+		return protocol
 	}
-	return out
+	return string(store.ProtocolOpenAIChatCompletions)
 }
 
-// buildUserConfigEnvelope 输出可直接 JSON 化的 map。平台模型按真实上游协议分组，
-// 让客户端自动选择与上游一致的 wire endpoint；同一会话仍由客户端从 canonical history 重建请求。
+// buildUserConfigEnvelope 输出可直接 JSON 化的 map。平台始终只下发一个托管 Provider，
+// 各模型真实上游协议由精确模型规则表达，避免不同协议 Provider 身份分裂平台目录。
 func buildUserConfigEnvelope(input BuildUserConfigInput) map[string]any {
-	groups := groupUserConfigModels(input)
-	providerRules := make([]any, 0, len(groups))
-	if len(groups) == 0 {
-		// 空授权目录保留旧的 disabled 哨兵，阻止客户端回退到 Provider 内置模型目录。
-		providerRules = append(providerRules, map[string]any{
-			"providerId":   platformProviderID,
-			"providerName": platformProviderName,
-			"enabled":      false,
-			"config": map[string]any{
-				"group":            "standard-personal",
-				"access":           map[string]any{"type": "api-key"},
-				"api":              map[string]any{"type": input.GatewayAPI.Type, "baseUrl": input.GatewayAPI.BaseURL},
-				"personalModelIds": []string{},
-				"modelOrder":       []string{},
-				"visibility":       "visible",
-			},
-		})
+	modelIDs := make([]string, 0, len(input.Models))
+	for _, model := range input.Models {
+		modelIDs = append(modelIDs, model.ModelID)
+	}
+	providerName := input.ProviderName
+	if providerName == "" {
+		providerName = platformProviderName
+	}
+	providerRule := map[string]any{
+		"providerId":   platformProviderID,
+		"providerName": providerName,
+		"enabled":      len(input.Models) > 0,
+		"config": map[string]any{
+			"group":            "standard-personal",
+			"access":           map[string]any{"type": "api-key"},
+			"api":              map[string]any{"type": input.GatewayAPI.Type, "baseUrl": input.GatewayAPI.BaseURL},
+			"personalModelIds": modelIDs,
+			"modelOrder":       modelIDs,
+			"visibility":       "visible",
+		},
 	}
 	providerModelRules := make([]any, 0, len(input.Models))
-	providerOrder := make([]any, 0, len(groups))
-	defaultProviderID := ""
-	for _, group := range groups {
-		modelIDs := make([]string, 0, len(group.Models))
-		for _, model := range group.Models {
-			modelIDs = append(modelIDs, model.ModelID)
-			if model.ModelID == input.DefaultModelID {
-				defaultProviderID = group.ProviderID
-			}
+	for _, model := range input.Models {
+		ruleConfig := map[string]any{"enabled": true}
+		if displayName := store.ModelDisplayName(model.ModelID, model.DisplayName); displayName != "" {
+			ruleConfig["displayName"] = displayName
 		}
-		providerRules = append(providerRules, map[string]any{
-			"providerId":   group.ProviderID,
-			"providerName": group.ProviderName,
-			"enabled":      len(modelIDs) > 0,
-			"config": map[string]any{
-				"group":  "standard-personal",
-				"access": map[string]any{"type": "api-key"},
-				"api": map[string]any{
-					"type":    group.GatewayAPI.Type,
-					"baseUrl": group.GatewayAPI.BaseURL,
-				},
-				"personalModelIds": modelIDs,
-				"modelOrder":       modelIDs,
-				"visibility":       "visible",
-			},
-		})
-		providerOrder = append(providerOrder, group.ProviderID)
-		for _, model := range group.Models {
-			ruleConfig := map[string]any{"enabled": true}
-			if displayName := store.ModelDisplayName(model.ModelID, model.DisplayName); displayName != "" {
-				ruleConfig["displayName"] = displayName
-			}
-			if model.ConfigMode == modelConfigManual && len(model.Config) > 0 {
-				var override map[string]any
-				if json.Unmarshal(model.Config, &override) == nil {
-					for _, key := range []string{"properties", "optionSpecs"} {
-						if value, exists := override[key]; exists {
-							ruleConfig[key] = value
-						}
+		if model.ConfigMode == modelConfigManual && len(model.Config) > 0 {
+			var override map[string]any
+			if json.Unmarshal(model.Config, &override) == nil {
+				for _, key := range []string{"properties", "optionSpecs"} {
+					if value, exists := override[key]; exists {
+						ruleConfig[key] = value
 					}
 				}
 			}
-			providerModelRules = append(providerModelRules, map[string]any{
-				"providerId": group.ProviderID,
-				"modelId":    model.ModelID,
-				"config":     ruleConfig,
-			})
 		}
+		providerModelRules = append(providerModelRules, map[string]any{
+			"providerId": platformProviderID,
+			"modelId":    model.ModelID,
+			"apiType":    effectiveModelProtocol(model, input.GatewayAPI.Type),
+			"config":     ruleConfig,
+		})
 	}
 	personalConfig := map[string]any{
-		"providerConfigRules": map[string]any{"providerRules": providerRules},
+		"providerConfigRules": map[string]any{"providerRules": []any{providerRule}},
 		"modelConfigRules": map[string]any{
 			"providerModelRules":       providerModelRules,
 			"manualProviderModelRules": []any{},
 		},
-		"providerOrder": providerOrder,
+		"providerOrder": []any{platformProviderID},
 	}
-	if input.DefaultModelID != "" && defaultProviderID != "" {
+	if input.DefaultModelID != "" {
 		personalConfig["defaultModelSelection"] = map[string]any{
-			"providerId": defaultProviderID,
+			"providerId": platformProviderID,
 			"modelId":    input.DefaultModelID,
 		}
 	}
@@ -215,7 +131,7 @@ func buildUserConfigEnvelope(input BuildUserConfigInput) map[string]any {
 // (客户端 Registry 只认这里;credentials 通道普通 personal provider 不消费)。
 func isPlatformGatewayProviderID(value any) bool {
 	providerID, ok := value.(string)
-	return ok && (providerID == platformProviderID || strings.HasPrefix(providerID, platformProviderID+":"))
+	return ok && providerID == platformProviderID
 }
 
 func withPlatformAccessToken(envelope map[string]any, deviceToken string) map[string]any {
@@ -280,14 +196,10 @@ func computeUserConfigSyncID(input BuildUserConfigInput) string {
 		if mode == modelConfigManual && len(model.Config) > 0 {
 			config = string(model.Config)
 		}
-		protocol := string(model.Protocol)
-		if protocol == "" {
-			protocol = input.GatewayAPI.Type
-		}
 		models = append(models, modelStable{
 			ID:          model.ModelID,
 			DisplayName: store.ModelDisplayName(model.ModelID, model.DisplayName),
-			Protocol:    protocol,
+			Protocol:    effectiveModelProtocol(model, input.GatewayAPI.Type),
 			ConfigMode:  mode, Config: config,
 		})
 
@@ -325,5 +237,5 @@ func computeUserConfigSyncID(input BuildUserConfigInput) string {
 		return "ucfg_invalid"
 	}
 	sum := sha256.Sum256(raw)
-	return "ucfg_" + hex.EncodeToString(sum[:])[:40]
+	return fmt.Sprintf("ucfg_v%d_%s", userConfigProjectionVersion, hex.EncodeToString(sum[:])[:40])
 }

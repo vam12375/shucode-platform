@@ -53,6 +53,7 @@ func runSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 	t.Run("full-precharge-background", func(t *testing.T) { testFullPrechargeAndBackgroundJobs(t, ctx, s) })
 	t.Run("pending-settlements", func(t *testing.T) { testPendingSettlements(t, ctx, s) })
 	t.Run("upstream-routes", func(t *testing.T) { testUpstreamRoutes(t, ctx, s) })
+	t.Run("upstream-route-protocol-policy", func(t *testing.T) { testUpstreamRouteProtocolPolicy(t, ctx, s) })
 	t.Run("ops-alerts", func(t *testing.T) { testOpsAlerts(t, ctx, s) })
 	t.Run("device-tokens", func(t *testing.T) { testDeviceTokens(t, ctx, s) })
 	t.Run("login-flows", func(t *testing.T) { testLoginFlows(t, ctx, s) })
@@ -726,6 +727,217 @@ func testUpstreamRoutes(t *testing.T, ctx context.Context, s PlatformStore) {
 		t.Fatalf("恢复后状态不符: %+v", provider)
 	}
 	_, _ = s.DeleteModel(ctx, modelID)
+}
+
+func testUpstreamRouteProtocolPolicy(t *testing.T, ctx context.Context, s PlatformStore) {
+	suffix := fmt.Sprint(time.Now().UnixNano())
+	chatProvider, err := s.CreateUpstreamProvider(ctx, CreateUpstreamProviderInput{
+		Name: "route-policy-chat-" + suffix, BaseURL: "https://chat.example.com", Protocol: ProtocolOpenAIChatCompletions,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	anthropicProvider, err := s.CreateUpstreamProvider(ctx, CreateUpstreamProviderInput{
+		Name: "route-policy-anthropic-" + suffix, BaseURL: "https://anthropic.example.com", Protocol: ProtocolAnthropicMessages,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerIDs := []string{chatProvider.ID, anthropicProvider.ID}
+	modelIDs := make([]string, 0, 5)
+	t.Cleanup(func() {
+		for _, id := range modelIDs {
+			routes, err := s.ListUpstreamRoutes(ctx, id, true)
+			if err != nil {
+				t.Errorf("list routes for cleanup: %v", err)
+				continue
+			}
+			for _, route := range routes {
+				if _, err := s.DeleteUpstreamRoute(ctx, route.ID); err != nil {
+					t.Errorf("delete route for cleanup: %v", err)
+				}
+			}
+			if _, err := s.DeleteModel(ctx, id); err != nil {
+				t.Errorf("delete model for cleanup: %v", err)
+			}
+		}
+		for _, id := range providerIDs {
+			if _, err := s.DeleteUpstreamProvider(ctx, id); err != nil {
+				t.Errorf("delete provider for cleanup: %v", err)
+			}
+		}
+	})
+	modelID := "m-route-policy-" + suffix
+	if _, err := s.UpsertModel(ctx, UpsertModelInput{
+		ModelID: modelID, DisplayName: "Route protocol policy", InputPricePerMtok: "1", OutputPricePerMtok: "1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	modelIDs = append(modelIDs, modelID)
+	if _, err := s.CreateUpstreamRoute(ctx, CreateUpstreamRouteInput{ModelID: modelID, ProviderID: chatProvider.ID, Enabled: true, Weight: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateUpstreamRoute(ctx, CreateUpstreamRouteInput{ModelID: modelID, ProviderID: anthropicProvider.ID, Enabled: true, Weight: 1}); !errors.Is(err, ErrUpstreamRouteProtocolConflict) {
+		t.Fatalf("enabled mixed-protocol route must be rejected: %v", err)
+	}
+	draft, err := s.CreateUpstreamRoute(ctx, CreateUpstreamRouteInput{ModelID: modelID, ProviderID: anthropicProvider.ID, Enabled: false, Weight: 1})
+	if err != nil || draft == nil {
+		t.Fatalf("disabled incompatible route draft should be allowed: %+v %v", draft, err)
+	}
+	enabled := true
+	if _, err := s.UpdateUpstreamRoute(ctx, draft.ID, UpdateUpstreamRoutePatch{Enabled: &enabled}); !errors.Is(err, ErrUpstreamRouteProtocolConflict) {
+		t.Fatalf("enabling an incompatible route must be rejected: %v", err)
+	}
+
+	providerModelID := "m-route-provider-policy-" + suffix
+	if _, err := s.UpsertModel(ctx, UpsertModelInput{
+		ModelID: providerModelID, DisplayName: "Provider protocol policy", InputPricePerMtok: "1", OutputPricePerMtok: "1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	modelIDs = append(modelIDs, providerModelID)
+	secondChatProvider, err := s.CreateUpstreamProvider(ctx, CreateUpstreamProviderInput{
+		Name: "route-policy-chat-second-" + suffix, BaseURL: "https://chat-second.example.com", Protocol: ProtocolOpenAIChatCompletions,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerIDs = append(providerIDs, secondChatProvider.ID)
+	for _, provider := range []*UpstreamProviderRecord{chatProvider, secondChatProvider} {
+		if _, err := s.CreateUpstreamRoute(ctx, CreateUpstreamRouteInput{ModelID: providerModelID, ProviderID: provider.ID, Enabled: true, Weight: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	responses := ProtocolOpenAIResponses
+	if _, err := s.UpdateUpstreamProvider(ctx, secondChatProvider.ID, UpdateUpstreamProviderPatch{Protocol: &responses}); !errors.Is(err, ErrUpstreamRouteProtocolConflict) {
+		t.Fatalf("provider protocol mutation must preserve route pool protocol: %v", err)
+	}
+
+	// Provider availability does not remove an enabled route from the protocol invariant.
+	disabled := false
+	if _, err := s.UpdateUpstreamProvider(ctx, anthropicProvider.ID, UpdateUpstreamProviderPatch{Enabled: &disabled}); err != nil {
+		t.Fatal(err)
+	}
+	disabledRouteModelID := "m-route-disabled-provider-policy-" + suffix
+	if _, err := s.UpsertModel(ctx, UpsertModelInput{
+		ModelID: disabledRouteModelID, DisplayName: "Disabled provider protocol policy", InputPricePerMtok: "1", OutputPricePerMtok: "1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	modelIDs = append(modelIDs, disabledRouteModelID)
+	if _, err := s.CreateUpstreamRoute(ctx, CreateUpstreamRouteInput{ModelID: disabledRouteModelID, ProviderID: anthropicProvider.ID, Enabled: true, Weight: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateUpstreamRoute(ctx, CreateUpstreamRouteInput{ModelID: disabledRouteModelID, ProviderID: chatProvider.ID, Enabled: true, Weight: 1}); !errors.Is(err, ErrUpstreamRouteProtocolConflict) {
+		t.Fatalf("route protocol must be checked even when its provider is disabled: %v", err)
+	}
+
+	raceModelID := "m-route-policy-race-" + suffix
+	if _, err := s.UpsertModel(ctx, UpsertModelInput{
+		ModelID: raceModelID, DisplayName: "Concurrent route protocol policy", InputPricePerMtok: "1", OutputPricePerMtok: "1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	modelIDs = append(modelIDs, raceModelID)
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for _, provider := range []*UpstreamProviderRecord{chatProvider, anthropicProvider} {
+		wg.Add(1)
+		go func(providerID string) {
+			defer wg.Done()
+			<-start
+			_, err := s.CreateUpstreamRoute(ctx, CreateUpstreamRouteInput{ModelID: raceModelID, ProviderID: providerID, Enabled: true, Weight: 1})
+			errs <- err
+		}(provider.ID)
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	succeeded, conflicted := 0, 0
+	for err := range errs {
+		switch {
+		case err == nil:
+			succeeded++
+		case errors.Is(err, ErrUpstreamRouteProtocolConflict):
+			conflicted++
+		default:
+			t.Fatalf("unexpected concurrent route create error: %v", err)
+		}
+	}
+	if succeeded != 1 || conflicted != 1 {
+		t.Fatalf("concurrent mixed-protocol creates should serialize: succeeded=%d conflicted=%d", succeeded, conflicted)
+	}
+
+	mutationModelID := "m-route-provider-policy-race-" + suffix
+	if _, err := s.UpsertModel(ctx, UpsertModelInput{
+		ModelID: mutationModelID, DisplayName: "Concurrent provider protocol policy", InputPricePerMtok: "1", OutputPricePerMtok: "1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	modelIDs = append(modelIDs, mutationModelID)
+	if _, err := s.CreateUpstreamRoute(ctx, CreateUpstreamRouteInput{ModelID: mutationModelID, ProviderID: chatProvider.ID, Enabled: true, Weight: 1}); err != nil {
+		t.Fatal(err)
+	}
+	mutationProvider, err := s.CreateUpstreamProvider(ctx, CreateUpstreamProviderInput{
+		Name: "route-policy-mutation-race-" + suffix, BaseURL: "https://mutation-race.example.com", Protocol: ProtocolOpenAIChatCompletions,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerIDs = append(providerIDs, mutationProvider.ID)
+	startMutation := make(chan struct{})
+	mutationErrs := make(chan error, 2)
+	var mutationWG sync.WaitGroup
+	mutationWG.Add(2)
+	go func() {
+		defer mutationWG.Done()
+		<-startMutation
+		_, err := s.CreateUpstreamRoute(ctx, CreateUpstreamRouteInput{ModelID: mutationModelID, ProviderID: mutationProvider.ID, Enabled: true, Weight: 1})
+		mutationErrs <- err
+	}()
+	go func() {
+		defer mutationWG.Done()
+		<-startMutation
+		_, err := s.UpdateUpstreamProvider(ctx, mutationProvider.ID, UpdateUpstreamProviderPatch{Protocol: &responses})
+		mutationErrs <- err
+	}()
+	close(startMutation)
+	mutationWG.Wait()
+	close(mutationErrs)
+	mutationSucceeded, mutationConflicted := 0, 0
+	for err := range mutationErrs {
+		switch {
+		case err == nil:
+			mutationSucceeded++
+		case errors.Is(err, ErrUpstreamRouteProtocolConflict):
+			mutationConflicted++
+		default:
+			t.Fatalf("unexpected concurrent provider mutation error: %v", err)
+		}
+	}
+	if mutationSucceeded != 1 || mutationConflicted != 1 {
+		t.Fatalf("concurrent route create/provider protocol mutation should serialize: succeeded=%d conflicted=%d", mutationSucceeded, mutationConflicted)
+	}
+	routes, err := s.ListUpstreamRoutes(ctx, mutationModelID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var routeProtocol UpstreamProtocol
+	for _, route := range routes {
+		if !route.Enabled {
+			continue
+		}
+		provider, err := s.GetUpstreamProvider(ctx, route.ProviderID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if routeProtocol == "" {
+			routeProtocol = provider.Protocol
+		} else if provider.Protocol != routeProtocol {
+			t.Fatalf("concurrent mutation left mixed protocols: route=%+v provider=%+v", route, provider)
+		}
+	}
 }
 
 func testOpsAlerts(t *testing.T, ctx context.Context, s PlatformStore) {

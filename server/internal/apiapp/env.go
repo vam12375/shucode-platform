@@ -26,7 +26,6 @@ type Env struct {
 	PlatformSecretKey    string
 	CookieDomain         string
 	SecureCookies        bool
-	GatewayBaseURL       string
 	GatewayAPIType       string // "openai-chat-completions" | "anthropic-messages"
 	GatewayAPIBaseURL    string
 	ReleaseBaseURL       string
@@ -126,14 +125,13 @@ func LoadPlatformEnv() (*Env, error) {
 	if err != nil {
 		return nil, fmt.Errorf("PUBLIC_APP_ORIGIN 非法: %v", err)
 	}
-	gatewayBaseURL := strings.TrimRight(platformenv.EnvOr("GATEWAY_BASE_URL", "https://gw.mendao.chat"), "/")
+	gatewayAPIBaseURL := strings.TrimRight(platformenv.EnvOr("GATEWAY_BASE_URL", "https://gw.mendao.chat"), "/")
 	gatewayAPIType := "openai-chat-completions"
 	if strings.TrimSpace(os.Getenv("GATEWAY_API_TYPE")) == "anthropic-messages" {
 		gatewayAPIType = "anthropic-messages"
 	}
-	gatewayAPIBaseURL := gatewayBaseURL
 	if gatewayAPIType == "openai-chat-completions" {
-		gatewayAPIBaseURL = gatewayBaseURL + "/v1"
+		gatewayAPIBaseURL += "/v1"
 	}
 	reservationTTLSeconds, err := strconv.Atoi(platformenv.EnvOr("GATEWAY_RESERVATION_TTL_SEC", "1800"))
 	if err != nil || reservationTTLSeconds <= 0 {
@@ -210,7 +208,6 @@ func LoadPlatformEnv() (*Env, error) {
 		PlatformSecretKey:    strings.TrimSpace(os.Getenv("PLATFORM_SECRET_KEY")),
 		CookieDomain:         strings.TrimSpace(os.Getenv("COOKIE_DOMAIN")),
 		SecureCookies:        strings.HasPrefix(publicAPIOrigin, "https:"),
-		GatewayBaseURL:       gatewayBaseURL,
 		GatewayAPIType:       gatewayAPIType,
 		GatewayAPIBaseURL:    gatewayAPIBaseURL,
 		ReleaseBaseURL:       strings.TrimRight(platformenv.EnvOr("RELEASE_BASE_URL", publicAPIOrigin), "/"),

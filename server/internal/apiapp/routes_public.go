@@ -181,10 +181,9 @@ func registerUserConfigRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		input := BuildUserConfigInput{
-			UserID:         auth.User.ID,
-			TeamID:         membership.Team.ID,
-			DeviceTokenID:  auth.Device.ID,
-			GatewayBaseURL: deps.Env.GatewayBaseURL,
+			UserID:        auth.User.ID,
+			TeamID:        membership.Team.ID,
+			DeviceTokenID: auth.Device.ID,
 			GatewayAPI: gatewayAPI{
 				Type:    deps.Env.GatewayAPIType,
 				BaseURL: deps.Env.GatewayAPIBaseURL,
@@ -194,10 +193,13 @@ func registerUserConfigRoutes(router *gin.Engine, deps *Deps) {
 			if !store.TeamModelAllowed(policy, model.ModelID) {
 				continue
 			}
-			protocol, err := gatewayProtocolForModel(ctx, deps, model)
+			protocol, available, err := gatewayProtocolForModel(ctx, deps, model)
 			if err != nil {
 				internalError(c, deps, err)
 				return
+			}
+			if !available {
+				continue
 			}
 			input.Models = append(input.Models, userConfigModel{
 				ModelID: model.ModelID, DisplayName: model.DisplayName, Protocol: protocol,
@@ -236,34 +238,92 @@ func registerUserConfigRoutes(router *gin.Engine, deps *Deps) {
 	})
 }
 
-func gatewayProtocolForModel(ctx context.Context, deps *Deps, model store.PlatformModelRecord) (store.UpstreamProtocol, error) {
-	// user-config 无路由时与网关实际回退协议保持一致。
-	routes, err := deps.Store.ListUpstreamRoutes(ctx, model.ModelID, false)
+func gatewayProtocolForModel(ctx context.Context, deps *Deps, model store.PlatformModelRecord) (store.UpstreamProtocol, bool, error) {
+	routes, err := deps.Store.ListUpstreamRoutes(ctx, model.ModelID, true)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	for _, route := range routes {
-		provider, err := deps.Store.GetUpstreamProvider(ctx, route.ProviderID)
-		if err != nil {
-			return "", err
+	if len(routes) > 0 {
+		providers := make(map[string]*store.UpstreamProviderRecord, len(routes))
+		var selectedProtocol store.UpstreamProtocol
+		for _, route := range routes {
+			if !route.Enabled {
+				continue
+			}
+			provider, err := deps.Store.GetUpstreamProvider(ctx, route.ProviderID)
+			if err != nil {
+				return "", false, err
+			}
+			if provider == nil || !isSupportedGatewayProtocol(provider.Protocol) {
+				// 协议一致性先覆盖完整启用路由池，不能让损坏凭据掩盖历史混合配置。
+				return "", false, nil
+			}
+			if selectedProtocol != "" && selectedProtocol != provider.Protocol {
+				return "", false, nil
+			}
+			selectedProtocol = provider.Protocol
+			providers[route.ProviderID] = provider
 		}
-		if provider != nil && provider.Enabled {
-			return provider.Protocol, nil
+
+		selectedProtocol = ""
+		for _, route := range routes {
+			if !route.Enabled {
+				continue
+			}
+			provider := providers[route.ProviderID]
+			if provider == nil || !route.ProviderEnabled || !provider.Enabled {
+				continue
+			}
+			if _, err := decryptProviderKeyForConfig(deps, provider); err != nil {
+				// 网关会跳过凭据无法解密的渠道，并继续尝试优先级靠后的可用路由。
+				continue
+			}
+			selectedProtocol = provider.Protocol
+			break
 		}
+		if selectedProtocol != "" {
+			return selectedProtocol, true, nil
+		}
+		// 已配置路由池是唯一调度来源；不可用时不能借用旧单绑定或 env 上游。
+		return "", false, nil
 	}
 	if model.UpstreamProviderID != "" {
 		provider, err := deps.Store.GetUpstreamProvider(ctx, model.UpstreamProviderID)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
-		if provider != nil && provider.Enabled {
-			return provider.Protocol, nil
+		if provider == nil || !provider.Enabled || !isSupportedGatewayProtocol(provider.Protocol) {
+			return "", false, nil
 		}
+		if _, err := decryptProviderKeyForConfig(deps, provider); err != nil {
+			return "", false, nil
+		}
+		return provider.Protocol, true, nil
 	}
-	if deps.Env.GatewayAPIType == "anthropic-messages" {
-		return store.ProtocolAnthropicMessages, nil
+	// 无路由且无模型单绑定时，沿用 Gateway 的 env 单上游及默认协议。
+	if isSupportedGatewayProtocol(store.UpstreamProtocol(deps.Env.GatewayAPIType)) {
+		return store.UpstreamProtocol(deps.Env.GatewayAPIType), true, nil
 	}
-	return store.ProtocolOpenAIChatCompletions, nil
+	return store.ProtocolOpenAIChatCompletions, true, nil
+}
+
+func isSupportedGatewayProtocol(protocol store.UpstreamProtocol) bool {
+	switch protocol {
+	case store.ProtocolAnthropicMessages, store.ProtocolOpenAIChatCompletions, store.ProtocolOpenAIResponses:
+		return true
+	default:
+		return false
+	}
+}
+
+func decryptProviderKeyForConfig(deps *Deps, provider *store.UpstreamProviderRecord) (string, error) {
+	if provider.APIKeyCiphertext == "" {
+		return "", nil
+	}
+	if deps.SecretBox == nil {
+		return "", errors.New("平台密钥未配置，无法解析上游凭据")
+	}
+	return deps.SecretBox.Decrypt(provider.APIKeyCiphertext)
 }
 
 // ---- client-credit ----

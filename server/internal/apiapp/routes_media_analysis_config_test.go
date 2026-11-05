@@ -81,6 +81,9 @@ func TestAnalysisConfigIssuesSingleModelScopedProviderAndKeepsNormalConfig(t *te
 	if len(modelRules) != 1 || modelRules[0].(map[string]any)["providerId"] != providerID || personal["defaultModelSelection"].(map[string]any)["providerId"] != providerID {
 		t.Fatal("scoped provider identities are inconsistent")
 	}
+	if modelRules[0].(map[string]any)["apiType"] != string(store.ProtocolOpenAIChatCompletions) {
+		t.Fatalf("scoped model rule must carry its effective route protocol: %+v", modelRules[0])
+	}
 	if modelRules[0].(map[string]any)["config"].(map[string]any)["displayName"] != "DeepSeek V4 Pro" {
 		t.Fatal("scoped analysis must preserve the catalog display name")
 	}

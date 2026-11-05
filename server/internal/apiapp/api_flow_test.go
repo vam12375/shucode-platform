@@ -95,7 +95,7 @@ func newAPIFixtureWithSeed(t *testing.T, demoSeed bool) *apiFixture {
 		Port: 8787, Host: "127.0.0.1", MemoryDB: true,
 		PublicAPIOrigin: "http://localhost:8787", PublicAppOrigin: "http://localhost:8787",
 		PlatformSecretKey: testSecretKey(), SecureCookies: false,
-		GatewayBaseURL: "https://gw.mendao.chat", GatewayAPIType: "openai-chat-completions",
+		GatewayAPIType:    "openai-chat-completions",
 		GatewayAPIBaseURL: "https://gw.mendao.chat/v1",
 		ReleaseBaseURL:    "http://localhost:8787",
 		// 测试上游是 httptest 的 http://127.0.0.1，必须显式放行；生产默认只允许 https。

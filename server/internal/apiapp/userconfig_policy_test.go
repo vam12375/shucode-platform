@@ -132,6 +132,136 @@ func TestUserConfigSyncIDDoesNotEncodeModelPrices(t *testing.T) {
 	}
 }
 
+func TestBuildUserConfigEnvelopeKeepsOneProviderAndPerModelProtocols(t *testing.T) {
+	input := BuildUserConfigInput{
+		GatewayAPI: gatewayAPI{Type: string(store.ProtocolOpenAIChatCompletions), BaseURL: "https://gateway.example/v1"},
+		Models: []userConfigModel{
+			{ModelID: "chat-model", Protocol: store.ProtocolOpenAIChatCompletions},
+			{ModelID: "responses-model", Protocol: store.ProtocolOpenAIResponses},
+			{ModelID: "anthropic-model", Protocol: store.ProtocolAnthropicMessages},
+		},
+		DefaultModelID: "anthropic-model",
+	}
+	envelope := buildUserConfigEnvelope(input)
+	personal := envelope["personalConfig"].(map[string]any)
+	providerRules := personal["providerConfigRules"].(map[string]any)["providerRules"].([]any)
+	if len(providerRules) != 1 {
+		t.Fatalf("平台目录只能有一个 provider: %+v", providerRules)
+	}
+	provider := providerRules[0].(map[string]any)
+	if provider["providerId"] != platformProviderID || provider["config"].(map[string]any)["api"].(map[string]any)["baseUrl"] != "https://gateway.example/v1" {
+		t.Fatalf("provider identity and common gateway URL must be retained: %+v", provider)
+	}
+	modelRules := personal["modelConfigRules"].(map[string]any)["providerModelRules"].([]any)
+	protocols := map[string]any{}
+	for _, value := range modelRules {
+		rule := value.(map[string]any)
+		if rule["providerId"] != platformProviderID {
+			t.Fatalf("model rule split across providers: %+v", rule)
+		}
+		protocols[rule["modelId"].(string)] = rule["apiType"]
+	}
+	if protocols["chat-model"] != string(store.ProtocolOpenAIChatCompletions) ||
+		protocols["responses-model"] != string(store.ProtocolOpenAIResponses) ||
+		protocols["anthropic-model"] != string(store.ProtocolAnthropicMessages) {
+		t.Fatalf("model rules must preserve their actual protocols: %+v", protocols)
+	}
+	selection := personal["defaultModelSelection"].(map[string]any)
+	if selection["providerId"] != platformProviderID || selection["modelId"] != "anthropic-model" {
+		t.Fatalf("default selection must remain on the single platform provider: %+v", selection)
+	}
+	input.Models[2].Protocol = store.ProtocolOpenAIResponses
+	if computeUserConfigSyncID(input) == envelope["syncId"] {
+		t.Fatal("a model protocol change must change syncId")
+	}
+}
+
+func TestUserConfigOmitsMixedProtocolAndUnavailableRoutePools(t *testing.T) {
+	f, token, _ := newUserConfigPolicyFixture(t)
+	ctx := context.Background()
+	makeProvider := func(name string, protocol store.UpstreamProtocol, isEnabled bool) *store.UpstreamProviderRecord {
+		t.Helper()
+		provider, err := f.store.CreateUpstreamProvider(ctx, store.CreateUpstreamProviderInput{
+			Name: name, BaseURL: f.upstream.URL, Protocol: protocol, Enabled: boolPointer(isEnabled),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return provider
+	}
+	first := makeProvider("route-first", store.ProtocolAnthropicMessages, true)
+	second := makeProvider("route-second", store.ProtocolOpenAIResponses, true)
+	legacyBinding := makeProvider("legacy-binding", store.ProtocolOpenAIChatCompletions, true)
+	if _, err := f.store.CreateUpstreamRoute(ctx, store.CreateUpstreamRouteInput{ModelID: "model-a", ProviderID: first.ID, Priority: 1, Weight: 1, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.UpsertModel(ctx, store.UpsertModelInput{
+		ModelID: "model-c", DisplayName: "model-c", InputPricePerMtok: "1", OutputPricePerMtok: "2",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.CreateUpstreamRoute(ctx, store.CreateUpstreamRouteInput{ModelID: "model-c", ProviderID: first.ID, Priority: 1, Weight: 1, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	unavailable := makeProvider("disabled-route", store.ProtocolAnthropicMessages, false)
+	if _, err := f.store.CreateUpstreamRoute(ctx, store.CreateUpstreamRouteInput{ModelID: "model-b", ProviderID: unavailable.ID, Priority: 1, Weight: 1, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.UpsertModel(ctx, store.UpsertModelInput{
+		ModelID: "model-b", DisplayName: "model-b", UpstreamProviderID: legacyBinding.ID,
+		ProvideUpstreamProviderID: true, InputPricePerMtok: "1", OutputPricePerMtok: "2",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Store 已禁止新写入混合池；注入只读历史行以验证遗留数据不进入客户端目录。
+	f.deps.Store = legacyMixedUserConfigStore{
+		PlatformStore: f.store,
+		modelID:       "model-a",
+		route:         legacyMixedRoute(t, f, "model-a", second.ID, "legacy-responses-route"),
+	}
+
+	firstResponse := requestUserConfig(f, token, "")
+	if firstResponse.Code != 200 {
+		t.Fatalf("user-config: %d %s", firstResponse.Code, firstResponse.Body.String())
+	}
+	firstEnvelope := dataOf(t, firstResponse)["envelope"].(map[string]any)
+	personal := firstEnvelope["personalConfig"].(map[string]any)
+	providerRules := personal["providerConfigRules"].(map[string]any)["providerRules"].([]any)
+	if len(providerRules) != 1 || providerRules[0].(map[string]any)["providerId"] != platformProviderID {
+		t.Fatalf("mixed protocols must remain under one provider: %+v", providerRules)
+	}
+	models := providerRules[0].(map[string]any)["config"].(map[string]any)["personalModelIds"].([]any)
+	if len(models) != 1 || models[0] != "model-c" {
+		t.Fatalf("mixed and unavailable route pools must stay out of user-config: %+v", models)
+	}
+	modelRules := personal["modelConfigRules"].(map[string]any)["providerModelRules"].([]any)
+	if len(modelRules) != 1 || modelRules[0].(map[string]any)["modelId"] != "model-c" || modelRules[0].(map[string]any)["apiType"] != string(store.ProtocolAnthropicMessages) {
+		t.Fatalf("model apiType must follow its homogeneous available route pool: %+v", modelRules)
+	}
+
+	oldETag := firstResponse.Header().Get("etag")
+	newProtocol := store.ProtocolOpenAIResponses
+	if _, err := f.store.UpdateUpstreamProvider(ctx, first.ID, store.UpdateUpstreamProviderPatch{Protocol: &newProtocol}); err != nil {
+		t.Fatal(err)
+	}
+	updated := requestUserConfig(f, token, oldETag)
+	if updated.Code != 200 || updated.Header().Get("etag") == oldETag {
+		t.Fatalf("route protocol change must invalidate ETag: %d %s", updated.Code, updated.Body.String())
+	}
+	updatedEnvelope := dataOf(t, updated)["envelope"].(map[string]any)
+	if updatedEnvelope["syncId"] == firstEnvelope["syncId"] {
+		t.Fatal("route protocol change must invalidate syncId")
+	}
+	updatedRules := updatedEnvelope["personalConfig"].(map[string]any)["modelConfigRules"].(map[string]any)["providerModelRules"].([]any)
+	if updatedRules[0].(map[string]any)["apiType"] != string(store.ProtocolOpenAIResponses) {
+		t.Fatalf("updated route protocol was not projected: %+v", updatedRules)
+	}
+	updatedModels := updatedEnvelope["personalConfig"].(map[string]any)["providerConfigRules"].(map[string]any)["providerRules"].([]any)[0].(map[string]any)["config"].(map[string]any)["personalModelIds"].([]any)
+	if len(updatedModels) != 2 || updatedModels[0] != "model-a" || updatedModels[1] != "model-c" {
+		t.Fatalf("repairing the mixed pool should restore all its models: %+v", updatedModels)
+	}
+}
+
 func TestUserConfigSyncsCatalogDisplayNameWithoutChangingModelIdentityOrCapabilities(t *testing.T) {
 	for _, mode := range []string{modelConfigRecommended, modelConfigManual} {
 		t.Run(mode, func(t *testing.T) {

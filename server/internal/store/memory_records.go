@@ -478,6 +478,15 @@ func (s *memoryStore) UpdateUpstreamProvider(_ context.Context, id string, patch
 	if !ok {
 		return nil, nil
 	}
+	protocol := provider.Protocol
+	if patch.Protocol != nil {
+		protocol = *patch.Protocol
+	}
+	if patch.Protocol != nil || (patch.Enabled != nil && *patch.Enabled) {
+		if err := s.validateProviderRouteProtocolLocked(id, protocol); err != nil {
+			return nil, err
+		}
+	}
 	if patch.Name != nil {
 		provider.Name = *patch.Name
 	}

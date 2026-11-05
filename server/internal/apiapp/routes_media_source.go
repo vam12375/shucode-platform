@@ -63,12 +63,15 @@ func registerMediaSourceRoutes(router *gin.Engine, deps *Deps) {
 			if !allowed {
 				continue
 			}
-			protocol, err := gatewayProtocolForModel(ctx, deps, model)
+			protocol, available, err := gatewayProtocolForModel(ctx, deps, model)
 			if err != nil {
 				internalError(c, deps, err)
 				return
 			}
-			envelope := buildUserConfigEnvelope(BuildUserConfigInput{UserID: auth.User.ID, TeamID: membership.Team.ID, DeviceTokenID: auth.Device.ID, GatewayBaseURL: deps.Env.GatewayBaseURL, GatewayAPI: gatewayAPI{Type: deps.Env.GatewayAPIType, BaseURL: deps.Env.GatewayAPIBaseURL}, Models: []userConfigModel{{ModelID: model.ModelID, DisplayName: model.DisplayName, Protocol: protocol, ConfigMode: model.ConfigMode, Config: canonicalModelConfig(model.ModelConfig)}}, DefaultModelID: model.ModelID, ProviderName: "Mendao Video Analysis"})
+			if !available {
+				continue
+			}
+			envelope := buildUserConfigEnvelope(BuildUserConfigInput{UserID: auth.User.ID, TeamID: membership.Team.ID, DeviceTokenID: auth.Device.ID, GatewayAPI: gatewayAPI{Type: deps.Env.GatewayAPIType, BaseURL: deps.Env.GatewayAPIBaseURL}, Models: []userConfigModel{{ModelID: model.ModelID, DisplayName: model.DisplayName, Protocol: protocol, ConfigMode: model.ConfigMode, Config: canonicalModelConfig(model.ModelConfig)}}, DefaultModelID: model.ModelID, ProviderName: "Mendao Video Analysis"})
 
 			setSourceAnalysisReasoning(envelope)
 			c.JSON(200, okData(gin.H{"envelope": withPlatformAccessToken(envelope, auth.PlaintextToken)}))

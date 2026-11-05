@@ -91,7 +91,7 @@ func TestAnalysisModelUsesExistingAllowedDeepSeekCapabilities(t *testing.T) {
 		t.Fatalf("source analysis must explicitly select high: %s", response.Body.String())
 	}
 	modelRules := personal["modelConfigRules"].(map[string]any)["providerModelRules"].([]any)
-	if len(modelRules) != 1 || modelRules[0].(map[string]any)["config"].(map[string]any)["displayName"] != "DeepSeek V4.1 Flash" {
+	if len(modelRules) != 1 || modelRules[0].(map[string]any)["config"].(map[string]any)["displayName"] != "DeepSeek V4.1 Flash" || modelRules[0].(map[string]any)["apiType"] != string(store.ProtocolOpenAIChatCompletions) {
 		t.Fatalf("analysis preflight must carry the catalog display name: %s", response.Body.String())
 	}
 	response = sourceRequest(f, token, "GET", "/api/v1/media/analysis-model?vision=0", nil)

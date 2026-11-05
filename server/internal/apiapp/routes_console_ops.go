@@ -310,8 +310,33 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 			}
 			patch.Enabled = &parsed
 		}
+		if patch.Protocol != nil || (patch.Enabled != nil && *patch.Enabled) {
+			current, err := deps.Store.GetUpstreamProvider(ctx, c.Param("id"))
+			if err != nil {
+				internalError(c, deps, err)
+				return
+			}
+			if current == nil {
+				c.JSON(404, fail(404, "供应商不存在"))
+				return
+			}
+			protocol := current.Protocol
+			if patch.Protocol != nil {
+				protocol = *patch.Protocol
+			}
+			if err := validateProviderRouteProtocolMutation(ctx, deps, current.ID, protocol); err != nil {
+				if writeRouteProtocolConflict(c, err) {
+					return
+				}
+				internalError(c, deps, err)
+				return
+			}
+		}
 		provider, err := deps.Store.UpdateUpstreamProvider(ctx, c.Param("id"), patch)
 		if err != nil {
+			if writeRouteProtocolConflict(c, err) {
+				return
+			}
 			internalError(c, deps, err)
 			return
 		}

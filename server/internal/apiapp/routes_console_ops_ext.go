@@ -121,11 +121,23 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 			}
 			enabled = parsed
 		}
+		if enabled {
+			if err := validateModelRouteProtocol(ctx, deps, modelID, provider.Protocol, ""); err != nil {
+				if writeRouteProtocolConflict(c, err) {
+					return
+				}
+				internalError(c, deps, err)
+				return
+			}
+		}
 		route, err := deps.Store.CreateUpstreamRoute(ctx, store.CreateUpstreamRouteInput{
 			ModelID: modelID, ProviderID: providerID, UpstreamModel: upstreamModel,
 			Priority: priority, Weight: weight, Enabled: enabled,
 		})
 		if err != nil {
+			if writeRouteProtocolConflict(c, err) {
+				return
+			}
 			if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "重复") {
 				c.JSON(409, fail(409, "同一模型不能重复绑定同一供应商"))
 				return
@@ -192,8 +204,36 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 			}
 			patch.Enabled = &value
 		}
+		if patch.Enabled != nil && *patch.Enabled {
+			route, err := findUpstreamRoute(ctx, deps, c.Param("id"))
+			if err != nil {
+				internalError(c, deps, err)
+				return
+			}
+			if route != nil {
+				provider, err := deps.Store.GetUpstreamProvider(ctx, route.ProviderID)
+				if err != nil {
+					internalError(c, deps, err)
+					return
+				}
+				if provider == nil {
+					c.JSON(404, fail(404, "供应商不存在"))
+					return
+				}
+				if err := validateModelRouteProtocol(ctx, deps, route.ModelID, provider.Protocol, route.ID); err != nil {
+					if writeRouteProtocolConflict(c, err) {
+						return
+					}
+					internalError(c, deps, err)
+					return
+				}
+			}
+		}
 		route, err := deps.Store.UpdateUpstreamRoute(ctx, c.Param("id"), patch)
 		if err != nil {
+			if writeRouteProtocolConflict(c, err) {
+				return
+			}
 			internalError(c, deps, err)
 			return
 		}

@@ -70,14 +70,17 @@ func registerMediaAnalysisConfigRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		providerID := "platform:video-analysis:" + p.ID + ":" + p.Analysis.InputID
-		protocol, err := gatewayProtocolForModel(ctx, deps, *model)
+		protocol, available, err := gatewayProtocolForModel(ctx, deps, *model)
 		if err != nil {
 			internalError(c, deps, err)
 			return
 		}
+		if !available {
+			c.JSON(403, fail(403, "analysis_model_not_allowed"))
+			return
+		}
 		envelope := buildUserConfigEnvelope(BuildUserConfigInput{
 			UserID: auth.User.ID, TeamID: membership.Team.ID, DeviceTokenID: auth.Device.ID,
-			GatewayBaseURL: deps.Env.GatewayBaseURL,
 			GatewayAPI:     gatewayAPI{Type: deps.Env.GatewayAPIType, BaseURL: deps.Env.GatewayAPIBaseURL},
 			Models:         []userConfigModel{{ModelID: model.ModelID, DisplayName: model.DisplayName, Protocol: protocol, ConfigMode: model.ConfigMode, Config: canonicalModelConfig(model.ModelConfig)}},
 			DefaultModelID: model.ModelID, ProviderName: "Mendao Video Analysis",

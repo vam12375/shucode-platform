@@ -35,6 +35,7 @@ interface ProviderOption {
   id: string;
   name: string;
   enabled: boolean;
+  protocol: "openai-chat-completions" | "openai-responses" | "anthropic-messages";
 }
 
 /** 定价库条目（/console/api/model-pricing）：命中模型 ID 时自动带价。 */

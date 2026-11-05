@@ -4,7 +4,8 @@ import { confirmDialog, toastErr, toastOk } from "./Feedback.js";
 import { Select } from "./Select.js";
 import { Chip, Notice } from "./StatusChip.js";
 
-interface Provider { id: string; name: string; enabled: boolean }
+type ProviderProtocol = "openai-chat-completions" | "openai-responses" | "anthropic-messages";
+interface Provider { id: string; name: string; enabled: boolean; protocol: ProviderProtocol }
 interface Route {
   id: string; modelId: string; providerId: string; providerName: string;
   providerEnabled?: boolean; upstreamModel: string; priority: number; weight: number; enabled: boolean;
@@ -15,6 +16,12 @@ export function routeInteger(value: string, min: number, max: number): number | 
   if (!/^\d+$/.test(value.trim())) return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed >= min && parsed <= max ? parsed : null;
+}
+
+function protocolLabel(protocol: ProviderProtocol): string {
+  if (protocol === "anthropic-messages") return "Anthropic Messages";
+  if (protocol === "openai-responses") return "OpenAI Responses";
+  return "OpenAI Chat Completions";
 }
 
 // 每个模型独立挂载，旧请求只更新旧实例；切换模型后不能用上一模型的路由误操作。
@@ -74,7 +81,15 @@ export function ModelRoutePool({ modelId, upstreamModel, providers }: {
       providerId, upstreamModel: upstream.trim(), ...parsed,
     });
   };
-  const available = providers.filter((provider) => !routes.some((route) => route.providerId === provider.id));
+  const enabledRouteProtocols = [...new Set(routes
+    .filter((route) => route.enabled)
+    .map((route) => providers.find((provider) => provider.id === route.providerId)?.protocol)
+    .filter((protocol): protocol is ProviderProtocol => protocol !== undefined))];
+  const mixedProtocols = enabledRouteProtocols.length > 1;
+  const routeProtocol = enabledRouteProtocols.length === 1 ? enabledRouteProtocols[0] : null;
+  const available = providers.filter((provider) =>
+    !routes.some((route) => route.providerId === provider.id) &&
+    !mixedProtocols && (!routeProtocol || provider.protocol === routeProtocol));
   const unavailable = routes.length > 0 && !routes.some((route) => route.enabled &&
     route.providerEnabled !== false && providers.some((provider) => provider.id === route.providerId && provider.enabled));
   const disabled = loading || busy || error !== null;
@@ -84,18 +99,20 @@ export function ModelRoutePool({ modelId, upstreamModel, providers }: {
   return <>
     <p className="readout">优先级越小越先调用；同优先级按权重轮转（1:1 均分，2:1 约为两倍请求）。主组失败时再尝试备用组。</p>
     <p className="readout">配置路由池后仅使用池内供应商；全部停用时拒绝新请求。上游模型留空继承模型绑定：{upstreamModel || modelId}。</p>
+    {routeProtocol ? <p className="readout">当前启用路由协议：{protocolLabel(routeProtocol)}。同一模型的启用路由需使用相同协议。</p> : null}
+    {mixedProtocols ? <Notice tone="stop" k="路由池协议不一致">该模型已有启用路由使用不同 API 协议。请先停用不兼容路由；修复前网关不会下发该模型。</Notice> : null}
     {unavailable && !loading ? <Notice k="没有可用路由">请启用至少一条路由及其供应商；当前不会回退到模型的单一供应商绑定。</Notice> : null}
     {error ? <Notice tone="stop" k="路由加载失败">{error} <button className="btn btn-ghost btn-sm" type="button" onClick={() => setRevision((value) => value + 1)}>重新加载路由</button></Notice> : null}
     <fieldset disabled={disabled} style={{ border: 0, padding: 0, margin: "12px 0" }}>
       <div className="form-row">
         <label className="field"><span className="field-label">供应商</span><Select
           ariaLabel="路由供应商" disabled={disabled} value={providerId} onChange={setProviderId}
-          options={[{ value: "", label: "选择未绑定的供应商…" }, ...available.map((provider) => ({ value: provider.id, label: provider.enabled ? provider.name : `${provider.name}（已停用）` }))]}
+          options={[{ value: "", label: "选择未绑定的兼容供应商…" }, ...available.map((provider) => ({ value: provider.id, label: `${provider.name} · ${protocolLabel(provider.protocol)}${provider.enabled ? "" : "（已停用）"}` }))]}
         /></label>
         <label className="field"><span className="field-label">上游模型</span><input className="input" aria-label="路由上游模型" placeholder={`留空继承 ${upstreamModel || modelId}`} value={upstream} onChange={(event) => setUpstream(event.target.value)} maxLength={200} /></label>
         <label className="field"><span className="field-label">优先级 · 小者优先</span><input className="input num" style={{ width: 130 }} inputMode="numeric" aria-label="路由优先级" value={priority} onChange={(event) => setPriority(event.target.value)} /></label>
         <label className="field"><span className="field-label">权重 · 同级分流</span><input className="input num" style={{ width: 120 }} inputMode="numeric" aria-label="路由权重" value={weight} onChange={(event) => setWeight(event.target.value)} /></label>
-        <button className="btn" type="button" disabled={disabled || !available.some((provider) => provider.id === providerId)} onClick={() => void add()}>添加路由</button>
+        <button className="btn" type="button" disabled={disabled || mixedProtocols || !available.some((provider) => provider.id === providerId)} onClick={() => void add()}>添加路由</button>
       </div>
     </fieldset>
     {loading ? <p className="readout" role="status">正在加载路由…</p> : !error ? <div className="table-scroll"><table className="table" style={{ minWidth: 1000, whiteSpace: "nowrap" }}><thead><tr>

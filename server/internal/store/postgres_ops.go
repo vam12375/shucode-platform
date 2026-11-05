@@ -73,8 +73,28 @@ func (s *PostgresStore) getUpstreamRoute(ctx context.Context, id string) (*Upstr
 }
 
 func (s *PostgresStore) CreateUpstreamRoute(ctx context.Context, input CreateUpstreamRouteInput) (*UpstreamRouteRecord, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	if err := lockUpstreamRouteProtocolPolicy(ctx, tx); err != nil {
+		return nil, err
+	}
+	if input.Enabled {
+		var protocol string
+		err := tx.QueryRow(ctx, `SELECT protocol FROM upstream_providers WHERE id = $1::uuid`, input.ProviderID).Scan(&protocol)
+		if err != nil && !queryErrNoRows(err) {
+			return nil, err
+		}
+		if err == nil {
+			if err := validateUpstreamRouteProtocolTx(ctx, tx, input.ModelID, UpstreamProtocol(protocol), ""); err != nil {
+				return nil, err
+			}
+		}
+	}
 	var id string
-	err := s.pool.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		INSERT INTO upstream_routes (model_id, provider_id, upstream_model, priority, weight, enabled)
 		VALUES ($1, $2::uuid, $3, $4, $5, $6)
 		RETURNING id::text`,
@@ -82,11 +102,49 @@ func (s *PostgresStore) CreateUpstreamRoute(ctx context.Context, input CreateUps
 	if err != nil {
 		return nil, err
 	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
 	return s.getUpstreamRoute(ctx, id)
 }
 
 func (s *PostgresStore) UpdateUpstreamRoute(ctx context.Context, id string, patch UpdateUpstreamRoutePatch) (*UpstreamRouteRecord, error) {
-	tag, err := s.pool.Exec(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	if err := lockUpstreamRouteProtocolPolicy(ctx, tx); err != nil {
+		return nil, err
+	}
+	var modelID, providerID string
+	var enabled bool
+	err = tx.QueryRow(ctx, `
+		SELECT model_id, provider_id::text, enabled
+		FROM upstream_routes
+		WHERE id = $1::uuid
+		FOR UPDATE`, id).Scan(&modelID, &providerID, &enabled)
+	if queryErrNoRows(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	candidateEnabled := enabled
+	if patch.Enabled != nil {
+		candidateEnabled = *patch.Enabled
+	}
+	if candidateEnabled {
+		var protocol string
+		err := tx.QueryRow(ctx, `SELECT protocol FROM upstream_providers WHERE id = $1::uuid`, providerID).Scan(&protocol)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateUpstreamRouteProtocolTx(ctx, tx, modelID, UpstreamProtocol(protocol), id); err != nil {
+			return nil, err
+		}
+	}
+	tag, err := tx.Exec(ctx, `
 		UPDATE upstream_routes SET
 			upstream_model = COALESCE($2, upstream_model),
 			priority = COALESCE($3::integer, priority),
@@ -101,12 +159,26 @@ func (s *PostgresStore) UpdateUpstreamRoute(ctx context.Context, id string, patc
 	if tag.RowsAffected() == 0 {
 		return nil, nil
 	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
 	return s.getUpstreamRoute(ctx, id)
 }
 
 func (s *PostgresStore) DeleteUpstreamRoute(ctx context.Context, id string) (bool, error) {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM upstream_routes WHERE id = $1::uuid`, id)
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+	if err := lockUpstreamRouteProtocolPolicy(ctx, tx); err != nil {
+		return false, err
+	}
+	tag, err := tx.Exec(ctx, `DELETE FROM upstream_routes WHERE id = $1::uuid`, id)
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return false, err
 	}
 	return tag.RowsAffected() > 0, nil
