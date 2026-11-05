@@ -37,6 +37,9 @@ func (p *ShotPlan) UnmarshalJSON(raw []byte) error {
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		return err
 	}
+	if v, ok := fields["anchors"]; ok && bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+		return ErrInvalid
+	}
 	*p = ShotPlan(value)
 	for i, key := range []string{"sourceUrl", "sourceStart", "sourceEnd"} {
 		if data, ok := fields[key]; ok {

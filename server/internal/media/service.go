@@ -174,7 +174,7 @@ func (s *Service) Revise(ctx context.Context, team, id string, version int64, pl
 		if err != nil {
 			return err
 		}
-		shots, total, err := BuildShots(p.Brief, plan, p.Models)
+		shots, total, err := buildShotsWithReferenceScript(p.Brief, plan, p.Models, revisionReferenceScriptVersion(p, plan))
 		if err != nil {
 			return err
 		}

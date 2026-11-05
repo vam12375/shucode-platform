@@ -1,0 +1,300 @@
+[
+  {
+    "name": "historical",
+    "valid": true,
+    "shot": {
+      "sourceUrl": "",
+      "sourceStart": 0,
+      "sourceEnd": 5,
+      "framing": "full",
+      "camera": "push",
+      "action": "walk",
+      "purpose": "open"
+    }
+  },
+  {
+    "name": "observed",
+    "valid": true,
+    "shot": {
+      "sourceUrl": "",
+      "sourceStart": 0,
+      "sourceEnd": 5,
+      "framing": "full",
+      "camera": "push",
+      "action": "walk",
+      "purpose": "open",
+      "anchors": [
+        {
+          "sourceTime": 2,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door"
+        }
+      ]
+    }
+  },
+  {
+    "name": "boundaries",
+    "valid": true,
+    "shot": {
+      "sourceUrl": "",
+      "sourceStart": 0,
+      "sourceEnd": 5,
+      "framing": "full",
+      "camera": "push",
+      "action": "walk",
+      "purpose": "open",
+      "anchors": [
+        {
+          "sourceTime": 0,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door"
+        },
+        {
+          "sourceTime": 5,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door"
+        }
+      ]
+    }
+  },
+  {
+    "name": "empty",
+    "valid": false,
+    "shot": {
+      "sourceUrl": "",
+      "sourceStart": 0,
+      "sourceEnd": 5,
+      "framing": "full",
+      "camera": "push",
+      "action": "walk",
+      "purpose": "open",
+      "anchors": []
+    }
+  },
+  {
+    "name": "null",
+    "valid": false,
+    "shot": {
+      "sourceUrl": "",
+      "sourceStart": 0,
+      "sourceEnd": 5,
+      "framing": "full",
+      "camera": "push",
+      "action": "walk",
+      "purpose": "open",
+      "anchors": null
+    }
+  },
+  {
+    "name": "outside",
+    "valid": false,
+    "shot": {
+      "sourceUrl": "",
+      "sourceStart": 0,
+      "sourceEnd": 5,
+      "framing": "full",
+      "camera": "push",
+      "action": "walk",
+      "purpose": "open",
+      "anchors": [
+        {
+          "sourceTime": 6,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door"
+        }
+      ]
+    }
+  },
+  {
+    "name": "duplicate",
+    "valid": false,
+    "shot": {
+      "sourceUrl": "",
+      "sourceStart": 0,
+      "sourceEnd": 5,
+      "framing": "full",
+      "camera": "push",
+      "action": "walk",
+      "purpose": "open",
+      "anchors": [
+        {
+          "sourceTime": 2,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door"
+        },
+        {
+          "sourceTime": 2,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door"
+        }
+      ]
+    }
+  },
+  {
+    "name": "reversed",
+    "valid": false,
+    "shot": {
+      "sourceUrl": "",
+      "sourceStart": 0,
+      "sourceEnd": 5,
+      "framing": "full",
+      "camera": "push",
+      "action": "walk",
+      "purpose": "open",
+      "anchors": [
+        {
+          "sourceTime": 2,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door"
+        },
+        {
+          "sourceTime": 1,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door"
+        }
+      ]
+    }
+  },
+  {
+    "name": "null-detail",
+    "valid": false,
+    "shot": {
+      "sourceUrl": "",
+      "sourceStart": 0,
+      "sourceEnd": 5,
+      "framing": "full",
+      "camera": "push",
+      "action": "walk",
+      "purpose": "open",
+      "anchors": [
+        {
+          "sourceTime": 2,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door",
+          "requiredDetails": null
+        }
+      ]
+    }
+  },
+  {
+    "name": "unknown-field",
+    "valid": false,
+    "shot": {
+      "sourceUrl": "",
+      "sourceStart": 0,
+      "sourceEnd": 5,
+      "framing": "full",
+      "camera": "push",
+      "action": "walk",
+      "purpose": "open",
+      "anchors": [
+        {
+          "sourceTime": 2,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door",
+          "unknown": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "utf16-limit",
+    "valid": false,
+    "shot": {
+      "sourceUrl": "",
+      "sourceStart": 0,
+      "sourceEnd": 5,
+      "framing": "full",
+      "camera": "push",
+      "action": "walk",
+      "purpose": "open",
+      "anchors": [
+        {
+          "sourceTime": 2,
+          "framing": "close",
+          "camera": "static",
+          "action": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+        }
+      ]
+    }
+  },
+  {
+    "name": "too-many",
+    "valid": false,
+    "shot": {
+      "sourceUrl": "",
+      "sourceStart": 0,
+      "sourceEnd": 5,
+      "framing": "full",
+      "camera": "push",
+      "action": "walk",
+      "purpose": "open",
+      "anchors": [
+        {
+          "sourceTime": 0.0,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door"
+        },
+        {
+          "sourceTime": 0.5,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door"
+        },
+        {
+          "sourceTime": 1.0,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door"
+        },
+        {
+          "sourceTime": 1.5,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door"
+        },
+        {
+          "sourceTime": 2.0,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door"
+        },
+        {
+          "sourceTime": 2.5,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door"
+        },
+        {
+          "sourceTime": 3.0,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door"
+        },
+        {
+          "sourceTime": 3.5,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door"
+        },
+        {
+          "sourceTime": 4.0,
+          "framing": "close",
+          "camera": "static",
+          "action": "open door"
+        }
+      ]
+    }
+  }
+]

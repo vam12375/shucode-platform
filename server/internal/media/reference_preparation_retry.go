@@ -3,6 +3,7 @@ package media
 import (
 	"context"
 	"math"
+	"reflect"
 	"time"
 
 	"github.com/vam12375/shucode-platform/server/internal/store"
@@ -63,7 +64,7 @@ func preserveReferencePreparationState(p *Project, plan Plan, shots []Shot, quot
 				previous, next := current.Plan, shots[i].Plan
 				previous.ReferenceVideoAssetID, next.ReferenceVideoAssetID = "", ""
 				previous.ReferenceAudioAssetID, next.ReferenceAudioAssetID = "", ""
-				if previous != next {
+				if !reflect.DeepEqual(previous, next) {
 					preserve = false
 					break
 				}
@@ -97,7 +98,7 @@ func preserveReferencePreparationState(p *Project, plan Plan, shots []Shot, quot
 			previous.ReferenceVideoAssetID, next.ReferenceVideoAssetID = "", ""
 			previous.ReferenceAudioAssetID, next.ReferenceAudioAssetID = "", ""
 			// 已结算段的供应商输入与汇总脚本都是执行事实；不能通过 revise 偷换后让它重新 pending。
-			if current.Error != "" || current.OutputAssetID == "" || previousClip == "" || previousClip != nextClip || previousAudio != nextAudio || current.ReferenceVideoAssetID != previousClip || current.ReferenceAudioAssetID != previousAudio || previous != next || !referenceExecutionFactsMatch(*p.Plan, current, previousClip, previousAudio) || !referenceExecutionFactsMatch(plan, shots[i], nextClip, nextAudio) {
+			if current.Error != "" || current.OutputAssetID == "" || previousClip == "" || previousClip != nextClip || previousAudio != nextAudio || current.ReferenceVideoAssetID != previousClip || current.ReferenceAudioAssetID != previousAudio || !reflect.DeepEqual(previous, next) || !referenceExecutionFactsMatch(*p.Plan, current, previousClip, previousAudio) || !referenceExecutionFactsMatch(plan, shots[i], nextClip, nextAudio) {
 				return ErrConflict
 			}
 			charged += current.ChargedMicro
@@ -177,7 +178,7 @@ func (s *Service) retryReferencePreparation(ctx context.Context, p *Project) err
 	if validateSourceAnalysis(p, *p.SourceAnalysis) != nil || validateSourceBoundaries(p, plan) != nil {
 		return ErrConflict
 	}
-	shots, quote, err := BuildShots(p.Brief, plan, p.Models)
+	shots, quote, err := buildShotsWithReferenceScript(p.Brief, plan, p.Models, frozenReferenceScriptVersion(p))
 	if err != nil || len(shots) != len(p.Shots) || quote != p.QuoteMicro {
 		return ErrConflict
 	}
@@ -186,7 +187,7 @@ func (s *Service) retryReferencePreparation(ctx context.Context, p *Project) err
 		execution.ReferenceVideoAssetID, execution.ReferenceAudioAssetID = "", ""
 		candidate := shots[i].Plan
 		candidate.ReferenceVideoAssetID, candidate.ReferenceAudioAssetID = "", ""
-		if execution != candidate || shot.QuoteMicro != shots[i].QuoteMicro {
+		if !reflect.DeepEqual(execution, candidate) || shot.QuoteMicro != shots[i].QuoteMicro {
 			return ErrConflict
 		}
 	}

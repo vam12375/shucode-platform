@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -295,6 +296,13 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	return nil
 }
 func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
+	return buildShotsWithReferenceScript(b, plan, models, 1)
+}
+
+func buildShotsWithReferenceScript(b Brief, plan Plan, models []Model, scriptVersion int) ([]Shot, int64, error) {
+	if scriptVersion != 0 && scriptVersion != 1 {
+		return nil, 0, ErrInvalid
+	}
 	if err := validateResearchPlan(b, plan); err != nil {
 		return nil, 0, err
 	}
@@ -372,7 +380,7 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 	deliveryFrames := 0
 	sourceEnd := float64(0)
 	for _, p := range plan.Shots {
-		if utf8.RuneCountInString(p.Prompt) > 4000 || utf8.RuneCountInString(p.ImagePrompt) > 4000 || utf8.RuneCountInString(p.Subtitle) > 300 || utf8.RuneCountInString(p.Narration) > 300 || utf8.RuneCountInString(p.Camera) > 500 || utf8.RuneCountInString(p.Framing) > 500 || utf8.RuneCountInString(p.Action) > 1000 || utf8.RuneCountInString(p.Purpose) > 500 {
+		if (scriptVersion == 0 && p.Anchors != nil) || !validReferenceAnchors(p.Anchors, p.SourceStart, p.SourceEnd) || utf8.RuneCountInString(p.Prompt) > 4000 || utf8.RuneCountInString(p.ImagePrompt) > 4000 || utf8.RuneCountInString(p.Subtitle) > 300 || utf8.RuneCountInString(p.Narration) > 300 || utf8.RuneCountInString(p.Camera) > 500 || utf8.RuneCountInString(p.Framing) > 500 || utf8.RuneCountInString(p.Action) > 1000 || utf8.RuneCountInString(p.Purpose) > 500 {
 			return nil, 0, ErrInvalid
 		}
 		validShotSource := !sourced || (p.hasCompleteSource() && (refs[p.SourceURL] || (replica && p.SourceURL == "" && len(b.ReferenceURLs) == 0 && refs[""])))
@@ -408,6 +416,17 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 			// 制作单的全局图片是参考集合；历史镜头文字或绑定不能重新开启首帧阶段。
 			p.AssetID, p.ImagePrompt = "", ""
 		}
+		if replica && !wholeReference && scriptVersion == 1 {
+			var script strings.Builder
+			if b.ReplacementInstructions != "" {
+				script.WriteString("替换目标：" + b.ReplacementInstructions + "\n")
+			}
+			appendWholeReferenceScript(&script, p, p.SourceStart, p.SourceEnd, p.Duration, scriptVersion)
+			if len(utf16.Encode([]rune(script.String()))) > 4000 {
+				return nil, 0, fmt.Errorf("video_reference_prompt_limit")
+			}
+			p.Prompt = strings.TrimSpace(script.String())
+		}
 		var q int64
 		if b.GenerationMode == "video_reference" {
 			if v.VideoReference == nil {
@@ -430,13 +449,17 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 		total += q
 		duration += p.Duration
 		deliveryFrames += storyDeliveryFrames(p)
-		out = append(out, Shot{Plan: p, Status: "pending", Attempt: 1, QuoteMicro: q})
+		version := 0
+		if replica {
+			version = scriptVersion
+		}
+		out = append(out, Shot{ReferenceScriptVersion: version, Plan: p, Status: "pending", Attempt: 1, QuoteMicro: q})
 	}
 	if wholeReference {
 		if math.Abs(sourceEnd-b.ReferenceDurationSeconds) > .001 {
 			return nil, 0, fmt.Errorf("video_reference_plan_invalid")
 		}
-		return buildWholeReferenceExecution(b, plan, v, models)
+		return buildWholeReferenceExecution(b, plan, v, models, scriptVersion)
 	}
 	if (!replica && ((!storyPlanning(b) && duration != b.Duration) || (storyPlanning(b) && deliveryFrames != b.Duration*30))) || (replica && math.Abs(sourceEnd-b.ReferenceDurationSeconds) > .001) || total > b.MaxCreditsMicro {
 		return nil, 0, fmt.Errorf("duration_or_budget_exceeded")

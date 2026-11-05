@@ -3,6 +3,7 @@ package media
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,14 +22,14 @@ func referenceReviewPlan(project *Project, plan Plan) (Plan, error) {
 			withoutBindings.Shots[i].ReferenceVideoAssetID = ""
 			withoutBindings.Shots[i].ReferenceAudioAssetID = ""
 		}
-		derived, _, err := BuildShots(project.Brief, withoutBindings, project.Models)
+		derived, _, err := buildShotsWithReferenceScript(project.Brief, withoutBindings, project.Models, frozenReferenceScriptVersion(project))
 		if err == nil && len(derived) == len(project.Shots) {
 			matches := true
 			for i := range derived {
 				current := project.Shots[i].Plan
 				current.ReferenceVideoAssetID = ""
 				current.ReferenceAudioAssetID = ""
-				if current != derived[i].Plan {
+				if !reflect.DeepEqual(current, derived[i].Plan) {
 					matches = false
 					break
 				}
@@ -223,8 +224,27 @@ func lexicographicallyLonger(a, b []int) bool {
 	return len(a) > len(b)
 }
 
-func appendWholeReferenceScript(script *strings.Builder, shot ShotPlan) {
+func appendWholeReferenceScript(script *strings.Builder, shot ShotPlan, segmentStart, segmentEnd float64, outputDuration, scriptVersion int) {
+	// 独立字段曾被聚合脚本遗漏；必须编译已审阅的构图、运镜和动作，不能依赖prompt重复描述。
+	local := func(t float64) string { return strconv.FormatFloat(t-segmentStart, 'f', 3, 64) }
+	output := func(t float64) string {
+		return strconv.FormatFloat((t-segmentStart)/(segmentEnd-segmentStart)*float64(outputDuration), 'f', 3, 64)
+	}
+	if scriptVersion == 1 {
+		script.WriteString("[片段局部 " + local(shot.SourceStart) + "–" + local(shot.SourceEnd) + "秒；请求输出 " + output(shot.SourceStart) + "–" + output(shot.SourceEnd) + "秒]\n")
+	}
 	script.WriteString("[" + strconv.FormatFloat(shot.SourceStart, 'f', -1, 64) + "–" + strconv.FormatFloat(shot.SourceEnd, 'f', -1, 64) + "秒]\n")
+	if scriptVersion == 1 {
+		script.WriteString("景别：" + shot.Framing + "\n运镜：" + shot.Camera + "\n动作：" + shot.Action + "\n")
+		for _, anchor := range shot.Anchors {
+			script.WriteString("锚点 原片 " + strconv.FormatFloat(anchor.SourceTime, 'f', -1, 64) + "秒 / 局部 " + local(anchor.SourceTime) + "秒 / 请求输出 " + output(anchor.SourceTime) + "秒：景别 " + anchor.Framing + "；运镜 " + anchor.Camera + "；动作 " + anchor.Action)
+			if anchor.RequiredDetails != "" {
+				script.WriteString("；必要细节 " + anchor.RequiredDetails)
+			}
+			script.WriteString("\n")
+		}
+		script.WriteString("叙事目的：" + shot.Purpose + "\n")
+	}
 	if shot.Subject != "" {
 		script.WriteString("主体：" + shot.Subject + "\n")
 	}
@@ -247,7 +267,7 @@ func appendWholeReferenceScript(script *strings.Builder, shot ShotPlan) {
 }
 
 // 审阅镜头保留原片边界；执行镜头按能力在事实边界派生最少连续参考段。
-func buildWholeReferenceExecution(b Brief, plan Plan, model Model, models []Model) ([]Shot, int64, error) {
+func buildWholeReferenceExecution(b Brief, plan Plan, model Model, models []Model, scriptVersion int) ([]Shot, int64, error) {
 	if err := validateBriefReferenceImages(b, model); err != nil {
 		return nil, 0, err
 	}
@@ -300,7 +320,7 @@ func buildWholeReferenceExecution(b Brief, plan Plan, model Model, models []Mode
 				}
 				audioID = fact.ReferenceAudioAssetID
 			}
-			appendWholeReferenceScript(&script, fact)
+			appendWholeReferenceScript(&script, fact, facts[0].SourceStart, facts[len(facts)-1].SourceEnd, duration, scriptVersion)
 		}
 		if boundClips != 0 && boundClips != len(facts) || boundAudios != 0 && boundAudios != len(facts) {
 			return nil, 0, fmt.Errorf("video_reference_plan_invalid")
@@ -328,6 +348,7 @@ func buildWholeReferenceExecution(b Brief, plan Plan, model Model, models []Mode
 			return nil, 0, fmt.Errorf("first_frame_required")
 		}
 		execution := facts[0]
+		execution.Anchors = nil
 		execution.SourceStart, execution.SourceEnd, execution.Duration = facts[0].SourceStart, facts[len(facts)-1].SourceEnd, duration
 		execution.AssetID, execution.ReferenceVideoAssetID, execution.ReferenceAudioAssetID = firstImage, clipID, audioID
 		execution.Prompt, execution.Subtitle = strings.TrimSpace(script.String()), ""
@@ -335,7 +356,7 @@ func buildWholeReferenceExecution(b Brief, plan Plan, model Model, models []Mode
 		if b.ImageModel != "" {
 			execution.ImagePrompt = firstImagePrompt
 		}
-		executions = append(executions, Shot{Plan: execution, Status: "pending", Attempt: 1, QuoteMicro: quote})
+		executions = append(executions, Shot{ReferenceScriptVersion: scriptVersion, Plan: execution, Status: "pending", Attempt: 1, QuoteMicro: quote})
 		total += quote
 	}
 	if total > b.MaxCreditsMicro {

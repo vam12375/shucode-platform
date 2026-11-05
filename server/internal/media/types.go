@@ -380,7 +380,8 @@ type Reference struct {
 	SelectionReason string    `json:"selectionReason"`
 }
 type ShotPlan struct {
-	Creative              *ShotCreative `json:"creative,omitempty"`
+	Anchors               []ReferenceAnchor `json:"anchors,omitempty"`
+	Creative              *ShotCreative     `json:"creative,omitempty"`
 	sourceFields          uint8
 	SourceURL             string  `json:"sourceUrl"`
 	SourceStart           float64 `json:"sourceStart"`
@@ -419,30 +420,31 @@ type Analysis struct {
 	WorkspaceIdentity string `json:"workspaceIdentity,omitempty"`
 }
 type Shot struct {
-	CanvasVideoAssetIDs   []string       `json:"canvasVideoAssetIds,omitempty"`
-	LastFrameAssetID      string         `json:"lastFrameAssetId,omitempty"`
-	LastFrameResultURL    string         `json:"lastFrameResultUrl,omitempty"`
-	Plan                  ShotPlan       `json:"plan"`
-	Status                string         `json:"status"`
-	Attempt               int            `json:"attempt"`
-	VideoTaskID           string         `json:"videoTaskId,omitempty"`
-	ImageTaskID           string         `json:"imageTaskId,omitempty"`
-	ImageNextQueryAt      time.Time      `json:"imageNextQueryAt,omitempty"`
-	ReferenceVideoAssetID string         `json:"referenceVideoAssetId,omitempty"`
-	ReferenceAudioAssetID string         `json:"referenceAudioAssetId,omitempty"`
-	ResultURL             string         `json:"resultUrl,omitempty"`
-	ImageAssetID          string         `json:"imageAssetId,omitempty"`
-	OutputAssetID         string         `json:"outputAssetId,omitempty"`
-	Error                 string         `json:"error,omitempty"`
-	ProviderError         *ProviderError `json:"providerError,omitempty"`
-	ChargedMicro          int64          `json:"chargedMicro"`
-	QuoteMicro            int64          `json:"quoteMicro"`
-	ReservationID         string         `json:"reservationId,omitempty"`
-	Stage                 string         `json:"stage,omitempty"`
-	ProviderID            string         `json:"providerId,omitempty"`
-	PendingChargeMicro    int64          `json:"pendingChargeMicro,omitempty"`
-	ReservedMicro         int64          `json:"reservedMicro,omitempty"`
-	ReleasedMicro         int64          `json:"releasedMicro,omitempty"`
+	ReferenceScriptVersion int            `json:"referenceScriptVersion,omitempty"`
+	CanvasVideoAssetIDs    []string       `json:"canvasVideoAssetIds,omitempty"`
+	LastFrameAssetID       string         `json:"lastFrameAssetId,omitempty"`
+	LastFrameResultURL     string         `json:"lastFrameResultUrl,omitempty"`
+	Plan                   ShotPlan       `json:"plan"`
+	Status                 string         `json:"status"`
+	Attempt                int            `json:"attempt"`
+	VideoTaskID            string         `json:"videoTaskId,omitempty"`
+	ImageTaskID            string         `json:"imageTaskId,omitempty"`
+	ImageNextQueryAt       time.Time      `json:"imageNextQueryAt,omitempty"`
+	ReferenceVideoAssetID  string         `json:"referenceVideoAssetId,omitempty"`
+	ReferenceAudioAssetID  string         `json:"referenceAudioAssetId,omitempty"`
+	ResultURL              string         `json:"resultUrl,omitempty"`
+	ImageAssetID           string         `json:"imageAssetId,omitempty"`
+	OutputAssetID          string         `json:"outputAssetId,omitempty"`
+	Error                  string         `json:"error,omitempty"`
+	ProviderError          *ProviderError `json:"providerError,omitempty"`
+	ChargedMicro           int64          `json:"chargedMicro"`
+	QuoteMicro             int64          `json:"quoteMicro"`
+	ReservationID          string         `json:"reservationId,omitempty"`
+	Stage                  string         `json:"stage,omitempty"`
+	ProviderID             string         `json:"providerId,omitempty"`
+	PendingChargeMicro     int64          `json:"pendingChargeMicro,omitempty"`
+	ReservedMicro          int64          `json:"reservedMicro,omitempty"`
+	ReleasedMicro          int64          `json:"releasedMicro,omitempty"`
 	// Token 结算：成功后先落实际 token 与费用，下载/重试/结算都复用同一份事实。
 	ProviderUsageTokens      int64 `json:"providerUsageTokens,omitempty"`
 	TokenChargeMicro         int64 `json:"tokenChargeMicro,omitempty"`

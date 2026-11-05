@@ -21,19 +21,20 @@ import (
 
 // 原片报告只记录观察事实；生成素材、提示和供应商秒数在后续方案中单独绑定。
 type SourceShot struct {
-	SourceURL             string  `json:"sourceUrl"`
-	SourceStart           float64 `json:"sourceStart"`
-	SourceEnd             float64 `json:"sourceEnd"`
-	Framing               string  `json:"framing"`
-	Camera                string  `json:"camera"`
-	Action                string  `json:"action"`
-	Purpose               string  `json:"purpose"`
-	Subject               string  `json:"subject,omitempty"`
-	Scene                 string  `json:"scene,omitempty"`
-	Sound                 string  `json:"sound,omitempty"`
-	Subtitle              string  `json:"subtitle,omitempty"`
-	Transition            string  `json:"transition,omitempty"`
-	TransitionDescription string  `json:"transitionDescription,omitempty"`
+	Anchors               []ReferenceAnchor `json:"anchors,omitempty"`
+	SourceURL             string            `json:"sourceUrl"`
+	SourceStart           float64           `json:"sourceStart"`
+	SourceEnd             float64           `json:"sourceEnd"`
+	Framing               string            `json:"framing"`
+	Camera                string            `json:"camera"`
+	Action                string            `json:"action"`
+	Purpose               string            `json:"purpose"`
+	Subject               string            `json:"subject,omitempty"`
+	Scene                 string            `json:"scene,omitempty"`
+	Sound                 string            `json:"sound,omitempty"`
+	Subtitle              string            `json:"subtitle,omitempty"`
+	Transition            string            `json:"transition,omitempty"`
+	TransitionDescription string            `json:"transitionDescription,omitempty"`
 }
 
 type SourceAnalysis struct {
@@ -53,6 +54,9 @@ func (shot *SourceShot) UnmarshalJSON(raw []byte) error {
 		if value, ok := fields[key]; !ok || bytes.Equal(value, []byte("null")) {
 			return ErrInvalid
 		}
+	}
+	if v, ok := fields["anchors"]; ok && bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+		return ErrInvalid
 	}
 	var parsed sourceShotJSON
 	decoder := json.NewDecoder(bytes.NewReader(raw))
@@ -143,7 +147,7 @@ func validateSourceAnalysis(p *Project, report SourceAnalysis) error {
 	}
 	end := float64(0)
 	for _, shot := range report.Shots {
-		if !refs[shot.SourceURL] || math.IsNaN(shot.SourceStart) || math.IsInf(shot.SourceStart, 0) || !finitePositive(shot.SourceEnd) || math.Abs(shot.SourceStart-end) > .001 || shot.SourceEnd > p.Brief.ReferenceDurationSeconds+.001 || shot.SourceEnd-shot.SourceStart < 1.0/30 || strings.TrimSpace(shot.Framing) == "" || strings.TrimSpace(shot.Camera) == "" || strings.TrimSpace(shot.Action) == "" || strings.TrimSpace(shot.Purpose) == "" || utf8.RuneCountInString(shot.Framing) > 500 || utf8.RuneCountInString(shot.Camera) > 500 || utf8.RuneCountInString(shot.Action) > 1000 || utf8.RuneCountInString(shot.Purpose) > 500 || utf8.RuneCountInString(shot.Subject) > 1000 || utf8.RuneCountInString(shot.Scene) > 1000 || utf8.RuneCountInString(shot.Sound) > 1000 || utf8.RuneCountInString(shot.Subtitle) > 300 || utf8.RuneCountInString(shot.TransitionDescription) > 1000 || (shot.Transition != "" && shot.Transition != "cut" && shot.Transition != "fade") {
+		if !validReferenceAnchors(shot.Anchors, shot.SourceStart, shot.SourceEnd) || !refs[shot.SourceURL] || math.IsNaN(shot.SourceStart) || math.IsInf(shot.SourceStart, 0) || !finitePositive(shot.SourceEnd) || math.Abs(shot.SourceStart-end) > .001 || shot.SourceEnd > p.Brief.ReferenceDurationSeconds+.001 || shot.SourceEnd-shot.SourceStart < 1.0/30 || strings.TrimSpace(shot.Framing) == "" || strings.TrimSpace(shot.Camera) == "" || strings.TrimSpace(shot.Action) == "" || strings.TrimSpace(shot.Purpose) == "" || utf8.RuneCountInString(shot.Framing) > 500 || utf8.RuneCountInString(shot.Camera) > 500 || utf8.RuneCountInString(shot.Action) > 1000 || utf8.RuneCountInString(shot.Purpose) > 500 || utf8.RuneCountInString(shot.Subject) > 1000 || utf8.RuneCountInString(shot.Scene) > 1000 || utf8.RuneCountInString(shot.Sound) > 1000 || utf8.RuneCountInString(shot.Subtitle) > 300 || utf8.RuneCountInString(shot.TransitionDescription) > 1000 || (shot.Transition != "" && shot.Transition != "cut" && shot.Transition != "fade") {
 			return ErrInvalid
 		}
 		end = shot.SourceEnd
@@ -260,7 +264,7 @@ func validateSourceBoundaries(p *Project, plan Plan) error {
 	}
 	for i, shot := range plan.Shots {
 		source := p.SourceAnalysis.Shots[i]
-		if shot.SourceURL != source.SourceURL || math.Abs(shot.SourceStart-source.SourceStart) > .001 || math.Abs(shot.SourceEnd-source.SourceEnd) > .001 {
+		if !sameReferenceAnchorTimes(source.Anchors, shot.Anchors) || shot.SourceURL != source.SourceURL || math.Abs(shot.SourceStart-source.SourceStart) > .001 || math.Abs(shot.SourceEnd-source.SourceEnd) > .001 {
 			return ErrInvalid
 		}
 	}

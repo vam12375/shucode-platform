@@ -313,6 +313,10 @@ func installAnalysisModel(t *testing.T, f *apiFixture, id string, vision bool) {
 }
 
 func TestSourceFirstAPIPreservesReportAndChargesAdaptationOnce(t *testing.T) {
+	t.Run("legacy", func(t *testing.T) { testSourceFirstAPI(t, false) })
+	t.Run("anchors", func(t *testing.T) { testSourceFirstAPI(t, true) })
+}
+func testSourceFirstAPI(t *testing.T, withAnchors bool) {
 	f, token, team := newUserConfigPolicyFixture(t)
 	installAnalysisModel(t, f, "model-a", true)
 	ctx := context.Background()
@@ -343,6 +347,9 @@ func TestSourceFirstAPIPreservesReportAndChargesAdaptationOnce(t *testing.T) {
 		t.Fatal(scoped.Code, scoped.Body.String())
 	}
 	report := map[string]any{"sourceChecksum": source.Checksum, "summary": "真实原片报告", "references": []map[string]any{{"url": "", "title": "原片", "capturedAt": time.Now().UTC().Format(time.RFC3339Nano), "likes": nil, "evidence": "Read真实原片", "selectionReason": "用户导入"}}, "shots": []map[string]any{{"sourceUrl": "", "sourceStart": 0, "sourceEnd": 1.3, "framing": "全景", "camera": "推进", "action": "舞蹈", "purpose": "开场"}}}
+	if withAnchors {
+		report["shots"].([]map[string]any)[0]["anchors"] = []map[string]any{{"sourceTime": 0.8, "framing": "close", "camera": "FID_API_ORBIT", "action": "source action"}}
+	}
 	response = sourceRequest(f, token, "POST", prefix+"/source-analysis", map[string]any{"version": version, "inputId": "source-input", "sourceAnalysis": report})
 	if response.Code != 200 || dataOf(t, response)["status"] != "source_ready" || dataOf(t, response)["sourceAnalysis"] == nil {
 		t.Fatalf("source completion: %d %s", response.Code, response.Body.String())
@@ -376,9 +383,23 @@ func TestSourceFirstAPIPreservesReportAndChargesAdaptationOnce(t *testing.T) {
 		t.Fatal("configuration replay reset active input", response.Body.String())
 	}
 	shot := map[string]any{"sourceUrl": "", "sourceStart": 0, "sourceEnd": 1.3, "duration": 4, "framing": "全景", "camera": "推进", "action": "替换主体舞蹈", "purpose": "开场", "prompt": "改编视频", "imagePrompt": "新人物首帧", "assetId": "", "subtitle": ""}
+	if withAnchors {
+		shot["anchors"] = []map[string]any{{"sourceTime": 0.8, "framing": "close", "camera": "FID_API_ORBIT", "action": "target action"}}
+	}
 	response = sourceRequest(f, token, "POST", prefix+"/plan", map[string]any{"version": version, "inputId": "adapt-input", "plan": map[string]any{"references": report["references"], "shots": []any{shot}}})
 	if response.Code != 200 || dataOf(t, response)["status"] != "review" || dataOf(t, response)["analysisChargedMicro"] != float64(1000000) {
 		t.Fatal("adaptation result", response.Code, response.Body.String())
+	}
+	if withAnchors {
+		data := dataOf(t, response)
+		sourceAnchors := data["sourceAnalysis"].(map[string]any)["shots"].([]any)[0].(map[string]any)["anchors"].([]any)
+		if sourceAnchors[0].(map[string]any)["action"] != "source action" {
+			t.Fatal("adaptation changed source evidence")
+		}
+		prompt := data["shots"].([]any)[0].(map[string]any)["plan"].(map[string]any)["prompt"].(string)
+		if !strings.Contains(prompt, "FID_API_ORBIT") || !strings.Contains(prompt, "target action") {
+			t.Fatal("anchor lost before provider execution")
+		}
 	}
 	balance, err := f.store.GetTeam(ctx, team)
 	if err != nil || balance.UsedCredits != "1.000000" {
