@@ -63,7 +63,13 @@ func registerMediaSourceRoutes(router *gin.Engine, deps *Deps) {
 			if !allowed {
 				continue
 			}
-			envelope := buildUserConfigEnvelope(BuildUserConfigInput{UserID: auth.User.ID, TeamID: membership.Team.ID, DeviceTokenID: auth.Device.ID, GatewayBaseURL: deps.Env.GatewayBaseURL, GatewayAPI: gatewayAPI{Type: deps.Env.GatewayAPIType, BaseURL: deps.Env.GatewayAPIBaseURL}, Models: []userConfigModel{{ModelID: model.ModelID, DisplayName: model.DisplayName, ConfigMode: model.ConfigMode, Config: canonicalModelConfig(model.ModelConfig)}}, DefaultModelID: model.ModelID, ProviderName: "Mendao Video Analysis"})
+			protocol, err := gatewayProtocolForModel(ctx, deps, model)
+			if err != nil {
+				internalError(c, deps, err)
+				return
+			}
+			envelope := buildUserConfigEnvelope(BuildUserConfigInput{UserID: auth.User.ID, TeamID: membership.Team.ID, DeviceTokenID: auth.Device.ID, GatewayBaseURL: deps.Env.GatewayBaseURL, GatewayAPI: gatewayAPI{Type: deps.Env.GatewayAPIType, BaseURL: deps.Env.GatewayAPIBaseURL}, Models: []userConfigModel{{ModelID: model.ModelID, DisplayName: model.DisplayName, Protocol: protocol, ConfigMode: model.ConfigMode, Config: canonicalModelConfig(model.ModelConfig)}}, DefaultModelID: model.ModelID, ProviderName: "Mendao Video Analysis"})
+
 			setSourceAnalysisReasoning(envelope)
 			c.JSON(200, okData(gin.H{"envelope": withPlatformAccessToken(envelope, auth.PlaintextToken)}))
 			return
@@ -157,7 +163,9 @@ func analysisProviderAvailable(deps *Deps, provider *store.UpstreamProviderRecor
 	if provider == nil || !provider.Enabled || strings.TrimSpace(provider.BaseURL) == "" || provider.APIKeyCiphertext == "" || deps.SecretBox == nil {
 		return false
 	}
-	if string(provider.Protocol) != deps.Env.GatewayAPIType {
+	if provider.Protocol != store.ProtocolAnthropicMessages &&
+		provider.Protocol != store.ProtocolOpenAIChatCompletions &&
+		provider.Protocol != store.ProtocolOpenAIResponses {
 		return false
 	}
 	key, err := deps.SecretBox.Decrypt(provider.APIKeyCiphertext)

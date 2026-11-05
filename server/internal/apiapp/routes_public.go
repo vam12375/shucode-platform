@@ -194,13 +194,17 @@ func registerUserConfigRoutes(router *gin.Engine, deps *Deps) {
 			if !store.TeamModelAllowed(policy, model.ModelID) {
 				continue
 			}
+			protocol, err := gatewayProtocolForModel(ctx, deps, model)
+			if err != nil {
+				internalError(c, deps, err)
+				return
+			}
 			input.Models = append(input.Models, userConfigModel{
-				ModelID:     model.ModelID,
-				DisplayName: model.DisplayName,
-				ConfigMode:  model.ConfigMode,
-				Config:      canonicalModelConfig(model.ModelConfig),
+				ModelID: model.ModelID, DisplayName: model.DisplayName, Protocol: protocol,
+				ConfigMode: model.ConfigMode, Config: canonicalModelConfig(model.ModelConfig),
 			})
 		}
+
 		if len(input.Models) > 0 {
 			input.DefaultModelID = input.Models[0].ModelID
 		}
@@ -230,6 +234,36 @@ func registerUserConfigRoutes(router *gin.Engine, deps *Deps) {
 		c.Header("cache-control", "private, no-cache")
 		c.Data(200, "application/json; charset=utf-8", body)
 	})
+}
+
+func gatewayProtocolForModel(ctx context.Context, deps *Deps, model store.PlatformModelRecord) (store.UpstreamProtocol, error) {
+	// user-config 无路由时与网关实际回退协议保持一致。
+	routes, err := deps.Store.ListUpstreamRoutes(ctx, model.ModelID, false)
+	if err != nil {
+		return "", err
+	}
+	for _, route := range routes {
+		provider, err := deps.Store.GetUpstreamProvider(ctx, route.ProviderID)
+		if err != nil {
+			return "", err
+		}
+		if provider != nil && provider.Enabled {
+			return provider.Protocol, nil
+		}
+	}
+	if model.UpstreamProviderID != "" {
+		provider, err := deps.Store.GetUpstreamProvider(ctx, model.UpstreamProviderID)
+		if err != nil {
+			return "", err
+		}
+		if provider != nil && provider.Enabled {
+			return provider.Protocol, nil
+		}
+	}
+	if deps.Env.GatewayAPIType == "anthropic-messages" {
+		return store.ProtocolAnthropicMessages, nil
+	}
+	return store.ProtocolOpenAIChatCompletions, nil
 }
 
 // ---- client-credit ----
