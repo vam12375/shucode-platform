@@ -372,6 +372,19 @@ func resolveGatewayTeam(c *gin.Context, deps Deps, userID string, errorResponse 
 		errorResponse(c, 409, "permission_error", "账号存在多个有效团队，请联系管理员明确团队归属")
 		return nil, nil, false
 	}
+	// 同账号重新登录可恢复设备授权；跨账号与账本撤权必须给出各自的可操作原因。
+	if errors.Is(err, store.ErrBillingBindingActorMismatch) {
+		errorResponse(c, 403, "permission_error", "此会话属于其他账号，请切回创建此会话的账号后继续")
+		return nil, nil, false
+	}
+	if errors.Is(err, store.ErrBillingBindingDeviceMismatch) {
+		errorResponse(c, 403, "permission_error", "当前设备尚未恢复此会话的授权，请重新打开会话后重试")
+		return nil, nil, false
+	}
+	if errors.Is(err, store.ErrBillingBindingAccountUnavailable) {
+		errorResponse(c, 403, "permission_error", "此会话的消费账本已停用或访问权限已撤销，请联系管理员")
+		return nil, nil, false
+	}
 	if errors.Is(err, store.ErrBillingBindingForbidden) || errors.Is(err, store.ErrBillingBindingNotFound) {
 		errorResponse(c, 403, "permission_error", "消费会话绑定无效或已失效")
 		return nil, nil, false

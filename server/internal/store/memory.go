@@ -46,6 +46,7 @@ type memoryStore struct {
 	quotaRequests         map[string]QuotaRequestRecord
 	personalAccounts      map[string]string
 	billingBindings       map[string]BillingSessionBinding
+	billingBindingDevices map[billingBindingDeviceKey]struct{}
 	billingModes          map[string]string
 	paymentOrders         map[string]PaymentOrderRecord
 	memberJoinedAt        map[string]time.Time
@@ -95,6 +96,7 @@ func NewMemoryStore(ctx context.Context, opts MemoryOptions) (*memoryStore, erro
 		quotaRequests:         map[string]QuotaRequestRecord{},
 		personalAccounts:      map[string]string{},
 		billingBindings:       map[string]BillingSessionBinding{},
+		billingBindingDevices: map[billingBindingDeviceKey]struct{}{},
 		billingModes:          map[string]string{},
 		paymentOrders:         map[string]PaymentOrderRecord{},
 		deviceTokens:          map[string]DeviceTokenRecord{},

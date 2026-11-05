@@ -69,11 +69,6 @@ func testBillingSessionBindings(t *testing.T, ctx context.Context, s PlatformSto
 	if err = s.CreateDeviceToken(ctx, second); err != nil {
 		t.Fatal(err)
 	}
-	changed := input
-	changed.DeviceTokenID = second.ID
-	if _, err = s.CreateBillingSessionBinding(ctx, changed); !errors.Is(err, ErrBillingBindingForbidden) {
-		t.Fatalf("cross-device rebind: %v", err)
-	}
 	if _, err = s.ResolveBillingSessionBinding(ctx, binding.ID, user.ID, second.ID); !errors.Is(err, ErrBillingBindingForbidden) {
 		t.Fatalf("cross-device resolve: %v", err)
 	}

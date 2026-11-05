@@ -13,7 +13,7 @@ func ResolveBillingBindingAccount(ctx context.Context, st PlatformStore, binding
 			return nil, err
 		}
 		if account == nil || account.ID != binding.BillingAccountID || account.DisabledAt != nil {
-			return nil, ErrBillingBindingForbidden
+			return nil, ErrBillingBindingAccountUnavailable
 		}
 		return &TeamMembership{Team: *account, Role: MemberRoleOwner}, nil
 	}
@@ -22,14 +22,14 @@ func ResolveBillingBindingAccount(ctx context.Context, st PlatformStore, binding
 		return nil, err
 	}
 	if member == nil || member.MemberDisabledAt != nil || member.User.DisabledAt != nil {
-		return nil, ErrBillingBindingForbidden
+		return nil, ErrBillingBindingAccountUnavailable
 	}
 	team, err := st.GetTeam(ctx, binding.BillingAccountID)
 	if err != nil || team == nil || team.DisabledAt != nil {
 		if err != nil {
 			return nil, err
 		}
-		return nil, ErrBillingBindingForbidden
+		return nil, ErrBillingBindingAccountUnavailable
 	}
 	return &TeamMembership{Team: *team, Role: member.Role, MemberDisabledAt: member.MemberDisabledAt, MonthlyBudgetCredits: member.MonthlyBudgetCredits}, nil
 }

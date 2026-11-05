@@ -1,9 +1,30 @@
 package store
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
+
+var (
+	ErrBillingBindingActorMismatch      = fmt.Errorf("%w: actor mismatch", ErrBillingBindingForbidden)
+	ErrBillingBindingDeviceMismatch     = fmt.Errorf("%w: device not authorized", ErrBillingBindingForbidden)
+	ErrBillingBindingNoActiveTeam       = fmt.Errorf("%w: no active team", ErrBillingBindingForbidden)
+	ErrBillingBindingAccountUnavailable = fmt.Errorf("%w: account unavailable", ErrBillingBindingForbidden)
+)
+
+type billingBindingDeviceKey struct{ bindingID, deviceID string }
+
+func validateBillingBindingReplay(binding *BillingSessionBinding, input BillingSessionBindingInput) error {
+	if binding.ActorUserID != input.ActorUserID {
+		return ErrBillingBindingActorMismatch
+	}
+	// 媒体恢复只带会话 identity；未提供 parent 是读取既有关系，不能当成改为根会话。
+	if input.ParentSessionID != "" && binding.ParentSessionID != input.ParentSessionID {
+		return ErrBillingBindingConflict
+	}
+	return nil
+}
 
 type BillingSessionBindingInput struct {
 	SessionID         string

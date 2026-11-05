@@ -169,29 +169,12 @@ func (s *PostgresStore) reserveQuota(ctx context.Context, input ReserveQuotaInpu
 		return "", err
 	}
 	if input.BillingBindingID != "" {
-		if input.DeviceTokenID == "" {
-			return ReserveDenied, ErrBillingBindingForbidden
-		}
-		var tokenUser string
-		var revokedAt *time.Time
-		err = tx.QueryRow(ctx, `SELECT user_id::text,revoked_at FROM device_tokens WHERE id=$1::uuid`, input.DeviceTokenID).Scan(&tokenUser, &revokedAt)
-		if errors.Is(err, pgx.ErrNoRows) || (err == nil && (tokenUser != input.UserID || revokedAt != nil)) {
-			return ReserveDenied, ErrBillingBindingForbidden
-		}
+		// 与网关 resolve 共用设备授权判断，重登录不改写 reservation 的原始 token 快照。
+		binding, err := resolveBillingSessionBindingQuery(ctx, tx, input.BillingBindingID, input.UserID, input.DeviceTokenID)
 		if err != nil {
-			return "", err
+			return ReserveDenied, err
 		}
-	}
-	if input.BillingBindingID != "" {
-		var actor, device, account string
-		err = tx.QueryRow(ctx, `SELECT actor_user_id::text,device_token_id::text,billing_account_id::text FROM billing_session_bindings WHERE id=$1::uuid`, input.BillingBindingID).Scan(&actor, &device, &account)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ReserveDenied, ErrBillingBindingNotFound
-		}
-		if err != nil {
-			return "", err
-		}
-		if input.DeviceTokenID == "" || actor != input.UserID || device != input.DeviceTokenID || account != input.TeamID {
+		if binding.BillingAccountID != input.TeamID {
 			return ReserveDenied, ErrBillingBindingForbidden
 		}
 	}

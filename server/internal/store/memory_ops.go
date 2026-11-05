@@ -152,16 +152,12 @@ func (s *memoryStore) reserveQuota(_ context.Context, input ReserveQuotaInput) (
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if input.BillingBindingID != "" {
-		token, exists := s.deviceTokens[input.DeviceTokenID]
-		if !exists || token.UserID != input.UserID || token.RevokedAt != nil {
-			return ReserveDenied, ErrBillingBindingForbidden
-		}
 		// 先验证绑定授权，避免错误设备借重复身份分支绕过准入校验。
-		b, exists := s.billingBindings[input.BillingBindingID]
-		if !exists {
-			return ReserveDenied, ErrBillingBindingNotFound
+		b, err := s.resolveBillingSessionBindingLocked(input.BillingBindingID, input.UserID, input.DeviceTokenID)
+		if err != nil {
+			return ReserveDenied, err
 		}
-		if b.ActorUserID != input.UserID || b.DeviceTokenID != input.DeviceTokenID || b.BillingAccountID != input.TeamID {
+		if b.BillingAccountID != input.TeamID {
 			return ReserveDenied, ErrBillingBindingForbidden
 		}
 	}

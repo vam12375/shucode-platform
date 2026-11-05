@@ -206,12 +206,7 @@ func registerClientPaymentRoutes(router *gin.Engine, deps *Deps) {
 		}
 		binding, err := deps.Store.CreateBillingSessionBinding(c.Request.Context(), input)
 		if err != nil {
-			if errors.Is(err, store.ErrBillingBindingForbidden) || errors.Is(err, store.ErrAmbiguousTeam) {
-				c.JSON(http.StatusForbidden, fail(http.StatusForbidden, "无法绑定消费账本"))
-				return
-			}
-			if errors.Is(err, store.ErrBillingBindingNotFound) {
-				c.JSON(http.StatusNotFound, fail(http.StatusNotFound, "父会话绑定不存在"))
+			if respondBillingBindingError(c, err) {
 				return
 			}
 			if errors.Is(err, store.ErrInvalidInput) {
@@ -222,8 +217,7 @@ func registerClientPaymentRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		if _, err := ResolveClientBillingBindingAccount(c.Request.Context(), deps.Store, binding); err != nil {
-			if errors.Is(err, store.ErrBillingBindingForbidden) {
-				c.JSON(http.StatusForbidden, fail(http.StatusForbidden, "消费账本当前不可用"))
+			if respondBillingBindingError(c, err) {
 				return
 			}
 			internalError(c, deps, err)

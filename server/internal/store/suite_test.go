@@ -42,6 +42,7 @@ func runSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 	t.Run("teams", func(t *testing.T) { testTeams(t, ctx, s) })
 	t.Run("payment-orders", func(t *testing.T) { testPaymentOrders(t, ctx, s) })
 	t.Run("billing-session-bindings", func(t *testing.T) { testBillingSessionBindings(t, ctx, s) })
+	t.Run("billing-session-reauthentication", func(t *testing.T) { testBillingSessionReauthentication(t, ctx, s) })
 	t.Run("payment-packages", func(t *testing.T) { testPaymentPackages(t, ctx, s) })
 	t.Run("personal-accounts", func(t *testing.T) { testPersonalAccounts(t, ctx, s) })
 	t.Run("team-accounting", func(t *testing.T) { testTeamAccounting(t, ctx, s) })

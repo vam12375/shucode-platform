@@ -116,10 +116,18 @@ func mediaIdentity(c *gin.Context, deps *Deps) (*AuthenticatedDevice, *store.Tea
 			c.Request.Context(), bindingID, a.User.ID, a.Device.ID,
 		)
 		if bindingErr != nil {
-			c.JSON(403, fail(403, "消费会话绑定无效或已失效"))
+			if !respondBillingBindingError(c, bindingErr) {
+				internalError(c, deps, bindingErr)
+			}
 			return nil, nil, false
 		}
 		m, e = store.ResolveBillingBindingAccount(c.Request.Context(), deps.Store, binding)
+		if e != nil {
+			if !respondBillingBindingError(c, e) {
+				internalError(c, deps, e)
+			}
+			return nil, nil, false
+		}
 	} else {
 		// 媒体制作单按消费账本隔离；切换模式不能读取另一账户的制作单或改变已冻结费用。
 		m, e = store.ResolveBillingAccount(c.Request.Context(), deps.Store, a.User.ID)
