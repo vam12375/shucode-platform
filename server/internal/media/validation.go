@@ -155,6 +155,9 @@ const (
 )
 
 func ValidateBrief(b Brief, models []Model, assets []Asset) error {
+	if err := validateAssetUnderstanding(b); err != nil {
+		return err
+	}
 	if b.Finishing != nil {
 		if err := validateVideoBrand(b.Finishing.Brand); err != nil {
 			return err

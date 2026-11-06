@@ -165,7 +165,16 @@ func validateTemplateSelection(b Brief, templates []VideoTemplate) (VideoTemplat
 	if err != nil {
 		return VideoTemplate{}, err
 	}
-	if len(videoProductAssetIDs(b)) < t.MinAssets || !slices.Contains(t.AspectRatios, b.AspectRatio) || b.Duration < t.DurationRange.Min || b.Duration > t.DurationRange.Max {
+	assetCount := len(videoProductAssetIDs(b))
+	if b.AssetUnderstanding != nil {
+		assetCount = 0
+		for _, asset := range b.AssetUnderstanding.Assets {
+			if asset.Role == "product" {
+				assetCount++
+			}
+		}
+	}
+	if assetCount < t.MinAssets || !slices.Contains(t.AspectRatios, b.AspectRatio) || b.Duration < t.DurationRange.Min || b.Duration > t.DurationRange.Max {
 		return VideoTemplate{}, adaptiveResearchError()
 	}
 	if !slices.Contains(t.VerifiedModelIDs, b.VideoModel) && !b.ReviewPlan {

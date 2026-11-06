@@ -197,32 +197,33 @@ type Asset struct {
 	Internal        bool      `json:"internal,omitempty"`
 }
 type Brief struct {
-	GenerationPolicy         string   `json:"generationPolicy,omitempty"`
-	CreativeExpansion        string   `json:"creativeExpansion,omitempty"`
-	ResearchPolicy           string   `json:"researchPolicy,omitempty"`
-	CreativeIntent           string   `json:"creativeIntent,omitempty"`
-	DistributionPlatform     string   `json:"distributionPlatform,omitempty"`
-	TemplateID               string   `json:"templateId,omitempty"`
-	TemplateVersion          string   `json:"templateVersion,omitempty"`
-	SourceOnly               bool     `json:"sourceOnly,omitempty"`
-	GenerationMode           string   `json:"generationMode,omitempty"`
-	ReferenceMode            string   `json:"referenceMode,omitempty"`
-	Mode                     string   `json:"mode"`
-	Product                  string   `json:"product"`
-	SellingPoints            string   `json:"sellingPoints"`
-	AssetIDs                 []string `json:"assetIds"`
-	ReferenceURLs            []string `json:"referenceUrls"`
-	Platforms                []string `json:"platforms"`
-	VideoModel               string   `json:"videoModel"`
-	ImageModel               string   `json:"imageModel,omitempty"`
-	Resolution               string   `json:"resolution"`
-	AspectRatio              string   `json:"aspectRatio"`
-	Duration                 int      `json:"duration"`
-	MaxCreditsMicro          int64    `json:"maxCreditsMicro"`
-	ReviewPlan               bool     `json:"reviewPlan"`
-	ReferenceAssetID         string   `json:"referenceAssetId,omitempty"`
-	ReferenceDurationSeconds float64  `json:"referenceDurationSeconds,omitempty"`
-	ReplacementInstructions  string   `json:"replacementInstructions,omitempty"`
+	AssetUnderstanding       *AssetUnderstanding `json:"assetUnderstanding,omitempty"`
+	GenerationPolicy         string              `json:"generationPolicy,omitempty"`
+	CreativeExpansion        string              `json:"creativeExpansion,omitempty"`
+	ResearchPolicy           string              `json:"researchPolicy,omitempty"`
+	CreativeIntent           string              `json:"creativeIntent,omitempty"`
+	DistributionPlatform     string              `json:"distributionPlatform,omitempty"`
+	TemplateID               string              `json:"templateId,omitempty"`
+	TemplateVersion          string              `json:"templateVersion,omitempty"`
+	SourceOnly               bool                `json:"sourceOnly,omitempty"`
+	GenerationMode           string              `json:"generationMode,omitempty"`
+	ReferenceMode            string              `json:"referenceMode,omitempty"`
+	Mode                     string              `json:"mode"`
+	Product                  string              `json:"product"`
+	SellingPoints            string              `json:"sellingPoints"`
+	AssetIDs                 []string            `json:"assetIds"`
+	ReferenceURLs            []string            `json:"referenceUrls"`
+	Platforms                []string            `json:"platforms"`
+	VideoModel               string              `json:"videoModel"`
+	ImageModel               string              `json:"imageModel,omitempty"`
+	Resolution               string              `json:"resolution"`
+	AspectRatio              string              `json:"aspectRatio"`
+	Duration                 int                 `json:"duration"`
+	MaxCreditsMicro          int64               `json:"maxCreditsMicro"`
+	ReviewPlan               bool                `json:"reviewPlan"`
+	ReferenceAssetID         string              `json:"referenceAssetId,omitempty"`
+	ReferenceDurationSeconds float64             `json:"referenceDurationSeconds,omitempty"`
+	ReplacementInstructions  string              `json:"replacementInstructions,omitempty"`
 	// 创作意图与文案控制，全部可选；客户端仅在 overview 声明 capability 时发送。
 	Audience          string            `json:"audience,omitempty"`
 	Tone              string            `json:"tone,omitempty"`

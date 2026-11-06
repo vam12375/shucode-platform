@@ -202,6 +202,17 @@ func videoProductAssetIDs(b Brief) []string {
 		logo = b.Finishing.Brand.LogoAssetID
 	}
 	for _, id := range b.AssetIDs {
+		if b.AssetUnderstanding != nil {
+			usable := false
+			for _, asset := range b.AssetUnderstanding.Assets {
+				if asset.AssetID == id && asset.Role != "logo" && asset.Role != "unused" {
+					usable = true
+				}
+			}
+			if !usable {
+				continue
+			}
+		}
 		if id != logo {
 			ids = append(ids, id)
 		}

@@ -1,0 +1,41 @@
+{
+  "brief": {
+    "mode": "auto",
+    "product": "Cup",
+    "assetUnderstanding": {
+      "product": "Cup",
+      "category": "Drinkware",
+      "summary": "White cup with a handle",
+      "keywords": ["cup"],
+      "ambiguity": "",
+      "assets": [
+        {
+          "assetId": "E2E_IMAGE",
+          "role": "product",
+          "subjectGroup": "cup",
+          "description": "White cup"
+        }
+      ],
+      "templateCandidates": []
+    },
+    "sellingPoints": "",
+    "assetIds": ["E2E_IMAGE"],
+    "referenceUrls": [],
+    "platforms": [],
+    "researchPolicy": "disabled",
+    "creativeExpansion": "related",
+    "generationPolicy": "whole-first",
+    "videoModel": "E2E_V30",
+    "resolution": "720p",
+    "aspectRatio": "9:16",
+    "duration": 30,
+    "maxCreditsMicro": 50000000,
+    "reviewPlan": false,
+    "finishing": {
+      "voiceover": false,
+      "music": false,
+      "nativeAudio": true,
+      "subtitles": "none"
+    }
+  }
+}
