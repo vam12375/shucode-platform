@@ -215,9 +215,6 @@ func TestPlanReviewUnavailableNeedsExplicitNewRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.s.SetPlan(ctx, f.team, p.ID, p.Version, p.Analysis.InputID, plan); err == nil || err.Error() != "video_story_review_required" {
-		t.Fatalf("unavailable review accepted plan: %v", err)
-	}
 	req.Version, req.Operation, req.Review = p.Version, "start", nil
 	if _, started, err = f.s.PlanReview(ctx, f.team, p.ID, req); err == nil || started {
 		t.Fatalf("same request reused after unknown result: started=%v err=%v", started, err)

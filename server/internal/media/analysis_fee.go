@@ -116,7 +116,7 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 		return nil, ErrInvalid
 	}
 	if current.Brief.CreativeExpansion != "" {
-		if current.PlanReview == nil || current.PlanReview.InputID != input || current.PlanReview.Status != "passed" && current.PlanReview.Status != "warning" {
+		if current.PlanReview == nil || current.PlanReview.InputID != input || !slices.Contains([]string{"passed", "warning", "unavailable"}, current.PlanReview.Status) {
 			return nil, fmt.Errorf("video_story_review_required")
 		}
 		hash, hashErr := candidatePlanHash(plan)
@@ -127,6 +127,10 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 			return nil, fmt.Errorf("video_story_invalid")
 		}
 		plan.Story.Review = &StoryPlanReview{Status: current.PlanReview.Status, Issues: slices.Clone(current.PlanReview.Issues)}
+		if current.PlanReview.Status == "unavailable" {
+			// 复核不可用不等于原分析失败；保留合法计划和原诊断，交由既有审阅，不伪造审核通过。
+			plan.Story.Review = &StoryPlanReview{Status: "warning", Issues: []string{"独立故事复核暂不可用，请检查故事、分段与声音衔接后生成。"}}
+		}
 	}
 	if current.AnalysisFee != nil && current.Analysis != nil && current.Analysis.InputID == input && current.Plan != nil && equalAnalysisPlan(*current.Plan, plan) {
 		if current.Status == "analysis_settling" {
@@ -218,7 +222,8 @@ func (s *Service) finishAnalysisFee(ctx context.Context, p *Project) (*Project, 
 			v.Status = "review"
 			if v.Brief.SourceOnly && v.SourceAnalysis != nil {
 				v.Status = "source_ready"
-			} else if !v.Brief.ReviewPlan {
+			} else if !v.Brief.ReviewPlan && v.Plan != nil && !storyNeedsReview(v.Brief, *v.Plan) {
+				// 结算恢复必须服从同一故事审核结果；不能在付清分析费用后绕过 warning/upload 审阅。
 				v.Status = "queued"
 			}
 			if v.CancelRequested {
