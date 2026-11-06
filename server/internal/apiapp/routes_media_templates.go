@@ -11,7 +11,12 @@ func registerMediaTemplateRoutes(router *gin.Engine, deps *Deps) {
 		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
 			return
 		}
-		templates, err := deps.Media.VideoTemplates(c.Request.Context())
+		models, err := deps.Media.Repo.Models(c.Request.Context())
+		if err != nil {
+			mediaError(c, deps, err)
+			return
+		}
+		templates, err := deps.Media.AllVideoTemplates(c.Request.Context(), models)
 		if err != nil {
 			mediaError(c, deps, err)
 			return

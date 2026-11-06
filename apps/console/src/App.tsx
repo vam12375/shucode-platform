@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState, type ReactNode } from "reac
 import {
   Activity,
   Boxes,
+  BookOpen,
   Building2,
   ChartColumn,
   Clapperboard,
@@ -55,6 +56,7 @@ import { ReleasesPage } from "./pages/Releases.js";
 import { RootSetupPage } from "./pages/RootSetup.js";
 import { TeamDetailPage } from "./pages/TeamDetail.js";
 import { UsagePage } from "./pages/Usage.js";
+import { TemplateLibraryPage } from "./pages/TemplateLibrary.js";
 import { UiLibraryPage } from "./pages/UiLibrary.js";
 
 export type AdminUser = ConsoleUser;
@@ -374,6 +376,9 @@ export function App() {
     case "ops":
       page = <OpsPage />;
       break;
+    case "template-library":
+      page = <TemplateLibraryPage />;
+      break;
     case "ui":
       page = <UiLibraryPage />;
       break;
@@ -455,6 +460,10 @@ export function App() {
               <a href="#/ui" className={section === "ui" ? "nav-item active" : "nav-item"}>
                 <Glyph icon={Palette} />
                 <span>UI 组件库</span>
+              </a>
+              <a href="#/template-library" className={section === "template-library" ? "nav-item active" : "nav-item"}>
+                <Glyph icon={BookOpen} />
+                <span>模板库</span>
               </a>
             </div>
           ) : null}

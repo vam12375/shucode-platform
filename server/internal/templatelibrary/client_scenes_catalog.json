@@ -1,0 +1,2068 @@
+[
+  {
+    "namespace": "zcode",
+    "scene": "ai-slides",
+    "options": {
+      "prompts": {
+        "id": "opt-t5r3MN",
+        "type": "prompts",
+        "contents": {
+          "cn": "推荐提示词",
+          "en": "Recommended Prompts"
+        },
+        "refer": "",
+        "cascades": {},
+        "items": [
+          {
+            "id": "item-YrQYLB",
+            "type": "prompt",
+            "contents": {
+              "cn": "设计一份面向全球投资者的企业级风险敞口分析报告演示文稿，内容需详细拆解当前的关键风险数据，展示具体的风险缓解试点案例，并制定分阶段战略路线图。整体风格应强调“精准溯源”与数据驱动，视觉采用极致理性的暗色数据风格，以石墨黑（#0B0F14）作为全局底色，所有图表与数据面板均采用钴蓝（#2563EB），使用冷灰（#6B7280）、薄荷青（#2DD4BF）作为辅助色，旨在证明主动式风险管理的商业价值并确立企业的稳健治理形象。",
+              "en": "Design a presentation for a corporate-level risk exposure analysis report for global investors. The presentation should detail current key risk data, showcase specific risk mitigation pilot cases, and outline a phased strategic roadmap. The overall style should emphasize \"precise tracing\" and data-driven approaches, employing a highly rational, dark data style with graphite black (#0B0F14) as the overall background color. All charts and data panels should use cobalt blue (#2563EB), with cool gray (#6B7280) and mint green (#2DD4BF) as secondary colors. This aims to demonstrate the commercial value of proactive risk management and establish a robust corporate governance image."
+            },
+            "labels": {
+              "cn": "准备一个面向全球投资者的企业级风险敞口分析报告演示文稿",
+              "en": "Prepare an enterprise-level risk exposure analysis report presentation for global investors"
+            }
+          },
+          {
+            "id": "item-6DFfB4",
+            "type": "prompt",
+            "contents": {
+              "cn": "设计一份关于“品牌交响乐编曲法”的营销方法论演示文稿，目的是向企业决策者展示如何通过和谐一致的品牌乐章增强情感连接并巩固用户忠诚，内容应涵盖“序曲-展开-高潮”的三乐章叙事结构、基于乐谱美学的视觉呈现规范，以及量化的受众共鸣度与参与度提升数据。整体视觉基调采用终端黑（#050505）作为主背景色，所有动态过渡、章节分隔页及核心概念图示均以荧光酸橙（#84C016）勾勒轮廓。",
+              "en": "Design a marketing methodology presentation on the \"Brand Symphony Arrangement Method.\" The goal is to show corporate decision-makers how to enhance emotional connections and solidify user loyalty through a harmonious brand symphony. The content should cover a three-movement narrative structure of \"overture-development-climax,\" visual presentation guidelines based on musical score aesthetics, and quantifiable data on increased audience resonance and engagement. The overall visual tone uses terminal black (#050505) as the main background color. All dynamic transitions, chapter separators, and core concept diagrams are outlined in fluorescent lime (#84C016)."
+            },
+            "labels": {
+              "cn": "创建一个关于 “品牌交响乐编曲法” 的营销方法论演示文稿",
+              "en": "Create a marketing methodology presentation on the Brand Symphony Arrangement Method"
+            }
+          },
+          {
+            "id": "item-vXAqTK",
+            "type": "prompt",
+            "contents": {
+              "cn": "设计一份针对专业院校教育者的培训演示文稿，核心主题是如何将传统课程讲授从单向的知识传递升级为具有沉浸式体验的探索工坊，遵循教育理念演进 → 学习环境构建 → 教学工具集成 → 学习成果内化的逻辑框架，必须包含具体的教学实施标准，视觉体系采用学术奢华主义取向，整体以深岩灰（#2E2E2E）作为页面基底，章节标题与关键概念统一使用暗金色（#BFA76A）装饰元素严格限制为细线与框线。",
+              "en": "Design a training presentation for professional educators. The core theme is how to upgrade traditional lectures from one-way knowledge transmission to immersive exploration workshops. Follow the logical framework of educational philosophy evolution → learning environment construction → teaching tool integration → learning outcome internalization. It must include specific teaching implementation standards. The visual system adopts an academic luxury approach, using dark rock gray (#2E2E2E) as the page base. Chapter titles and key concepts use dark gold (#BFA76A) decorative elements, strictly limited to thin lines and borders."
+            },
+            "labels": {
+              "cn": "设计一个面向专业院校教育者的沉浸式探索工坊培训演示文稿",
+              "en": "Design a training presentation for educators in professional colleges on immersive exploration workshops"
+            }
+          },
+          {
+            "id": "item-xPhPHk",
+            "type": "prompt",
+            "contents": {
+              "cn": "设计一份针对连锁餐饮集团门店运营部门的2025财年年度绩效总结与战略规划演示文稿。内容需全面回顾财务表现、核心菜品里程碑及运营服务效能指标。整体采用 “珍珠白”（#F8FAFC）作为背景底色，核心数据使用 “普鲁士蓝”（#1E3A8A）作为主色，关键增长点运用 “活力橙”（#F97316）作为强调色。整体演示文稿应包含具体的顾客满意案例，并提出针对2026年的战略建议，如数字化点餐系统升级、健康轻食产品线拓展及数据分析专家引进。",
+              "en": "Design a 2025 fiscal year annual performance summary and strategic planning presentation for the store operations department of a chain restaurant group. The content must comprehensively review financial performance, core dish milestones, and operational service efficiency indicators. The overall presentation uses \"Pearl White\" (#F8FAFC) as the background color, with \"Prussian Blue\" (#1E3A8A) as the primary color for core content such as financial data and KPI indicators, and \"Graphite Gray\" (#4B5563) for secondary information and charts, ensuring a clear and concise information structure. \"Vibrant Orange\" (#F97316) is used as the accent color for key growth points. The presentation should also include specific customer satisfaction case studies and strategic recommendations for 2026, such as upgrading the digital ordering system, expanding the healthy light meal product line, and bringing in data analytics experts. The overall style should reflect a high degree of rationality and order, aiming to demonstrate to management the operations team's \"standardized service\" and future \"scalable replication capabilities.\""
+            },
+            "labels": {
+              "cn": "准备一个针对连锁餐饮集团门店运营部门的 2025 财年绩效总结与战略规划演示文稿",
+              "en": "Prepare a FY2025 performance summary and strategic planning presentation for the store operations department of a chain catering group"
+            }
+          }
+        ],
+        "templates": {
+          "cn": "使用推荐提示词: {prompt}",
+          "en": "Use recommended prompt: {prompt}"
+        }
+      }
+    },
+    "created_at": 1769511208,
+    "updated_at": 1770383097
+  },
+  {
+    "namespace": "zcode",
+    "scene": "artifact",
+    "options": {
+      "projects": {
+        "id": "opt-71H6eb",
+        "type": "projects",
+        "contents": {
+          "cn": "项目类型",
+          "en": "Project Type"
+        },
+        "refer": "",
+        "cascades": {},
+        "items": [
+          {
+            "id": "item-Th7Pdr",
+            "type": "project",
+            "contents": {
+              "cn": "落地页",
+              "en": "Landing Page"
+            },
+            "labels": {
+              "cn": "落地页",
+              "en": "Landing Page"
+            }
+          },
+          {
+            "id": "item-yTOES2",
+            "type": "project",
+            "contents": {
+              "cn": "科普/教案",
+              "en": "Knowledge/Teaching Material"
+            },
+            "labels": {
+              "cn": "科普/教案",
+              "en": "Knowledge/Teaching Material"
+            }
+          },
+          {
+            "id": "item-QNNEHu",
+            "type": "project",
+            "contents": {
+              "cn": "3D建模",
+              "en": "3D Modeling"
+            },
+            "labels": {
+              "cn": "3D建模",
+              "en": "3D Modeling"
+            }
+          },
+          {
+            "id": "item-2et4KS",
+            "type": "project",
+            "contents": {
+              "cn": "小游戏",
+              "en": "Mini Game"
+            },
+            "labels": {
+              "cn": "小游戏",
+              "en": "Mini Game"
+            }
+          },
+          {
+            "id": "item-2brEeI",
+            "type": "project",
+            "contents": {
+              "cn": "个人博客",
+              "en": "Personal Blog"
+            },
+            "labels": {
+              "cn": "个人博客",
+              "en": "Personal Blog"
+            }
+          }
+        ],
+        "templates": {
+          "cn": "选择项目类型: {project}",
+          "en": "Choose project type: {project}"
+        }
+      },
+      "prompts": {
+        "id": "opt-4n6EfR",
+        "type": "prompts",
+        "contents": {
+          "cn": "推荐提示词",
+          "en": "Recommended Prompts"
+        },
+        "refer": "projects",
+        "cascades": {
+          "item-2brEeI": [
+            {
+              "id": "item-HSj4B7",
+              "type": "prompt",
+              "contents": {
+                "cn": "\"Design a tech YouTuber's home website, complementing video content with deep-dive written reviews.\n\nVisual Strategy:\nImagery: video thumbnails, behind-the-scenes shots, creator portrait.\nPhotography: signature high-contrast lighting.\nComposition: cinematic 16:9 hero blocks.\n\nColor Palette:\nPrimary Colors: deep black, signal red, pure white.\nAccent Colors: neon yellow, electric blue.\nBackground: pure black with film-grain overlay.\n\nTypography:\nHeadings: heavy display sans.\nBody Text: clean grotesque.\nLayout: video-first with collapsible written companion.\n\nPage Structure:\nHero Section: latest video as autoplay-on-hover thumbnail.\nVideo Library: chronological with category filters.\nWritten Reviews: longer-form companions to videos.\nRecommendations: \"\"What I'd Buy at $X\"\" guides.\nNewsletter & Patreon.\n\nInteraction Details:\n- Video thumbnails play silent muted previews on hover.\n- Filters slide cards into a new arrangement with a 300ms shuffle.\n- Written reviews have a \"\"read along while video plays\"\" sticky video.\n- Recommendation cards have a price-range slider that re-sorts in real time.\n- Newsletter signup uses a typewriter-style placeholder cycling through pitches.\n- Page uses scroll-driven brand color shifts at section breaks.\n\nOverall Vibe: high-production, opinionated, charismatic, modern.\"",
+                "en": "\"Design a tech YouTuber's home website, complementing video content with deep-dive written reviews.\n\nVisual Strategy:\nImagery: video thumbnails, behind-the-scenes shots, creator portrait.\nPhotography: signature high-contrast lighting.\nComposition: cinematic 16:9 hero blocks.\n\nColor Palette:\nPrimary Colors: deep black, signal red, pure white.\nAccent Colors: neon yellow, electric blue.\nBackground: pure black with film-grain overlay.\n\nTypography:\nHeadings: heavy display sans.\nBody Text: clean grotesque.\nLayout: video-first with collapsible written companion.\n\nPage Structure:\nHero Section: latest video as autoplay-on-hover thumbnail.\nVideo Library: chronological with category filters.\nWritten Reviews: longer-form companions to videos.\nRecommendations: \"\"What I'd Buy at $X\"\" guides.\nNewsletter & Patreon.\n\nInteraction Details:\n- Video thumbnails play silent muted previews on hover.\n- Filters slide cards into a new arrangement with a 300ms shuffle.\n- Written reviews have a \"\"read along while video plays\"\" sticky video.\n- Recommendation cards have a price-range slider that re-sorts in real time.\n- Newsletter signup uses a typewriter-style placeholder cycling through pitches.\n- Page uses scroll-driven brand color shifts at section breaks.\n\nOverall Vibe: high-production, opinionated, charismatic, modern.\""
+              },
+              "labels": {
+                "cn": "SYNTH.ART  AI 生成艺术展示博客",
+                "en": "BtyeLog dark-themed tech blog"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/blog-1.png?auth_key=1813140157-312bc8c1c16a4fb291924971e44bcecc-0-6b48c3cfbb9934f611a45b4dfffc962b",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/blog-1.png?auth_key=1813140157-312bc8c1c16a4fb291924971e44bcecc-0-6b48c3cfbb9934f611a45b4dfffc962b"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/92f35719-f912-47c2-be2d-23ff4115612e",
+                "en": "https://chat.z.ai/s/92f35719-f912-47c2-be2d-23ff4115612e"
+              }
+            },
+            {
+              "id": "item-WLPe4N",
+              "type": "prompt",
+              "contents": {
+                "cn": "\"Design a terminal-style developer blog where the entire site behaves like a CLI.\n\nThe page emulates a TTY. Visitors type commands (`ls`, `cat post.md`, `cd projects`) to navigate. A persistent prompt at the bottom; output above. Tab-completion supported.\n\nVisual: pure terminal aesthetic. Monospaced everywhere. Cursor blinks.\n\nPage Structure (as commands):\n- `ls` lists posts and projects.\n- `cat <post>` opens a post in markdown-rendered fashion.\n- `cd <topic>` filters by tag.\n- `whoami` shows the about page.\n- `mail <addr>` opens a contact composer.\n\nInteraction Details:\n- Cursor blinks at 1.06s intervals (CRT-accurate).\n- Type-with-keypress sound (subtle, opt-in).\n- Tab-completion shows a flicker of grey ghost text.\n- Up/down arrow scrolls command history.\n- A subtle CRT-scanline overlay can be toggled.\n- \"\"Help\"\" command animates a man-page style scroll.\n\nOverall Vibe: hacker, nostalgic, opinionated, fun.\"",
+                "en": "\"Design a terminal-style developer blog where the entire site behaves like a CLI.\n\nThe page emulates a TTY. Visitors type commands (`ls`, `cat post.md`, `cd projects`) to navigate. A persistent prompt at the bottom; output above. Tab-completion supported.\n\nVisual: pure terminal aesthetic. Monospaced everywhere. Cursor blinks.\n\nPage Structure (as commands):\n- `ls` lists posts and projects.\n- `cat <post>` opens a post in markdown-rendered fashion.\n- `cd <topic>` filters by tag.\n- `whoami` shows the about page.\n- `mail <addr>` opens a contact composer.\n\nInteraction Details:\n- Cursor blinks at 1.06s intervals (CRT-accurate).\n- Type-with-keypress sound (subtle, opt-in).\n- Tab-completion shows a flicker of grey ghost text.\n- Up/down arrow scrolls command history.\n- A subtle CRT-scanline overlay can be toggled.\n- \"\"Help\"\" command animates a man-page style scroll.\n\nOverall Vibe: hacker, nostalgic, opinionated, fun.\""
+              },
+              "labels": {
+                "cn": "CherryDry日志照片博客",
+                "en": "Designer portfolio"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/blog-2.png?auth_key=1813140157-fb4e42d64eea4fae997d6306d3353cc6-0-a4423293fbabb425642c3946221f16c9",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/blog-2.png?auth_key=1813140157-fb4e42d64eea4fae997d6306d3353cc6-0-a4423293fbabb425642c3946221f16c9"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/d18dbb17-7d04-4f9c-89ad-0ff2240ef576",
+                "en": "https://chat.z.ai/s/d18dbb17-7d04-4f9c-89ad-0ff2240ef576"
+              }
+            },
+            {
+              "id": "item-9p6F2Y",
+              "type": "project",
+              "contents": {
+                "cn": "Build a programmer blog with typewriter hero greeting, hover-raise article cards, copy-flash code-block buttons, top reading-progress bar, live GitHub star/fork counters, and a 3-state theme toggle with smooth color transitions.",
+                "en": "Build a programmer blog with typewriter hero greeting, hover-raise article cards, copy-flash code-block buttons, top reading-progress bar, live GitHub star/fork counters, and a 3-state theme toggle with smooth color transitions."
+              },
+              "descs": {
+                "cn": "",
+                "en": ""
+              },
+              "labels": {
+                "cn": "label",
+                "en": "label"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/blog-3.png?auth_key=1813146616-b0dcd0225b3a4d2b9976bd489c23bf1d-0-d3f8b6a59c71ac5b6d4e6fadb1c0d159",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/blog-3.png?auth_key=1813146616-b0dcd0225b3a4d2b9976bd489c23bf1d-0-d3f8b6a59c71ac5b6d4e6fadb1c0d159"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/37a3bab1-651b-4f43-b5b3-20cbfa050739",
+                "en": "https://chat.z.ai/s/37a3bab1-651b-4f43-b5b3-20cbfa050739"
+              }
+            }
+          ],
+          "item-2et4KS": [
+            {
+              "id": "item-ilX4tO",
+              "type": "prompt",
+              "contents": {
+                "cn": "\"Build a Go (Weiqi) AI gameplay platform that combines traditional board aesthetics with modern AI technology.\n\nRender the board with realistic wood grain; black and white stones should have glossy highlights and cast shadows. Include stone-placement sound effects (a crisp click of stone on wood). Provide three AI difficulty levels, marked with rank badges (Beginner Dan / Mid Dan / High Dan).\n\nWhile the AI is computing, show a \"\"Thinking…\"\" animation. After each AI move, briefly explain the intent of the play (e.g., \"\"securing the corner\"\", \"\"invasion\"\", \"\"saving a weak group\"\"). When the game ends, offer a replay plus an AI post-game review (key moves annotated with red triangles).\n\nA side panel displays a real-time territory estimate (a territory heatmap), so players can tell who is leading.\n\nThe color scheme follows traditional board aesthetics — board yellow paired with black-and-white stones, set against a subtle light rice-paper texture. Overall feel: AlphaGo meets the Japan Go Institute.\n\nInteraction Details:\n- Stones drop with a slight bounce and cast a soft shadow on the wood.\n- Hovering a legal point shows a translucent ghost stone.\n- The territory heatmap fades in/out smoothly between moves.\n- AI \"\"Thinking…\"\" shows a tasteful spinner of orbiting stones.\n- Last move is annotated with a small white circle that gently pulses.\n- Post-game review lets you scrub through moves with a horizontal slider; key moves snap into focus.\"",
+                "en": "\"Build a Go (Weiqi) AI gameplay platform that combines traditional board aesthetics with modern AI technology.\n\nRender the board with realistic wood grain; black and white stones should have glossy highlights and cast shadows. Include stone-placement sound effects (a crisp click of stone on wood). Provide three AI difficulty levels, marked with rank badges (Beginner Dan / Mid Dan / High Dan).\n\nWhile the AI is computing, show a \"\"Thinking…\"\" animation. After each AI move, briefly explain the intent of the play (e.g., \"\"securing the corner\"\", \"\"invasion\"\", \"\"saving a weak group\"\"). When the game ends, offer a replay plus an AI post-game review (key moves annotated with red triangles).\n\nA side panel displays a real-time territory estimate (a territory heatmap), so players can tell who is leading.\n\nThe color scheme follows traditional board aesthetics — board yellow paired with black-and-white stones, set against a subtle light rice-paper texture. Overall feel: AlphaGo meets the Japan Go Institute.\n\nInteraction Details:\n- Stones drop with a slight bounce and cast a soft shadow on the wood.\n- Hovering a legal point shows a translucent ghost stone.\n- The territory heatmap fades in/out smoothly between moves.\n- AI \"\"Thinking…\"\" shows a tasteful spinner of orbiting stones.\n- Last move is annotated with a small white circle that gently pulses.\n- Post-game review lets you scrub through moves with a horizontal slider; key moves snap into focus.\""
+              },
+              "labels": {
+                "cn": "围棋AI对弈平台",
+                "en": "围棋AI对弈平台"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/game-1.png?auth_key=1813140157-d1fe111e03b14aa985be4d66c56a69d0-0-7a54a734c71f7039a8cea03bf7e108a0",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/game-1.png?auth_key=1813140157-d1fe111e03b14aa985be4d66c56a69d0-0-7a54a734c71f7039a8cea03bf7e108a0"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/e84fbcf6-a07c-4571-9ad6-ac88ea164e18",
+                "en": "https://chat.z.ai/s/e84fbcf6-a07c-4571-9ad6-ac88ea164e18"
+              }
+            },
+            {
+              "id": "item-FIM38v",
+              "type": "prompt",
+              "contents": {
+                "cn": "Build a memory matching game with 3D-transform card flips, chime + float-fade on match, shake-and-flip-back on miss, streak fanfare, layered background music, and confetti + star-rating on completion.",
+                "en": "Build a memory matching game with 3D-transform card flips, chime + float-fade on match, shake-and-flip-back on miss, streak fanfare, layered background music, and confetti + star-rating on completion."
+              },
+              "labels": {
+                "cn": "小游戏 推荐提示词2",
+                "en": "Polished match-3 puzzle game "
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/game-2.png?auth_key=1813140157-6bf7e357f4274845b1e9a96b0c84d19d-0-0132bf1e3e525e5654bedccc723a79e4",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/game-2.png?auth_key=1813140157-6bf7e357f4274845b1e9a96b0c84d19d-0-0132bf1e3e525e5654bedccc723a79e4"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/834d87e5-1538-4a0c-b97e-f91942ec5f9f",
+                "en": "https://chat.z.ai/s/834d87e5-1538-4a0c-b97e-f91942ec5f9f"
+              }
+            },
+            {
+              "id": "item-j0Tb7x",
+              "type": "project",
+              "contents": {
+                "cn": "\"Design a \"\"BeatCraft\"\" Mini Game for casual players looking for a quick, satisfying session.\n\nVisual Strategy:\nImagery: chunky game art, simple shapes, and motion-driven particles\nPhotography: flat-shaded game art instead of photography\nComposition: a centered game canvas with on-canvas HUD around it\n\nColor Palette:\nPrimary Colors: sky blue, bright yellow, coral pink, and grass green\nAccent Colors: pure white highlights and a deep navy for shadow\nBackground: a flat color or subtle gradient that does not compete with gameplay\n\nTypography:\nHeadings: rounded display font with a slight cartoon feel\nBody Text: highly legible sans-serif sized for quick reading\nshort labels, big numbers, and color-coded states (good = green, bad = red)\n\nGame Structure:\nHero Section: tagline \"\"BeatCraft — focused, fast, and a pleasure to use.\"\" paired with a focused product preview.\nStart Screen: title, brief rules, and a single \"\"Play\"\" button.\nLevel Select: a grid of levels with locked or unlocked states.\nGame Board: the main interactive area with clear visual feedback.\nHUD: score, timer, lives, or other at-a-glance metrics.\nResults Screen: outcome, score, and \"\"Play Again\"\" or \"\"Next Level\"\" actions.\nAudio and Accessibility: music and sound toggles plus a reduced-motion mode.\n\nOverall Vibe: cheerful, energetic, forgiving, instantly playable.\"",
+                "en": "\"Design a \"\"BeatCraft\"\" Mini Game for casual players looking for a quick, satisfying session.\n\nVisual Strategy:\nImagery: chunky game art, simple shapes, and motion-driven particles\nPhotography: flat-shaded game art instead of photography\nComposition: a centered game canvas with on-canvas HUD around it\n\nColor Palette:\nPrimary Colors: sky blue, bright yellow, coral pink, and grass green\nAccent Colors: pure white highlights and a deep navy for shadow\nBackground: a flat color or subtle gradient that does not compete with gameplay\n\nTypography:\nHeadings: rounded display font with a slight cartoon feel\nBody Text: highly legible sans-serif sized for quick reading\nshort labels, big numbers, and color-coded states (good = green, bad = red)\n\nGame Structure:\nHero Section: tagline \"\"BeatCraft — focused, fast, and a pleasure to use.\"\" paired with a focused product preview.\nStart Screen: title, brief rules, and a single \"\"Play\"\" button.\nLevel Select: a grid of levels with locked or unlocked states.\nGame Board: the main interactive area with clear visual feedback.\nHUD: score, timer, lives, or other at-a-glance metrics.\nResults Screen: outcome, score, and \"\"Play Again\"\" or \"\"Next Level\"\" actions.\nAudio and Accessibility: music and sound toggles plus a reduced-motion mode.\n\nOverall Vibe: cheerful, energetic, forgiving, instantly playable.\""
+              },
+              "descs": {
+                "cn": "",
+                "en": ""
+              },
+              "labels": {
+                "cn": "label",
+                "en": "label"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/game-3.png?auth_key=1813146616-4e839a6ff8374c828eddda3b497516c3-0-9d17cc46c59d771caa523c823c791d70",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/game-3.png?auth_key=1813146616-4e839a6ff8374c828eddda3b497516c3-0-9d17cc46c59d771caa523c823c791d70"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/5e7d95cd-67e4-45a8-bb5b-2f3e13aea772",
+                "en": "https://chat.z.ai/s/5e7d95cd-67e4-45a8-bb5b-2f3e13aea772"
+              }
+            }
+          ],
+          "item-QNNEHu": [
+            {
+              "id": "item-kwUFyA",
+              "type": "prompt",
+              "contents": {
+                "cn": "\"Design a 3D commercial space planner — for cafés, small offices, and boutique retail.\n\nVisual Strategy:\nImagery: cafe counters, office desk clusters, retail fixtures.\nPhotography: documentary-style shop interiors.\nComposition: floor-plan + 3D perspective side-by-side.\n\nColor Palette:\nPrimary Colors: warm white, oat, charcoal.\nAccent Colors: signature brand color (user-pickable).\nBackground: subtle blueprint grid.\n\nTypography:\nHeadings: contemporary geometric sans.\nBody Text: clean utility sans.\nLayout: workspace with toolbars.\n\nPage Structure:\nHero Section: a coffee shop space the user can lay out.\nTemplates: cafe / co-working / boutique / restaurant.\nCapacity Planner: seats per square meter / fire egress.\nBrand Color: apply across the room instantly.\nCost Estimator: rough furniture and fixture totals.\n\nInteraction Details:\n- Switch between top-down floor plan and 3D view with a smooth camera swing.\n- Brand color picker recolors all branded elements live.\n- Capacity meter ticks up/down as you place chairs.\n- Egress paths animate as flowing arrows when \"\"Show fire safety\"\" is toggled.\n- Cost estimator slides out a side panel that updates as you place items.\n- Export to PDF triggers a building-up animation of the layout sheet.\n\nOverall Vibe: practical, customizable, business-savvy, polished.\"",
+                "en": "\"Design a 3D commercial space planner — for cafés, small offices, and boutique retail.\n\nVisual Strategy:\nImagery: cafe counters, office desk clusters, retail fixtures.\nPhotography: documentary-style shop interiors.\nComposition: floor-plan + 3D perspective side-by-side.\n\nColor Palette:\nPrimary Colors: warm white, oat, charcoal.\nAccent Colors: signature brand color (user-pickable).\nBackground: subtle blueprint grid.\n\nTypography:\nHeadings: contemporary geometric sans.\nBody Text: clean utility sans.\nLayout: workspace with toolbars.\n\nPage Structure:\nHero Section: a coffee shop space the user can lay out.\nTemplates: cafe / co-working / boutique / restaurant.\nCapacity Planner: seats per square meter / fire egress.\nBrand Color: apply across the room instantly.\nCost Estimator: rough furniture and fixture totals.\n\nInteraction Details:\n- Switch between top-down floor plan and 3D view with a smooth camera swing.\n- Brand color picker recolors all branded elements live.\n- Capacity meter ticks up/down as you place chairs.\n- Egress paths animate as flowing arrows when \"\"Show fire safety\"\" is toggled.\n- Cost estimator slides out a side panel that updates as you place items.\n- Export to PDF triggers a building-up animation of the layout sheet.\n\nOverall Vibe: practical, customizable, business-savvy, polished.\""
+              },
+              "labels": {
+                "cn": "MODE室内设计3D预览器",
+                "en": "Design 3D previewer"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/3D-%E6%96%B0.png?auth_key=1813145481-2daea9d977a14f94bfdd7cc6a355a822-0-9056efa820e811c2679efc8464b46af6",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/3D-%E6%96%B0.png?auth_key=1813145481-2daea9d977a14f94bfdd7cc6a355a822-0-9056efa820e811c2679efc8464b46af6"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/6add161b-bb18-4af6-9191-2bceea36576d",
+                "en": "https://chat.z.ai/s/6add161b-bb18-4af6-9191-2bceea36576d"
+              }
+            },
+            {
+              "id": "item-z02oDN",
+              "type": "prompt",
+              "contents": {
+                "cn": "Render a sleek minimalist display pedestal — matte black hex base, levitating glass frame, neon-glowing edges, a slowly rotating placeholder hologram cube, polished concrete reflective floor, idle auto-orbit camera, hover-brighten neon, and click-to-swap user model.",
+                "en": "Render a sleek minimalist display pedestal — matte black hex base, levitating glass frame, neon-glowing edges, a slowly rotating placeholder hologram cube, polished concrete reflective floor, idle auto-orbit camera, hover-brighten neon, and click-to-swap user model."
+              },
+              "labels": {
+                "cn": "AUREON 汽车3D配置",
+                "en": "Digital Art Gallery Scene"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/3D-2.png?auth_key=1813140157-3cf0b8a8b798469c9c271df364dd6aa3-0-25e429344ffdb7911a427942dc13a1f1",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/3D-2.png?auth_key=1813140157-3cf0b8a8b798469c9c271df364dd6aa3-0-25e429344ffdb7911a427942dc13a1f1"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/df6544b2-ab6b-4135-9888-cc8fd9dac53c",
+                "en": "https://chat.z.ai/s/df6544b2-ab6b-4135-9888-cc8fd9dac53c"
+              }
+            },
+            {
+              "id": "item-hKY5qd",
+              "type": "prompt",
+              "contents": {
+                "cn": "Build a 3D watch customizer with drag-orbit, PBR material live previews, animated strap swaps, real-time hand sweep at the user's local time, complication hover-glow, and a webcam-AR \"try on your wrist\" mode.",
+                "en": "Build a 3D watch customizer with drag-orbit, PBR material live previews, animated strap swaps, real-time hand sweep at the user's local time, complication hover-glow, and a webcam-AR \"try on your wrist\" mode."
+              },
+              "labels": {
+                "cn": "DNA 3D教学平台",
+                "en": "Premium 3D watch customization platform"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/3D-3.png?auth_key=1813140157-81cb17db927248bea68d7d12e2c75bcb-0-b59a4d8b12f3bb87b48ea09d5e936cde",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/3D-3.png?auth_key=1813140157-81cb17db927248bea68d7d12e2c75bcb-0-b59a4d8b12f3bb87b48ea09d5e936cde"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/618c1edd-3ed5-4a4d-97ce-8b65df753a1b",
+                "en": "https://chat.z.ai/s/618c1edd-3ed5-4a4d-97ce-8b65df753a1b"
+              }
+            }
+          ],
+          "item-Th7Pdr": [
+            {
+              "id": "item-ohLaae",
+              "type": "prompt",
+              "contents": {
+                "cn": "\"Design a high-end fitness studio brand official website, emphasizing professionalism and community belonging.\n\nVisual Strategy:\nImagery: athletic poses, sweat, muscle definition, equipment texture.\nPhotography: high-contrast black and white, emphasizing strength and beauty.\nComposition: people as the main subject, blurred surroundings.\n\nColor Palette:\nPrimary Colors: pure black, dark gray.\nAccent Colors: neon orange, metallic silver.\nBackground: dark, strong textural feel.\n\nTypography:\nHeadings: bold sans-serif, powerful.\nBody Text: clean and forceful, condensed information.\nWhitespace: minimal, high information density.\n\nPage Structure:\nHero Section: brand attitude + coach team showcase.\nCurriculum: organized by goals (muscle gain, fat loss, fitness).\nCoach Profiles: professional background + certifications.\nMember Stories: real transformation case studies.\nBook a Trial Class: clear CTA button.\n\nInteraction Details:\n- Hero auto-plays a muted slow-motion training reel; click to unmute.\n- Section reveals use staggered fade + slight upward translate on scroll.\n- Coach cards flip on hover to reveal certifications and signature workout.\n- \"\"Book a Trial Class\"\" CTA pulses softly and snaps to a sticky bottom bar on scroll.\n- Member story carousel auto-advances; drag-to-swipe with rubber-band easing.\n- Subtle grain-texture parallax drifts as you scroll.\n\nOverall Vibe: professional, hardcore, motivating, sense of belonging.\"",
+                "en": "Design a high-end fitness studio brand official website, emphasizing professionalism and community belonging.\n\nVisual Strategy:\nImagery: athletic poses, sweat, muscle definition, equipment texture.\nPhotography: high-contrast black and white, emphasizing strength and beauty.\nComposition: people as the main subject, blurred surroundings.\n\nColor Palette:\nPrimary Colors: pure black, dark gray.\nAccent Colors: neon orange, metallic silver.\nBackground: dark, strong textural feel.\n\nTypography:\nHeadings: bold sans-serif, powerful.\nBody Text: clean and forceful, condensed information.\nminimal whitespace, high information density.\n\nPage Structure:\nHero Section: brand attitude + coach team showcase.\nCurriculum: organized by goals(muscle gain, fat loss, fitness).\nCoach Profiles: professional background + certifications.\nMember Stories: real transformation case studies.\nBook a Trial Class: clear CTA button.\n\nOverall Vibe: professional, hardcore, motivating, sense of belonging."
+              },
+              "labels": {
+                "cn": "FORGE 健身房官网",
+                "en": "FORGE GYM WEBPAGE"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/landingpage-1.png?auth_key=1813140157-5eddc7a0e7184fc492752d2ae1e8e447-0-0c5acc304e41534ff5021bd75483602b",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/landingpage-1.png?auth_key=1813140157-5eddc7a0e7184fc492752d2ae1e8e447-0-0c5acc304e41534ff5021bd75483602b"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/85ba5110-5e2f-42dd-aa53-91daebc356b3",
+                "en": "https://chat.z.ai/s/85ba5110-5e2f-42dd-aa53-91daebc356b3"
+              }
+            },
+            {
+              "id": "item-EscpZM",
+              "type": "prompt",
+              "contents": {
+                "cn": "\"Design a boutique yoga studio landing page that feels calm, intentional, and grounded — the antidote to high-intensity gym culture.\n\nVisual Strategy:\nImagery: soft morning light through large windows, students in postures, plants, mat textures.\nPhotography: warm natural light, shallow depth of field.\nComposition: open negative space, diagonal sunbeams.\n\nColor Palette:\nPrimary Colors: warm sand, sage green, off-white.\nAccent Colors: terracotta, dusk pink.\nBackground: subtle paper or linen texture.\n\nTypography:\nHeadings: humanist serif, comfortable weight.\nBody Text: airy line-height.\nLayout: generous margins; one idea per scroll viewport.\n\nPage Structure:\nHero Section: a slow-breathing visual + studio name + booking CTA.\nPractices: vinyasa / yin / restorative / breathwork.\nTeacher Bios: photo + personal \"\"why I teach\"\" quote.\nClass Schedule: calendar view with seat availability.\nFirst Class Free: prominent capture form.\n\nInteraction Details:\n- Hero visual subtly expands and contracts on a 4-second breath cycle.\n- Headlines fade up with a soft 600ms ease as they enter view.\n- Teacher quotes type out character-by-character on hover.\n- Schedule rows expand to reveal the studio room and prerequisites.\n- A tiny chime plays once on first scroll (opt-in).\n- Hover on any image triggers a slow Ken Burns zoom.\n\nOverall Vibe: calm, welcoming, intentional, restorative.\"",
+                "en": "\"Design a boutique yoga studio landing page that feels calm, intentional, and grounded — the antidote to high-intensity gym culture.\n\nVisual Strategy:\nImagery: soft morning light through large windows, students in postures, plants, mat textures.\nPhotography: warm natural light, shallow depth of field.\nComposition: open negative space, diagonal sunbeams.\n\nColor Palette:\nPrimary Colors: warm sand, sage green, off-white.\nAccent Colors: terracotta, dusk pink.\nBackground: subtle paper or linen texture.\n\nTypography:\nHeadings: humanist serif, comfortable weight.\nBody Text: airy line-height.\nLayout: generous margins; one idea per scroll viewport.\n\nPage Structure:\nHero Section: a slow-breathing visual + studio name + booking CTA.\nPractices: vinyasa / yin / restorative / breathwork.\nTeacher Bios: photo + personal \"\"why I teach\"\" quote.\nClass Schedule: calendar view with seat availability.\nFirst Class Free: prominent capture form.\n\nInteraction Details:\n- Hero visual subtly expands and contracts on a 4-second breath cycle.\n- Headlines fade up with a soft 600ms ease as they enter view.\n- Teacher quotes type out character-by-character on hover.\n- Schedule rows expand to reveal the studio room and prerequisites.\n- A tiny chime plays once on first scroll (opt-in).\n- Hover on any image triggers a slow Ken Burns zoom.\n\nOverall Vibe: calm, welcoming, intentional, restorative.\""
+              },
+              "labels": {
+                "cn": "心栖 心理健康咨询平台",
+                "en": "TERREN Landing Page"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/landingpage-2.png?auth_key=1813140157-cb806342412f4f84840118d5bb0b85cd-0-1c3cbb87d22565154b63e38a1c8c35f0",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/landingpage-2.png?auth_key=1813140157-cb806342412f4f84840118d5bb0b85cd-0-1c3cbb87d22565154b63e38a1c8c35f0"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/f1c5709c-33d4-45b8-b0ee-08f4baf17fab",
+                "en": "https://chat.z.ai/s/f1c5709c-33d4-45b8-b0ee-08f4baf17fab"
+              }
+            },
+            {
+              "id": "item-ZkjEPK",
+              "type": "prompt",
+              "contents": {
+                "cn": "\"Design a brand and graphic designer's portfolio that feels like a print monograph.\n\nLogo systems, packaging, posters, type design. Each project gets a \"\"spread\"\" with editorial copy.\n\nVisual: high-contrast, type-led, oversized headlines.\n\nPage Structure:\nHero Section: oversized typographic name treatment.\nProjects: each project is a vertically scrollable \"\"spread.\"\"\nType Specimens: download specimen PDFs.\nLectures & Talks: with embedded video.\nContact.\n\nInteraction Details:\n- Hero name treatment animates with kinetic typography on load.\n- Each project spread cross-fades into the next with a slight horizontal slide.\n- Logos animate (build / rotate / construct) when scrolled into view.\n- Type specimens are draggable; you can resize them by pinching.\n- Color palette swatches scrub like film strips.\n- Cursor leaves a faint risograph dot trail.\n\nOverall Vibe: editorial, type-heavy, opinionated, art-directed.\"",
+                "en": "\"Design a brand and graphic designer's portfolio that feels like a print monograph.\n\nLogo systems, packaging, posters, type design. Each project gets a \"\"spread\"\" with editorial copy.\n\nVisual: high-contrast, type-led, oversized headlines.\n\nPage Structure:\nHero Section: oversized typographic name treatment.\nProjects: each project is a vertically scrollable \"\"spread.\"\"\nType Specimens: download specimen PDFs.\nLectures & Talks: with embedded video.\nContact.\n\nInteraction Details:\n- Hero name treatment animates with kinetic typography on load.\n- Each project spread cross-fades into the next with a slight horizontal slide.\n- Logos animate (build / rotate / construct) when scrolled into view.\n- Type specimens are draggable; you can resize them by pinching.\n- Color palette swatches scrub like film strips.\n- Cursor leaves a faint risograph dot trail.\n\nOverall Vibe: editorial, type-heavy, opinionated, art-directed.\""
+              },
+              "labels": {
+                "cn": "DesignBridge设计师接单平台",
+                "en": "Crafted premium tea brand website"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/landingpage-3.png?auth_key=1813140157-82293b70f47f446396ebcbcb2b7f5f9d-0-c233a658fdb61cb29afeef2b2acd8edd",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/landingpage-3.png?auth_key=1813140157-82293b70f47f446396ebcbcb2b7f5f9d-0-c233a658fdb61cb29afeef2b2acd8edd"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/fb3f17eb-b3db-44e3-b10c-8466f2fbf39e",
+                "en": "https://chat.z.ai/s/fb3f17eb-b3db-44e3-b10c-8466f2fbf39e"
+              }
+            }
+          ],
+          "item-yTOES2": [
+            {
+              "id": "item-WUecIA",
+              "type": "prompt",
+              "contents": {
+                "cn": "\"Design a tutorial-series-focused developer blog — multi-part guides with embedded runnable demos.\n\nSeries-first structure. Each tutorial has a sticky table-of-contents, code playgrounds (CodeMirror / Sandpack), and a progress checklist.\n\nVisual: clean, light-default with a dim mode. Code monospace, prose serif.\n\nPage Structure:\nHero Section: featured series + new chapters this week.\nSeries Library: grid of tutorial series with completion percentage.\nSeries Page: chapter list, prerequisite map.\nChapter Page: prose + embedded runnable code.\nComments: per-chapter discussion threads.\n\nInteraction Details:\n- Code playgrounds show output instantly as you type.\n- Progress checklist auto-checks chapters as you finish them (>= 80% scroll).\n- Sticky TOC highlights the active heading.\n- Embedded \"\"diff\"\" widgets animate from before-code to after-code on click.\n- Chapter completion plays a small celebration animation (gold tick + a soft chime).\n- Series prerequisite map is an interactive node graph.\n\nOverall Vibe: educational, hands-on, structured, polished.\"",
+                "en": "\"Design a tutorial-series-focused developer blog — multi-part guides with embedded runnable demos.\n\nSeries-first structure. Each tutorial has a sticky table-of-contents, code playgrounds (CodeMirror / Sandpack), and a progress checklist.\n\nVisual: clean, light-default with a dim mode. Code monospace, prose serif.\n\nPage Structure:\nHero Section: featured series + new chapters this week.\nSeries Library: grid of tutorial series with completion percentage.\nSeries Page: chapter list, prerequisite map.\nChapter Page: prose + embedded runnable code.\nComments: per-chapter discussion threads.\n\nInteraction Details:\n- Code playgrounds show output instantly as you type.\n- Progress checklist auto-checks chapters as you finish them (>= 80% scroll).\n- Sticky TOC highlights the active heading.\n- Embedded \"\"diff\"\" widgets animate from before-code to after-code on click.\n- Chapter completion plays a small celebration animation (gold tick + a soft chime).\n- Series prerequisite map is an interactive node graph.\n\nOverall Vibe: educational, hands-on, structured, polished.\""
+              },
+              "labels": {
+                "cn": "纪年-历史时间轴",
+                "en": "Functional tech review Blog"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/knowladge-1.png?auth_key=1813140157-83b3ffbcff33410ca5e2957caf9a82ef-0-247e53bd2989e7bc6ca8a84ba1ef51d6",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/knowladge-1.png?auth_key=1813140157-83b3ffbcff33410ca5e2957caf9a82ef-0-247e53bd2989e7bc6ca8a84ba1ef51d6"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/c14e52c2-68d0-4875-bc78-010fd76b965f",
+                "en": "https://chat.z.ai/s/c14e52c2-68d0-4875-bc78-010fd76b965f"
+              }
+            },
+            {
+              "id": "item-fmmTkg",
+              "type": "project",
+              "contents": {
+                "cn": "Build a math concept site with a hero shape that continuously morphs, drag-vertex live readouts, slider-driven function plots, color-pulse quiz feedback, and step-by-step solutions revealed line by line.",
+                "en": "Build a math concept site with a hero shape that continuously morphs, drag-vertex live readouts, slider-driven function plots, color-pulse quiz feedback, and step-by-step solutions revealed line by line."
+              },
+              "descs": {
+                "cn": "",
+                "en": ""
+              },
+              "labels": {
+                "cn": "test",
+                "en": "test"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/knowledge-2.png?auth_key=1813146222-9277be6570334691a2dd975666fe17c5-0-50b58d631d6c09d3df2bf82ce8920df7",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/knowledge-2.png?auth_key=1813146222-9277be6570334691a2dd975666fe17c5-0-50b58d631d6c09d3df2bf82ce8920df7"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/7521a704-f946-4f6d-9e82-e98c29ac3e71",
+                "en": "https://chat.z.ai/s/7521a704-f946-4f6d-9e82-e98c29ac3e71"
+              }
+            },
+            {
+              "id": "item-1XHjbN",
+              "type": "project",
+              "contents": {
+                "cn": "\"Design a calculus visualization site dedicated to derivatives, integrals, and limits.\n\nVisual Strategy:\nImagery: tangent lines sweeping curves, areas under graphs, Riemann sums.\nPhotography: pure illustrations; no photographs.\nComposition: side-by-side function and its derivative.\n\nColor Palette:\nPrimary Colors: navy, paper white.\nAccent Colors: derivative orange, integral green.\nBackground: graph paper with millimeter grid.\n\nTypography:\nHeadings: editorial sans.\nBody Text: serif for prose, mono for code.\nMath: KaTeX-rendered formulas.\n\nPage Structure:\nHero Section: a tangent line sweeping along sin(x).\nDerivatives: drag a point on f(x) to see the tangent slope live.\nIntegrals: Riemann sum sliders.\nLimits: ε-δ visual proof tool.\nPractice: applied problems with hints.\n\nInteraction Details:\n- Tangent line slides along the curve continuously; speed adjustable.\n- Riemann rectangles fill smoothly as you drag the partition slider.\n- ε-δ tool: drag ε, δ snaps to the right value with a confirming flash.\n- Hover any term in a formula to see its definition popover.\n- Step-through proofs play with a \"\"next\"\" key press.\n- Plotting area supports zoom/pan with cursor-anchored math grid.\n\nOverall Vibe: rigorous, beautiful, intuitive, exam-ready.\"",
+                "en": "\"Design a calculus visualization site dedicated to derivatives, integrals, and limits.\n\nVisual Strategy:\nImagery: tangent lines sweeping curves, areas under graphs, Riemann sums.\nPhotography: pure illustrations; no photographs.\nComposition: side-by-side function and its derivative.\n\nColor Palette:\nPrimary Colors: navy, paper white.\nAccent Colors: derivative orange, integral green.\nBackground: graph paper with millimeter grid.\n\nTypography:\nHeadings: editorial sans.\nBody Text: serif for prose, mono for code.\nMath: KaTeX-rendered formulas.\n\nPage Structure:\nHero Section: a tangent line sweeping along sin(x).\nDerivatives: drag a point on f(x) to see the tangent slope live.\nIntegrals: Riemann sum sliders.\nLimits: ε-δ visual proof tool.\nPractice: applied problems with hints.\n\nInteraction Details:\n- Tangent line slides along the curve continuously; speed adjustable.\n- Riemann rectangles fill smoothly as you drag the partition slider.\n- ε-δ tool: drag ε, δ snaps to the right value with a confirming flash.\n- Hover any term in a formula to see its definition popover.\n- Step-through proofs play with a \"\"next\"\" key press.\n- Plotting area supports zoom/pan with cursor-anchored math grid.\n\nOverall Vibe: rigorous, beautiful, intuitive, exam-ready.\""
+              },
+              "descs": {
+                "cn": "",
+                "en": ""
+              },
+              "labels": {
+                "cn": "label",
+                "en": "label"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/knowledge-3.png?auth_key=1813146222-96ed9cb5f60347eca678fa9ea897cdcb-0-2da93dc623520440aba032bdfd0ff7b1",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/knowledge-3.png?auth_key=1813146222-96ed9cb5f60347eca678fa9ea897cdcb-0-2da93dc623520440aba032bdfd0ff7b1"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/8c254ca2-bdf9-4f00-a052-6c4efd070358",
+                "en": "https://chat.z.ai/s/8c254ca2-bdf9-4f00-a052-6c4efd070358"
+              }
+            }
+          ]
+        },
+        "items": [],
+        "templates": {
+          "cn": "{prompt}",
+          "en": "{prompt}"
+        }
+      }
+    },
+    "created_at": 1769511209,
+    "updated_at": 1781585868
+  },
+  {
+    "namespace": "zcode",
+    "scene": "data-insight",
+    "options": {
+      "charts": {
+        "id": "opt-tP8yvO",
+        "type": "charts",
+        "contents": {
+          "cn": "推荐图表",
+          "en": "Recommended Chart"
+        },
+        "refer": "",
+        "cascades": {},
+        "items": [
+          {
+            "id": "item-Zd4p3M",
+            "type": "chart",
+            "contents": {
+              "cn": "# 折线图生成\n\n用户已选择折线图进行生成。\n\n图表内容根据数据特征自动生成，系统自动判断数据如何使用和呈现。\n\n用户上传的数据已验证适用于折线图生成。\n\n用户已选择折线图进行生成",
+              "en": "# Line Chart Generation\n\nUser has selected Line Chart for generation.\n\nChart content is automatically generated based on data characteristics, with the system automatically determining how to use and present the data.\n\nUser-uploaded data has been validated as suitable for Line Chart generation.\n\nUser has selected Line Chart for generation."
+            },
+            "descs": {
+              "cn": "适用场景：时间序列趋势展示、连续数据变化\n适用数据结构：时间/序列 + 数值",
+              "en": "Applicable Scenarios: Time Series Trend Display, Continuous Data Change\nApplicable Data Structure: Time/Sequence + Value"
+            },
+            "labels": {
+              "cn": "折线图",
+              "en": "Line Chart"
+            },
+            "img": "https://z-cdn.chatglm.cn/z-ai/static/data-insight/Line%20chart.png"
+          },
+          {
+            "id": "item-h4Aaso",
+            "type": "chart",
+            "contents": {
+              "cn": "使用柱状图进行生成和",
+              "en": "User has selected bar chart for generation."
+            },
+            "descs": {
+              "cn": "适用场景：分类数据对比、数量比较\n适用数据结构：类别 + 数值",
+              "en": "Applicable Scenarios: Comparison of Categorical Data, Comparison of Quantities\nApplicable Data Structure: Category + Value"
+            },
+            "labels": {
+              "cn": "柱状图",
+              "en": "Bar Chart"
+            },
+            "img": "https://z-cdn.chatglm.cn/z-ai/static/data-insight/Bar%20Chart.png"
+          },
+          {
+            "id": "item-u22Lld",
+            "type": "chart",
+            "contents": {
+              "cn": "# 饼图生成\n\n用户已选择饼图进行生成。\n\n图表内容根据数据特征自动生成，系统自动判断数据如何使用和呈现。\n\n用户上传的数据已验证适用于饼图生成。\n\n用户已选择饼图进行生成",
+              "en": "# Pie Chart Generation\n\nUser has selected Pie Chart for generation.\n\nChart content is automatically generated based on data characteristics, with the system automatically determining how to use and present the data.\n\nUser-uploaded data has been validated as suitable for Pie Chartt generation.\n\nUser has selected Pie Chart for generation."
+            },
+            "descs": {
+              "cn": "适用场景：占比分布、部分与整体关系\n适用数据结构：类别 + 数值（占比）",
+              "en": "Applicable Scenarios: Proportion Distribution, Part-to-Whole Relationship\nApplicable Data Structure: Category + Value (Proportion)"
+            },
+            "labels": {
+              "cn": "饼状图",
+              "en": "Pie Chart"
+            },
+            "img": "https://z-cdn.chatglm.cn/z-ai/static/data-insight/Pie%20chart.png"
+          },
+          {
+            "id": "item-6VSft0",
+            "type": "chart",
+            "contents": {
+              "cn": "# 散点图生成\n\n用户已选择散点图进行生成。\n\n图表内容根据数据特征自动生成，系统自动判断数据如何使用和呈现。\n\n用户上传的数据已验证适用于散点图生成。\n\n用户已选择散点图进行生成",
+              "en": "# Scatter Plot Generation\n\nUser has selected scatter plot for generation.\n\nChart content is automatically generated based on data characteristics, with the system automatically determining how to use and present the data.\n\nUser-uploaded data has been validated as suitable for scatter plot generation.\n\nUser has selected scatter plot for generation."
+            },
+            "descs": {
+              "cn": "适用场景：相关性分析、分布探索\n适用数据结构：X轴数值 + Y轴数值",
+              "en": "Applicable Scenarios: Correlation Analysis, Distribution Exploration\nApplicable Data Structure: X-axis Value + Y-axis Value"
+            },
+            "labels": {
+              "cn": "散点图",
+              "en": "Scatter Plot"
+            },
+            "img": "https://z-cdn.chatglm.cn/z-ai/static/data-insight/Scatter%20plot.png"
+          },
+          {
+            "id": "item-lDjO3B",
+            "type": "chart",
+            "contents": {
+              "cn": "# 热力图生成\n\n用户已选择热力图进行生成。\n\n图表内容根据数据特征自动生成，系统自动判断数据如何使用和呈现。\n\n用户上传的数据已验证适用于热力图生成。\n\n用户已选择热力图进行生成",
+              "en": "# Heatmap Generation\n\nUser has selected heatmap for generation.\n\nChart content is automatically generated based on data characteristics, with the system automatically determining how to use and present the data.\n\nUser-uploaded data has been validated as suitable for heatmap generation.\n\nUser has selected heatmap for generation."
+            },
+            "descs": {
+              "cn": "适用场景：矩阵数据可视化、密度分布\n适用数据结构：行标签 + 列标签 + 数值矩阵",
+              "en": "Applicable Scenarios: Matrix Data Visualization, Density Distribution\nApplicable Data Structure: Row Labels + Column Labels + Value Matrix"
+            },
+            "labels": {
+              "cn": "热力图",
+              "en": "Heatmap"
+            },
+            "img": "https://z-cdn.chatglm.cn/z-ai/static/data-insight/Heatmap.png"
+          },
+          {
+            "id": "item-OxiBvO",
+            "type": "chart",
+            "contents": {
+              "cn": "{PROMPT:data-insight:cn:Density Plot }",
+              "en": "{PROMPT:data-insight:en:Density Plot }"
+            },
+            "descs": {
+              "cn": "适用场景：连续型数据的分布形态、峰值位置和数据集中度\n适用数据结构：单维度或多维度的连续型数值数据",
+              "en": "Applicable Scenarios:  Distribution pattern, peak position, and data concentration of continuous data\nApplicable Data Structure: Unidimensional or multidimensional continuous numerical data"
+            },
+            "labels": {
+              "cn": "密度图 ",
+              "en": "Density Plot "
+            },
+            "img": "https://z-cdn.chatglm.cn/z-ai/static/data-insight/Density%20Plot.png"
+          },
+          {
+            "id": "item-BLds7n",
+            "type": "chart",
+            "contents": {
+              "cn": "# 瀑布图生成\n\n用户已选择瀑布图进行生成。\n\n图表内容根据数据特征自动生成，系统自动判断数据如何使用和呈现。\n\n用户上传的数据已验证适用于瀑布图生成。\n\n用户已选择瀑布图进行生成",
+              "en": "# waterfall chart Generation\n\nUser has selected waterfall chart for generation.\n\nChart content is automatically generated based on data characteristics, with the system automatically determining how to use and present the data.\n\nUser-uploaded data has been validated as suitable for waterfall chart generation.\n\nUser has selected waterfall chart for generation."
+            },
+            "descs": {
+              "cn": "适用场景：数据的变化过程，拆解每一步增减项的影响程度\n适用数据结构：分类 + 数值 + 增减标识",
+              "en": "Applicable Scenarios: The change process of data, and the decomposition of the impact degree of each incremental and decremental item\nApplicable Data Structure: Category + Value + Increase/Decrease Indicator"
+            },
+            "labels": {
+              "cn": "瀑布图",
+              "en": "Waterfall Chart"
+            },
+            "img": "https://z-cdn.chatglm.cn/z-ai/static/data-insight/WaterfallChart.png"
+          },
+          {
+            "id": "item-Vn2bk7",
+            "type": "chart",
+            "contents": {
+              "cn": "# 桑基图生成\n\n用户已选择桑基图进行生成。\n\n图表内容根据数据特征自动生成，系统自动判断数据如何使用和呈现。\n\n用户上传的数据已验证适用于桑基图生成。\n\n用户已选择桑基图进行生成",
+              "en": "# Sankey Diagram Generation\n\nUser has selected Sankey diagram for generation.\n\nChart content is automatically generated based on data characteristics, with the system automatically determining how to use and present the data.\n\nUser-uploaded data has been validated as suitable for Sankey diagram generation.\n\nUser has selected Sankey diagram for generation."
+            },
+            "descs": {
+              "cn": "适用场景：流量流向、转化路径、能量流动\n适用数据结构：源节点 + 目标节点 + 流量值",
+              "en": "Applicable Scenarios: Traffic Flow, Conversion Path, Energy Flow\nApplicable Data Structure: Source Node + Destination Node + Flow Value"
+            },
+            "labels": {
+              "cn": "桑基图",
+              "en": "Sankey Diagram"
+            },
+            "img": "https://z-cdn.chatglm.cn/z-ai/static/data-insight/Sankeydiagram.png"
+          },
+          {
+            "id": "item-ptRnAJ",
+            "type": "chart",
+            "contents": {
+              "cn": "# 主题河流图生成\n\n用户已选择主题河流图进行生成。\n\n图表内容根据数据特征自动生成，系统自动判断数据如何使用和呈现。\n\n用户上传的数据已验证适用于主题河流图生成。\n\n用户已选择主题河流图进行生成",
+              "en": "# ThemeRiver Generation\n\nUser has selected ThemeRiver for generation.\n\nChart content is automatically generated based on data characteristics, with the system automatically determining how to use and present the data.\n\nUser-uploaded data has been validated as suitable for ThemeRiver generation.\n\nUser has selected ThemeRiver for generation."
+            },
+            "descs": {
+              "cn": "适用场景：多主题时间演变、话题热度变化\n适用数据结构：时间 + 主题 + 数值",
+              "en": "Applicable Scenarios: Multi-topic Time Evolution, Topic Popularity Changes\nApplicable Data Structure: Time + Topic + Value"
+            },
+            "labels": {
+              "cn": "主题河流图",
+              "en": "ThemeRiver"
+            },
+            "img": "https://z-cdn.chatglm.cn/z-ai/static/data-insight/Themeriver.png"
+          },
+          {
+            "id": "item-52Cxex",
+            "type": "chart",
+            "contents": {
+              "cn": "# 雷达图生成\n\n用户已选择雷达图进行生成。\n\n图表内容根据数据特征自动生成，系统自动判断数据如何使用和呈现。\n\n用户上传的数据已验证适用于雷达图生成。\n\n用户已选择雷达图进行生成",
+              "en": "# Radar Chart Generation\n\nUser has selected radar chart for generation.\n\nChart content is automatically generated based on data characteristics, with the system automatically determining how to use and present the data.\n\nUser-uploaded data has been validated as suitable for radar chart generation.\n\nUser has selected radar chart for generation."
+            },
+            "descs": {
+              "cn": "适用场景：多维度评价、能力对比\n适用数据结构：维度 + 数值（多组）",
+              "en": "Applicable Scenarios: Multi-dimensional Evaluation, Competency Comparison\nApplicable Data Structure: Dimension + Value (Multiple Sets)"
+            },
+            "labels": {
+              "cn": "雷达图",
+              "en": "Radar Chart"
+            },
+            "img": "https://z-cdn.chatglm.cn/z-ai/static/data-insight/Radar%20Chart.png"
+          },
+          {
+            "id": "item-FkGbi8",
+            "type": "chart",
+            "contents": {
+              "cn": "# 堆叠柱状图生成\n\n用户已选择堆叠柱状图进行生成。\n\n图表内容根据数据特征自动生成，系统自动判断数据如何使用和呈现。\n\n用户上传的数据已验证适用于堆叠柱状图生成。\n\n用户已选择堆叠柱状图进行生成",
+              "en": "# Stacked Bar Chart Generation\n\nUser has selected stacked bar chart for generation.\n\nChart content is automatically generated based on data characteristics, with the system automatically determining how to use and present the data.\n\nUser-uploaded data has been validated as suitable for stacked bar chart generation.\n\nUser has selected stacked bar chart for generation."
+            },
+            "descs": {
+              "cn": "适用场景：分类内部构成、多维度对比\n适用数据结构：类别 + 子类别 + 数值",
+              "en": "Applicable Scenarios: Internal Composition of Categories, Multi-dimensional Comparison\nApplicable Data Structure: Category + Subcategory + Value"
+            },
+            "labels": {
+              "cn": "堆叠柱状图",
+              "en": "Stacked Bar Chart"
+            },
+            "img": "https://z-cdn.chatglm.cn/z-ai/static/data-insight/Stacked%20Column%C2%A0.png"
+          },
+          {
+            "id": "item-QHML1l",
+            "type": "chart",
+            "contents": {
+              "cn": "# 旭日图生成\n\n用户已选择旭日图进行生成。\n\n图表内容根据数据特征自动生成，系统自动判断数据如何使用和呈现。\n\n用户上传的数据已验证适用于旭日图生成。\n\n用户已选择旭日图进行生成",
+              "en": "# Sunburst Chart Generation\n\nUser has selected sunburst chart for generation.\n\nChart content is automatically generated based on data characteristics, with the system automatically determining how to use and present the data.\n\nUser-uploaded data has been validated as suitable for sunburst chart generation.\n\nUser has selected sunburst chart for generation."
+            },
+            "descs": {
+              "cn": "适用场景：层级数据展示、占比嵌套\n适用数据结构：多层级分类 + 数值",
+              "en": "Applicable Scenarios: Hierarchical Data Display, Proportion Nested\nApplicable Data Structure: Multi-level Classification + Numerical Value"
+            },
+            "labels": {
+              "cn": "旭日图",
+              "en": "Sunburst Chart"
+            },
+            "img": "https://z-cdn.chatglm.cn/z-ai/static/data-insight/Sunburst.png"
+          },
+          {
+            "id": "item-4I0ZVm",
+            "type": "chart",
+            "contents": {
+              "cn": "# 漏斗图生成\n\n用户已选择漏斗图进行生成。\n\n图表内容根据数据特征自动生成，系统自动判断数据如何使用和呈现。\n\n用户上传的数据已验证适用于漏斗图生成。\n\n用户已选择漏斗图进行生成",
+              "en": "# Funnel Chart Generation\n\nUser has selected funnel chart for generation.\n\nChart content is automatically generated based on data characteristics, with the system automatically determining how to use and present the data.\n\nUser-uploaded data has been validated as suitable for funnel chart generation.\n\nUser has selected funnel chart for generation."
+            },
+            "descs": {
+              "cn": "适用场景：转化率分析、流程衰减\n适用数据结构：阶段 + 数值（递减）",
+              "en": "Applicable Scenarios: Conversion Rate Analysis, Process Decay\nApplicable Data Structure: Phase + Value (Decreasing)"
+            },
+            "labels": {
+              "cn": "漏斗图",
+              "en": "Funnel Chart"
+            },
+            "img": "https://z-cdn.chatglm.cn/z-ai/static/data-insight/Funnel%20chart.png"
+          },
+          {
+            "id": "item-7GjkH1",
+            "type": "chart",
+            "contents": {
+              "cn": "# 金字塔图生成\n\n用户已选择金字塔图进行生成。\n\n图表内容根据数据特征自动生成，系统自动判断数据如何使用和呈现。\n\n用户上传的数据已验证适用于金字塔图生成。\n\n用户已选择金字塔图进行生成",
+              "en": "# pyramid chart Generation\n\nUser has selected pyramid chart for generation.\n\nChart content is automatically generated based on data characteristics, with the system automatically determining how to use and present the data.\n\nUser-uploaded data has been validated as suitable for pyramid chart generation.\n\nUser has selected pyramid chart for generation."
+            },
+            "descs": {
+              "cn": "适用场景：层级递减 / 递增的分布\n适用数据结构：分类 + 层级 + 数值",
+              "en": "Applicable Scenarios: hierarchically decreasing distribution/hierarchically increasing distribution\nApplicable Data Structure: Category + Hierarchy + Value"
+            },
+            "labels": {
+              "cn": "金字塔图",
+              "en": "Pyramid Chart"
+            },
+            "img": "https://z-cdn.chatglm.cn/z-ai/static/data-insight/Pyramid.png"
+          },
+          {
+            "id": "item-FeAXIF",
+            "type": "chart",
+            "contents": {
+              "cn": "# K线图生成\n\n用户已选择K线图进行生成。\n\n图表内容根据数据特征自动生成，系统自动判断数据如何使用和呈现。\n\n用户上传的数据已验证适用于K线图生成。\n\n用户已选择K线图进行生成",
+              "en": "# Candlestick Chart Generation\n\nUser has selected candlestick chart for generation.\n\nChart content is automatically generated based on data characteristics, with the system automatically determining how to use and present the data.\n\nUser-uploaded data has been validated as suitable for candlestick chart generation.\n\nUser has selected candlestick chart for generation."
+            },
+            "descs": {
+              "cn": "适用场景：股票/金融数据、OHLC数据\n适用数据结构：日期 + 开盘 + 最高 + 最低 + 收盘",
+              "en": "Applicable Scenarios: Stock/Financial Data, OHLC Data\nApplicable Data Structure: Date + Open + High + Low + Close"
+            },
+            "labels": {
+              "cn": "K线图",
+              "en": "Candlestick Chart"
+            },
+            "img": "https://z-cdn.chatglm.cn/z-ai/static/data-insight/Candlestick.png"
+          },
+          {
+            "id": "item-0KeiiM",
+            "type": "chart",
+            "contents": {
+              "cn": "# 环形图生成\n\n用户已选择环形图进行生成。\n\n图表内容根据数据特征自动生成，系统自动判断数据如何使用和呈现。\n\n用户上传的数据已验证适用于环形图生成。\n\n用户已选择环形图进行生成",
+              "en": "# donut chart Generation\n\nUser has selected donut chart for generation.\n\nChart content is automatically generated based on data characteristics, with the system automatically determining how to use and present the data.\n\nUser-uploaded data has been validated as suitable for donut chart generation.\n\nUser has selected donut chart for generation."
+            },
+            "descs": {
+              "cn": "适用场景：展示各分类对总体的占比关系\n适用数据结构：分类字段 + 数值字段",
+              "en": "Applicable Scenarios: Display the proportion of each category to the total\nApplicable Data Structure:Category Field + Value Field"
+            },
+            "labels": {
+              "cn": "环形图",
+              "en": "Donut Chart"
+            },
+            "img": "https://z-cdn.chatglm.cn/z-ai/static/data-insight/Doughnut%C2%A0.png"
+          },
+          {
+            "id": "item-c0zrXk",
+            "type": "chart",
+            "contents": {
+              "cn": "# 面积图生成\n\n用户已选择面积图进行生成。\n\n图表内容根据数据特征自动生成，系统自动判断数据如何使用和呈现。\n\n用户上传的数据已验证适用于面积图生成。\n\n用户已选择面积图进行生成",
+              "en": "# Area Chart Generation\n\nUser has selected area chart for generation.\n\nChart content is automatically generated based on data characteristics, with the system automatically determining how to use and present the data.\n\nUser-uploaded data has been validated as suitable for area chart generation.\n\nUser has selected area chart for generation."
+            },
+            "descs": {
+              "cn": "适用场景：累积趋势、体量变化\n适用数据结构：时间/序列 + 数值",
+              "en": "Applicable Scenarios: Cumulative Trends, Volume Changes\nApplicable Data Structure: Time/Sequence + Value"
+            },
+            "labels": {
+              "cn": "面积图",
+              "en": "Area Chart"
+            },
+            "img": "https://z-cdn.chatglm.cn/z-ai/static/data-insight/Area%20chart.png"
+          },
+          {
+            "id": "item-BZl9YY",
+            "type": "chart",
+            "contents": {
+              "cn": "# gantt chart Generation\n\nUser has selected gantt chart for generation.\n\nChart content is automatically generated based on data characteristics, with the system automatically determining how to use and present the data.\n\nUser-uploaded data has been validated as suitable for gantt chart generation.\n\nUser has selected gantt chart for generation.",
+              "en": "# gantt chart Generation\n\nUser has selected gantt chart for generation.\n\nChart content is automatically generated based on data characteristics, with the system automatically determining how to use and present the data.\n\nUser-uploaded data has been validated as suitable for gantt chart generation.\n\nUser has selected gantt chart for generation."
+            },
+            "descs": {
+              "cn": "适用场景：可视化展示项目任务的时间进度、依赖关系与资源分配\n适用数据结构：任务 + 时间 + 状态",
+              "en": "Applicable Scenarios: Visually display the time progress, dependency relationships, and resource allocation of project tasks\nApplicable Data Structure: Task + Time + Status"
+            },
+            "labels": {
+              "cn": "甘特图",
+              "en": "Gantt Chart"
+            },
+            "img": "https://z-cdn.chatglm.cn/z-ai/static/data-insight/Ganttchart.png"
+          }
+        ],
+        "templates": {
+          "cn": "{chart}",
+          "en": "{chart}"
+        }
+      },
+      "modes": {
+        "id": "opt-f8btnk",
+        "type": "modes",
+        "contents": {
+          "cn": "模式选择",
+          "en": "Mode Selection"
+        },
+        "refer": "",
+        "cascades": {},
+        "items": [
+          {
+            "id": "item-z18deS",
+            "type": "mode",
+            "contents": {
+              "cn": "# Visual chart Prompt\n\n## English Version\n\n### Mode & Objective\n- Scenario: **Visual chart** — the primary deliverable is a ready-to-use chart or structured table.\n- Focus on speed and clarity; deliver visualization directly without lengthy narrative.\n- Disallowed outputs: Full analysis reports, multi-page documents, or text-heavy explanations.\n- If chart type is unspecified, infer the most suitable type based on data characteristics.\n\n### Chart Type Selection Logic\n\n| Data Pattern | Recommended Chart |\n|--------------|-------------------|\n| Category comparison | Bar Chart (horizontal if labels are long) |\n| Time series trend | Line Chart / Area Chart |\n| Proportion breakdown (≤7 categories) | Pie Chart / Donut Chart |\n| Correlation / outlier detection | Scatter Plot |\n| Multi-dimensional assessment (5–10 axes) | Radar Chart |\n| Matrix density / correlation matrix | Heatmap |\n| Hierarchical proportion | Treemap / Sunburst |\n| Flow / conversion stages | Sankey / Funnel |\n| Distribution analysis | Histogram / Box Plot |\n\n### Data Preprocessing\n- Auto-detect and handle: missing values, duplicates, outliers.\n\n### Chart Quality Checklist\n- Title: Clear, concise, top-positioned.\n- Axis labels: Include units (e.g., \"Revenue (¥M)\").\n- Legend: Outside plot area if >4 items.\n- Data labels: Show key values if not cluttered.\n- Grid: Light gray, dashed, horizontal only (bar/line).\n- Color: Use colorblind-friendly palette.",
+              "en": "# Visual chart Prompt\n\n## English Version\n\n### Mode & Objective\n- Scenario: **Visual chart** — the primary deliverable is a ready-to-use chart or structured table.\n- Focus on speed and clarity; deliver visualization directly without lengthy narrative.\n- Disallowed outputs: Full analysis reports, multi-page documents, or text-heavy explanations.\n- If chart type is unspecified, infer the most suitable type based on data characteristics.\n\n### Chart Type Selection Logic\n\n| Data Pattern | Recommended Chart |\n|--------------|-------------------|\n| Category comparison | Bar Chart (horizontal if labels are long) |\n| Time series trend | Line Chart / Area Chart |\n| Proportion breakdown (≤7 categories) | Pie Chart / Donut Chart |\n| Correlation / outlier detection | Scatter Plot |\n| Multi-dimensional assessment (5–10 axes) | Radar Chart |\n| Matrix density / correlation matrix | Heatmap |\n| Hierarchical proportion | Treemap / Sunburst |\n| Flow / conversion stages | Sankey / Funnel |\n| Distribution analysis | Histogram / Box Plot |\n\n### Data Preprocessing\n- Auto-detect and handle: missing values, duplicates, outliers.\n\n### Chart Quality Checklist\n- Title: Clear, concise, top-positioned.\n- Axis labels: Include units (e.g., \"Revenue (¥M)\").\n- Legend: Outside plot area if >4 items.\n- Data labels: Show key values if not cluttered.\n- Grid: Light gray, dashed, horizontal only (bar/line).\n- Color: Use colorblind-friendly palette."
+            },
+            "labels": {
+              "cn": "图表可视化",
+              "en": "Quick Charts"
+            },
+            "on_finish": "visual_charts_gen_report"
+          },
+          {
+            "id": "item-mFdQa7",
+            "type": "mode",
+            "contents": {
+              "cn": "# Data Analysis Report Prompt\n\n## English Version\n\n### Mode & Objective\n- Scenario: **Data Analysis** — the primary deliverable is a structured data analysis report.\n- A valid report MUST include: narrative explanation, quantified evidence, and embedded charts/tables where applicable.\n- Disallowed outputs: Quick Charts only, bullet-point summaries, chart-only output, or conclusions without supporting evidence.\n- Non-blocking delivery: If inputs are incomplete, state explicit assumptions and append an Assumptions & Gaps section.\n\n### Recommended Workflow\n\n| Step | Core | Minimum Output |\n|------|:----:|----------------|\n| 1. Scope & Definitions | ✅ | Objective, key metrics, time range, granularity |\n| 2. Data Quality Checks | ✅ | Row count, coverage, cleaning rules applied |\n| 3. Core Performance | ✅ | ≥1 chart + key metric highlights with numeric evidence |\n| 4. Comparisons | ✅ | ≥1 comparison (WoW/MoM/YoY/segment) + variance drivers |\n| 5. Attribution & Diagnosis | ✅ | Driver list with evidence chain |\n| 6. Insights & Action Plan | ✅ | ≥2 recommendations with priority, impact, risks, validation |\n| 7. Uncertainty Statement | ⚪ | Limitations, biases, next validation steps |",
+              "en": "# Data Analysis Report Prompt\n\n## English Version\n\n### Mode & Objective\n- Scenario: **Data Analysis** — the primary deliverable is a structured data analysis report.\n- A valid report MUST include: narrative explanation, quantified evidence, and embedded charts/tables where applicable.\n- Disallowed outputs: Quick Charts only, bullet-point summaries, chart-only output, or conclusions without supporting evidence.\n- Non-blocking delivery: If inputs are incomplete, state explicit assumptions and append an Assumptions & Gaps section.\n\n### Recommended Workflow\n\n| Step | Core | Minimum Output |\n|------|:----:|----------------|\n| 1. Scope & Definitions | ✅ | Objective, key metrics, time range, granularity |\n| 2. Data Quality Checks | ✅ | Row count, coverage, cleaning rules applied |\n| 3. Core Performance | ✅ | ≥1 chart + key metric highlights with numeric evidence |\n| 4. Comparisons | ✅ | ≥1 comparison (WoW/MoM/YoY/segment) + variance drivers |\n| 5. Attribution & Diagnosis | ✅ | Driver list with evidence chain |\n| 6. Insights & Action Plan | ✅ | ≥2 recommendations with priority, impact, risks, validation |\n| 7. Uncertainty Statement | ⚪ | Limitations, biases, next validation steps |"
+            },
+            "labels": {
+              "cn": "数据分析",
+              "en": "Data Analysis"
+            }
+          }
+        ],
+        "templates": {
+          "cn": "{mode}",
+          "en": "{mode}"
+        }
+      },
+      "outputs": {
+        "id": "opt-ghTPmk",
+        "type": "outputs",
+        "contents": {
+          "cn": "输出格式选择",
+          "en": "Output Format Selection"
+        },
+        "refer": "modes",
+        "cascades": {
+          "item-mFdQa7": [
+            {
+              "id": "item-6lzAWZ",
+              "type": "output",
+              "contents": {
+                "cn": "* **The report output format must be Word (.docx)**:\n  - **Library**: Use `python-docx`.\n  - **Fonts**:\n    - Chinese: SimSun (宋体) / Microsoft YaHei (微软雅黑)\n    - English: Arial / Times New Roman\n    - Fallback: Use system-available fonts; avoid hardcoding font paths.\n  - **Page Setup**: A4, margins 2.5cm (top/bottom), 2cm (left/right).\n  - **Header & Footer** (exclude cover page):\n    - Header: Report title, right-aligned or centered, font size 10pt.\n    - Footer: Page number centered (format: \"Page X\" or \"第 X 页\").\n    - Use Section Breaks to isolate cover page (no header/footer on cover).\n  - **Document Structure**:\n    - Use built-in styles: Heading 1 / Heading 2 / Heading 3 for hierarchy.\n    - Auto-generate Table of Contents (TOC) linked to heading styles.\n  - **Image Embedding**:\n    - Alignment: Inline with text, centered.\n    - Maintain aspect ratio; width ≤ 80% page width (~14cm).\n    - Caption below image: \"图 X-XX：[描述]\" (centered, smaller font).\n  - **Table Formatting**:\n    - Enable text wrapping in cells (prevent overflow).\n    - Auto-fit column width to content.\n    - Header row: Bold, background #F2F2F2.\n  - **File Naming**: `[主题]_分析报告_[YYYY-MM-DD].docx`\n* **Output**: Provide a direct download link after generating the file.",
+                "en": "* **The report output format must be Word (.docx)**:\n  - **Library**: Use `python-docx`.\n  - **Fonts**:\n    - Chinese: SimSun (宋体) / Microsoft YaHei (微软雅黑)\n    - English: Arial / Times New Roman\n    - Fallback: Use system-available fonts; avoid hardcoding font paths.\n  - **Page Setup**: A4, margins 2.5cm (top/bottom), 2cm (left/right).\n  - **Header & Footer** (exclude cover page):\n    - Header: Report title, right-aligned or centered, font size 10pt.\n    - Footer: Page number centered (format: \"Page X\" or \"第 X 页\").\n    - Use Section Breaks to isolate cover page (no header/footer on cover).\n  - **Document Structure**:\n    - Use built-in styles: Heading 1 / Heading 2 / Heading 3 for hierarchy.\n    - Auto-generate Table of Contents (TOC) linked to heading styles.\n  - **Image Embedding**:\n    - Alignment: Inline with text, centered.\n    - Maintain aspect ratio; width ≤ 80% page width (~14cm).\n    - Caption below image: \"图 X-XX：[描述]\" (centered, smaller font).\n  - **Table Formatting**:\n    - Enable text wrapping in cells (prevent overflow).\n    - Auto-fit column width to content.\n    - Header row: Bold, background #F2F2F2.\n  - **File Naming**: `[主题]_分析报告_[YYYY-MM-DD].docx`\n* **Output**: Provide a direct download link after generating the file."
+              },
+              "labels": {
+                "cn": "docx",
+                "en": "docx"
+              }
+            },
+            {
+              "id": "item-tDW92z",
+              "type": "output",
+              "contents": {
+                "cn": "* **The report output format must be PDF**:\n  - **Library**: Use `reportlab` (preferred for complex layouts and CJK support) or `fpdf2` with registered CJK fonts.\n  - **Fonts**:\n    - Chinese: SimSun / Microsoft YaHei / Noto Sans CJK SC\n    - English: Arial / Times New Roman\n    - Fallback: Ensure font embedding for cross-platform rendering.\n  - **Page Setup**: A4 (210×297mm), margins 2.5cm (top/bottom), 2cm (left/right).\n  - **Header & Footer** (exclude cover page):\n    - Header: Report title, right-aligned or centered, font size 10pt.\n    - Footer: Page number centered (format: \"Page X\" or \"第 X 页\").\n  - **Bookmarks**: Auto-generate PDF bookmarks from Heading 1/2/3 for navigation.\n  - **Image Embedding**:\n    - Resolution ≥ 150 DPI for print quality.\n    - Maintain aspect ratio; width ≤ 80% page width.\n  - **File Optimization**: Target file size ≤ 10MB; compress images if necessary.\n  - **File Naming**: `[主题]_分析报告_[YYYY-MM-DD].pdf`\n* **Output**: Provide a direct download link after generating the file.",
+                "en": "* **The report output format must be PDF**:\n  - **Library**: Use `reportlab` (preferred for complex layouts and CJK support) or `fpdf2` with registered CJK fonts.\n  - **Fonts**:\n    - Chinese: SimSun / Microsoft YaHei / Noto Sans CJK SC\n    - English: Arial / Times New Roman\n    - Fallback: Ensure font embedding for cross-platform rendering.\n  - **Page Setup**: A4 (210×297mm), margins 2.5cm (top/bottom), 2cm (left/right).\n  - **Header & Footer** (exclude cover page):\n    - Header: Report title, right-aligned or centered, font size 10pt.\n    - Footer: Page number centered (format: \"Page X\" or \"第 X 页\").\n  - **Bookmarks**: Auto-generate PDF bookmarks from Heading 1/2/3 for navigation.\n  - **Image Embedding**:\n    - Resolution ≥ 150 DPI for print quality.\n    - Maintain aspect ratio; width ≤ 80% page width.\n  - **File Optimization**: Target file size ≤ 10MB; compress images if necessary.\n  - **File Naming**: `[主题]_分析报告_[YYYY-MM-DD].pdf`\n* **Output**: Provide a direct download link after generating the file."
+              },
+              "labels": {
+                "cn": "pdf",
+                "en": "pdf"
+              }
+            }
+          ],
+          "item-z18deS": [
+            {
+              "id": "item-kOMvX2",
+              "type": "output",
+              "contents": {
+                "cn": "* **The output format must be Image**:\n  - **Library**: Use `matplotlib` + `seaborn` (static charts) or `pyecharts` / `plotly` (interactive → export as static).\n  - **Fonts**:\n    - Chinese: SimHei (黑体) / Microsoft YaHei / Noto Sans CJK SC\n    - English: Arial / Helvetica / DejaVu Sans\n    - Set globally: `plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial']`\n    - Fix minus sign: `plt.rcParams['axes.unicode_minus'] = False`\n  - **Output Format**:\n    - PNG: Default, white background, best compatibility.\n    - PNG (transparent): Use `transparent=True` when user requests.\n  - **Resolution & Size**:\n    - Resolution: 150 DPI (screen) / 300 DPI (print-ready).\n    - Default size: 1920×1080 px (16:9) or 1600×1200 px (4:3).\n    - Export: `plt.savefig('filename.png', dpi=150, bbox_inches='tight')`\n  - **Color Scheme**:\n    - Use professional palettes: `seaborn` built-in (e.g., \"muted\", \"colorblind\") or custom brand colors.\n    - Ensure colorblind-friendly (avoid red-green only differentiation).\n  - **Chart Quality Checklist**:\n    - Title: Clear, concise, positioned at top.\n    - Axis labels: Include units (e.g., \"Revenue (¥M)\").\n    - Legend: Positioned outside plot area if >4 items.\n    - Data labels: Show key values on bars/points (if not cluttered).\n    - Grid: Light gray, dashed, horizontal only (for bar/line charts).\n    - Source annotation: Bottom-left, small font (if applicable).\n  - **File Naming**: `[ChartType]_[Topic]_[YYYY-MM-DD].png`\n* **Output**: Provide a direct download link after generating the file.",
+                "en": "* **The output format must be Image**:\n  - **Library**: Use `matplotlib` + `seaborn` (static charts) or `pyecharts` / `plotly` (interactive → export as static).\n  - **Fonts**:\n    - Chinese: SimHei (黑体) / Microsoft YaHei / Noto Sans CJK SC\n    - English: Arial / Helvetica / DejaVu Sans\n    - Set globally: `plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial']`\n    - Fix minus sign: `plt.rcParams['axes.unicode_minus'] = False`\n  - **Output Format**:\n    - PNG: Default, white background, best compatibility.\n    - PNG (transparent): Use `transparent=True` when user requests.\n  - **Resolution & Size**:\n    - Resolution: 150 DPI (screen) / 300 DPI (print-ready).\n    - Default size: 1920×1080 px (16:9) or 1600×1200 px (4:3).\n    - Export: `plt.savefig('filename.png', dpi=150, bbox_inches='tight')`\n  - **Color Scheme**:\n    - Use professional palettes: `seaborn` built-in (e.g., \"muted\", \"colorblind\") or custom brand colors.\n    - Ensure colorblind-friendly (avoid red-green only differentiation).\n  - **Chart Quality Checklist**:\n    - Title: Clear, concise, positioned at top.\n    - Axis labels: Include units (e.g., \"Revenue (¥M)\").\n    - Legend: Positioned outside plot area if >4 items.\n    - Data labels: Show key values on bars/points (if not cluttered).\n    - Grid: Light gray, dashed, horizontal only (for bar/line charts).\n    - Source annotation: Bottom-left, small font (if applicable).\n  - **File Naming**: `[ChartType]_[Topic]_[YYYY-MM-DD].png`\n* **Output**: Provide a direct download link after generating the file."
+              },
+              "labels": {
+                "cn": "png",
+                "en": "png"
+              }
+            },
+            {
+              "id": "item-MDdxi9",
+              "type": "output",
+              "contents": {
+                "cn": "* **The output format must be Excel/CSV**:\n  - **Library**: Use `pandas` + `openpyxl` (for .xlsx) or `xlsxwriter` (for advanced formatting).\n  - **Output Format**:\n    - XLSX: Default, supports multi-sheet, formatting, formulas.\n    - CSV: Use when user requests or for cross-platform compatibility (UTF-8 with BOM).\n    - **Formatting Standards**:\n    - Header row: Bold, background #F2F2F2, border, center-aligned.\n    - Number formats:\n      - Integer: `#,##0`\n      - Decimal: `#,##0.00`\n      - Percentage: `0.00%`\n      - Currency: `¥#,##0.00` or `$#,##0.00`\n      - Date: `YYYY-MM-DD`\n    - Conditional formatting: Green for positive growth, red for negative.\n  - **Data Integrity**:\n    - Freeze first row (header) and first column (if row labels exist).\n    - Enable auto-filter on header row.\n    - Add data validation / dropdown for key columns (if applicable).\n  - **Print Settings** (for XLSX):\n    - Page: A4 landscape, fit to page width.\n    - Repeat header row on each printed page.\n  - **File Naming**: `[Topic]_[YYYY-MM-DD]_v[Version].xlsx`\n* **Output**: Provide a direct download link after generating the file.",
+                "en": "* **The output format must be Excel/CSV**:\n  - **Library**: Use `pandas` + `openpyxl` (for .xlsx) or `xlsxwriter` (for advanced formatting).\n  - **Output Format**:\n    - XLSX: Default, supports multi-sheet, formatting, formulas.\n    - CSV: Use when user requests or for cross-platform compatibility (UTF-8 with BOM).\n    - **Formatting Standards**:\n    - Header row: Bold, background #F2F2F2, border, center-aligned.\n    - Number formats:\n      - Integer: `#,##0`\n      - Decimal: `#,##0.00`\n      - Percentage: `0.00%`\n      - Currency: `¥#,##0.00` or `$#,##0.00`\n      - Date: `YYYY-MM-DD`\n    - Conditional formatting: Green for positive growth, red for negative.\n  - **Data Integrity**:\n    - Freeze first row (header) and first column (if row labels exist).\n    - Enable auto-filter on header row.\n    - Add data validation / dropdown for key columns (if applicable).\n  - **Print Settings** (for XLSX):\n    - Page: A4 landscape, fit to page width.\n    - Repeat header row on each printed page.\n  - **File Naming**: `[Topic]_[YYYY-MM-DD]_v[Version].xlsx`\n* **Output**: Provide a direct download link after generating the file."
+              },
+              "labels": {
+                "cn": "csv",
+                "en": "csv"
+              }
+            }
+          ]
+        },
+        "items": [],
+        "templates": {
+          "cn": "{output}",
+          "en": "{output}"
+        }
+      },
+      "prompts": {
+        "id": "opt-FxTGBh",
+        "type": "prompts",
+        "contents": {
+          "cn": "推荐提示词",
+          "en": "Recommended Prompts"
+        },
+        "refer": "modes",
+        "cascades": {
+          "item-mFdQa7": [
+            {
+              "id": "item-r3Aqpu",
+              "type": "prompt",
+              "contents": {
+                "cn": "2021–2025年全球核心贵金属价格（黄金、白银、铂金、钯金），包括月度收盘价、季度环比变化和波动率（CV值）。新增对比表，显示：（1）同期全球主要经济体核心CPI、PPI数据，以分析贵金属价格与通胀、工业需求的相关性；（2）相关行业成本指数，如珠宝加工成本、电子元器件原材料成本、化工催化材料成本。构建包含价格趋势、相关性热力图及行业成本传导路径的图表仪表板。 ",
+                "en": "Global core precious metal prices (gold, silver, platinum, palladium) from 2021 to 2025, including monthly closing prices, quarter-on-quarter changes, and volatility (CV values). Add a comparative table showing: (1) core CPI and PPI data of major global economies over the same period to analyze the correlation between precious metal prices, inflation, and industrial demand; (2) relevant industry cost indices, such as jewelry processing costs, raw material costs for electronic components, and costs for chemical catalytic materials. Build a chart dashboard containing price trends, correlation heatmaps, and industry cost transmission paths."
+              },
+              "labels": {
+                "cn": "2021–2025年全球核心贵金属价格",
+                "en": "Global core precious metal prices from 2021 to 2025"
+              },
+              "img": "https://z-cdn.chatglm.cn/imgs/feedback-insight-tool-1.png",
+              "defaults": {
+                "charts": [
+                  "item-h4Aaso",
+                  "item-lDjO3B"
+                ],
+                "modes": [
+                  "item-z18deS"
+                ],
+                "outputs": [
+                  "item-MDdxi9"
+                ]
+              }
+            },
+            {
+              "id": "item-92c8v3",
+              "type": "prompt",
+              "contents": {
+                "cn": "分析2024年两家新能源科技公司的季度成本管控成效，重点拆解营业成本、销售费用、管理费用的季度变化趋势，计算各成本费用占营收的比重，对比两家公司的成本管控效率；展示其中一家公司全年各季度的成本费用结构细分，识别成本管控中的优势与薄弱环节，结合行业成本趋势，提出可落地的成本优化方案。",
+                "en": "Analyze the quarterly cost control effectiveness of two new energy technology companies in 2024, with a focus on dissecting the quarterly change trends of operating costs, sales expenses and general & administrative expenses; calculate the proportion of each cost and expense to revenue, and compare the cost control efficiency of the two companies; present the quarterly breakdown of the cost and expense structure of one of the companies throughout the year, identify the strengths and weaknesses in cost control, and put forward actionable cost optimization solutions in combination with the industry cost trends."
+              },
+              "labels": {
+                "cn": "2024年两家新能源科技公司的季度成本管控成效",
+                "en": "The Quarterly Cost Control Effectiveness of Two New Energy Technology Companies in 2024"
+              },
+              "img": "https://z-cdn.chatglm.cn/imgs/feedback-insight-tool-2.png",
+              "defaults": {
+                "charts": [
+                  "item-h4Aaso",
+                  "item-FkGbi8"
+                ],
+                "modes": [
+                  "item-mFdQa7"
+                ],
+                "outputs": [
+                  "item-tDW92z"
+                ]
+              }
+            },
+            {
+              "id": "item-Gq3Itz",
+              "type": "prompt",
+              "contents": {
+                "cn": "你是某知名投资机构的高级股票经纪人兼财务顾问，受托为一位高净值客户准备一份全面的《年度投资策略与投资组合回顾》报告。你的目标是用英文编写一份详尽且专业的报告，分析当前市场环境，并提出一套定制化的多资产投资策略。该文档不得包含目录（TOC），并且所有文本须使用 Times New Roman 字体。 最终交付物必须是一份经过精心润色的 Microsoft Word 文档（.docx 文件），用于正式场合呈现。请遵循以下具体要求： 执行摘要（Executive Summary）： 以简明的执行摘要开篇。内容应对当前宏观经济及地缘政治环境进行高层次概述，并重点分析具有结构性增长潜力的关键领域，尤其是科技领域（例如：人工智能、网络安全、云计算）以及可持续能源领域（例如：可再生能源基础设施、储能、电气化）。 投资组合配置与可视化： 资产配置方案（Asset Allocation Plan）： 为“平衡型”风险偏好的投资者（即中等风险承受能力）设计一个多元化的资产配置模型。明确以下核心资产类别的目标配置比例： * 股票（进一步按地区/市值划分） * 固定收益 * 实物资产（房地产/基础设施） * 现金及另类投资 图表 1 – 饼图/环形图（Pie/Donut Chart）： 创建一张高分辨率、可用于正式出版的图表（如饼图或环形图），直观展示建议的资产配置比例。采用专业配色方案（以海军蓝和铂金色为主，辅以协调的点缀色）。该图需嵌入文档中。 图表 2 – 柱状图（Bar Chart）： 创建第二张高分辨率柱状图，对比所建议投资组合与标准基准（具体为标普500指数以及全球60/40综合基准）在两个时间维度（5年和10年）下的预期年化收益率。 投资建议与详细数据表： 表格 1 – 前十大股票持仓（Top 10 Equity Holdings）： 生成一张详细表格，列出推荐的前10只个股。表格列必须包括： * 公司名称 * 股票代码 * 行业（科技 / 可持续能源 / 其他） * 当前价格 * 预期市盈率（Forward P/E） * 股息收益率（%） * 12个月目标价 并为每一项投资提供简要的要点式投资逻辑说明（1–2点）。 表格 2 – 基金 / ETF 推荐（Fund/ETF Recommendations）： 创建另一张表格，推荐5只互惠基金或ETF，用于提供更广泛的市场或主题敞口。表格列包括： * 基金名称 * 代码 * 资产类别 / 投资主题 * 费用率（Expense Ratio） * 三年年化回报率 表格 3 – 风险指标汇总（Risk Metrics Summary）： 添加第三张简要表格，总结建议投资组合的关键风险收益指标，包括： * 预期波动率（标准差） * 夏普比率 * 最大回撤 * 相对标普500的Beta系数 新增要求： 增加一张折线图（Line Chart），并调用图像生成接口以获取一个示意性图表（schematic diagram）。 文档格式与专业标准： Word文档必须遵循严格的企业视觉规范。 字体（Typography）： 所有标题使用专业衬线字体（如 Times New Roman、Garamond）；正文使用清晰的无衬线字体（如 Calibri、Arial）。 配色方案（Color Scheme）： 主色为海军蓝（#002D62）和铂金色（#E5E4E2）。用于标题、分节线、图表元素及视觉点缀。 结构（Structure）： 包含目录（Table of Contents）、专业页眉（含客户名称/报告标题）以及页脚（含页码、保密声明及日期）。 免责声明（Disclaimers）： 在独立章节中附上必要的法律与合规免责声明，明确说明本报告仅供参考，不构成对未来收益的保证，并建议客户咨询其个人税务及法律顾问。 输出说明（Output Instructions）： 请生成完整的Word文档内容，包括所有文字部分、图表的详细说明（图表将由我在外部制作）、以及所有以清晰Markdown或可直接复制到Word的文本格式呈现的表格。确保内容具有洞察力、数据驱动，并以客户为中心。",
+                "en": "You are a Senior Stockbroker and Financial Advisor at a prestigious investment firm, tasked with preparing a comprehensive \"Annual Investment Strategy & Portfolio Review\" for a high-net-worth client. Your objective is to compile a detailed, professional report in English that analyzes prevailing market conditions and proposes a bespoke, multi-asset investment strategy. The doc should not have TOC and use times new roman for all text The final deliverable must be a polished Microsoft Word document (.docx file), designed for formal presentation. Please follow these specific instructions: Executive Summary: Begin with a concise executive summary. It should provide a high-level overview of the current macroeconomic and geopolitical outlook, with a focused analysis identifying key structural growth opportunities, particularly within the Technology (e.g., AI, Cybersecurity, Cloud Computing) and Sustainable Energy (e.g., Renewable Infrastructure, Energy Storage, Electrification) sectors. Portfolio Allocation & Visualization: Asset Allocation Plan: Develop a diversified portfolio allocation model suitable for a \"Balanced\" risk profile (e.g., moderate risk tolerance). Specify target percentages for the following core asset classes: Equities (further broken down by region/market cap), Fixed Income, Real Assets (Real Estate/Infrastructure), and Cash & Alternatives. Visual 1 - Pie/Donut Chart: Create a high-resolution, publication-quality chart (e.g., a pie or donut chart) that visually represents the recommended asset allocation percentages. Use a professional color scheme (primarily Navy Blue and Platinum, with complementary accents). Embed this chart in the document. Visual 2 - Bar Chart: Create a second high-resolution bar chart comparing the projected annualized returns of the proposed portfolio against standard benchmarks (specifically the S&P 500 and a Global 60/40 Aggregate Benchmark) over two time horizons: 5 years and 10 years. Investment Recommendations with Detailed Data Tables: Provide actionable investment recommendations supported by detailed data tables. Table 1 - Top 10 Equity Holdings: Generate a detailed table listing the top 10 recommended individual stock picks. Columns must include: Company Name, Ticker Symbol, Sector (Technology/Sustainable Energy/Other), Current Price, Forward P/E Ratio, Dividend Yield (%), and 12-Month Price Target. Include brief, bullet-point rationale for each selection (1-2 points). Table 2 - Fund/ETF Recommendations: Create a separate table recommending 5 complementary mutual funds or ETFs to provide broader market or thematic exposure. Columns should include: Fund Name, Ticker, Asset Class/Focus, Expense Ratio, and 3-Year Annualized Return. Table 3 - Risk Metrics Summary: Include a succinct third table summarizing the key risk-return metrics of the proposed portfolio, such as: Projected Volatility (Std Dev), Sharpe Ratio, Maximum Drawdown, and Beta vs. S&P 500. Add a requirement for a line chart and call the image generation interface to obtain a schematic diagram Document Formatting & Professional Standards: The Word document must adhere to a strict corporate visual identity. Typography: Use a professional serif font (e.g., Times New Roman, Garamond) for all headings and a clean sans-serif font (e.g., Calibri, Arial) for body text. Color Scheme: Primary colors are Navy Blue (#002D62) and Platinum (#E5E4E2). Use these for headings, section dividers, chart elements, and accents. Structure: Include a Table of Contents, professional headers (with client name/report title) and footers (with page numbers, confidentiality notice, and date). Disclaimers: Append necessary legal and compliance disclaimers in a dedicated section, clarifying that this is for informational purposes, is not a guarantee of future performance, and advising the client to consult with their personal tax and legal advisors. Output Instructions: Please generate the full content of the Word document, including all written sections, the specifications/descriptions for the charts (which I will create externally), and all tables formatted in clear Markdown or text suitable for copying into Word. Ensure the narrative is insightful, data-driven, and client-focused."
+              },
+              "labels": {
+                "cn": "分析当前市场环境，定制一套年度投资策略与投资组合",
+                "en": "Analyze the current market environment and tailor an annual investment strategy and portfolio plan"
+              },
+              "img": "https://z-cdn.chatglm.cn/imgs/feedback-insight-tool-3.png",
+              "defaults": {
+                "charts": [
+                  "item-u22Lld",
+                  "item-h4Aaso",
+                  "item-0KeiiM"
+                ],
+                "modes": [
+                  "item-mFdQa7"
+                ],
+                "outputs": [
+                  "item-6lzAWZ"
+                ]
+              }
+            },
+            {
+              "id": "item-Q3ZFgc",
+              "type": "prompt",
+              "contents": {
+                "cn": "你是一名高级 MLOps 架构师，负责对企业级机器学习基础设施进行现代化改造。你的目标是设计一套稳健、自动化的 MLOps 流水线策略，推动模型从实验阶段平滑过渡到生产级部署，重点减少与手动容器管理相关的运维开销，并能够编排复杂的训练工作流。 请对现代编排与容器化方法进行全面分析，尤其要对比云原生方案（例如使用 Cloud Native Buildpacks 和 Tekton）与传统的手写 Dockerfile/手动构建工作流。基于这项技术评估，制定一份详细的战略规划，覆盖模型版本管理、自动化训练触发机制以及持续部署（CD）标准。 最后，请将你的分析与策略整理成一份结构专业的 Excel 工作簿（.xlsx）。文件至少包含三个独立工作表： 1. **Tooling Evaluation Matrix（工具评估矩阵）**：对多种编排工具进行对比，列包含如可扩展性（Scalability）、复杂度（Complexity）、集成难易度（Integration Ease）等； 2. **Deployment Roadmap（部署路线图）**：按阶段列出实施自动化流水线的推进计划； 3. **Risk Assessment（风险评估）**：列出风险项与应对措施等。 该 Excel 文件必须具备专业格式，包括： * 冻结首行作为表头； * 对所有数据表启用筛选器； * 使用条件格式高亮关键路径事项或高风险因素； * 自动调整列宽，以确保整体呈现效果清晰、专业。",
+                "en": "You are a Senior MLOps Architect responsible for modernizing an enterprise-level machine learning infrastructure. Your objective is to design a robust, automated MLOps pipeline strategy that facilitates the transition from experimental models to production-grade deployment, specifically aiming to reduce operational overhead associated with manual container management and orchestrate complex training workflows.\\n\\nPlease conduct a comprehensive analysis of modern orchestration and containerization methodologies, specifically comparing cloud-native approaches (such as utilizing Cloud Native Buildpacks and Tekton) against traditional manual Dockerfile workflows. Based on this technical evaluation, develop a detailed strategic plan that addresses model versioning, automated training triggers, and continuous deployment standards.\\n\\nFinally, consolidate your analysis and strategy into a professionally structured Excel workbook (.xlsx). The file should include at least three distinct worksheets: a 'Tooling Evaluation Matrix' that compares various orchestration tools across columns such as Scalability, Complexity, and Integration Ease; a 'Deployment Roadmap' sheet outlining the phases of implementing this automated pipeline; and a 'Risk Assessment' sheet. The Excel file must feature professional formatting, including frozen top rows for headers, activated filters on all data tables, conditional formatting to highlight critical path items or high-risk factors, and auto-adjusted column widths to ensure a high-quality visual presentation."
+              },
+              "labels": {
+                "cn": "企业级 MLOps 现代化与自动化流水线架构战略设计",
+                "en": "Enterprise MLOps Modernization & Automated Pipeline Architecture Strategy"
+              },
+              "img": "https://z-cdn.chatglm.cn/imgs/feedback-insight-tool-4.png",
+              "defaults": {
+                "modes": [
+                  "item-z18deS"
+                ],
+                "outputs": [
+                  "item-MDdxi9"
+                ]
+              }
+            }
+          ],
+          "item-z18deS": [
+            {
+              "id": "item-WP3arJ",
+              "type": "prompt",
+              "contents": {
+                "cn": "2021–2025年全球核心贵金属价格（黄金、白银、铂金、钯金），包括月度收盘价、季度环比变化和波动率（CV值）。新增对比表，显示：（1）同期全球主要经济体核心CPI、PPI数据，以分析贵金属价格与通胀、工业需求的相关性；（2）相关行业成本指数，如珠宝加工成本、电子元器件原材料成本、化工催化材料成本。构建包含价格趋势、相关性热力图及行业成本传导路径的图表仪表板。 ",
+                "en": "Global core precious metal prices (gold, silver, platinum, palladium) from 2021 to 2025, including monthly closing prices, quarter-on-quarter changes, and volatility (CV values). Add a comparative table showing: (1) core CPI and PPI data of major global economies over the same period to analyze the correlation between precious metal prices, inflation, and industrial demand; (2) relevant industry cost indices, such as jewelry processing costs, raw material costs for electronic components, and costs for chemical catalytic materials. Build a chart dashboard containing price trends, correlation heatmaps, and industry cost transmission paths."
+              },
+              "labels": {
+                "cn": "2021–2025年全球核心贵金属价格",
+                "en": "Global core precious metal prices from 2021 to 2025"
+              },
+              "img": "https://z-cdn.chatglm.cn/imgs/feedback-insight-tool-1.png",
+              "defaults": {
+                "charts": [
+                  "item-h4Aaso",
+                  "item-lDjO3B"
+                ],
+                "modes": [
+                  "item-z18deS"
+                ],
+                "outputs": [
+                  "item-MDdxi9"
+                ]
+              }
+            },
+            {
+              "id": "item-9qULoG",
+              "type": "prompt",
+              "contents": {
+                "cn": "分析2024年两家新能源科技公司的季度成本管控成效，重点拆解营业成本、销售费用、管理费用的季度变化趋势，计算各成本费用占营收的比重，对比两家公司的成本管控效率；展示其中一家公司全年各季度的成本费用结构细分，识别成本管控中的优势与薄弱环节，结合行业成本趋势，提出可落地的成本优化方案。",
+                "en": "Analyze the quarterly cost control effectiveness of two new energy technology companies in 2024, with a focus on dissecting the quarterly change trends of operating costs, sales expenses and general & administrative expenses; calculate the proportion of each cost and expense to revenue, and compare the cost control efficiency of the two companies; present the quarterly breakdown of the cost and expense structure of one of the companies throughout the year, identify the strengths and weaknesses in cost control, and put forward actionable cost optimization solutions in combination with the industry cost trends."
+              },
+              "labels": {
+                "cn": "2024年两家新能源科技公司的季度成本管控成效",
+                "en": "The Quarterly Cost Control Effectiveness of Two New Energy Technology Companies in 2024"
+              },
+              "img": "https://z-cdn.chatglm.cn/imgs/feedback-insight-tool-2.png",
+              "defaults": {
+                "charts": [
+                  "item-h4Aaso",
+                  "item-FkGbi8"
+                ],
+                "modes": [
+                  "item-mFdQa7"
+                ],
+                "outputs": [
+                  "item-6lzAWZ"
+                ]
+              }
+            },
+            {
+              "id": "item-oyWNA3",
+              "type": "prompt",
+              "contents": {
+                "cn": "你是某知名投资机构的高级股票经纪人兼财务顾问，受托为一位高净值客户准备一份全面的《年度投资策略与投资组合回顾》报告。你的目标是用英文编写一份详尽且专业的报告，分析当前市场环境，并提出一套定制化的多资产投资策略。该文档不得包含目录（TOC），并且所有文本须使用 Times New Roman 字体。\n\n最终交付物必须是一份经过精心润色的 Microsoft Word 文档（.docx 文件），用于正式场合呈现。请遵循以下具体要求：\n\n执行摘要（Executive Summary）：\n以简明的执行摘要开篇。内容应对当前宏观经济及地缘政治环境进行高层次概述，并重点分析具有结构性增长潜力的关键领域，尤其是科技领域（例如：人工智能、网络安全、云计算）以及可持续能源领域（例如：可再生能源基础设施、储能、电气化）。\n\n投资组合配置与可视化：\n\n资产配置方案（Asset Allocation Plan）：\n为“平衡型”风险偏好的投资者（即中等风险承受能力）设计一个多元化的资产配置模型。明确以下核心资产类别的目标配置比例：\n\n* 股票（进一步按地区/市值划分）\n* 固定收益\n* 实物资产（房地产/基础设施）\n* 现金及另类投资\n\n图表 1 – 饼图/环形图（Pie/Donut Chart）：\n创建一张高分辨率、可用于正式出版的图表（如饼图或环形图），直观展示建议的资产配置比例。采用专业配色方案（以海军蓝和铂金色为主，辅以协调的点缀色）。该图需嵌入文档中。\n\n图表 2 – 柱状图（Bar Chart）：\n创建第二张高分辨率柱状图，对比所建议投资组合与标准基准（具体为标普500指数以及全球60/40综合基准）在两个时间维度（5年和10年）下的预期年化收益率。\n\n投资建议与详细数据表：\n\n表格 1 – 前十大股票持仓（Top 10 Equity Holdings）：\n生成一张详细表格，列出推荐的前10只个股。表格列必须包括：\n\n* 公司名称\n* 股票代码\n* 行业（科技 / 可持续能源 / 其他）\n* 当前价格\n* 预期市盈率（Forward P/E）\n* 股息收益率（%）\n* 12个月目标价\n\n并为每一项投资提供简要的要点式投资逻辑说明（1–2点）。\n\n表格 2 – 基金 / ETF 推荐（Fund/ETF Recommendations）：\n创建另一张表格，推荐5只互惠基金或ETF，用于提供更广泛的市场或主题敞口。表格列包括：\n\n* 基金名称\n* 代码\n* 资产类别 / 投资主题\n* 费用率（Expense Ratio）\n* 三年年化回报率\n\n表格 3 – 风险指标汇总（Risk Metrics Summary）：\n添加第三张简要表格，总结建议投资组合的关键风险收益指标，包括：\n\n* 预期波动率（标准差）\n* 夏普比率\n* 最大回撤\n* 相对标普500的Beta系数\n\n新增要求：\n增加一张折线图（Line Chart），并调用图像生成接口以获取一个示意性图表（schematic diagram）。\n\n文档格式与专业标准：\n\nWord文档必须遵循严格的企业视觉规范。\n\n字体（Typography）：\n所有标题使用专业衬线字体（如 Times New Roman、Garamond）；正文使用清晰的无衬线字体（如 Calibri、Arial）。\n\n配色方案（Color Scheme）：\n主色为海军蓝（#002D62）和铂金色（#E5E4E2）。用于标题、分节线、图表元素及视觉点缀。\n\n结构（Structure）：\n包含目录（Table of Contents）、专业页眉（含客户名称/报告标题）以及页脚（含页码、保密声明及日期）。\n\n免责声明（Disclaimers）：\n在独立章节中附上必要的法律与合规免责声明，明确说明本报告仅供参考，不构成对未来收益的保证，并建议客户咨询其个人税务及法律顾问。\n\n输出说明（Output Instructions）：\n请生成完整的Word文档内容，包括所有文字部分、图表的详细说明（图表将由我在外部制作）、以及所有以清晰Markdown或可直接复制到Word的文本格式呈现的表格。确保内容具有洞察力、数据驱动，并以客户为中心。",
+                "en": "You are a Senior Stockbroker and Financial Advisor at a prestigious investment firm, tasked with preparing a comprehensive \"Annual Investment Strategy & Portfolio Review\" for a high-net-worth client. Your objective is to compile a detailed, professional report in English that analyzes prevailing market conditions and proposes a bespoke, multi-asset investment strategy. The doc should not have TOC  and use times new roman for all text\n\nThe final deliverable must be a polished Microsoft Word document (.docx file), designed for formal presentation. Please follow these specific instructions:\n\nExecutive Summary: Begin with a concise executive summary. It should provide a high-level overview of the current macroeconomic and geopolitical outlook, with a focused analysis identifying key structural growth opportunities, particularly within the Technology (e.g., AI, Cybersecurity, Cloud Computing) and Sustainable Energy (e.g., Renewable Infrastructure, Energy Storage, Electrification) sectors.\n\nPortfolio Allocation & Visualization:\n\nAsset Allocation Plan: Develop a diversified portfolio allocation model suitable for a \"Balanced\" risk profile (e.g., moderate risk tolerance). Specify target percentages for the following core asset classes: Equities (further broken down by region/market cap), Fixed Income, Real Assets (Real Estate/Infrastructure), and Cash & Alternatives.\n\nVisual 1 - Pie/Donut Chart: Create a high-resolution, publication-quality chart (e.g., a pie or donut chart) that visually represents the recommended asset allocation percentages. Use a professional color scheme (primarily Navy Blue and Platinum, with complementary accents). Embed this chart in the document.\n\nVisual 2 - Bar Chart: Create a second high-resolution bar chart comparing the projected annualized returns of the proposed portfolio against standard benchmarks (specifically the S&P 500 and a Global 60/40 Aggregate Benchmark) over two time horizons: 5 years and 10 years.\n\nInvestment Recommendations with Detailed Data Tables: Provide actionable investment recommendations supported by detailed data tables.\n\nTable 1 - Top 10 Equity Holdings: Generate a detailed table listing the top 10 recommended individual stock picks. Columns must include: Company Name, Ticker Symbol, Sector (Technology/Sustainable Energy/Other), Current Price, Forward P/E Ratio, Dividend Yield (%), and 12-Month Price Target. Include brief, bullet-point rationale for each selection (1-2 points).\n\nTable 2 - Fund/ETF Recommendations: Create a separate table recommending 5 complementary mutual funds or ETFs to provide broader market or thematic exposure. Columns should include: Fund Name, Ticker, Asset Class/Focus, Expense Ratio, and 3-Year Annualized Return.\n\nTable 3 - Risk Metrics Summary: Include a succinct third table summarizing the key risk-return metrics of the proposed portfolio, such as: Projected Volatility (Std Dev), Sharpe Ratio, Maximum Drawdown, and Beta vs. S&P 500.\n\nAdd a requirement for a line chart and call the image generation interface to obtain a schematic diagram\n\n\nDocument Formatting & Professional Standards:\n\nThe Word document must adhere to a strict corporate visual identity.\n\nTypography: Use a professional serif font (e.g., Times New Roman, Garamond) for all headings and a clean sans-serif font (e.g., Calibri, Arial) for body text.\n\nColor Scheme: Primary colors are Navy Blue (#002D62) and Platinum (#E5E4E2). Use these for headings, section dividers, chart elements, and accents.\n\nStructure: Include a Table of Contents, professional headers (with client name/report title) and footers (with page numbers, confidentiality notice, and date).\n\nDisclaimers: Append necessary legal and compliance disclaimers in a dedicated section, clarifying that this is for informational purposes, is not a guarantee of future performance, and advising the client to consult with their personal tax and legal advisors.\n\nOutput Instructions: Please generate the full content of the Word document, including all written sections, the specifications/descriptions for the charts (which I will create externally), and all tables formatted in clear Markdown or text suitable for copying into Word. Ensure the narrative is insightful, data-driven, and client-focused."
+              },
+              "labels": {
+                "cn": "分析当前市场环境，定制一套年度投资策略与投资组合",
+                "en": "Analyze the current market environment and tailor an annual investment strategy and portfolio plan"
+              },
+              "img": "https://z-cdn.chatglm.cn/imgs/feedback-insight-tool-3.png",
+              "defaults": {
+                "charts": [
+                  "item-u22Lld",
+                  "item-h4Aaso",
+                  "item-0KeiiM"
+                ],
+                "modes": [
+                  "item-mFdQa7"
+                ],
+                "outputs": [
+                  "item-6lzAWZ"
+                ]
+              }
+            },
+            {
+              "id": "item-aIOBdg",
+              "type": "prompt",
+              "contents": {
+                "cn": "你是一名高级 MLOps 架构师，负责对企业级机器学习基础设施进行现代化改造。你的目标是设计一套稳健、自动化的 MLOps 流水线策略，推动模型从实验阶段平滑过渡到生产级部署，重点减少与手动容器管理相关的运维开销，并能够编排复杂的训练工作流。\n\n请对现代编排与容器化方法进行全面分析，尤其要对比云原生方案（例如使用 Cloud Native Buildpacks 和 Tekton）与传统的手写 Dockerfile/手动构建工作流。基于这项技术评估，制定一份详细的战略规划，覆盖模型版本管理、自动化训练触发机制以及持续部署（CD）标准。\n\n最后，请将你的分析与策略整理成一份结构专业的 Excel 工作簿（.xlsx）。文件至少包含三个独立工作表：\n\n1. **Tooling Evaluation Matrix（工具评估矩阵）**：对多种编排工具进行对比，列包含如可扩展性（Scalability）、复杂度（Complexity）、集成难易度（Integration Ease）等；\n2. **Deployment Roadmap（部署路线图）**：按阶段列出实施自动化流水线的推进计划；\n3. **Risk Assessment（风险评估）**：列出风险项与应对措施等。\n\n该 Excel 文件必须具备专业格式，包括：\n\n* 冻结首行作为表头；\n* 对所有数据表启用筛选器；\n* 使用条件格式高亮关键路径事项或高风险因素；\n* 自动调整列宽，以确保整体呈现效果清晰、专业。",
+                "en": "You are a Senior MLOps Architect responsible for modernizing an enterprise-level machine learning infrastructure. Your objective is to design a robust, automated MLOps pipeline strategy that facilitates the transition from experimental models to production-grade deployment, specifically aiming to reduce operational overhead associated with manual container management and orchestrate complex training workflows.\\n\\nPlease conduct a comprehensive analysis of modern orchestration and containerization methodologies, specifically comparing cloud-native approaches (such as utilizing Cloud Native Buildpacks and Tekton) against traditional manual Dockerfile workflows. Based on this technical evaluation, develop a detailed strategic plan that addresses model versioning, automated training triggers, and continuous deployment standards.\\n\\nFinally, consolidate your analysis and strategy into a professionally structured Excel workbook (.xlsx). The file should include at least three distinct worksheets: a 'Tooling Evaluation Matrix' that compares various orchestration tools across columns such as Scalability, Complexity, and Integration Ease; a 'Deployment Roadmap' sheet outlining the phases of implementing this automated pipeline; and a 'Risk Assessment' sheet. The Excel file must feature professional formatting, including frozen top rows for headers, activated filters on all data tables, conditional formatting to highlight critical path items or high-risk factors, and auto-adjusted column widths to ensure a high-quality visual presentation."
+              },
+              "labels": {
+                "cn": "企业级 MLOps 现代化与自动化流水线架构战略设计",
+                "en": "Enterprise MLOps Modernization & Automated Pipeline Architecture Strategy"
+              },
+              "img": "https://z-cdn.chatglm.cn/imgs/feedback-insight-tool-4.png",
+              "defaults": {
+                "modes": [
+                  "item-z18deS"
+                ],
+                "outputs": [
+                  "item-MDdxi9"
+                ]
+              }
+            }
+          ]
+        },
+        "items": [],
+        "templates": {
+          "cn": "{prompt}",
+          "en": "{prompt}"
+        }
+      }
+    },
+    "created_at": 1769511209,
+    "updated_at": 1770788930
+  },
+  {
+    "namespace": "zcode",
+    "scene": "file-tool",
+    "options": {
+      "categories": {
+        "id": "opt-4anmlF",
+        "type": "categories",
+        "contents": {
+          "cn": "类型",
+          "en": "categories"
+        },
+        "refer": "",
+        "cascades": {},
+        "items": [
+          {
+            "id": "item-XYkuJs",
+            "type": "category",
+            "contents": {
+              "cn": "格式转换",
+              "en": "Format Conversion"
+            },
+            "labels": {
+              "cn": "格式转换",
+              "en": "Format Conversion"
+            }
+          },
+          {
+            "id": "item-DMeUqG",
+            "type": "category",
+            "contents": {
+              "cn": "文件压缩",
+              "en": "Compress File"
+            },
+            "labels": {
+              "cn": "文件压缩",
+              "en": "Compress File"
+            }
+          },
+          {
+            "id": "item-fe4Won",
+            "type": "category",
+            "contents": {
+              "cn": "文件处理",
+              "en": "File Processing"
+            },
+            "labels": {
+              "cn": "文件处理",
+              "en": "File Processing"
+            }
+          }
+        ],
+        "templates": {
+          "cn": "选择文件工具类型: {category}",
+          "en": "Choose file tool category: {category}"
+        }
+      },
+      "tools": {
+        "id": "opt-oYlJdg",
+        "type": "tools",
+        "contents": {
+          "cn": "工具",
+          "en": "tools"
+        },
+        "refer": "categories",
+        "cascades": {
+          "item-DMeUqG": [
+            {
+              "id": "item-atquDN",
+              "type": "tool",
+              "contents": {
+                "cn": "指定大小压缩",
+                "en": "Compress by Size"
+              },
+              "labels": {
+                "cn": "指定大小压缩",
+                "en": "Compress by Size"
+              }
+            },
+            {
+              "id": "item-SDUCZt",
+              "type": "tool",
+              "contents": {
+                "cn": "指定压缩等级",
+                "en": "Compress by Level"
+              },
+              "labels": {
+                "cn": "指定压缩等级",
+                "en": "Compress by Level"
+              }
+            }
+          ],
+          "item-XYkuJs": [
+            {
+              "id": "item-2K9H8N",
+              "type": "tool",
+              "contents": {
+                "cn": "PDF转Word",
+                "en": "PDF to Word"
+              },
+              "labels": {
+                "cn": "PDF转Word",
+                "en": "PDF to Word"
+              }
+            },
+            {
+              "id": "item-mTWACh",
+              "type": "tool",
+              "contents": {
+                "cn": "Word转PDF",
+                "en": "Word to PDF"
+              },
+              "labels": {
+                "cn": "Word转PDF",
+                "en": "Word to PDF"
+              }
+            },
+            {
+              "id": "item-zCOGV6",
+              "type": "tool",
+              "contents": {
+                "cn": "JPG转PDF",
+                "en": "JPG to PDF"
+              },
+              "labels": {
+                "cn": "JPG转PDF",
+                "en": "JPG to PDF"
+              }
+            }
+          ],
+          "item-fe4Won": [
+            {
+              "id": "item-APn9NI",
+              "type": "tool",
+              "contents": {
+                "cn": "拆分文件",
+                "en": "Split File"
+              },
+              "labels": {
+                "cn": "拆分文件",
+                "en": "Split File"
+              }
+            },
+            {
+              "id": "item-aTmq9X",
+              "type": "tool",
+              "contents": {
+                "cn": "合并文件",
+                "en": "Merge Files"
+              },
+              "labels": {
+                "cn": "合并文件",
+                "en": "Merge Files"
+              }
+            },
+            {
+              "id": "item-M7rj65",
+              "type": "tool",
+              "contents": {
+                "cn": "提取内容",
+                "en": "Extract Content"
+              },
+              "labels": {
+                "cn": "提取内容",
+                "en": "Extract Content"
+              }
+            },
+            {
+              "id": "item-WVpueg",
+              "type": "tool",
+              "contents": {
+                "cn": "分析搜索",
+                "en": "Search Analysis"
+              },
+              "labels": {
+                "cn": "分析搜索",
+                "en": "Search Analysis"
+              }
+            }
+          ]
+        },
+        "items": [],
+        "templates": {
+          "cn": "选择文件工具: {tool}",
+          "en": "Choose file tool: {tool}"
+        }
+      }
+    },
+    "created_at": 1769511209,
+    "updated_at": 1770383096
+  },
+  {
+    "namespace": "zcode",
+    "scene": "full-stack",
+    "options": {
+      "projects": {
+        "id": "opt-UbY88J",
+        "type": "projects",
+        "contents": {
+          "cn": "项目类型",
+          "en": "Project Type"
+        },
+        "refer": "",
+        "cascades": {},
+        "items": [
+          {
+            "id": "item-Mv7Uqx",
+            "type": "project",
+            "contents": {
+              "cn": "长程任务",
+              "en": "long-running task"
+            },
+            "descs": {
+              "cn": "",
+              "en": ""
+            },
+            "labels": {
+              "cn": "长程任务",
+              "en": "long-running task"
+            }
+          },
+          {
+            "id": "item-YfiX4G",
+            "type": "project",
+            "contents": {
+              "cn": "平台网站构建",
+              "en": "Website"
+            },
+            "labels": {
+              "cn": "平台网站构建",
+              "en": "Website"
+            }
+          },
+          {
+            "id": "item-9Hwrtc",
+            "type": "project",
+            "contents": {
+              "cn": "工具产品开发",
+              "en": "Product"
+            },
+            "labels": {
+              "cn": "工具产品开发",
+              "en": "Product"
+            }
+          }
+        ],
+        "templates": {
+          "cn": "选择项目类型: {project}",
+          "en": "Choose project type: {project}"
+        }
+      },
+      "prompts": {
+        "id": "opt-v7Cq9v",
+        "type": "prompts",
+        "contents": {
+          "cn": "推荐提示词",
+          "en": "Recommended Prompts"
+        },
+        "refer": "projects",
+        "cascades": {
+          "item-9Hwrtc": [
+            {
+              "id": "item-IgZQZZ",
+              "type": "prompt",
+              "contents": {
+                "cn": "Design a sleep meditation and ASMR web app — for falling asleep with looping ambient soundscapes.\n\nVisual: deep navy and starfield, with a slowly drifting moon arc.\n\nPage Structure:\nHero: tonight's pick — a 45-minute soundscape.\nLibrary: rain / forest / ocean / cafe / fireplace / piano hum.\nSleep Stories: narrated long-form stories.\nSleep Timer: 30 / 60 / 90 minutes with fade-out.\nAccount: streak and minutes slept.\n\nInteraction Details:\n- Moon arc traverses the screen at a 12-hour pace, regardless of session length.\n- Soundscape mixer: drag sliders to layer rain / wind / fire intensities.\n- \"Sleep Timer\" counts down with a long fade-out audio over the last 60 seconds.\n- Stars twinkle gently; intensity decreases as the timer expires.\n- Cursor leaves a faint trailing light in the dark interface.\n- Tapping the moon icon hides all UI for true full-bleed immersion.\n\nOverall Vibe: peaceful, restorative, dark-friendly, atmospheric.",
+                "en": "Design a sleep meditation and ASMR web app — for falling asleep with looping ambient soundscapes.\n\nVisual: deep navy and starfield, with a slowly drifting moon arc.\n\nPage Structure:\nHero: tonight's pick — a 45-minute soundscape.\nLibrary: rain / forest / ocean / cafe / fireplace / piano hum.\nSleep Stories: narrated long-form stories.\nSleep Timer: 30 / 60 / 90 minutes with fade-out.\nAccount: streak and minutes slept.\n\nInteraction Details:\n- Moon arc traverses the screen at a 12-hour pace, regardless of session length.\n- Soundscape mixer: drag sliders to layer rain / wind / fire intensities.\n- \"Sleep Timer\" counts down with a long fade-out audio over the last 60 seconds.\n- Stars twinkle gently; intensity decreases as the timer expires.\n- Cursor leaves a faint trailing light in the dark interface.\n- Tapping the moon icon hides all UI for true full-bleed immersion.\n\nOverall Vibe: peaceful, restorative, dark-friendly, atmospheric."
+              },
+              "labels": {
+                "cn": "Highlight Maker 金句发卡机",
+                "en": "An immersive breathing meditation web app"
+              },
+              "img": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/0e7b0c4a-8a50-4f41-a0a1-af14559c6cb2.png?auth_key=1807167969-3257c8ccdaf841cbb94be286cf1fdcf3-0-2e009900831fe0f71f46b3d1c302e110",
+              "share_urls": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/product-1.png?auth_key=1813057586-ab9c3d79fee0421e8caca77845734e72-0-4df49f1f68312000dccac15ad2eccafb",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/product-1.png?auth_key=1813057586-ab9c3d79fee0421e8caca77845734e72-0-4df49f1f68312000dccac15ad2eccafb"
+              }
+            },
+            {
+              "id": "item-6mKlTh",
+              "type": "prompt",
+              "contents": {
+                "cn": "Build a CLI-only \"OS\" in the browser — every interaction happens via a terminal.\n\nVisual: monochrome terminal, with a CRT scanline overlay (toggleable). Old-school amber-on-black option.\n\nCommands to include:\n- `ls`, `cd`, `cat`, `mkdir`, `rm` (operate on a virtual file system).\n- `play <song>` — plays a music file from a virtual library.\n- `paint` — opens a tiny ASCII paint editor.\n- `chat` — opens a fictional chat client with simulated messages.\n- `weather` — fetches weather for a fake city.\n- `theme <amber|green|white>` — switches theme.\n\nInteraction Details:\n- Cursor blinks at 1.06s.\n- Keypresses can play a soft mechanical-keyboard sound (opt-in).\n- Tab-completion shows ghost text in a faded color.\n- Up/down arrows scroll command history.\n- `help` shows a man-page-style scrollable doc.\n- Theme switch fades the screen for 200ms before swapping colors.\n\nOverall Vibe: hacker, retro, focused, surprisingly capable.",
+                "en": "Build a CLI-only \"OS\" in the browser — every interaction happens via a terminal.\n\nVisual: monochrome terminal, with a CRT scanline overlay (toggleable). Old-school amber-on-black option.\n\nCommands to include:\n- `ls`, `cd`, `cat`, `mkdir`, `rm` (operate on a virtual file system).\n- `play <song>` — plays a music file from a virtual library.\n- `paint` — opens a tiny ASCII paint editor.\n- `chat` — opens a fictional chat client with simulated messages.\n- `weather` — fetches weather for a fake city.\n- `theme <amber|green|white>` — switches theme.\n\nInteraction Details:\n- Cursor blinks at 1.06s.\n- Keypresses can play a soft mechanical-keyboard sound (opt-in).\n- Tab-completion shows ghost text in a faded color.\n- Up/down arrows scroll command history.\n- `help` shows a man-page-style scrollable doc.\n- Theme switch fades the screen for 200ms before swapping colors.\n\nOverall Vibe: hacker, retro, focused, surprisingly capable."
+              },
+              "labels": {
+                "cn": "打字速度竞速",
+                "en": "A mindfulness timer designed to combat procrastination."
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/product-2.png?auth_key=1813057586-fc5e9eacce3648f0ad2e24fa582c0805-0-c8829eb1a39971d766e87c7676fbd9c9",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/product-2.png?auth_key=1813057586-fc5e9eacce3648f0ad2e24fa582c0805-0-c8829eb1a39971d766e87c7676fbd9c9"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/495de939-fac8-4a0f-9109-d967f208f564",
+                "en": "https://chat.z.ai/s/495de939-fac8-4a0f-9109-d967f208f564"
+              }
+            },
+            {
+              "id": "item-fkjb80",
+              "type": "prompt",
+              "contents": {
+                "cn": "Build a mobile iOS-style interface in the browser — home screen, app icons, swipeable pages, and functional widgets.\n\nVisual: rounded squircle icons, blurred wallpaper, swipe-driven home screens, live widgets.\n\nApps:\n- Weather (current + 7-day).\n- Music (playable demo tracks).\n- Photos (a starter gallery).\n- Notes (sync to localStorage).\n- Calendar (read-only sample).\n- Settings (theme switching).\n\nInteraction Details:\n- Long-press any icon to enter \"wiggle mode\" for rearranging.\n- Swipe left/right snaps between home screen pages with a parallax wallpaper.\n- Pull down from top to show Notification Center with a frosted blur.\n- Pull up from bottom to open Control Center with toggleable controls.\n- Widgets refresh visibly with a subtle pulse on update.\n- App-launch animation zooms from the icon's position with a smooth scale.\n\nOverall Vibe: mobile-native-feel, polished, fluent, modern.",
+                "en": "Build a mobile iOS-style interface in the browser — home screen, app icons, swipeable pages, and functional widgets.\n\nVisual: rounded squircle icons, blurred wallpaper, swipe-driven home screens, live widgets.\n\nApps:\n- Weather (current + 7-day).\n- Music (playable demo tracks).\n- Photos (a starter gallery).\n- Notes (sync to localStorage).\n- Calendar (read-only sample).\n- Settings (theme switching).\n\nInteraction Details:\n- Long-press any icon to enter \"wiggle mode\" for rearranging.\n- Swipe left/right snaps between home screen pages with a parallax wallpaper.\n- Pull down from top to show Notification Center with a frosted blur.\n- Pull up from bottom to open Control Center with toggleable controls.\n- Widgets refresh visibly with a subtle pulse on update.\n- App-launch animation zooms from the icon's position with a smooth scale.\n\nOverall Vibe: mobile-native-feel, polished, fluent, modern."
+              },
+              "labels": {
+                "cn": "工作流管理平台",
+                "en": "MacOS interface"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/product-3.png?auth_key=1813057586-4b1046056cd24be2a326a1a2d94319c2-0-48fa08624c72bf084bd80e5192977840",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/product-3.png?auth_key=1813057586-4b1046056cd24be2a326a1a2d94319c2-0-48fa08624c72bf084bd80e5192977840"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/cfbf6003-96fc-4027-860a-0f85f52e9561",
+                "en": "https://chat.z.ai/s/cfbf6003-96fc-4027-860a-0f85f52e9561"
+              }
+            }
+          ],
+          "item-Mv7Uqx": [
+            {
+              "id": "item-Y6Mod1",
+              "type": "project",
+              "contents": {
+                "cn": "Build a YouTube-like website.",
+                "en": "Build a YouTube-like website."
+              },
+              "descs": {
+                "cn": "",
+                "en": ""
+              },
+              "labels": {
+                "cn": "youtube复刻",
+                "en": "youtube复刻"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/%E9%95%BF%E7%A8%8B%E4%BB%BB%E5%8A%A1-1.png?auth_key=1813057478-89bd841410a440bfb7e66e6359bfa698-0-bfcd28aefd99945207e7f18aa544413b",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/%E9%95%BF%E7%A8%8B%E4%BB%BB%E5%8A%A1-1.png?auth_key=1813057478-89bd841410a440bfb7e66e6359bfa698-0-bfcd28aefd99945207e7f18aa544413b"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/68e31504-fdbb-4784-941a-9a1ed57f9449",
+                "en": "https://chat.z.ai/s/68e31504-fdbb-4784-941a-9a1ed57f9449"
+              }
+            },
+            {
+              "id": "item-ru3kb6",
+              "type": "project",
+              "contents": {
+                "cn": "Built a full-stack e-commerce application named Z Shop, similar to Amazon. \nIt implements an end-to-end user experience, including product browsing, cart management, secure checkout, payment integration, and order history. ",
+                "en": "Built a full-stack e-commerce application named Z Shop, similar to Amazon. \nIt implements an end-to-end user experience, including product browsing, cart management, secure checkout, payment integration, and order history. "
+              },
+              "descs": {
+                "cn": "",
+                "en": ""
+              },
+              "labels": {
+                "cn": "e-commerce application named Z Shop",
+                "en": "e-commerce application named Z Shop"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/%E9%95%BF%E7%A8%8B%E4%BB%BB%E5%8A%A1-2.png?auth_key=1813057586-5eb44ee68f384f119a24af6cbac2f64d-0-a7a1c778b10c186fc471f5e5e5cc8fd9",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/%E9%95%BF%E7%A8%8B%E4%BB%BB%E5%8A%A1-2.png?auth_key=1813057586-5eb44ee68f384f119a24af6cbac2f64d-0-a7a1c778b10c186fc471f5e5e5cc8fd9"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/25166470-692a-4281-8578-59f37e949c86",
+                "en": "https://chat.z.ai/s/25166470-692a-4281-8578-59f37e949c86"
+              }
+            },
+            {
+              "id": "item-Z0njlO",
+              "type": "project",
+              "contents": {
+                "cn": "Create a CSS effect library featuring complete online demonstrations and CSS code.",
+                "en": "Create a CSS effect library featuring complete online demonstrations and CSS code."
+              },
+              "descs": {
+                "cn": "",
+                "en": ""
+              },
+              "labels": {
+                "cn": "CSS特效库",
+                "en": "CSS特效库"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/%E9%95%BF%E7%A8%8B%E4%BB%BB%E5%8A%A1-%E6%96%B0.png?auth_key=1813129199-f0581d3401a54516a97e56e15daac8ea-0-2005ea2c8f6aa708c08cec0b73f2b463",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/%E9%95%BF%E7%A8%8B%E4%BB%BB%E5%8A%A1-%E6%96%B0.png?auth_key=1813129199-f0581d3401a54516a97e56e15daac8ea-0-2005ea2c8f6aa708c08cec0b73f2b463"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/f2771eee-2427-4613-987b-99cb92713148",
+                "en": "https://chat.z.ai/s/f2771eee-2427-4613-987b-99cb92713148"
+              }
+            }
+          ],
+          "item-YfiX4G": [
+            {
+              "id": "item-Ui8N4k",
+              "type": "prompt",
+              "contents": {
+                "cn": "Design a corporate team-building murder-mystery and escape-room booking platform.\nVisual: professional, polished, with a hint of game-night fun. Less \"noir,\" more \"engaging\".\nPage Structure:\nHero: a happy team mid-discussion around a board.\nExperiences: scenarios tagged by team-skill (collaboration / leadership / creativity).\nFor Companies: pricing for groups of 10-100+.\nCustomization: branded experiences for clients.\nCase Studies: testimonials from prior corporate clients.\nInteraction Details:\n- Hero photo subtly shifts perspective on cursor move.\n- Skill tags glow when hovered; matching experiences reorder above with a 350ms transition.\n- Pricing slider for team size animates the total price up/down with friendly ticks.\n- Customization page builds a faux dossier with the company's logo overlaid.\n- Case study cards expand to reveal a quote with a \"speech mark\" animation.\n- \"Request a Quote\" button has a confident slide-in confirmation.\nOverall Vibe: professional, engaging, polished, ROI-friendly.",
+                "en": "Design a corporate team-building murder-mystery and escape-room booking platform.\nVisual: professional, polished, with a hint of game-night fun. Less \"noir,\" more \"engaging\".\nPage Structure:\nHero: a happy team mid-discussion around a board.\nExperiences: scenarios tagged by team-skill (collaboration / leadership / creativity).\nFor Companies: pricing for groups of 10-100+.\nCustomization: branded experiences for clients.\nCase Studies: testimonials from prior corporate clients.\nInteraction Details:\n- Hero photo subtly shifts perspective on cursor move.\n- Skill tags glow when hovered; matching experiences reorder above with a 350ms transition.\n- Pricing slider for team size animates the total price up/down with friendly ticks.\n- Customization page builds a faux dossier with the company's logo overlaid.\n- Case study cards expand to reveal a quote with a \"speech mark\" animation.\n- \"Request a Quote\" button has a confident slide-in confirmation.\nOverall Vibe: professional, engaging, polished, ROI-friendly."
+              },
+              "labels": {
+                "cn": "Artisan 独立艺术家数字画廊",
+                "en": "Virtual Museum of World Cultures platform"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/website-1.png?auth_key=1813057586-9a6d322b93204307aa3926c17a29f5c7-0-a9ac42987131e839839f771f14bfd83b",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/website-1.png?auth_key=1813057586-9a6d322b93204307aa3926c17a29f5c7-0-a9ac42987131e839839f771f14bfd83b"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/6a9af87a-2e6a-4922-b6c5-79e141a552aa",
+                "en": "https://chat.z.ai/s/6a9af87a-2e6a-4922-b6c5-79e141a552aa"
+              }
+            },
+            {
+              "id": "item-pqw8Oh",
+              "type": "prompt",
+              "contents": {
+                "cn": "Build an art history museum platform with cross-fade spotlight hero, follow-cursor 4x magnifier, horizontal scroll genre timeline, drag-to-look 3D virtual tour with teleport hotspots, and audio-guide circular progress rings.",
+                "en": "Build an art history museum platform with cross-fade spotlight hero, follow-cursor 4x magnifier, horizontal scroll genre timeline, drag-to-look 3D virtual tour with teleport hotspots, and audio-guide circular progress rings."
+              },
+              "descs": {
+                "cn": "",
+                "en": ""
+              },
+              "labels": {
+                "cn": "音乐社交网页",
+                "en": "MonoGlass Gallery"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/website-2.png?auth_key=1813057586-8c98835810f24eaca2672383756660bd-0-1069e53d9bc7e3cca6328d233fb000d8",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/website-2.png?auth_key=1813057586-8c98835810f24eaca2672383756660bd-0-1069e53d9bc7e3cca6328d233fb000d8"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/b5b16339-f707-44de-a864-93938d6ce288",
+                "en": "https://chat.z.ai/s/b5b16339-f707-44de-a864-93938d6ce288"
+              }
+            },
+            {
+              "id": "item-aTM9hY",
+              "type": "prompt",
+              "contents": {
+                "cn": "Build a murder-mystery booking site with a flickering desk-lamp hero, paper-flip dossier reveal, red-string suspect connections, giant press-stamp \"Join the Game\" CTA with paper-rustle audio, and a magnifying-glass cursor.",
+                "en": "Build a murder-mystery booking site with a flickering desk-lamp hero, paper-flip dossier reveal, red-string suspect connections, giant press-stamp \"Join the Game\" CTA with paper-rustle audio, and a magnifying-glass cursor."
+              },
+              "labels": {
+                "cn": "Immich照片管理(复刻)",
+                "en": "A booking platform for murder mystery games"
+              },
+              "imgs": {
+                "cn": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/website-3.png?auth_key=1813057586-85ec710087ff45e9ba5c3d7a96fd34e1-0-4448f1638e00552fd3eb1e38870e5563",
+                "en": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/website-3.png?auth_key=1813057586-85ec710087ff45e9ba5c3d7a96fd34e1-0-4448f1638e00552fd3eb1e38870e5563"
+              },
+              "share_urls": {
+                "cn": "https://chat.z.ai/s/cf7b2a61-6fdf-40d8-83a9-8e1b9a9bec43",
+                "en": "https://chat.z.ai/s/cf7b2a61-6fdf-40d8-83a9-8e1b9a9bec43"
+              }
+            }
+          ]
+        },
+        "items": [],
+        "templates": {
+          "cn": "{prompt}",
+          "en": "{prompt}"
+        }
+      }
+    },
+    "created_at": 1769511209,
+    "updated_at": 1781585878
+  },
+  {
+    "namespace": "zcode",
+    "scene": "scheduled-task",
+    "options": {
+      "cronExpr": {
+        "id": "opt-cronExpr",
+        "type": "cronExpr",
+        "contents": {
+          "cn": "调度规则",
+          "en": "Schedule"
+        },
+        "refer": "",
+        "cascades": {},
+        "items": [
+          {
+            "id": "item-morningDevBrief-cronExpr",
+            "type": "cronExpr",
+            "contents": {
+              "cn": "0 9 * * 1-5",
+              "en": "0 9 * * 1-5"
+            },
+            "labels": {
+              "cn": "工作日 09:00",
+              "en": "Weekdays at 09:00"
+            }
+          },
+          {
+            "id": "item-dailyRiskScan-cronExpr",
+            "type": "cronExpr",
+            "contents": {
+              "cn": "0 10 * * *",
+              "en": "0 10 * * *"
+            },
+            "labels": {
+              "cn": "每天 10:00",
+              "en": "Daily at 10:00"
+            }
+          },
+          {
+            "id": "item-weeklyReleaseBrief-cronExpr",
+            "type": "cronExpr",
+            "contents": {
+              "cn": "0 16 * * 5",
+              "en": "0 16 * * 5"
+            },
+            "labels": {
+              "cn": "每周五 16:00",
+              "en": "Fridays at 16:00"
+            }
+          },
+          {
+            "id": "item-documentationSyncCheck-cronExpr",
+            "type": "cronExpr",
+            "contents": {
+              "cn": "0 15 * * 3",
+              "en": "0 15 * * 3"
+            },
+            "labels": {
+              "cn": "每周三 15:00",
+              "en": "Wednesdays at 15:00"
+            }
+          }
+        ],
+        "templates": {
+          "cn": "{prompt}",
+          "en": "{prompt}"
+        }
+      },
+      "prompts": {
+        "id": "opt-9fa513",
+        "type": "prompts",
+        "contents": {
+          "cn": "定时任务模板",
+          "en": "Scheduled task template"
+        },
+        "refer": "",
+        "cascades": {},
+        "items": [
+          {
+            "id": "item-morningDevBrief",
+            "type": "prompts",
+            "contents": {
+              "cn": "汇总上一个工作日以来的提交、模块变化、CI 状态和待跟进事项，最终生成不超过 6 条的晨会口述摘要。只读分析，只使用可验证的仓库事实；证据不足时明确说明，不推测，也不修改代码或外部状态。",
+              "en": "Summarize commits, module changes, CI status, and follow-ups since the previous workday, then produce no more than five stand-up-ready bullets. Perform read-only analysis using only verifiable repository facts; state when evidence is insufficient, do not speculate, and do not modify code or external state."
+            },
+            "labels": {
+              "cn": "晨会动态",
+              "en": "Morning dev brief"
+            },
+            "defaults": {
+              "cronExpr": [
+                "item-morningDevBrief-cronExpr"
+              ]
+            }
+          },
+          {
+            "id": "item-dailyRiskScan",
+            "type": "prompts",
+            "contents": {
+              "cn": "检查最近 24 小时的代码变更，识别运行错误、数据丢失、权限绕过、资源泄漏及跨端兼容等高置信风险，并附代码和 commit/diff 证据。只读分析，只使用可验证的仓库事实；证据不足时明确说明，不推测，也不修改代码或外部状态。",
+              "en": "Inspect code changes from the last 24 hours for high-confidence risks involving runtime failures, data loss, authorization bypasses, resource leaks, or cross-platform compatibility, and attach code and commit/diff evidence. Perform read-only analysis using only verifiable repository facts; state when evidence is insufficient, do not speculate, and do not modify code or external state."
+            },
+            "labels": {
+              "cn": "风险扫描",
+              "en": "Risk scan"
+            },
+            "defaults": {
+              "cronExpr": [
+                "item-dailyRiskScan-cronExpr"
+              ]
+            }
+          },
+          {
+            "id": "item-weeklyReleaseBrief",
+            "type": "prompts",
+            "contents": {
+              "cn": "整理本周合并的 PR 和 commit，按功能、修复、体验及工程改进分类，同时生成团队版和面向用户的精简发布说明。只读分析，只使用可验证的仓库事实；证据不足时明确说明，不推测，也不修改代码或外部状态。",
+              "en": "Organize PRs and commits merged this week into Features, Fixes, Experience improvements, and Engineering improvements, then produce both a team brief and concise user-facing release notes. Perform read-only analysis using only verifiable repository facts; state when evidence is insufficient, do not speculate, and do not modify code or external state."
+            },
+            "labels": {
+              "cn": "发布简报",
+              "en": "Release brief"
+            },
+            "defaults": {
+              "cronExpr": [
+                "item-weeklyReleaseBrief-cronExpr"
+              ]
+            }
+          },
+          {
+            "id": "item-documentationSyncCheck",
+            "type": "prompts",
+            "contents": {
+              "cn": "对照最近 7 天的代码、配置、接口与文档变更，识别已改变公开行为但文档尚未同步的高置信差异，并附文件路径和 commit/diff 证据，给出应更新的文档位置与要点。只读分析，只使用可验证的仓库事实；证据不足时明确说明，不推测，也不修改代码或外部状态。",
+              "en": "Compare code, configuration, API, and documentation changes from the last seven days. Identify high-confidence cases where public behavior changed without matching documentation, attach file paths and commit/diff evidence, and name the documentation locations and key points that should be updated. Perform read-only analysis using only verifiable repository facts; state when evidence is insufficient, do not speculate, and do not modify code or external state."
+            },
+            "labels": {
+              "cn": "文档同步检查",
+              "en": "Documentation sync check"
+            },
+            "defaults": {
+              "cronExpr": [
+                "item-documentationSyncCheck-cronExpr"
+              ]
+            }
+          }
+        ],
+        "templates": {
+          "cn": "{prompt}",
+          "en": "{prompt}"
+        }
+      }
+    },
+    "created_at": 1786935503,
+    "updated_at": 1786935557
+  },
+  {
+    "namespace": "zcode",
+    "scene": "off-peak-task",
+    "options": {
+      "prompts": {
+        "id": "opt-5c5e69",
+        "type": "prompts",
+        "contents": {
+          "cn": "闲时任务模板",
+          "en": "Idle-time task template"
+        },
+        "refer": "",
+        "cascades": {},
+        "items": [
+          {
+            "id": "item-standupGitSummary",
+            "type": "prompts",
+            "contents": {
+              "cn": "汇总本周 Git 活动，生成周五站会摘要：列出重要提交、已合并 PR 及主要变更，并保持简洁。",
+              "en": "Summarize this week's git activity into a Friday standup: notable commits, merged PRs, and what changed. Keep it concise."
+            },
+            "labels": {
+              "cn": "Git 站会摘要",
+              "en": "Standup Git Summary"
+            }
+          },
+          {
+            "id": "item-ciFlakyReport",
+            "type": "prompts",
+            "contents": {
+              "cn": "扫描最近的 CI 运行，列出失败和不稳定测试及其可能原因，并按影响范围给出修复建议。",
+              "en": "Scan recent CI runs, list failing and flaky tests with likely causes, and propose fixes ranked by impact."
+            },
+            "labels": {
+              "cn": "CI 失败与不稳定测试报告",
+              "en": "CI Failures & Flaky Test Report"
+            }
+          },
+          {
+            "id": "item-documentationSyncCheck",
+            "type": "prompts",
+            "contents": {
+              "cn": "基于当前代码实现和最近提交，检查仓库中的 README、docs、配置说明与使用示例是否过时或与实现不一致。仅修改能够从代码、配置或提交记录中直接确认的内容；不要猜测未验证的行为，并保持现有文档的结构、术语和写作风格。完成后列出修改的文件及每项修改依据；若无需修改，说明已检查的范围、证据与结论。",
+              "en": "Using the current implementation and recent commits as evidence, check whether README files, docs, configuration guidance, and usage examples are outdated or inconsistent with the code. Modify only content that can be directly verified from code, configuration, or commit history; do not infer unverified behavior, and preserve the existing document structure, terminology, and writing style. When finished, list the files changed and the evidence for each change. If no update is needed, report the scope checked, the evidence reviewed, and the conclusion."
+            },
+            "labels": {
+              "cn": "文档同步检查",
+              "en": "Documentation sync check"
+            }
+          }
+        ],
+        "templates": {
+          "cn": "{prompt}",
+          "en": "{prompt}"
+        }
+      }
+    },
+    "created_at": 1786935483,
+    "updated_at": 1786935576
+  },
+  {
+    "namespace": "zcode",
+    "scene": "ai-writing",
+    "options": {
+      "plugins": {
+        "id": "opt-2c8a4b",
+        "type": "plugins",
+        "contents": {
+          "cn": "引用插件",
+          "en": "Referencing plugins"
+        },
+        "refer": "",
+        "cascades": {},
+        "items": [
+          {
+            "id": "item-017cd7",
+            "type": "plugins",
+            "contents": {
+              "cn": "github@zcode-plugins-official",
+              "en": "github@zcode-plugins-official"
+            },
+            "labels": {
+              "cn": "Github",
+              "en": "Github"
+            }
+          },
+          {
+            "id": "item-75f7f9",
+            "type": "plugins",
+            "contents": {
+              "cn": "document-skills@zcode-plugins-official",
+              "en": "document-skills@zcode-plugins-official"
+            },
+            "labels": {
+              "cn": "文档技能",
+              "en": "Document Skills"
+            }
+          }
+        ],
+        "templates": {
+          "cn": "{prompt}",
+          "en": "{prompt}"
+        }
+      },
+      "prompts": {
+        "id": "opt-Y7f2fe",
+        "type": "prompts",
+        "contents": {
+          "cn": "推荐提示词",
+          "en": "Recommended Prompts"
+        },
+        "refer": "",
+        "cascades": {},
+        "items": [
+          {
+            "id": "item-d325a7",
+            "type": "prompt",
+            "contents": {
+              "cn": "每周五总结这一周发生的事情。",
+              "en": "Summarize the events of the week every Friday."
+            },
+            "labels": {
+              "cn": "每周五总结这一周发生的事情。",
+              "en": "Summarize the events of the week every Friday."
+            },
+            "img": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/icon-alarm-clock-check.svg?auth_key=1818576620-2760921f0f0a45b6803156f3488a1ba2-0-9f82abeabfcf7c3d3d15638c7bee2161"
+          },
+          {
+            "id": "item-dd6512",
+            "type": "prompt",
+            "contents": {
+              "cn": "请分析以下终端报错日志，找出导致该错误的根本原因，并提供可以直接运行的修复代码示例。",
+              "en": "Please analyze the following terminal error log, find the root cause of the error, and provide a sample of fix code that can be run directly."
+            },
+            "labels": {
+              "cn": "请分析以下终端报错日志，找出导致该错误的根本原因，并提供可以直接运行的修复代码示例。",
+              "en": "Please analyze the following terminal error log, find the root cause of the error, and provide a sample of fix code that can be run directly."
+            },
+            "img": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/icon-debug.svg?auth_key=1818576620-3570d9ba42de46b89f89ddf5cfecadfd-0-80be5aeaea6ea47b0775fdac9ebd66ad"
+          },
+          {
+            "id": "item-4YwHmg",
+            "type": "prompt",
+            "contents": {
+              "cn": "帮我创建一份PPT，主题是「AI Agent 进化之路」，内容涵盖三个阶段：Prompt Engineering（起源、核心技巧、局限性）→ Context Engineering（为什么context更重要、RAG/Memory/Tool Use等关键技术）→ Harness Engineering（Agent框架演进、代表产品如AutoGPT/ACPAgent/OpenClaw）。风格科技感，深色背景，要有时间线贯穿",
+              "en": "Please create a PowerPoint presentation for me on the topic \"The Evolution of AI Agents,\" covering three stages: Prompt Engineering (origins, core techniques, limitations) → Context Engineering (why context is important, key technologies such as RAG/Memory/Tool Use) → Harness Engineering (agent framework evolution, representative products such as AutoGPT/ACPAgent/OpenClaw). The style should be tech-oriented, with a dark background, and a timeline should be clearly presented."
+            },
+            "labels": {
+              "cn": "帮我创建一份科技感十足的PPT，主题是「AI Agent 进化之路」",
+              "en": "Please help me create a high-tech PowerPoint presentation on the topic \"The Evolution of AI Agents\"."
+            },
+            "img": "https://z-cdn-media.chatglm.cn/prompts-rich-media-resources/icon-ai-slides.svg?auth_key=1818576620-3314aee4743f47bca30142cca98d20d8-0-8c4d3712b995445b4957ebcca0900f0d",
+            "defaults": {
+              "plugins": [
+                "item-75f7f9"
+              ]
+            }
+          }
+        ],
+        "templates": {
+          "cn": "{prompt}",
+          "en": "{prompt}"
+        }
+      }
+    },
+    "created_at": 1769511209,
+    "updated_at": 1787193221
+  },
+  {
+    "namespace": "zcode",
+    "scene": "draft-suggestion",
+    "options": {
+      "plugins": {
+        "id": "opt-2c8a4b",
+        "type": "plugins",
+        "contents": {
+          "cn": "引用插件",
+          "en": "Referencing plugins"
+        },
+        "refer": "",
+        "cascades": {},
+        "items": [
+          {
+            "id": "item-017cd7",
+            "type": "plugins",
+            "contents": {
+              "cn": "github@zcode-plugins-official",
+              "en": "github@zcode-plugins-official"
+            },
+            "labels": {
+              "cn": "Github",
+              "en": "Github"
+            }
+          },
+          {
+            "id": "item-75f7f9",
+            "type": "plugins",
+            "contents": {
+              "cn": "document-skills@zcode-plugins-official",
+              "en": "document-skills@zcode-plugins-official"
+            },
+            "labels": {
+              "cn": "文档技能",
+              "en": "Document Skills"
+            }
+          }
+        ],
+        "templates": {
+          "cn": "{prompt}",
+          "en": "{prompt}"
+        }
+      },
+      "prompts": {
+        "id": "opt-Y7f2fe",
+        "type": "prompts",
+        "contents": {
+          "cn": "推荐提示词",
+          "en": "Recommended Prompts"
+        },
+        "refer": "",
+        "cascades": {},
+        "items": [
+          {
+            "id": "item-d325a7",
+            "type": "prompt",
+            "contents": {
+              "cn": "每周五总结这一周发生的事情。",
+              "en": "Summarize the events of the week every Friday."
+            },
+            "labels": {
+              "cn": "周报总结",
+              "en": "Weekly Summary"
+            },
+            "img": "alarm-clock-check"
+          },
+          {
+            "id": "item-dd6512",
+            "type": "prompt",
+            "contents": {
+              "cn": "请分析以下终端报错日志，找出导致该错误的根本原因，并提供可以直接运行的修复代码示例。",
+              "en": "Please analyze the following terminal error log, find the root cause of the error, and provide a sample of fix code that can be run directly."
+            },
+            "labels": {
+              "cn": "报错修复",
+              "en": "Error Fix"
+            },
+            "img": "bug"
+          },
+          {
+            "id": "item-4YwHmg",
+            "type": "prompt",
+            "contents": {
+              "cn": "帮我创建一份PPT，主题是「AI Agent 进化之路」，内容涵盖三个阶段：Prompt Engineering（起源、核心技巧、局限性）→ Context Engineering（为什么context更重要、RAG/Memory/Tool Use等关键技术）→ Harness Engineering（Agent框架演进、代表产品如AutoGPT/ACPAgent/OpenClaw）。风格科技感，深色背景，要有时间线贯穿",
+              "en": "Please create a PowerPoint presentation for me on the topic \"The Evolution of AI Agents,\" covering three stages: Prompt Engineering (origins, core techniques, limitations) → Context Engineering (why context is important, key technologies such as RAG/Memory/Tool Use) → Harness Engineering (agent framework evolution, representative products such as AutoGPT/ACPAgent/OpenClaw). The style should be tech-oriented, with a dark background, and a timeline should be clearly presented."
+            },
+            "labels": {
+              "cn": "PPT 制作",
+              "en": "PPT Creation"
+            },
+            "img": "presentation",
+            "defaults": {
+              "plugins": [
+                "item-75f7f9"
+              ]
+            }
+          },
+          {
+            "id": "item-032195",
+            "type": "prompt",
+            "contents": {
+              "cn": "创建闲时任务",
+              "en": " Create Idle-time task"
+            },
+            "labels": {
+              "cn": "闲时任务",
+              "en": "Idle-time task"
+            },
+            "on_finish": "NAVIGATE:AUTOMATIONS:OFFPEAK",
+            "img": "moon"
+          }
+        ],
+        "templates": {
+          "cn": "{prompt}",
+          "en": "{prompt}"
+        }
+      }
+    },
+    "created_at": 1787202353,
+    "updated_at": 1787202377
+  }
+]

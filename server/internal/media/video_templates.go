@@ -10,6 +10,8 @@ import (
 	"os"
 	"slices"
 	"time"
+
+	"github.com/vam12375/shucode-platform/server/internal/templatelibrary"
 )
 
 //go:embed video_template_catalog.json
@@ -112,6 +114,25 @@ func (s *Service) VideoTemplates(ctx context.Context) ([]VideoTemplate, error) {
 }
 
 func (s *Service) videoTemplatesForModels(ctx context.Context, models []Model) ([]VideoTemplate, error) {
+	templates, err := s.AllVideoTemplates(ctx, models)
+	if err != nil {
+		return nil, err
+	}
+	disabled, err := (templatelibrary.Repository{Store: s.Repo.Store}).DisabledVideoIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]VideoTemplate, 0, len(templates))
+	for _, t := range templates {
+		if !disabled[t.ID] {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
+// 管理目录保留停用模板；消费与准入统一读取过滤后的目录。
+func (s *Service) AllVideoTemplates(ctx context.Context, models []Model) ([]VideoTemplate, error) {
 	templates, err := VideoTemplateDefinitions()
 	if err != nil {
 		return nil, err

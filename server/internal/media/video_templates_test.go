@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/vam12375/shucode-platform/server/internal/templatelibrary"
 )
 
 func templateReviewFixture(t *testing.T) (*fixture, *Project, TemplateReviewInput) {
@@ -190,5 +191,64 @@ func TestTemplateReviewForChangedModelCannotVerifyEarlierFrozenProject(t *testin
 				t.Fatalf("%s used current B approval for frozen A: %v", entry, err)
 			}
 		})
+	}
+}
+
+func TestTemplateLibraryDisableBlocksAdmissionAndPreservesReview(t *testing.T) {
+	f, p, input := templateReviewFixture(t)
+	ctx := context.Background()
+	if _, err := f.s.ReviewVideoTemplate(ctx, "root", input); err != nil {
+		t.Fatal(err)
+	}
+	repo := templatelibrary.Repository{Store: f.s.Repo.Store}
+	seeds := []templatelibrary.Entry{{ID: templatelibrary.VideoID(input.TemplateID), Kind: "video", Source: "builtin-video", Enabled: true}}
+	entries, err := repo.List(ctx, seeds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled := false
+	updated, err := repo.Save(ctx, seeds, entries[0].ID, templatelibrary.Mutation{ExpectedVersion: entries[0].ExpectedVersion, Enabled: &disabled}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	templates, err := f.s.VideoTemplates(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range templates {
+		if item.ID == input.TemplateID {
+			t.Fatal("disabled template leaked")
+		}
+	}
+	if err = f.s.validateTemplateBrief(ctx, p.Brief, p.Models); err == nil {
+		t.Fatal("disabled template admitted")
+	}
+	if err = f.s.validateAdaptivePlan(ctx, p.Brief, *p.Plan, p.Models); err == nil {
+		t.Fatal("disabled template plan accepted")
+	}
+	all, err := f.s.AllVideoTemplates(ctx, p.Models)
+	if err != nil || !slices.Contains(all[0].VerifiedModelIDs, p.Brief.VideoModel) {
+		t.Fatal("disabled template lost evidence")
+	}
+	enabled := true
+	updated, err = repo.Save(ctx, seeds, updated.ID, templatelibrary.Mutation{ExpectedVersion: updated.ExpectedVersion, Enabled: &enabled}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.s.validateTemplateBrief(ctx, p.Brief, p.Models); err != nil {
+		t.Fatal("re-enabled template rejected")
+	}
+	if _, err = repo.Save(ctx, seeds, updated.ID, templatelibrary.Mutation{ExpectedVersion: updated.ExpectedVersion}, true); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.s.validateTemplateBrief(ctx, p.Brief, p.Models); err == nil {
+		t.Fatal("deleted template admitted")
+	}
+	if err = f.s.validateAdaptivePlan(ctx, p.Brief, *p.Plan, p.Models); err == nil {
+		t.Fatal("deleted template plan accepted")
+	}
+	all, err = f.s.AllVideoTemplates(ctx, p.Models)
+	if err != nil || !slices.Contains(all[0].VerifiedModelIDs, p.Brief.VideoModel) {
+		t.Fatal("deleted template lost historical review evidence")
 	}
 }

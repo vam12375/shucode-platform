@@ -94,6 +94,7 @@ func New(deps *Deps) *gin.Engine {
 
 	registerPublicRoutes(router, deps)
 	registerMediaRoutes(router, deps)
+	registerTemplateLibraryRoutes(router, deps)
 	registerTeamAssetRoutes(router, deps)
 	registerConsoleRoutes(router, deps)
 	registerTeamCreditRoutes(router, deps)
