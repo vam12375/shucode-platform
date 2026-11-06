@@ -30,7 +30,7 @@ func TestLibraryPermissionsAndPublishing(t *testing.T) {
 		t.Fatal(response.Body.String())
 	}
 	entries := dataOf(t, response)["entries"].([]any)
-	if len(entries) != 107 {
+	if len(entries) != 115 {
 		t.Fatalf("incomplete catalog: %d", len(entries))
 	}
 	var selected map[string]any
@@ -65,6 +65,9 @@ func TestLibraryPermissionsAndPublishing(t *testing.T) {
 		response = root.do("GET", path, "", "")
 		if response.Code != 200 || strings.Contains(response.Body.String(), "expectedVersion") {
 			t.Fatalf("bad public catalog: %s", path)
+		}
+		if strings.Contains(response.Body.String(), "dineops:video-template:") {
+			t.Fatalf("unreviewed legacy original in public catalog: %s", path)
 		}
 	}
 	for _, body := range []string{`{"enabled":false}`, `{"kind":"skill","enabled":true,"fields":{"name":"No package","content":"incomplete"}}`, `{"kind":"prompt","enabled":true,"fields":{"name":"Test","content":"Test","scene":"draft-suggestion"},"reviewerId":"fake"}`, `{} {}`} {

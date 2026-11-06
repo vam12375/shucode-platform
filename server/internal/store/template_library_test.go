@@ -29,7 +29,7 @@ func runTemplateLibrary(t *testing.T, s PlatformStore) {
 	ctx := context.Background()
 	r := library.Repository{Store: s}
 	entries, err := r.List(ctx, nil)
-	if err != nil || len(entries) != 67 {
+	if err != nil || len(entries) != 75 {
 		t.Fatalf("catalog: %d %v", len(entries), err)
 	}
 	chosen := entries[0]
