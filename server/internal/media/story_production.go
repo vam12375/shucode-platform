@@ -91,6 +91,9 @@ func (v *StoryPlanReview) UnmarshalJSON(raw []byte) error {
 func storyPlanning(b Brief) bool { return b.CreativeExpansion != "" }
 func storyError() error          { return fmt.Errorf("video_story_invalid") }
 func validateStoryBrief(b Brief) error {
+	if b.GenerationPolicy != "" && (b.GenerationPolicy != "whole-first" || !storyPlanning(b) || b.Mode != "auto" || b.Finishing == nil || !adaptiveResearch(b) || b.ReferenceAssetID != "" || b.SourceOnly) {
+		return fmt.Errorf("video_generation_policy_invalid")
+	}
 	if !storyPlanning(b) {
 		return nil
 	}

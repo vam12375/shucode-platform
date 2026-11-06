@@ -197,6 +197,7 @@ type Asset struct {
 	Internal        bool      `json:"internal,omitempty"`
 }
 type Brief struct {
+	GenerationPolicy         string   `json:"generationPolicy,omitempty"`
 	CreativeExpansion        string   `json:"creativeExpansion,omitempty"`
 	ResearchPolicy           string   `json:"researchPolicy,omitempty"`
 	CreativeIntent           string   `json:"creativeIntent,omitempty"`
@@ -380,6 +381,7 @@ type Reference struct {
 	SelectionReason string    `json:"selectionReason"`
 }
 type ShotPlan struct {
+	Beats                 []GenerationBeat  `json:"beats,omitempty"`
 	Anchors               []ReferenceAnchor `json:"anchors,omitempty"`
 	Creative              *ShotCreative     `json:"creative,omitempty"`
 	sourceFields          uint8
@@ -407,10 +409,11 @@ type ShotPlan struct {
 	Sound                 string `json:"sound,omitempty"`
 }
 type Plan struct {
-	Story      *StoryPlan        `json:"story,omitempty"`
-	Research   *ResearchDecision `json:"research,omitempty"`
-	References []Reference       `json:"references"`
-	Shots      []ShotPlan        `json:"shots"`
+	Segmentation *Segmentation     `json:"segmentation,omitempty"`
+	Story        *StoryPlan        `json:"story,omitempty"`
+	Research     *ResearchDecision `json:"research,omitempty"`
+	References   []Reference       `json:"references"`
+	Shots        []ShotPlan        `json:"shots"`
 }
 type Analysis struct {
 	Kind              string `json:"kind,omitempty"`

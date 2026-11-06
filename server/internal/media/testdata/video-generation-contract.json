@@ -1,0 +1,171 @@
+{
+  "plan": {
+    "references": [
+      {
+        "url": "https://example.test/reference",
+        "title": "Fixture",
+        "capturedAt": "2026-11-06T00:00:00.120000Z",
+        "likes": null,
+        "evidence": "Observed scene",
+        "selectionReason": "Story structure"
+      }
+    ],
+    "research": {
+      "mode": "reference",
+      "reason": "Observed footage",
+      "intentSummary": "Demonstrate",
+      "assetObservations": [
+        {
+          "assetId": "a",
+          "description": "Shape"
+        }
+      ],
+      "creativeGaps": []
+    },
+    "story": {
+      "goal": "Demonstrate",
+      "progression": "Start then finish",
+      "ending": "Complete action",
+      "assetRoles": [
+        {
+          "assetId": "a",
+          "role": "product",
+          "facts": "Shape",
+          "retain": "Identity",
+          "allow": "Framing"
+        }
+      ],
+      "gaps": []
+    },
+    "segmentation": {
+      "reason": "Model duration limit",
+      "cuts": [
+        {
+          "kind": "sentence",
+          "description": "Complete sentence then pause"
+        }
+      ]
+    },
+    "shots": [
+      {
+        "sourceUrl": "https://example.test/reference",
+        "sourceStart": 0,
+        "sourceEnd": 15,
+        "duration": 15,
+        "framing": "Medium",
+        "camera": "Fixed",
+        "action": "Show",
+        "purpose": "Explain",
+        "prompt": "Subject & action <clear>",
+        "imagePrompt": "",
+        "assetId": "a",
+        "subtitle": "",
+        "narration": "",
+        "transitionDescription": "",
+        "subject": "",
+        "scene": "",
+        "sound": "",
+        "creative": {
+          "source": "asset",
+          "assetIds": ["a"],
+          "retain": "Identity",
+          "expand": "",
+          "beat": "Action",
+          "connection": "Pause",
+          "inFrame": 0,
+          "outFrame": 450
+        },
+        "beats": [
+          {
+            "inFrame": 0,
+            "outFrame": 150,
+            "description": "Start"
+          },
+          {
+            "inFrame": 150,
+            "outFrame": 450,
+            "description": "Finish"
+          }
+        ]
+      },
+      {
+        "sourceUrl": "https://example.test/reference",
+        "sourceStart": 0,
+        "sourceEnd": 15,
+        "duration": 15,
+        "framing": "Medium",
+        "camera": "Fixed",
+        "action": "Show",
+        "purpose": "Explain",
+        "prompt": "Subject & action <clear>",
+        "imagePrompt": "",
+        "assetId": "a",
+        "subtitle": "",
+        "narration": "",
+        "transitionDescription": "",
+        "subject": "",
+        "scene": "",
+        "sound": "",
+        "creative": {
+          "source": "asset",
+          "assetIds": ["a"],
+          "retain": "Identity",
+          "expand": "",
+          "beat": "Action",
+          "connection": "Pause",
+          "inFrame": 0,
+          "outFrame": 450
+        },
+        "beats": [
+          {
+            "inFrame": 0,
+            "outFrame": 150,
+            "description": "Start"
+          },
+          {
+            "inFrame": 150,
+            "outFrame": 450,
+            "description": "Finish"
+          }
+        ]
+      }
+    ]
+  },
+  "candidateHash": "df34456c1efb010fd0c5d644c2474cded59d6e5fadf4e1af8b70a61e5928b3d6",
+  "durations": [
+    {
+      "total": 30,
+      "model": {
+        "durations": [],
+        "minDuration": 4,
+        "maxDuration": 30
+      },
+      "expected": [30]
+    },
+    {
+      "total": 30,
+      "model": {
+        "durations": [],
+        "minDuration": 4,
+        "maxDuration": 15
+      },
+      "expected": [15, 15]
+    },
+    {
+      "total": 31,
+      "model": {
+        "durations": [],
+        "minDuration": 4,
+        "maxDuration": 30
+      },
+      "expected": [16, 15]
+    },
+    {
+      "total": 30,
+      "model": {
+        "durations": [8, 4, 8]
+      },
+      "expected": [8, 8, 8, 8]
+    }
+  ]
+}

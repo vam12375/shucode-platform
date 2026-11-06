@@ -137,9 +137,13 @@ func (s *Service) renderFinishingComposition(ctx context.Context, p *Project, se
 		if err != nil || parseErr != nil || math.IsNaN(length) || math.IsInf(length, 0) || (length < float64(clip.OutFrame)/30-.2 && !isWholeVideoReferenceExecution(p)) {
 			return fmt.Errorf("video_result_too_short")
 		}
-		if p.Composition != nil {
+		if p.Composition != nil || p.Brief.GenerationPolicy == "whole-first" {
 			actualFrames, err := probeCompositionSourceFrames(ctx, input)
 			if err != nil || clip.OutFrame > actualFrames {
+				// 整段交付必须有真实尾帧；旧的时长容差会用冻结画面/静音填补供应商丢失的收尾。
+				if p.Composition == nil {
+					return fmt.Errorf("video_result_too_short")
+				}
 				return fmt.Errorf("composition_source_invalid")
 			}
 		}
@@ -251,12 +255,29 @@ func (s *Service) finishingMasterAudio(ctx context.Context, p *Project, dir stri
 		index++
 	}
 	if len(native) > 0 {
-		// 原声底轨：各段按交付顺序直接拼接（已与画面同入出帧），统一响度后再参与压低与混音。
+		// 原声在独立生成段边界可能出现样本突跳；只在接缝两侧做5ms去点击，不交叠对白或缩短时间轴。
+		var nativeSegments []compositionSegment
+		if p.Brief.GenerationPolicy == "whole-first" && len(native) > 1 {
+			var err error
+			nativeSegments, err = compositionTimeline(p)
+			if err != nil || len(nativeSegments) != len(native) {
+				return "", fmt.Errorf("native_audio_timeline_invalid")
+			}
+		}
 		labels := make([]string, 0, len(native))
 		for i, name := range native {
 			args = append(args, "-i", name)
 			label := fmt.Sprintf("n%d", i)
-			filters = append(filters, fmt.Sprintf("[%d:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[%s]", index, label))
+			seam := ""
+			if len(nativeSegments) > 0 {
+				if i > 0 {
+					seam += ",afade=t=in:st=0:d=0.005"
+				}
+				if i+1 < len(native) {
+					seam += fmt.Sprintf(",afade=t=out:st=%.9f:d=0.005", nativeSegments[i].seconds()-.005)
+				}
+			}
+			filters = append(filters, fmt.Sprintf("[%d:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo%s[%s]", index, seam, label))
 			labels = append(labels, "["+label+"]")
 			index++
 		}

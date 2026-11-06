@@ -270,7 +270,8 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 			}
 		}
 	}
-	if !replica && !possible[b.Duration] {
+	// 整段策略允许离散档位以无台词余量裁出精确成片；旧制作单仍要求生成秒数精确可组合。
+	if !replica && ((b.GenerationPolicy == "whole-first" && len(planGenerationDurations(b.Duration, m)) == 0) || (b.GenerationPolicy != "whole-first" && !possible[b.Duration])) {
 		return fmt.Errorf("duration_not_supported")
 	}
 	if b.ImageModel != "" {
@@ -344,6 +345,9 @@ func buildShotsWithReferenceScript(b Brief, plan Plan, models []Model, scriptVer
 	v, e := FindModel(models, b.VideoModel, "video")
 	if e != nil {
 		return nil, 0, e
+	}
+	if err := validateGenerationPlan(b, plan, v); err != nil {
+		return nil, 0, err
 	}
 	if !storyPlanning(b) {
 		if err := validateBriefReferenceImages(b, v); err != nil {
