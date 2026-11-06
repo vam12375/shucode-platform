@@ -43,6 +43,10 @@ type ShotCreative struct {
 }
 
 func (v *ShotCreative) UnmarshalJSON(raw []byte) error {
+	raw, err := normalizeSecondsRangeJSON(raw)
+	if err != nil {
+		return err
+	}
 	type plain ShotCreative
 	var x plain
 	if _, err := decodeCompositionFields(raw, &x, []string{"source", "assetIds", "retain", "expand", "beat", "connection", "inFrame", "outFrame"}, nil); err != nil {

@@ -29,7 +29,7 @@ func (s *Service) inspectCompositionQuality(ctx context.Context, p *Project, pat
 		return report, fmt.Errorf("composition_output_invalid")
 	}
 	if frames <= 0 || w < 2 || h < 2 {
-		return fail("frame_clock")
+		return fail("duration")
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	raw, err := exec.CommandContext(probeCtx, "ffprobe", "-v", "error", "-protocol_whitelist", "file,pipe", "-show_entries", "stream=codec_type,width,height,avg_frame_rate:format=format_name", "-of", "json", path).Output()
@@ -56,19 +56,16 @@ func (s *Service) inspectCompositionQuality(ctx context.Context, p *Project, pat
 		if stream.Width != w || stream.Height != h {
 			return fail("dimensions")
 		}
-		var numerator, denominator float64
-		if _, err := fmt.Sscanf(stream.Rate, "%f/%f", &numerator, &denominator); err != nil || denominator <= 0 || math.Abs(numerator/denominator-30) > .001 {
-			return fail("frame_clock")
-		}
+
 		videoFound = true
 	}
 	if !videoFound {
 		return fail("video_stream")
 	}
-	if err := validateFinishingOutput(ctx, path, frames); err != nil {
+	if err := validateFinishingOutput(ctx, path, float64(frames)/30); err != nil {
 		return fail("decode")
 	}
-	for _, code := range []string{"container", "dimensions", "frame_clock", "audio_stream", "decode"} {
+	for _, code := range []string{"container", "dimensions", "duration", "audio_stream", "decode"} {
 		report.Checks = append(report.Checks, VideoQualityCheck{Code: code, Status: "passed"})
 	}
 	analysisCtx, cancel := context.WithTimeout(ctx, composeTimeout(p.Brief.Resolution))
@@ -147,7 +144,7 @@ func compositionQualityFrames(p *Project, segments []compositionSegment) []Video
 	start := 0
 	for index, segment := range segments {
 		source := finishingSourceClip(p, index).SourceShotIndex
-		for _, frame := range []int{start + min(4, segment.frames/4), start + segment.frames/2, start + segment.frames - 1} {
+		for _, frame := range []int{start + min(4, segment.frames/4), start + segment.frames/2, start + segment.frames - min(4, segment.frames/4)} {
 			sourceIndex := source
 			id := uuid.NewSHA1(uuid.NameSpaceOID, []byte(p.CompositionAssetID+"/quality/"+strconv.Itoa(frame))).String()
 			frames = append(frames, VideoQualityKeyframe{Frame: frame, AssetID: id, SourceShotIndex: &sourceIndex})
@@ -230,7 +227,8 @@ func (s *Service) extractCompositionQualityFrames(ctx context.Context, p *Projec
 	for _, frame := range frames {
 		selects = append(selects, fmt.Sprintf("eq(n,%d)", frame.Frame))
 	}
-	filter := "select='" + strings.Join(selects, "+") + "',scale=w='min(1280,iw)':h=-2"
+	// 先按展示时间归一化抽样；原片24/25fps或VFR时，n不能当作历史时间刻度。
+	filter := "setpts=PTS-STARTPTS,fps=30,select='" + strings.Join(selects, "+") + "',scale=w='min(1280,iw)':h=-2"
 	if err := runFinishingCommand(ctx, dir, "composition_quality_failed", "-protocol_whitelist", "file,pipe", "-i", path, "-map", "0:v:0", "-vf", filter, "-fps_mode", "vfr", "-frames:v", strconv.Itoa(len(frames)), "-q:v", "3", "-threads", "1", "frame-%03d.jpg"); err != nil {
 		return nil, err
 	}

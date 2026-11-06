@@ -20,6 +20,10 @@ type Segmentation struct {
 }
 
 func (v *GenerationBeat) UnmarshalJSON(raw []byte) error {
+	raw, err := normalizeSecondsRangeJSON(raw)
+	if err != nil {
+		return err
+	}
 	type plain GenerationBeat
 	var x plain
 	if _, err := decodeCompositionFields(raw, &x, []string{"inFrame", "outFrame", "description"}, nil); err != nil {

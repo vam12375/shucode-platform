@@ -85,7 +85,7 @@ func TestFinishingRealFFmpegPreservesFramesReplacesAudioAndOmitsCaptions(t *test
 				t.Fatal(err)
 			}
 			output := filepath.Join(dir, "final.mp4")
-			if err = validateFinishingOutput(ctx, output, 120); err != nil {
+			if err = validateFinishingOutput(ctx, output, 4); err != nil {
 				t.Fatal(err)
 			}
 			for _, at := range []float64{.1, 1, 1.95, 2.45, 3.9} {
@@ -147,7 +147,7 @@ func TestFinishingRealFFmpegKeepsNativeAudioWhenRequested(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := filepath.Join(dir, "final.mp4")
-	if err = validateFinishingOutput(ctx, output, 120); err != nil {
+	if err = validateFinishingOutput(ctx, output, 4); err != nil {
 		t.Fatal(err)
 	}
 	if amplitude := finishingAmplitude(finishingSamples(t, output, .3, 1), 880); amplitude < .05 {
@@ -269,7 +269,7 @@ func TestFinishingRealFFmpegMixedTransitionsAndExplicitShortCaptions(t *testing.
 		t.Fatal(err)
 	}
 	output := filepath.Join(dir, "final.mp4")
-	if err = validateFinishingOutput(context.Background(), output, 240); err != nil {
+	if err = validateFinishingOutput(context.Background(), output, 8); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {

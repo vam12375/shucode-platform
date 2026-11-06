@@ -293,8 +293,8 @@ func (s *Service) validateCompositionMedia(ctx context.Context, p *Project, e Vi
 		if !found {
 			return fmt.Errorf("composition_source_unavailable")
 		}
-		frames, probeErr := probeCompositionSourceFrames(ctx, s.Blobs.Path(p.TeamID, shot.OutputAssetID))
-		if probeErr != nil || clip.OutFrame > frames {
+		seconds, probeErr := probeCompositionStreamSeconds(ctx, s.Blobs.Path(p.TeamID, shot.OutputAssetID), "v:0")
+		if probeErr != nil || !compositionSourceCovers(seconds, float64(clip.OutFrame)/30) {
 			return fmt.Errorf("composition_source_unavailable")
 		}
 	}

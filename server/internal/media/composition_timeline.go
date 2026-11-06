@@ -1,13 +1,8 @@
 package media
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"math"
-	"os/exec"
-	"strconv"
-	"time"
 )
 
 // 后期时间线只派生交付帧，不改写供应商原镜头、合法秒数或计费身份。
@@ -70,24 +65,4 @@ func effectiveFinishingOptions(p *Project) FinishingOptions {
 		options.Voiceover, options.Music, options.Subtitles, options.Brand = edit.Voiceover, edit.Music, edit.Subtitles, edit.Brand
 	}
 	return options
-}
-
-// 编辑入出帧使用30fps归一化源时钟；源片本身24/25fps时不能把原编码帧数当30fps时长。
-func probeCompositionSourceFrames(ctx context.Context, path string) (int, error) {
-	probeCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	raw, err := exec.CommandContext(probeCtx, "ffprobe", "-v", "error", "-protocol_whitelist", "file,pipe", "-select_streams", "v:0", "-show_entries", "stream=duration", "-of", "json", path).Output()
-	var metadata struct {
-		Streams []struct {
-			Duration string
-		}
-	}
-	if err != nil || json.Unmarshal(raw, &metadata) != nil || len(metadata.Streams) != 1 {
-		return 0, fmt.Errorf("composition_source_invalid")
-	}
-	seconds, err := strconv.ParseFloat(metadata.Streams[0].Duration, 64)
-	if err != nil || math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds <= 0 || seconds > 120.2 {
-		return 0, fmt.Errorf("composition_source_invalid")
-	}
-	return int(math.Floor(seconds*30 + .01)), nil
 }

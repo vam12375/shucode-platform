@@ -132,30 +132,22 @@ func (s *Service) renderFinishingComposition(ctx context.Context, p *Project, se
 		shot := p.Shots[clip.SourceShotIndex]
 		segment := segments[i]
 		input := s.Blobs.Path(p.TeamID, shot.OutputAssetID)
-		raw, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-protocol_whitelist", "file,pipe", "-show_entries", "format=duration", "-of", "csv=p=0", input).Output()
-		length, parseErr := strconv.ParseFloat(strings.TrimSpace(string(raw)), 64)
-		if err != nil || parseErr != nil || math.IsNaN(length) || math.IsInf(length, 0) || (length < float64(clip.OutFrame)/30-.2 && !isWholeVideoReferenceExecution(p)) {
-			return fmt.Errorf("video_result_too_short")
-		}
-		if p.Composition != nil || p.Brief.GenerationPolicy == "whole-first" {
-			actualFrames, err := probeCompositionSourceFrames(ctx, input)
-			if err != nil || clip.OutFrame > actualFrames {
-				// 整段交付必须有真实尾帧；旧的时长容差会用冻结画面/静音填补供应商丢失的收尾。
-				if p.Composition == nil {
-					return fmt.Errorf("video_result_too_short")
-				}
+		length, err := probeCompositionStreamSeconds(ctx, input, "v:0")
+		if err != nil || !compositionSourceCovers(length, float64(clip.OutFrame)/30) {
+			if p.Composition != nil {
 				return fmt.Errorf("composition_source_invalid")
 			}
+			return fmt.Errorf("video_result_too_short")
 		}
 		tail := finishingOverlapFrames(p, segments, i)
 		clipFrames := segment.frames + tail
 		clipDuration := float64(clipFrames) / 30
 		name := fmt.Sprintf("clip-%03d.mp4", i)
 		// 自动生成统一满幅；旧的 decrease+pad 会把横版素材嵌入竖片，留下明显黑边。
-		shortfall := max(0, segment.seconds()-length)
+		shortfall := max(0, (float64(clip.OutFrame)/30-length)/clip.Speed)
 		// tpad 之后帧率元数据会变成 1/0，xfade 要求恒定帧率；最后再强制一次 30fps。
-		filter := fmt.Sprintf("fps=30,trim=start_frame=%d:end_frame=%d,setpts=(PTS-STARTPTS)/%.9f,scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,setsar=1,fps=30,tpad=stop_mode=clone:stop_duration=%.9f,fps=30", clip.InFrame, clip.OutFrame, clip.Speed, w, h, w, h, max(float64(tail)/30, shortfall))
-		if err = runFinishingCommand(ctx, dir, "clip_normalization_failed", "-protocol_whitelist", "file,pipe", "-i", input, "-an", "-sn", "-dn", "-vf", filter, "-t", fmt.Sprintf("%.9f", clipDuration), "-frames:v", strconv.Itoa(clipFrames), "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", name); err != nil {
+		filter := fmt.Sprintf("setpts=PTS-STARTPTS,trim=start=%.9f:end=%.9f,setpts=(PTS-STARTPTS)/%.9f,scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,setsar=1,fps=30,tpad=stop_mode=clone:stop_duration=%.9f,fps=30", float64(clip.InFrame)/30, float64(clip.OutFrame)/30, clip.Speed, w, h, w, h, float64(tail)/30+shortfall)
+		if err = runFinishingCommand(ctx, dir, "clip_normalization_failed", "-xerror", "-protocol_whitelist", "file,pipe", "-i", input, "-an", "-sn", "-dn", "-vf", filter, "-t", fmt.Sprintf("%.9f", clipDuration), "-frames:v", strconv.Itoa(clipFrames), "-c:v", "libx264", "-threads", "2", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", name); err != nil {
 			return err
 		}
 		pictureArgs = append(pictureArgs, "-i", name)
@@ -205,7 +197,7 @@ func (s *Service) renderFinishingComposition(ctx context.Context, p *Project, se
 	if err = runFinishingCommand(ctx, dir, "composition_failed", args...); err != nil {
 		return err
 	}
-	return validateFinishingOutput(ctx, filepath.Join(dir, "final.mp4"), frames)
+	return validateFinishingOutput(ctx, filepath.Join(dir, "final.mp4"), duration)
 }
 
 // extractFinishingNativeAudio 把单个镜头的原声切到交付段：入出帧与变速和画面同源，缺音轨时补静音。
@@ -375,13 +367,12 @@ func writeFinishingCaptions(p *Project, segments []compositionSegment, dir strin
 	return writeCompositionCaptions(p, segments, dir, w, h)
 }
 
-func validateFinishingOutput(ctx context.Context, path string, frames int) error {
-	raw, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-protocol_whitelist", "file,pipe", "-show_entries", "stream=codec_type,codec_name,nb_frames,duration:format=duration", "-of", "json", path).Output()
+func validateFinishingOutput(ctx context.Context, path string, duration float64) error {
+	raw, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-protocol_whitelist", "file,pipe", "-show_entries", "stream=codec_type,codec_name,duration:format=duration", "-of", "json", path).Output()
 	var metadata struct {
 		Streams []struct {
 			CodecType string `json:"codec_type"`
 			CodecName string `json:"codec_name"`
-			Frames    string `json:"nb_frames"`
 			Duration  string `json:"duration"`
 		} `json:"streams"`
 		Format struct {
@@ -391,19 +382,19 @@ func validateFinishingOutput(ctx context.Context, path string, frames int) error
 	if err != nil || json.Unmarshal(raw, &metadata) != nil || len(metadata.Streams) != 2 {
 		return fmt.Errorf("composition_output_invalid")
 	}
-	duration := float64(frames) / 30
 	length, err := strconv.ParseFloat(metadata.Format.Duration, 64)
-	if err != nil || math.IsNaN(length) || math.Abs(length-duration) > .05 {
+	if err != nil || !durationMatches(length, duration) {
 		return fmt.Errorf("composition_output_invalid")
 	}
 	video, audio := false, false
 	for _, stream := range metadata.Streams {
-		if stream.CodecType == "video" && stream.CodecName == "h264" && stream.Frames == strconv.Itoa(frames) {
-			video = true
+		if stream.CodecType == "video" && stream.CodecName == "h264" {
+			seconds, probeErr := probeCompositionStreamSeconds(ctx, path, "v:0")
+			video = probeErr == nil && durationMatches(seconds, duration)
 		}
 		if stream.CodecType == "audio" && stream.CodecName == "aac" {
-			seconds, err := strconv.ParseFloat(stream.Duration, 64)
-			audio = err == nil && !math.IsNaN(seconds) && math.Abs(seconds-duration) <= .05
+			seconds, probeErr := probeCompositionStreamSeconds(ctx, path, "a:0")
+			audio = probeErr == nil && durationMatches(seconds, duration)
 		}
 	}
 	if !video || !audio {

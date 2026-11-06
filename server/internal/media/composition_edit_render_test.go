@@ -322,7 +322,7 @@ func TestBrandRealFFmpegRecipesRenderLogoAndKeepTailInsideTotalFrames(t *testing
 				t.Fatal(err)
 			}
 			output := filepath.Join(dir, "final.mp4")
-			if err := validateFinishingOutput(ctx, output, 150); err != nil {
+			if err := validateFinishingOutput(ctx, output, 5); err != nil {
 				t.Fatal(err)
 			}
 			before := finishingSampleFrame(t, output, 3.8, "crop=4:4:2:140,scale=1:1")
@@ -363,11 +363,11 @@ func TestCompositionSourceClockNormalizesActualFrameRate(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "source-25fps.mp4")
 	finishingFFmpegFixture(t, "-f", "lavfi", "-i", "color=c=blue:s=160x90:r=25", "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p", path)
-	frames, err := probeCompositionSourceFrames(context.Background(), path)
-	if err != nil || frames != 60 {
-		t.Fatalf("normalized frames=%d, %v", frames, err)
+	seconds, err := probeCompositionStreamSeconds(context.Background(), path, "v:0")
+	if err != nil || seconds != 2 {
+		t.Fatalf("source seconds=%v, %v", seconds, err)
 	}
-	if _, err := probeCompositionSourceFrames(context.Background(), filepath.Join(dir, "missing.mp4")); err == nil {
+	if _, err := probeCompositionStreamSeconds(context.Background(), filepath.Join(dir, "missing.mp4"), "v:0"); err == nil {
 		t.Fatal("missing source accepted")
 	}
 }

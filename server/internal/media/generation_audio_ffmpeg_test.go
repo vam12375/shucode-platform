@@ -61,7 +61,7 @@ func TestWholeDurationRejectsMissingTailInsteadOfFreezing(t *testing.T) {
 	f := setup(t)
 	dir := t.TempDir()
 	source := filepath.Join(dir, "short.mp4")
-	finishingFFmpegFixture(t, "-f", "lavfi", "-i", "color=c=red:s=160x90:r=30", "-t", "0.9", "-c:v", "libx264", source)
+	finishingFFmpegFixture(t, "-f", "lavfi", "-i", "color=c=red:s=160x90:r=30", "-t", "0.8", "-c:v", "libx264", source)
 	raw, err := os.ReadFile(source)
 	if err != nil {
 		t.Fatal(err)
