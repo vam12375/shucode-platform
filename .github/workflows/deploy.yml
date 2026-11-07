@@ -127,7 +127,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           fingerprint: ${{ secrets.SSH_HOST_FINGERPRINT }}
-          source: "docker-compose.yml,docker-compose.prod.yml,deploy/nginx"
+          source: "docker-compose.yml,docker-compose.prod.yml,deploy/nginx,apps/console/public,apps/site"
           target: /opt/shucode-platform/
           overwrite: true
       - name: 拉取新镜像并重启
