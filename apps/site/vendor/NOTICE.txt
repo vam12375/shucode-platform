@@ -1,0 +1,8 @@
+GSAP and ScrollTrigger 3.15.1
+Source: https://registry.npmjs.org/gsap/-/gsap-3.15.1.tgz
+Copyright 2026, GreenSock. All rights reserved.
+License: https://gsap.com/standard-license
+The original license headers are preserved in both distribution files.
+
+Space Grotesk 600 / 700 Latin fonts, @fontsource/space-grotesk 5.3.0.
+The SIL Open Font License is included at ../assets/fonts/OFL.txt.

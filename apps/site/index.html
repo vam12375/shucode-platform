@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="有想法，就有门道。门道 Mendao 是连接对话、资料、代码与内容创作的 AI 工作空间，由杭州曜势科技有限公司打造。"
+    />
+    <meta name="theme-color" content="#f3f5f9" />
+    <meta property="og:title" content="门道 Mendao — 有想法，就有门道。" />
+    <meta
+      property="og:description"
+      content="一个 AI 工作空间，接住从灵感到成果的每一步。"
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://mendao.chat/" />
+    <link rel="canonical" href="https://mendao.chat/" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png" />
+    <link
+      rel="preload"
+      href="/assets/fonts/space-grotesk-latin-700-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="/styles.css?v=20261107-1" />
+    <script defer src="/vendor/gsap-3.15.1.min.js"></script>
+    <script defer src="/vendor/ScrollTrigger-3.15.1.min.js"></script>
+    <script defer src="/site.js?v=20261107-1"></script>
+    <title>门道 Mendao — 有想法，就有门道。</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳到正文</a>
+    <header class="site-header" id="top">
+      <a class="brand" href="/" aria-label="门道 Mendao 首页"
+        ><img
+          src="/assets/mendao-logo.png"
+          alt=""
+          width="40"
+          height="40"
+        /><span>门道<span class="brand-latin">mendao</span></span></a
+      >
+      <nav class="desktop-nav" aria-label="主导航">
+        <a href="#film">观看宣传片</a><a href="#workspace">探索门道</a
+        ><a href="#about">关于我们</a>
+      </nav>
+      <a class="header-console" href="https://console.mendao.chat/console/"
+        >进入控制台 <span class="arrow-circle" aria-hidden="true">↗</span></a
+      >
+    </header>
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-grid page-width">
+          <div class="hero-copy">
+            <p class="eyebrow hero-enter">
+              <span class="live-dot" aria-hidden="true"></span>
+              给认真做事的你，一个 AI 工作空间
+            </p>
+            <h1 id="hero-title">
+              <span class="title-line"
+                ><span class="title-word">有想法，</span></span
+              ><span class="title-line"
+                ><span class="title-word"
+                  >就有<span class="title-blue">门道</span
+                  ><span class="title-period">。</span></span
+                ></span
+              >
+            </h1>
+            <p class="hero-description hero-enter">
+              那些想明白、做出来的事，<br />从这里开始有了眉目。
+            </p>
+            <div class="hero-actions hero-enter">
+              <a class="button button-blue" href="#workspace"
+                >探索你的下一步 <span aria-hidden="true">↘</span></a
+              ><span class="hero-side-note">对话 · 编程 · 内容创作</span>
+            </div>
+          </div>
+          <div class="scene hero-enter">
+            <div class="scene-topline">
+              <span>OPEN TO POSSIBILITIES</span
+              ><span class="scene-cross" aria-hidden="true">✳</span>
+            </div>
+            <div class="door-space is-open" id="door-space">
+              <div class="scene-shadow" aria-hidden="true"></div>
+              <div class="scene-floor" aria-hidden="true"><span></span></div>
+              <div class="door-stage" aria-hidden="true">
+                <div class="door-depth"></div>
+                <div class="door-frame">
+                  <div class="room-back">
+                    <div class="room-halo"></div>
+                    <div class="room-grid"></div>
+                  </div>
+                  <div class="room-orb"></div>
+                  <div class="cat-platform"></div>
+                  <img
+                    class="door-cat"
+                    src="/assets/mendao-logo.png"
+                    alt=""
+                    width="256"
+                    height="256"
+                    fetchpriority="high"
+                  />
+                  <div class="door-leaf">
+                    <div class="door-face door-front">
+                      <span class="door-mark">m.</span>
+                      <div class="door-handle"></div>
+                      <span class="door-serial"
+                        >A LITTLE DOOR.<br />A BIG START.</span
+                      >
+                    </div>
+                    <div class="door-face door-back">
+                      <span class="door-mark">m.</span>
+                      <div class="door-handle"></div>
+                      <span class="door-serial"
+                        >HELLO, NEW IDEA.<br />LET’S MAKE IT REAL.</span
+                      >
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <span class="scene-chip chip-talk" aria-hidden="true">“</span
+              ><span class="scene-chip chip-code" aria-hidden="true"
+                >&lt;/&gt;</span
+              ><span class="scene-chip chip-image" aria-hidden="true">✦</span>
+              <button
+                class="door-toggle"
+                id="door-toggle"
+                aria-label="合上门道之门"
+                aria-pressed="true"
+                disabled
+              >
+                <span class="door-hint"
+                  ><span class="hint-pointer" aria-hidden="true">↖</span
+                  ><span id="door-hint-text">点点这扇门，灵感会回应</span></span
+                >
+              </button>
+            </div>
+            <p class="scene-caption">
+              <span class="caption-line" aria-hidden="true"></span>
+              从一个念头，到一个新的可能。
+            </p>
+          </div>
+        </div>
+        <div class="hero-bottom page-width">
+          <a href="#film"
+            ><span class="scroll-arrow" aria-hidden="true">↓</span>
+            向下，发现门道</a
+          ><span class="hero-signature">Ideas in. <span>Things out.</span></span
+          ><button
+            id="motion-toggle"
+            class="motion-toggle"
+            aria-pressed="false"
+            hidden
+          >
+            <span aria-hidden="true">Ⅱ</span
+            ><span class="motion-label">暂停动态</span>
+          </button>
+        </div>
+      </section>
+
+      <section
+        class="film-section page-width"
+        id="film"
+        aria-labelledby="film-title"
+      >
+        <div class="film-heading reveal">
+          <div>
+            <p class="eyebrow">
+              MENDAO IN MOTION
+              <span class="eyebrow-line" aria-hidden="true"></span>
+            </p>
+            <h2 id="film-title">
+              90 秒，<span class="ink-blue">看见门道。</span>
+            </h2>
+          </div>
+          <p>从一个想法，到一支作品。<br />看看创作如何发生。</p>
+        </div>
+        <div class="film-player reveal">
+          <video
+            id="promo-video"
+            class="promo-video"
+            controls
+            playsinline
+            preload="none"
+            width="1920"
+            height="1080"
+            poster="/assets/mendao-promo-0633894d4329.jpg"
+            src="https://cdn.hzyaoshi.com/site-media/mendao-promo-0633894d4329.mp4"
+            aria-label="门道宣传片：一键生成、视频复刻与画布协作，时长 90 秒"
+          >
+            <a
+              href="https://cdn.hzyaoshi.com/site-media/mendao-promo-0633894d4329.mp4"
+              >打开门道宣传片</a
+            >
+          </video>
+          <button
+            class="film-play"
+            id="film-play"
+            aria-controls="promo-video"
+            hidden
+          >
+            <span class="film-play-icon" aria-hidden="true">▶</span>
+            <span id="film-play-label">播放宣传片</span>
+            <span class="film-play-duration" aria-hidden="true">01:30</span>
+          </button>
+        </div>
+        <div class="film-caption">
+          <p>
+            <span class="film-caption-mark" aria-hidden="true">↳</span> 一键生成
+            · 视频复刻 · 画布协作
+          </p>
+          <span>门道 · 创作演示</span>
+        </div>
+        <p class="film-status" id="film-status" role="status" hidden>
+          视频暂时无法播放，请重试，或<a
+            href="https://cdn.hzyaoshi.com/site-media/mendao-promo-0633894d4329.mp4"
+            target="_blank"
+            rel="noopener"
+            >打开视频</a
+          >。
+        </p>
+      </section>
+
+      <section
+        class="workspace-section page-width"
+        id="workspace"
+        aria-labelledby="workspace-title"
+      >
+        <div class="section-intro reveal">
+          <p class="eyebrow">
+            MEET YOUR WORKSPACE
+            <span class="eyebrow-line" aria-hidden="true"></span>
+          </p>
+          <div class="intro-columns">
+            <h2 id="workspace-title">
+              一处工作空间，<br />接住每一种<span class="ink-blue"
+                >「想做」</span
+              >。
+            </h2>
+            <p>
+              有时需要一个答案，有时需要一个作品。<br />带上你的问题和资料，<br />在门道，把下一步接着做下去。
+            </p>
+          </div>
+        </div>
+        <div class="workspace-demo reveal">
+          <div class="demo-menu">
+            <div
+              class="demo-tabs"
+              role="tablist"
+              aria-label="探索工作场景"
+              hidden
+            >
+              <button
+                class="demo-tab is-active"
+                id="tab-think"
+                role="tab"
+                aria-selected="true"
+                aria-controls="panel-think"
+                tabindex="0"
+                data-scene="think"
+              >
+                <span class="tab-icon" aria-hidden="true">↗</span
+                ><span
+                  ><strong>先把想法聊清楚</strong
+                  ><small>对话与资料</small></span
+                ><span class="tab-arrow" aria-hidden="true">↗</span>
+              </button>
+              <button
+                class="demo-tab"
+                id="tab-build"
+                role="tab"
+                aria-selected="false"
+                aria-controls="panel-build"
+                tabindex="-1"
+                data-scene="build"
+              >
+                <span class="tab-icon icon-code" aria-hidden="true"
+                  >&lt;/&gt;</span
+                ><span
+                  ><strong>再把问题做出来</strong
+                  ><small>代码与项目</small></span
+                ><span class="tab-arrow" aria-hidden="true">↗</span>
+              </button>
+              <button
+                class="demo-tab"
+                id="tab-create"
+                role="tab"
+                aria-selected="false"
+                aria-controls="panel-create"
+                tabindex="-1"
+                data-scene="create"
+              >
+                <span class="tab-icon" aria-hidden="true">◈</span
+                ><span
+                  ><strong>让灵感变成画面</strong
+                  ><small>图片与视频</small></span
+                ><span class="tab-arrow" aria-hidden="true">↗</span>
+              </button>
+            </div>
+            <noscript
+              ><p class="no-script-intro">
+                对话与资料 · 代码与项目 · 图片与视频
+              </p></noscript
+            >
+            <p class="demo-note">
+              <span aria-hidden="true">↳</span>
+              从整理资料到推进项目，<br />再到完成内容创作。
+            </p>
+          </div>
+          <div class="demo-window">
+            <div class="window-topbar">
+              <div class="window-brand">
+                <img
+                  src="/assets/mendao-logo.png"
+                  alt=""
+                  width="22"
+                  height="22"
+                /><span>我的工作空间</span>
+              </div>
+              <span class="demo-badge">功能演示</span>
+            </div>
+            <div
+              class="demo-panel"
+              id="panel-think"
+              role="tabpanel"
+              aria-labelledby="tab-think"
+              tabindex="0"
+            >
+              <div class="panel-heading demo-piece">
+                <span class="panel-kicker">从资料里找到方向</span
+                ><span class="small-orbit" aria-hidden="true">✳</span>
+              </div>
+              <div class="prompt-message demo-piece">
+                <span class="prompt-avatar" aria-hidden="true">我</span>
+                <p>想做一个有趣的小项目，<br />帮我把这些零散的想法理一理。</p>
+              </div>
+              <div class="file-row demo-piece">
+                <span class="file-token"
+                  ><span aria-hidden="true">↗</span> 灵感笔记.md</span
+                ><span class="file-token"
+                  ><span aria-hidden="true">▤</span> 参考资料.pdf</span
+                >
+              </div>
+              <div class="answer-content demo-piece">
+                <div class="answer-brand">
+                  <img
+                    src="/assets/mendao-logo.png"
+                    alt=""
+                    width="26"
+                    height="26"
+                  /><strong>先找到你最想解决的问题。</strong>
+                </div>
+                <p>把资料和想法放在一起，逐步整理出清楚的方向。</p>
+                <div class="answer-steps">
+                  <span><i aria-hidden="true">✓</i> 梳理核心想法</span
+                  ><span><i aria-hidden="true">✓</i> 找到关键线索</span
+                  ><span><i aria-hidden="true">↗</i> 明确下一步</span>
+                </div>
+              </div>
+              <div class="demo-composer demo-piece">
+                <span>从一个问题，聊到一个方向</span
+                ><span class="composer-arrow" aria-hidden="true">↑</span>
+              </div>
+            </div>
+            <div
+              class="demo-panel"
+              id="panel-build"
+              role="tabpanel"
+              aria-labelledby="tab-build"
+              tabindex="0"
+              hidden
+            >
+              <div class="panel-heading demo-piece">
+                <span class="panel-kicker">在真实项目里，推进一步</span
+                ><span class="small-orbit" aria-hidden="true">&lt;/&gt;</span>
+              </div>
+              <div class="code-path demo-piece">
+                <span aria-hidden="true">⌘</span> 我的项目
+                <span>/</span> next-step.ts
+              </div>
+              <div class="code-editor demo-piece">
+                <div class="code-gutter" aria-hidden="true">
+                  1<br />2<br />3<br />4<br />5<br />6<br />7
+                </div>
+                <pre><code><span class="code-purple">export function</span> <span class="code-blue">nextStep</span>(idea: <span class="code-purple">string</span>) {
+  <span class="code-purple">return</span> {
+    title: idea.<span class="code-blue">trim</span>(),
+    status: <span class="code-green">"ready"</span>,
+    possibilities: <span class="code-green">"open"</span>
+  };
+}</code></pre>
+              </div>
+              <div class="code-context demo-piece">
+                <span class="context-symbol" aria-hidden="true">↳</span>
+                <div>
+                  <strong>让讨论带着项目上下文。</strong>
+                  <p>
+                    阅读代码、讨论方案、完成修改。<br />每一步，都围绕手上的真实问题。
+                  </p>
+                </div>
+              </div>
+              <div class="demo-composer demo-piece">
+                <span>接着，把这个想法做出来</span
+                ><span class="composer-arrow" aria-hidden="true">↑</span>
+              </div>
+            </div>
+            <div
+              class="demo-panel"
+              id="panel-create"
+              role="tabpanel"
+              aria-labelledby="tab-create"
+              tabindex="0"
+              hidden
+            >
+              <div class="panel-heading demo-piece">
+                <span class="panel-kicker">一个故事，可以有很多种画面</span
+                ><span class="small-orbit" aria-hidden="true">✦</span>
+              </div>
+              <div
+                class="storyboard demo-piece"
+                aria-label="三个示意分镜：灵感、探索和出发"
+              >
+                <div class="story-frame frame-one">
+                  <div class="art-sun"></div>
+                  <div class="art-gate"></div>
+                  <span>灵感</span>
+                </div>
+                <div class="story-frame frame-two">
+                  <div class="art-sun"></div>
+                  <div class="art-gate"></div>
+                  <span>探索</span>
+                </div>
+                <div class="story-frame frame-three">
+                  <div class="art-sun"></div>
+                  <div class="art-gate"></div>
+                  <span>出发</span>
+                </div>
+              </div>
+              <div class="story-timeline demo-piece" aria-hidden="true">
+                <span></span><span></span><span></span><i></i>
+              </div>
+              <div class="story-copy demo-piece">
+                <strong>从一句创意，到一段叙事。</strong>
+                <p>
+                  构思故事、分析参考、组织素材。<br />把脑海里的画面，慢慢变成手里的作品。
+                </p>
+              </div>
+              <div class="demo-composer demo-piece">
+                <span>让我们给这个故事一个开场</span
+                ><span class="composer-arrow" aria-hidden="true">↑</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="connections-section"
+        id="connections"
+        aria-labelledby="connections-title"
+      >
+        <div class="page-width">
+          <div class="connection-heading reveal">
+            <p class="eyebrow">KEEP THE THREAD</p>
+            <h2 id="connections-title">
+              好想法，<br />值得<span class="ink-blue">一直做下去</span>。
+            </h2>
+            <p>资料、项目和创作相互连接，<br />注意力留给你真正想完成的事。</p>
+          </div>
+          <div class="connection-flow">
+            <svg
+              class="flow-line"
+              viewBox="0 0 1100 140"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <path
+                class="flow-track"
+                d="M30 70 C240 -50 335 190 550 70 S870 -50 1070 70"
+              />
+              <path
+                class="flow-draw"
+                d="M30 70 C240 -50 335 190 550 70 S870 -50 1070 70"
+              />
+            </svg>
+            <article class="flow-item reveal">
+              <div class="flow-object thought-object" aria-hidden="true">
+                <span>?</span><i>!</i>
+              </div>
+              <h3>从一个念头开始</h3>
+              <p>不必先想得完美。<br />一个问题，也可以是好的起点。</p>
+            </article>
+            <article class="flow-item reveal">
+              <div class="flow-object context-object" aria-hidden="true">
+                <span></span><span></span><span>↗</span>
+              </div>
+              <h3>带上你的上下文</h3>
+              <p>让资料成为线索，<br />让每次讨论更贴近手上的工作。</p>
+            </article>
+            <article class="flow-item reveal">
+              <div class="flow-object result-object" aria-hidden="true">
+                <span>✳</span>
+              </div>
+              <h3>把下一步做出来</h3>
+              <p>
+                一份方案、一次修改、一个作品。<br />让灵感有一个看得见的落点。
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="about-section page-width"
+        id="about"
+        aria-labelledby="about-title"
+      >
+        <div class="about-mark reveal" aria-hidden="true">m<span>↗</span></div>
+        <div class="about-copy reveal">
+          <p class="eyebrow">HELLO, WE ARE MENDAO</p>
+          <h2 id="about-title">给工具一点默契，<br />给创作多一点空间。</h2>
+          <p>
+            门道（Mendao）是杭州曜势科技有限公司打造的 AI
+            工作空间。我们希望把对话、项目与内容创作连接起来，让工具更贴近你的工作方式，让想做的事，更容易继续。
+          </p>
+        </div>
+      </section>
+
+      <section class="invitation" aria-labelledby="invitation-title">
+        <div class="invitation-inner page-width">
+          <div class="invitation-top reveal">
+            <span class="invitation-spark" aria-hidden="true">✳</span>
+            <p>下一个好想法，正在等你。</p>
+          </div>
+          <div class="invitation-heading reveal">
+            <h2 id="invitation-title">来，打开一点可能。</h2>
+            <a
+              class="button button-white"
+              href="https://console.mendao.chat/console/"
+              >进入门道控制台 <span aria-hidden="true">↗</span></a
+            >
+          </div>
+          <p class="giant-wordmark" aria-hidden="true">mendao<span>↗</span></p>
+        </div>
+      </section>
+    </main>
+    <footer class="site-footer page-width">
+      <div class="footer-top">
+        <a class="brand footer-brand" href="#top"
+          ><img
+            src="/assets/mendao-logo.png"
+            alt=""
+            width="32"
+            height="32"
+          /><span>门道<span class="brand-latin">mendao</span></span></a
+        >
+        <p>有想法，就有门道。</p>
+        <a class="back-top" href="#top" aria-label="回到顶部">↑</a>
+      </div>
+      <div class="footer-bottom">
+        <p>© 2026 杭州曜势科技有限公司 <span>曜势门道 · mendao.chat</span></p>
+        <a
+          href="https://beian.miit.gov.cn/"
+          target="_blank"
+          rel="noopener noreferrer"
+          >浙ICP备2026057921号-3</a
+        >
+      </div>
+    </footer>
+  </body>
+</html>
