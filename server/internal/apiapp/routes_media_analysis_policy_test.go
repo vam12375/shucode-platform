@@ -9,7 +9,7 @@ import (
 	"github.com/vam12375/shucode-platform/server/internal/store"
 )
 
-func TestTextAnalysisPreflightRejectsMissingHighAndNonFlashUpstream(t *testing.T) {
+func TestTextAnalysisPreflightUsesCapabilitiesInsteadOfModelFamily(t *testing.T) {
 	for _, kind := range []string{"no-high", "pro"} {
 		t.Run(kind, func(t *testing.T) {
 			f, token, _ := analysisConfigFixture(t)
@@ -25,6 +25,12 @@ func TestTextAnalysisPreflightRejectsMissingHighAndNonFlashUpstream(t *testing.T
 				t.Fatal(err)
 			}
 			response := sourceRequest(f, token, "GET", "/api/v1/media/analysis-model?vision=0", nil)
+			if kind == "pro" {
+				if response.Code != 200 {
+					t.Fatalf("capable model rejected by family: %d %s", response.Code, response.Body.String())
+				}
+				return
+			}
 			if response.Code != 503 || strings.Contains(response.Body.String(), `"envelope"`) {
 				t.Fatalf("adaptation preflight bypassed fixed model/high: %d %s", response.Code, response.Body.String())
 			}

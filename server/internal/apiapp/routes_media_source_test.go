@@ -410,7 +410,7 @@ func testSourceFirstAPI(t *testing.T, withAnchors bool) {
 	}
 }
 
-func TestAnalysisConfigRejectsNonDeepSeekAndMissingVision(t *testing.T) {
+func TestAnalysisConfigUsesCapabilitiesAndPreservesConnectionGuards(t *testing.T) {
 	for _, kind := range []string{"non-deepseek", "pro-display-flash", "no-vision", "no-high", "mixed-routes", "disabled-provider"} {
 		t.Run(kind, func(t *testing.T) {
 			f, token, p := analysisConfigFixture(t)
@@ -453,6 +453,12 @@ func TestAnalysisConfigRejectsNonDeepSeekAndMissingVision(t *testing.T) {
 				t.Fatal(err)
 			}
 			response := requestAnalysisConfig(f, token, p.ID, "model-a")
+			if kind == "non-deepseek" || kind == "pro-display-flash" || kind == "mixed-routes" {
+				if response.Code != 200 {
+					t.Fatalf("capable model rejected: %s", response.Body.String())
+				}
+				return
+			}
 			if response.Code != 403 || strings.Contains(response.Body.String(), `"envelope"`) {
 				t.Fatalf("invalid analysis model issued: %d %s", response.Code, response.Body.String())
 			}

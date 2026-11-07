@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/vam12375/shucode-platform/server/internal/media"
+	"github.com/vam12375/shucode-platform/server/internal/contracts"
 	"github.com/vam12375/shucode-platform/server/internal/store"
 )
 
@@ -29,6 +29,47 @@ func registerMediaSourceRoutes(router *gin.Engine, deps *Deps) {
 		}
 		c.JSON(200, okData(p.View()))
 	})
+	router.GET("/api/v1/media/analysis-models", func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		_, membership, ok := mediaIdentity(c, deps)
+		if !ok {
+			return
+		}
+		ctx := c.Request.Context()
+		policy, err := deps.Store.GetTeamPolicy(ctx, membership.Team.ID)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		models, err := deps.Store.ListModels(ctx, false)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		result := make([]contracts.VideoAnalysisModel, 0, len(models))
+		defaultID := ""
+		for _, model := range models {
+			if !model.Enabled || !store.TeamModelAllowed(policy, model.ModelID) {
+				continue
+			}
+			reason, err := analysisModelUnavailableReason(ctx, deps, model, true)
+			if err != nil {
+				internalError(c, deps, err)
+				return
+			}
+			name := strings.TrimSpace(model.DisplayName)
+			if name == "" {
+				name = model.ModelID
+			}
+			item := contracts.VideoAnalysisModel{ID: model.ModelID, Name: name, Available: reason == "", UnavailableReason: reason}
+			if reason == "" && defaultID == "" {
+				defaultID = model.ModelID
+			}
+			result = append(result, item)
+		}
+		data := contracts.VideoAnalysisModelCatalog{Models: result, DefaultModelID: defaultID}
+		c.JSON(200, okData(data))
+	})
 	router.GET("/api/v1/media/analysis-model", func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
 		auth, membership, ok := mediaIdentity(c, deps)
@@ -38,6 +79,11 @@ func registerMediaSourceRoutes(router *gin.Engine, deps *Deps) {
 		rawVision := c.Query("vision")
 		if rawVision != "0" && rawVision != "1" {
 			c.JSON(400, fail(400, "analysis_vision_required"))
+			return
+		}
+		selectedID := strings.TrimSpace(c.Query("modelId"))
+		if len(selectedID) > 256 {
+			c.JSON(400, fail(400, "analysis_model_required"))
 			return
 		}
 		ctx := c.Request.Context()
@@ -52,7 +98,7 @@ func registerMediaSourceRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		for _, model := range models {
-			if !model.Enabled || !store.TeamModelAllowed(policy, model.ModelID) {
+			if !model.Enabled || !store.TeamModelAllowed(policy, model.ModelID) || (selectedID != "" && selectedID != model.ModelID) {
 				continue
 			}
 			allowed, err := analysisModelAvailable(ctx, deps, model, rawVision == "1")
@@ -82,31 +128,38 @@ func registerMediaSourceRoutes(router *gin.Engine, deps *Deps) {
 }
 
 func analysisModelAvailable(ctx context.Context, deps *Deps, model store.PlatformModelRecord, vision bool) (bool, error) {
+	reason, err := analysisModelUnavailableReason(ctx, deps, model, vision)
+	return reason == "", err
+}
+
+func analysisModelUnavailableReason(ctx context.Context, deps *Deps, model store.PlatformModelRecord, vision bool) (string, error) {
 	config, err := effectiveAnalysisModelCapabilities(ctx, deps, model)
 	if err != nil {
-		return false, err
+		return "", err
 	}
-	if config == nil || config.Properties.ContextWindow <= 0 || config.OptionSpecs.MaxOutputTokens.Max <= 0 || !config.Properties.InputFormat.SupportsText || !config.Properties.OutputFormat.SupportsText || (vision && !config.Properties.InputFormat.SupportsImage) {
-		return false, nil
+	if config == nil || config.Properties.ContextWindow <= 0 || config.OptionSpecs.MaxOutputTokens.Max <= 0 || !config.Properties.InputFormat.SupportsText || !config.Properties.OutputFormat.SupportsText {
+		return "model_config_invalid", nil
 	}
-	// 两阶段分析均固定 high；能力缺失时拒绝，不能让改编阶段继承历史 max。
+	if vision && !config.Properties.InputFormat.SupportsImage {
+		return "vision_required", nil
+	}
 	reasoning := config.OptionSpecs.ReasoningLevel
-	if reasoning == nil || strings.TrimSpace(reasoning.Map) == "" {
-		return false, nil
-	}
 	high := false
-	for _, value := range reasoning.Values {
-		if value == "high" {
-			high = true
-			break
+	if reasoning != nil && strings.TrimSpace(reasoning.Map) != "" {
+		for _, value := range reasoning.Values {
+			if value == "high" {
+				high = true
+				break
+			}
 		}
 	}
 	if !high {
-		return false, nil
+		return "high_reasoning_required", nil
 	}
+	// 能力和真实连接决定资格，不能再按供应商品牌或上游型号名称筛选。
 	routes, err := deps.Store.ListUpstreamRoutes(ctx, model.ModelID, true)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	available := false
 	for _, route := range routes {
@@ -115,46 +168,30 @@ func analysisModelAvailable(ctx context.Context, deps *Deps, model store.Platfor
 		}
 		provider, err := deps.Store.GetUpstreamProvider(ctx, route.ProviderID)
 		if err != nil {
-			return false, err
+			return "", err
 		}
-		if !analysisProviderAvailable(deps, provider) {
-			continue
+		if analysisProviderAvailable(deps, provider) {
+			available = true
 		}
-		upstream := route.UpstreamModel
-		if strings.TrimSpace(upstream) == "" {
-			upstream = model.UpstreamModel
-		}
-		if strings.TrimSpace(upstream) == "" {
-			upstream = model.ModelID
-		}
-		// 混合路由池仍可能被调度到 Pro，不能仅凭其中一个 Flash 路由放行。
-		if !media.IsDeepSeekAnalysisModel(upstream) {
-			return false, nil
-		}
-		available = true
 	}
-	if available {
-		return true, nil
-	}
-	// 已声明的路由池不可用时不回退其它供应商；沿用网关的唯一调度配置。
-	if len(routes) > 0 {
-		return false, nil
-	}
-	upstream := model.UpstreamModel
-	if strings.TrimSpace(upstream) == "" {
-		upstream = model.ModelID
-	}
-	if !media.IsDeepSeekAnalysisModel(upstream) {
-		return false, nil
-	}
-	if model.UpstreamProviderID != "" {
+	if len(routes) == 0 && model.UpstreamProviderID != "" {
 		provider, err := deps.Store.GetUpstreamProvider(ctx, model.UpstreamProviderID)
 		if err != nil {
-			return false, err
+			return "", err
 		}
-		return analysisProviderAvailable(deps, provider), nil
+		available = analysisProviderAvailable(deps, provider)
 	}
-	return false, nil
+	if !available {
+		return "upstream_unavailable", nil
+	}
+	_, protocolAvailable, err := gatewayProtocolForModel(ctx, deps, model)
+	if err != nil {
+		return "", err
+	}
+	if !protocolAvailable {
+		return "upstream_unavailable", nil
+	}
+	return "", nil
 }
 
 func setSourceAnalysisReasoning(envelope map[string]any) {

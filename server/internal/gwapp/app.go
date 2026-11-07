@@ -605,14 +605,7 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			spec.errorResponse(c, 403, "permission_error", "video_analysis_scope_invalid")
 			return
 		}
-		if err := media.ValidateAnalysisScope(ctx, media.Repository{Store: deps.Store}, deps.SecretBox, scopeValues[0], primary.ID, user.ID, device.ID, modelID, deps.Now(), sourceAnalysisReasoning(spec, body)); err != nil {
-			status, typ := 403, "permission_error"
-			if errors.Is(err, media.ErrAnalysisScopeUnavailable) {
-				status, typ = 503, "api_error"
-			}
-			spec.errorResponse(c, status, typ, err.Error())
-			return
-		}
+
 	}
 	priceCapturedAt := deps.Now()
 	rates := priceRates(model, priceCapturedAt, deps.Env.PeakHoursHolidays)
@@ -635,12 +628,17 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	}
 
 	if analysisScoped {
-		// Scope 签发后目录仍可能更新；请求发出前核对最终路由，防止改配后切到其它模型。
+		upstreamModels := make([]string, 0, len(targets))
 		for _, target := range targets {
-			if !media.IsDeepSeekAnalysisModel(target.UpstreamModel) {
-				spec.errorResponse(c, 403, "permission_error", "analysis_model_not_allowed")
-				return
+			upstreamModels = append(upstreamModels, target.UpstreamModel)
+		}
+		if err := media.ValidateAnalysisScope(ctx, media.Repository{Store: deps.Store}, deps.SecretBox, scopeValues[0], primary.ID, user.ID, device.ID, modelID, deps.Now(), sourceAnalysisReasoning(spec, body), upstreamModels...); err != nil {
+			status, typ := 403, "permission_error"
+			if errors.Is(err, media.ErrAnalysisScopeUnavailable) {
+				status, typ = 503, "api_error"
 			}
+			spec.errorResponse(c, status, typ, err.Error())
+			return
 		}
 	}
 

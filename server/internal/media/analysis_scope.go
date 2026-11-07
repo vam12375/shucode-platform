@@ -25,6 +25,7 @@ type analysisScope struct {
 	FeeID             string `json:"feeId"`
 	ModelID           string `json:"modelId"`
 	RequiredReasoning string `json:"requiredReasoning,omitempty"`
+	ModelConfigDigest string `json:"modelConfigDigest,omitempty"`
 	IssuedAt          int64  `json:"issuedAt"`
 	ExpiresAt         int64  `json:"expiresAt"`
 }
@@ -64,7 +65,7 @@ func analysisScopeCurrent(ctx context.Context, repo Repository, scope analysisSc
 	return nil
 }
 
-func IssueAnalysisScope(ctx context.Context, repo Repository, box *crypto.SecretBox, p *Project, model string, now time.Time) (string, error) {
+func IssueAnalysisScope(ctx context.Context, repo Repository, box *crypto.SecretBox, p *Project, model string, now time.Time, configDigest ...string) (string, error) {
 	if box == nil {
 		return "", ErrAnalysisScopeUnavailable
 	}
@@ -73,6 +74,9 @@ func IssueAnalysisScope(ctx context.Context, repo Repository, box *crypto.Secret
 	}
 	scope := analysisScope{Purpose: "media:reference-analysis:v1", TeamID: p.TeamID, UserID: p.UserID, DeviceID: p.DeviceID, ProjectID: p.ID, InputID: p.Analysis.InputID, FeeID: p.AnalysisFee.ID, ModelID: model, IssuedAt: now.Unix(), ExpiresAt: now.Add(time.Hour).Unix()}
 	scope.RequiredReasoning = "high"
+	if len(configDigest) > 0 {
+		scope.ModelConfigDigest = configDigest[0]
+	}
 	if err := analysisScopeCurrent(ctx, repo, scope); err != nil {
 		return "", err
 	}
@@ -87,7 +91,7 @@ func IssueAnalysisScope(ctx context.Context, repo Repository, box *crypto.Secret
 	return ticket, nil
 }
 
-func ValidateAnalysisScope(ctx context.Context, repo Repository, box *crypto.SecretBox, ticket, team, user, device, model string, now time.Time, actualReasoning string) error {
+func ValidateAnalysisScope(ctx context.Context, repo Repository, box *crypto.SecretBox, ticket, team, user, device, model string, now time.Time, actualReasoning string, upstreamModels ...string) error {
 	if box == nil || ticket == "" || len(ticket) > 8192 {
 		return ErrAnalysisScopeInvalid
 	}
@@ -105,6 +109,22 @@ func ValidateAnalysisScope(ctx context.Context, repo Repository, box *crypto.Sec
 	// 两阶段固定 high 是签名准入规则，不能只依赖客户端信封或由思考预算推断。
 	if actualReasoning != scope.RequiredReasoning {
 		return ErrAnalysisScopeInvalid
+	}
+	if scope.ModelConfigDigest != "" {
+		digest, err := AnalysisModelConfigDigest(ctx, repo.Store, model)
+		if err != nil {
+			return err
+		}
+		if digest != scope.ModelConfigDigest {
+			return ErrAnalysisScopeInvalid
+		}
+	} else {
+		// 历史票仍保留原来的型号约束；新票以配置摘要绑定精确选择。
+		for _, upstream := range upstreamModels {
+			if !IsDeepSeekAnalysisModel(upstream) {
+				return ErrAnalysisScopeInvalid
+			}
+		}
 	}
 	// scope 只证明本次分析授权。旧版累计请求/token预算会把全量视觉
 	// 证据误判为限流；新请求不再读取或写入该计数，输出遵循普通对话规则。

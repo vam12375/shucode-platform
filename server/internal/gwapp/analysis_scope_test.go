@@ -438,3 +438,79 @@ func TestAnalysisScopeRejectsUpstreamModelChangedAfterIssue(t *testing.T) {
 		t.Fatalf("scope changed upstream model: %d %s calls=%d", response.Code, response.Body.String(), calls.Load())
 	}
 }
+
+func TestAnalysisScopeFreezesConfiguredModelWithoutFamilyRestriction(t *testing.T) {
+	f, repo, p, box, _, calls := gatewayAnalysisFixture(t)
+	ctx := context.Background()
+	_, err := f.store.UpsertModel(ctx, store.UpsertModelInput{ModelID: "claude-sonnet-4-5", DisplayName: "Vision Creator", ProvideUpstreamModel: true, UpstreamModel: "vision-creator", InputPricePerMtok: "3", OutputPricePerMtok: "15"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := media.AnalysisModelConfigDigest(ctx, f.store, "claude-sonnet-4-5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticket, err := media.IssueAnalysisScope(ctx, repo, box, p, "claude-sonnet-4-5", time.Now(), digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"model":"claude-sonnet-4-5","max_tokens":100,"reasoning_effort":"high"}`
+	response := requestAnalysisScope(f, "POST", "/v1/chat/completions", f.token, ticket, body)
+	if response.Code != 200 || calls.Load() != 1 {
+		t.Fatalf("configured model rejected: %d %s", response.Code, response.Body.String())
+	}
+	_, err = f.store.UpsertModel(ctx, store.UpsertModelInput{ModelID: "claude-sonnet-4-5", DisplayName: "Vision Creator", ProvideUpstreamModel: true, UpstreamModel: "replacement-model", InputPricePerMtok: "3", OutputPricePerMtok: "15"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response = requestAnalysisScope(f, "POST", "/v1/chat/completions", f.token, ticket, body)
+	if response.Code != 403 || calls.Load() != 1 {
+		t.Fatalf("changed model accepted: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestAnalysisModelDigestIgnoresHealthUpdates(t *testing.T) {
+	f, _, _, _, _, _ := gatewayAnalysisFixture(t)
+	ctx := context.Background()
+	provider, err := f.store.CreateUpstreamProvider(ctx, store.CreateUpstreamProviderInput{
+		Name: "vision-provider", BaseURL: f.upstream.URL, Protocol: store.ProtocolOpenAIChatCompletions,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.store.UpsertModel(ctx, store.UpsertModelInput{
+		ModelID: "claude-sonnet-4-5", DisplayName: "Vision", InputPricePerMtok: "3", OutputPricePerMtok: "15",
+		ProvideUpstreamProviderID: true, UpstreamProviderID: provider.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := func() string {
+		t.Helper()
+		value, err := media.AnalysisModelConfigDigest(ctx, f.store, "claude-sonnet-4-5")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	before := digest()
+	if _, err := f.store.ReportUpstreamFailure(ctx, provider.ID, "fixture failure", 100); err != nil {
+		t.Fatal(err)
+	}
+	if after := digest(); after != before {
+		t.Fatal("health diagnostics invalidated the frozen model selection")
+	}
+	if err := f.store.ReportUpstreamSuccess(ctx, provider.ID); err != nil {
+		t.Fatal(err)
+	}
+	if after := digest(); after != before {
+		t.Fatal("health recovery invalidated the frozen model selection")
+	}
+	protocol := store.ProtocolOpenAIResponses
+	if _, err := f.store.UpdateUpstreamProvider(ctx, provider.ID, store.UpdateUpstreamProviderPatch{Protocol: &protocol}); err != nil {
+		t.Fatal(err)
+	}
+	if after := digest(); after == before {
+		t.Fatal("actual protocol changes must invalidate the frozen configuration")
+	}
+}

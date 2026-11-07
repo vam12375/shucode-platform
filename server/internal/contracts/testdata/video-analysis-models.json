@@ -1,0 +1,33 @@
+[
+  { "models": [] },
+  {
+    "models": [
+      { "id": "vision/custom", "name": "Vision Creator", "available": true },
+      {
+        "id": "text-only",
+        "name": "Text Only",
+        "available": false,
+        "unavailableReason": "vision_required"
+      },
+      {
+        "id": "no-high",
+        "name": "No High",
+        "available": false,
+        "unavailableReason": "high_reasoning_required"
+      },
+      {
+        "id": "invalid",
+        "name": "Invalid",
+        "available": false,
+        "unavailableReason": "model_config_invalid"
+      },
+      {
+        "id": "offline",
+        "name": "Offline",
+        "available": false,
+        "unavailableReason": "upstream_unavailable"
+      }
+    ],
+    "defaultModelId": "vision/custom"
+  }
+]
