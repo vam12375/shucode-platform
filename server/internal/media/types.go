@@ -219,7 +219,7 @@ type Brief struct {
 	Resolution               string              `json:"resolution"`
 	AspectRatio              string              `json:"aspectRatio"`
 	Duration                 int                 `json:"duration"`
-	MaxCreditsMicro          int64               `json:"maxCreditsMicro"`
+	MaxCreditsMicro          int64               `json:"maxCreditsMicro,omitempty"`
 	ReviewPlan               bool                `json:"reviewPlan"`
 	ReferenceAssetID         string              `json:"referenceAssetId,omitempty"`
 	ReferenceDurationSeconds float64             `json:"referenceDurationSeconds,omitempty"`

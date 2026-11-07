@@ -346,11 +346,8 @@ func (s *Service) action(ctx context.Context, team, id string, version int64, ac
 					remaining += shot.QuoteMicro - shot.ChargedMicro
 				}
 			}
-			budget := p.Brief.MaxCreditsMicro
-			if isDirectGeneration(*p) {
-				budget = p.QuoteMicro
-			}
-			if remaining+p.ChargedMicro > budget {
+			// 普通视频制作不再按旧预算拦截；媒体工具仍绑定用户确认的报价。
+			if isDirectGeneration(*p) && remaining+p.ChargedMicro > p.QuoteMicro {
 				return fmt.Errorf("budget_exceeded")
 			}
 			p.Status = "queued"

@@ -115,7 +115,7 @@ func (s *Service) CreateReferenceAnalysis(ctx context.Context, team, user, devic
 		}
 		references = append(references, source.SourceURL)
 	}
-	brief := Brief{SourceOnly: true, Mode: "replicate", Product: name, AssetIDs: []string{}, ReferenceURLs: references, Platforms: []string{"douyin", "xiaohongshu"}, ReviewPlan: true, ReferenceAssetID: source.ID, ReferenceDurationSeconds: source.DurationSeconds, AspectRatio: "9:16", Duration: max(5, int(math.Ceil(source.DurationSeconds))), MaxCreditsMicro: 50_000_000}
+	brief := Brief{SourceOnly: true, Mode: "replicate", Product: name, AssetIDs: []string{}, ReferenceURLs: references, Platforms: []string{"douyin", "xiaohongshu"}, ReviewPlan: true, ReferenceAssetID: source.ID, ReferenceDurationSeconds: source.DurationSeconds, AspectRatio: "9:16", Duration: max(5, int(math.Ceil(source.DurationSeconds)))}
 	brief.AspectRatio = nearestFixedVideoRatio(source.Width, source.Height)
 	now := time.Now().UTC()
 	p := &Project{ID: id, Version: 1, Status: "draft", TeamID: team, UserID: user, DeviceID: device, Brief: brief, SourceChecksum: source.Checksum, Shots: []Shot{}, Models: []Model{}, CreatedAt: now, UpdatedAt: now}

@@ -260,13 +260,7 @@ func (s *Service) RepairShots(ctx context.Context, team, id string, version int6
 				return fmt.Errorf("repair_attempt_exceeded")
 			}
 		}
-		additional := int64(0)
-		for _, index := range indices {
-			additional += p.Shots[index].QuoteMicro
-		}
-		if p.ChargedMicro+additional > p.Brief.MaxCreditsMicro {
-			return fmt.Errorf("repair_budget_exceeded")
-		}
+		// 制作预算已移除；仍由请求身份、显式选镜和 attempt 边界控制修复。
 		if p.RepairReceipts == nil {
 			p.RepairReceipts = map[string]repairReceipt{}
 		}

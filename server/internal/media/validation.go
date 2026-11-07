@@ -179,7 +179,7 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	if err := validateBriefReferenceMode(b); err != nil {
 		return err
 	}
-	if strings.TrimSpace(b.Product) == "" || utf8.RuneCountInString(b.Product) > 200 || utf8.RuneCountInString(b.SellingPoints) > 4000 || (!replica && len(videoProductAssetIDs(b)) == 0) || len(b.AssetIDs) > 20 || len(b.ReferenceURLs) > 10 || b.MaxCreditsMicro <= 0 || b.MaxCreditsMicro > 1_000_000_000 || (!replica && b.Duration < MinAutoBriefSeconds) || b.Duration < 1 || b.Duration > MaxBriefSeconds || utf8.RuneCountInString(b.ReplacementInstructions) > 4000 {
+	if strings.TrimSpace(b.Product) == "" || utf8.RuneCountInString(b.Product) > 200 || utf8.RuneCountInString(b.SellingPoints) > 4000 || (!replica && len(videoProductAssetIDs(b)) == 0) || len(b.AssetIDs) > 20 || len(b.ReferenceURLs) > 10 || b.MaxCreditsMicro < 0 || (!replica && b.Duration < MinAutoBriefSeconds) || b.Duration < 1 || b.Duration > MaxBriefSeconds || utf8.RuneCountInString(b.ReplacementInstructions) > 4000 {
 		return ErrInvalid
 	}
 	if replica {
@@ -468,7 +468,7 @@ func buildShotsWithReferenceScript(b Brief, plan Plan, models []Model, scriptVer
 		}
 		return buildWholeReferenceExecution(b, plan, v, models, scriptVersion)
 	}
-	if (!replica && ((!storyPlanning(b) && duration != b.Duration) || (storyPlanning(b) && deliveryFrames != b.Duration*30))) || (replica && math.Abs(sourceEnd-b.ReferenceDurationSeconds) > .001) || total > b.MaxCreditsMicro {
+	if (!replica && ((!storyPlanning(b) && duration != b.Duration) || (storyPlanning(b) && deliveryFrames != b.Duration*30))) || (replica && math.Abs(sourceEnd-b.ReferenceDurationSeconds) > .001) {
 		return nil, 0, fmt.Errorf("duration_or_budget_exceeded")
 	}
 	return out, total, nil

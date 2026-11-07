@@ -280,7 +280,7 @@ func TestWholeReferenceExecutionIncludesEditedIdentitySceneAndTransitions(t *tes
 }
 
 func TestWholeReferenceRejectsUnsupportedWholeInputWithoutTruncation(t *testing.T) {
-	for _, kind := range []string{"over-limit", "no-duration", "prompt-overflow", "utf16-overflow", "different-clips", "budget", "too-many-images"} {
+	for _, kind := range []string{"over-limit", "no-duration", "prompt-overflow", "utf16-overflow", "different-clips", "too-many-images"} {
 		t.Run(kind, func(t *testing.T) {
 			brief, models, plan := wholeReferenceFixture()
 			want := "video_reference_duration_unsupported"
@@ -299,9 +299,6 @@ func TestWholeReferenceRejectsUnsupportedWholeInputWithoutTruncation(t *testing.
 				plan.Shots[0].ReferenceVideoAssetID = "clip-a"
 				plan.Shots[1].ReferenceVideoAssetID = "clip-b"
 				want = "video_reference_plan_invalid"
-			case "budget":
-				brief.MaxCreditsMicro = 6_299_999
-				want = "duration_or_budget_exceeded"
 			case "too-many-images":
 				brief.AssetIDs = append(brief.AssetIDs, "second", "third")
 				plan.Shots[1].AssetID, plan.Shots[2].AssetID = "second", "third"

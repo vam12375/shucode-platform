@@ -6,7 +6,9 @@
       "product": "Cup",
       "category": "Drinkware",
       "summary": "White cup with a handle",
-      "keywords": ["cup"],
+      "keywords": [
+        "cup"
+      ],
       "ambiguity": "",
       "assets": [
         {
@@ -19,7 +21,9 @@
       "templateCandidates": []
     },
     "sellingPoints": "",
-    "assetIds": ["E2E_IMAGE"],
+    "assetIds": [
+      "E2E_IMAGE"
+    ],
     "referenceUrls": [],
     "platforms": [],
     "researchPolicy": "disabled",
@@ -29,7 +33,6 @@
     "resolution": "720p",
     "aspectRatio": "9:16",
     "duration": 30,
-    "maxCreditsMicro": 50000000,
     "reviewPlan": false,
     "finishing": {
       "voiceover": false,

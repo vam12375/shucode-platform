@@ -359,8 +359,5 @@ func buildWholeReferenceExecution(b Brief, plan Plan, model Model, models []Mode
 		executions = append(executions, Shot{ReferenceScriptVersion: scriptVersion, Plan: execution, Status: "pending", Attempt: 1, QuoteMicro: quote})
 		total += quote
 	}
-	if total > b.MaxCreditsMicro {
-		return nil, 0, fmt.Errorf("duration_or_budget_exceeded")
-	}
 	return executions, total, nil
 }
