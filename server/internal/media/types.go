@@ -474,7 +474,7 @@ type AgentGenerationRequest struct {
 }
 
 type Project struct {
-	ImageAnalysis        *AssetUnderstanding           `json:"imageAnalysis,omitempty"`
+	ImageAnalysis        *ImageAnalysis                `json:"imageAnalysis,omitempty"`
 	TemplateSnapshot     *TemplateSnapshot             `json:"templateSnapshot,omitempty"`
 	MachineReview        *VideoMachineReview           `json:"machineReview,omitempty"`
 	PlanReview           *PlanReview                   `json:"planReview,omitempty"`
@@ -519,7 +519,7 @@ type Project struct {
 
 // 用户投影不携带供应商路由、准入身份、锁定售价或 worker lease；opaque task ID 仅用于受理证据与排查。
 type ProjectView struct {
-	ImageAnalysis        *AssetUnderstanding      `json:"imageAnalysis,omitempty"`
+	ImageAnalysis        *ImageAnalysis           `json:"imageAnalysis,omitempty"`
 	TemplateSnapshot     *TemplateSnapshot        `json:"templateSnapshot,omitempty"`
 	MachineReview        *VideoMachineReview      `json:"machineReview,omitempty"`
 	PlanReview           *PlanReview              `json:"planReview,omitempty"`

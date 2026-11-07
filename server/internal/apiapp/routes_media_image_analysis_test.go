@@ -11,7 +11,7 @@ import (
 
 func TestImageAnalysisRoutePersistsSeparateObservation(t *testing.T) {
 	f, token, p := analysisConfigFixture(t)
-	raw, err := os.ReadFile("../media/testdata/video-staged-images.json")
+	raw, err := os.ReadFile("../media/testdata/video-image-analysis-text.json")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func stagedImageFixture(t *testing.T) (*fixture, *Project, AssetUnderstanding) {
+func stagedImageFixture(t *testing.T) (*fixture, *Project, ImageAnalysis) {
 	t.Helper()
 	f := setup(t)
 	p := f.project(t)
@@ -104,7 +104,7 @@ func TestStagedImageAnalysisRetryAndCancellation(t *testing.T) {
 }
 
 func TestStagedImageAnalysisRejectsInvalidObservation(t *testing.T) {
-	for _, invalid := range []string{"stale-version", "foreign-image", "ambiguous", "unknown-template", "changed-workspace"} {
+	for _, invalid := range []string{"stale-version", "empty", "changed-workspace"} {
 		t.Run(invalid, func(t *testing.T) {
 			f, p, observation := stagedImageFixture(t)
 			ctx := context.Background()
@@ -117,12 +117,8 @@ func TestStagedImageAnalysisRejectsInvalidObservation(t *testing.T) {
 			switch invalid {
 			case "stale-version":
 				version--
-			case "foreign-image":
-				observation.Assets[0].AssetID = "foreign"
-			case "ambiguous":
-				observation.Ambiguity = "multiple products"
-			case "unknown-template":
-				observation.TemplateCandidates = []ObservedTemplate{{TemplateID: "unknown", TemplateVersion: "1", Reason: "fixture"}}
+			case "empty":
+				observation = ImageAnalysis{Text: " \n "}
 			case "changed-workspace":
 				p, err = f.s.FailAnalysis(ctx, f.team, p.ID, p.Version, a.InputID, "analysis_failed")
 				if err != nil {
@@ -169,7 +165,7 @@ func TestStagedImageAnalysis(t *testing.T) {
 	if _, err = f.s.SetPlan(ctx, f.team, p.ID, p.Version, a.InputID, plan); err == nil {
 		t.Fatal("images accepted a video plan")
 	}
-	o := AssetUnderstanding{Product: "cup", Category: "cup", Summary: "white cup", Keywords: []string{"cup"}, Assets: []ObservedAsset{{AssetID: "a", Role: "product", SubjectGroup: "cup", Description: "white cup"}}, TemplateCandidates: []ObservedTemplate{}}
+	o := ImageAnalysis{Text: "A white cup. Recommend an original presentation."}
 	prior := p.Version
 	p, err = f.s.SetImageAnalysis(ctx, f.team, p.ID, p.Version, a.InputID, o)
 	if err != nil {
@@ -215,5 +211,70 @@ func TestStagedImageAnalysis(t *testing.T) {
 	}
 	if f.submits.Load() != 0 {
 		t.Fatal("acceptance directly submitted provider work")
+	}
+}
+
+func TestStagedImageAnalysisAcceptsTextAndRecoversCompletedFailure(t *testing.T) {
+	for _, text := range []string{"Images show a robot character. Subject is uncertain.", "## Image content\n- Two different subjects\n## Templates\nNone", `{"ambiguity":"please confirm subject","assets":[]}`, `{"summary":"incomplete JSON"`} {
+		for _, status := range []string{"analyzing", "analysis_failed"} {
+			t.Run(status+text, func(t *testing.T) {
+				f, p, _ := stagedImageFixture(t)
+				ctx := context.Background()
+				p, err := f.s.Bind(ctx, f.team, p.ID, p.Version, Analysis{Kind: "images", TaskID: "same-task", InputID: "images-input", WorkspacePath: "/fixture"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if status == "analysis_failed" {
+					p, err = f.s.FailAnalysis(ctx, f.team, p.ID, p.Version, p.Analysis.InputID, "analysis_failed")
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				p, err = f.s.SetImageAnalysis(ctx, f.team, p.ID, p.Version, p.Analysis.InputID, ImageAnalysis{Text: text})
+				if err != nil || p.Status != "image_review" || p.ImageAnalysis.Text != text {
+					t.Fatal("completed text rejected", err)
+				}
+				encoded, err := json.Marshal(f.s.ProjectView(ctx, p))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var view map[string]any
+				if err = json.Unmarshal(encoded, &view); err != nil {
+					t.Fatal(err)
+				}
+				image := view["imageAnalysis"].(map[string]any)
+				if len(image) != 1 || image["text"] != text {
+					t.Fatal("text wire leaked empty legacy fields")
+				}
+			})
+		}
+	}
+	// 旧客户端提交的主体疑问仅作文字说明，也不再阻断。
+	f, p, o := stagedImageFixture(t)
+	o.Ambiguity = "Please confirm the subject"
+	o.Assets[0].AssetID = "descriptive-unmatched-id"
+	ctx := context.Background()
+	p, err := f.s.Bind(ctx, f.team, p.ID, p.Version, Analysis{Kind: "images", TaskID: "same-task", InputID: "images-input", WorkspacePath: "/fixture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.s.SetImageAnalysis(ctx, f.team, p.ID, p.Version, p.Analysis.InputID, o); err != nil {
+		t.Fatal("legacy description rejected", err)
+	}
+}
+
+func TestImageAnalysisTextWire(t *testing.T) {
+	raw, err := os.ReadFile("testdata/video-image-analysis-text.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var p ProjectView
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err = decoder.Decode(&p); err != nil {
+		t.Fatal(err)
+	}
+	if p.ImageAnalysis == nil || p.ImageAnalysis.Text == "" || p.ImageAnalysis.AssetUnderstanding != nil || p.Status != "image_review" {
+		t.Fatal("text contract changed")
 	}
 }
