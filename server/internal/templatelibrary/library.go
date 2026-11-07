@@ -38,6 +38,7 @@ type Fields struct {
 	CronExpr      string   `json:"cronExpr"`
 }
 type Entry struct {
+	Preview *Preview     `json:"preview,omitempty"`
 	Package *PackageInfo `json:"package,omitempty"`
 	Fields
 	ID              string `json:"id"`
@@ -48,10 +49,11 @@ type Entry struct {
 	ExpectedVersion string `json:"expectedVersion"`
 }
 type Mutation struct {
-	ExpectedVersion string  `json:"expectedVersion"`
-	Enabled         *bool   `json:"enabled,omitempty"`
-	Fields          *Fields `json:"fields,omitempty"`
-	Kind            string  `json:"kind,omitempty"`
+	Preview         *Preview `json:"preview,omitempty"`
+	ExpectedVersion string   `json:"expectedVersion"`
+	Enabled         *bool    `json:"enabled,omitempty"`
+	Fields          *Fields  `json:"fields,omitempty"`
+	Kind            string   `json:"kind,omitempty"`
 }
 type Repository struct{ Store ConfigStore }
 
@@ -103,6 +105,7 @@ func catalog(seeds []Entry, overrides map[string]Entry) []Entry {
 			}
 			if seed.Kind == "video" {
 				entry.Enabled = override.Enabled
+				entry.Preview = override.Preview
 				entry.ExpectedVersion = override.ExpectedVersion
 			} else {
 				entry = override
@@ -256,7 +259,7 @@ func (r Repository) Save(ctx context.Context, videos []Entry, id string, input M
 			}
 		}
 		if remove {
-			if creating || input.Fields != nil || input.Enabled != nil {
+			if creating || input.Fields != nil || input.Enabled != nil || input.Preview != nil {
 				return Entry{}, ErrInvalid
 			}
 			current.Enabled = false
@@ -267,8 +270,15 @@ func (r Repository) Save(ctx context.Context, videos []Entry, id string, input M
 				overrides[id] = Entry{ID: id, Kind: current.Kind, Source: current.Source, Deleted: true}
 			}
 		} else {
-			if input.Fields == nil && input.Enabled == nil {
+			if input.Fields == nil && input.Enabled == nil && input.Preview == nil {
 				return Entry{}, ErrInvalid
+			}
+			if input.Preview != nil {
+				if !input.Preview.Valid() {
+					return Entry{}, ErrInvalid
+				}
+				preview := *input.Preview
+				current.Preview = &preview
 			}
 			if input.Fields != nil {
 				if current.Kind == "video" {

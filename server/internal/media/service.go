@@ -103,11 +103,12 @@ func (s *Service) Create(ctx context.Context, team, user, device, id string, b B
 			return nil, e
 		}
 	}
-	if e = s.validateTemplateBrief(ctx, b, models); e != nil {
+	snapshot, e := s.freezeTemplate(ctx, b, models)
+	if e != nil {
 		return nil, e
 	}
 	now := time.Now().UTC()
-	p := &Project{ID: id, TeamID: team, UserID: user, DeviceID: device, Version: 1, Status: "draft", Brief: b, Shots: []Shot{}, Models: models, CreatedAt: now, UpdatedAt: now}
+	p := &Project{TemplateSnapshot: snapshot, ID: id, TeamID: team, UserID: user, DeviceID: device, Version: 1, Status: "draft", Brief: b, Shots: []Shot{}, Models: models, CreatedAt: now, UpdatedAt: now}
 	bindProjectIdentity(ctx, p)
 	if e = s.Repo.Index(ctx, ProjectKey(team, id)); e != nil {
 		return nil, e
@@ -163,7 +164,7 @@ func (s *Service) Revise(ctx context.Context, team, id string, version int64, pl
 		if p.Status != "review" {
 			return ErrConflict
 		}
-		if err := s.validateAdaptivePlan(ctx, p.Brief, plan, p.Models); err != nil {
+		if err := s.validateAdaptivePlan(ctx, p.Brief, plan, p.Models, p.TemplateSnapshot); err != nil {
 			return err
 		}
 		if err := validateSourceBoundaries(p, plan); err != nil {
@@ -254,7 +255,7 @@ func (s *Service) action(ctx context.Context, team, id string, version int64, ac
 			if p.Plan == nil {
 				return ErrInvalid
 			}
-			if err := s.validateAdaptivePlan(ctx, p.Brief, *p.Plan, p.Models); err != nil {
+			if err := s.validateAdaptivePlan(ctx, p.Brief, *p.Plan, p.Models, p.TemplateSnapshot); err != nil {
 				return err
 			}
 			if e := s.validateFinishing(ctx, p.Brief); e != nil {

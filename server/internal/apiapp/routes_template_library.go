@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/vam12375/shucode-platform/server/internal/events"
 	"github.com/vam12375/shucode-platform/server/internal/media"
 	"github.com/vam12375/shucode-platform/server/internal/templatelibrary"
 )
@@ -56,6 +57,7 @@ func libraryError(c *gin.Context, deps *Deps, err error) {
 func registerTemplateLibraryRoutes(router *gin.Engine, deps *Deps) {
 	repo := templatelibrary.Repository{Store: deps.Store}
 	registerTemplatePackageRoutes(router, deps, repo)
+	registerTemplatePreviewRoutes(router, deps)
 	router.GET("/console/api/template-library", func(c *gin.Context) {
 		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
 			return
@@ -87,6 +89,10 @@ func registerTemplateLibraryRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
+		if input.Preview != nil && !uploadedPreviewExists(deps, *input.Preview) {
+			libraryError(c, deps, templatelibrary.ErrInvalid)
+			return
+		}
 		remove := c.Request.Method == "DELETE"
 		entry, err := repo.Save(c.Request.Context(), seeds, c.Param("id"), input, remove)
 		if err != nil {
@@ -98,6 +104,8 @@ func registerTemplateLibraryRoutes(router *gin.Engine, deps *Deps) {
 			action = "template-library.delete"
 		}
 		writeAudit(c.Request.Context(), deps, actor, action, "template", entry.ID, gin.H{"kind": entry.Kind, "enabled": entry.Enabled})
+		// 目录已持久化后再通知，客户端补读可看到新版本；冲突与失败不发送。
+		deps.ConfigEvents.Emit(events.DomainTemplateLibrary)
 		c.JSON(200, okData(entry))
 	}
 	router.POST("/console/api/template-library", mutate)

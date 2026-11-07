@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useState, type ReactNode } from "reac
 import {
   Activity,
   Boxes,
-  BookOpen,
+  LayoutTemplate,
   Building2,
   ChartColumn,
   Clapperboard,
@@ -462,7 +462,7 @@ export function App() {
                 <span>UI 组件库</span>
               </a>
               <a href="#/template-library" className={section === "template-library" ? "nav-item active" : "nav-item"}>
-                <Glyph icon={BookOpen} />
+                <Glyph icon={LayoutTemplate} />
                 <span>模板库</span>
               </a>
             </div>

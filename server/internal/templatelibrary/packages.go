@@ -25,7 +25,7 @@ import (
 const MaxPackageSize = 4 << 20
 const maxPackageExpandedSize = 16 << 20
 
-//go:embed packages/*.zip legacy_catalog.json
+//go:embed packages/*.zip legacy_catalog.json curated_catalog.json
 var legacyFiles embed.FS
 
 type PackageFile struct {
@@ -61,7 +61,18 @@ func builtinEntries() ([]Entry, error) {
 		return nil, err
 	}
 	legacy, err := legacyEntries()
-	return append(entries, legacy...), err
+	if err != nil {
+		return nil, err
+	}
+	raw, err := legacyFiles.ReadFile("curated_catalog.json")
+	if err != nil {
+		return nil, err
+	}
+	var curated []Entry
+	if err = json.Unmarshal(raw, &curated); err != nil {
+		return nil, err
+	}
+	return append(append(entries, legacy...), curated...), nil
 }
 func safePackagePath(name string) bool {
 	if name == "" || strings.ContainsAny(name, "\\:\x00") || strings.HasPrefix(name, "/") || path.Clean(name) != name {

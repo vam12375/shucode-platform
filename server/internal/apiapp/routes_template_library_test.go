@@ -1,9 +1,13 @@
 package apiapp
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/vam12375/shucode-platform/server/internal/events"
 )
 
 func TestLibraryPermissionsAndPublishing(t *testing.T) {
@@ -30,7 +34,7 @@ func TestLibraryPermissionsAndPublishing(t *testing.T) {
 		t.Fatal(response.Body.String())
 	}
 	entries := dataOf(t, response)["entries"].([]any)
-	if len(entries) != 115 {
+	if len(entries) != 139 {
 		t.Fatalf("incomplete catalog: %d", len(entries))
 	}
 	var selected map[string]any
@@ -47,12 +51,27 @@ func TestLibraryPermissionsAndPublishing(t *testing.T) {
 		t.Fatalf("skill package unavailable: %d", response.Code)
 	}
 	body, _ := json.Marshal(map[string]any{"expectedVersion": selected["expectedVersion"], "enabled": false})
+	notices, cancel := root.bus.Subscribe(context.Background())
+	defer cancel()
 	response = root.do("PUT", "/console/api/template-library/"+id, cookie, string(body))
 	if response.Code != 200 {
 		t.Fatal(response.Body.String())
 	}
+	select {
+	case domains := <-notices:
+		if len(domains) != 1 || domains[0] != events.DomainTemplateLibrary {
+			t.Fatalf("wrong catalog invalidation: %v", domains)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("saved catalog did not notify clients")
+	}
 	if response = root.do("PUT", "/console/api/template-library/"+id, cookie, string(body)); response.Code != 409 {
 		t.Fatal("stale update accepted")
+	}
+	select {
+	case domains := <-notices:
+		t.Fatalf("conflicted write emitted invalidation: %v", domains)
+	case <-time.After(400 * time.Millisecond):
 	}
 	if response = root.do("GET", "/api/v1/client/skills/"+id+"/package", "", ""); response.Code != 404 {
 		t.Fatal("disabled package published")

@@ -23,8 +23,9 @@ export interface TemplateFields {
 }
 export interface LibraryEntry extends TemplateFields {
   id: string;
+  preview?: { cover: string; video: string };
   kind: TemplateKind;
-  source: "builtin-video" | "client-scenes" | "custom" | "dineops";
+  source: "builtin-video" | "client-scenes" | "custom" | "dineops" | "curated";
   package?: PackageInfo;
   enabled: boolean;
   expectedVersion: string;

@@ -13,15 +13,15 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 	if err := json.Unmarshal(videoTemplateCatalogJSON, &templates); err != nil {
 		t.Fatal(err)
 	}
-	if len(templates) != 40 {
-		t.Fatalf("expected forty recipes, got %d", len(templates))
+	if len(templates) != 58 {
+		t.Fatalf("expected fifty-eight recipes, got %d", len(templates))
 	}
 	seen := map[string]bool{}
 	actions := map[string]bool{}
 	checks := map[string]bool{}
 	for _, recipe := range templates {
 		t.Run(recipe.ID, func(t *testing.T) {
-			if seen[recipe.ID] || recipe.Version != "1.1.0" || len(recipe.Beats) != 3 || len(recipe.VerifiedModelIDs) != 0 {
+			if seen[recipe.ID] || (recipe.Version != "1.1.0" && !(len(recipe.SkillIDs) > 0 && recipe.Version == "1.0.0")) || len(recipe.Beats) != 3 || len(recipe.VerifiedModelIDs) != 0 {
 				t.Fatalf("identity or verification changed: %+v", recipe)
 			}
 			seen[recipe.ID] = true

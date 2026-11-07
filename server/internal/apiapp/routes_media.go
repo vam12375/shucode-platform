@@ -209,6 +209,8 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 	router.GET("/api/v1/media/blobs/:team/:id", serveMediaBlob)
 	router.HEAD("/api/v1/media/blobs/:team/:id", serveMediaBlob)
 	router.GET("/api/v1/media/overview", func(c *gin.Context) {
+		// 目录变更通知要求补读当前投影；一年缓存只适用于不可变示例素材。
+		c.Header("Cache-Control", "no-store")
 		a, m, ok := mediaIdentity(c, deps)
 		if !ok {
 			return

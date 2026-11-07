@@ -10,8 +10,6 @@ import (
 	"os"
 	"slices"
 	"time"
-
-	"github.com/vam12375/shucode-platform/server/internal/templatelibrary"
 )
 
 //go:embed video_template_catalog.json
@@ -34,7 +32,14 @@ type TemplateDurationRange struct {
 	Min int `json:"min"`
 	Max int `json:"max"`
 }
+type TemplatePreview struct {
+	CoverURL string `json:"coverUrl,omitempty"`
+	VideoURL string `json:"videoUrl,omitempty"`
+}
 type VideoTemplate struct {
+	Preview           *TemplatePreview      `json:"preview,omitempty"`
+	SkillIDs          []string              `json:"skillIds,omitempty"`
+	Provenance        *TemplateProvenance   `json:"provenance,omitempty"`
 	ID                string                `json:"id"`
 	Version           string                `json:"version"`
 	Family            string                `json:"family"`
@@ -63,6 +68,7 @@ type TemplateReviewInput struct {
 	Note            string `json:"note"`
 }
 type TemplateReview struct {
+	RecipeDigest string `json:"recipeDigest,omitempty"`
 	TemplateReviewInput
 	ModelID        string    `json:"modelId"`
 	ModelSignature string    `json:"modelSignature"`
@@ -81,6 +87,16 @@ func VideoTemplateDefinitions() ([]VideoTemplate, error) {
 		t := &out[i]
 		if !boundedNonempty(t.ID, 100) || !boundedNonempty(t.Version, 100) || seen[t.ID] || len(t.Beats) == 0 || t.MinAssets < 1 || t.DurationRange.Min < 5 || t.DurationRange.Max > MaxBriefSeconds {
 			return nil, fmt.Errorf("video_templates_unavailable")
+		}
+		if len(t.SkillIDs) > 6 {
+			return nil, fmt.Errorf("video_templates_unavailable")
+		}
+		skillSeen := map[string]bool{}
+		for _, id := range t.SkillIDs {
+			if !boundedNonempty(id, 100) || skillSeen[id] {
+				return nil, fmt.Errorf("video_templates_unavailable")
+			}
+			skillSeen[id] = true
 		}
 		seen[t.ID] = true
 		t.VerifiedModelIDs = []string{}
@@ -114,18 +130,14 @@ func (s *Service) VideoTemplates(ctx context.Context) ([]VideoTemplate, error) {
 }
 
 func (s *Service) videoTemplatesForModels(ctx context.Context, models []Model) ([]VideoTemplate, error) {
-	templates, err := s.AllVideoTemplates(ctx, models)
+	catalog, err := s.resolveTemplateCatalog(ctx, models)
 	if err != nil {
 		return nil, err
 	}
-	disabled, err := (templatelibrary.Repository{Store: s.Repo.Store}).DisabledVideoIDs(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]VideoTemplate, 0, len(templates))
-	for _, t := range templates {
-		if !disabled[t.ID] {
-			out = append(out, t)
+	out := []VideoTemplate{}
+	for _, entry := range catalog {
+		if entry.enabled {
+			out = append(out, entry.snapshot.Template)
 		}
 	}
 	return out, nil
@@ -133,33 +145,15 @@ func (s *Service) videoTemplatesForModels(ctx context.Context, models []Model) (
 
 // 管理目录保留停用模板；消费与准入统一读取过滤后的目录。
 func (s *Service) AllVideoTemplates(ctx context.Context, models []Model) ([]VideoTemplate, error) {
-	templates, err := VideoTemplateDefinitions()
+	catalog, err := s.resolveTemplateCatalog(ctx, models)
 	if err != nil {
 		return nil, err
 	}
-	reviews, err := s.Repo.TemplateReviews(ctx)
-	if err != nil {
-		return nil, err
+	out := make([]VideoTemplate, 0, len(catalog))
+	for _, entry := range catalog {
+		out = append(out, entry.snapshot.Template)
 	}
-	for i := range templates {
-		t := &templates[i]
-		for _, model := range models {
-			if model.Kind != "video" {
-				continue
-			}
-			var latest *TemplateReview
-			for j := range reviews {
-				r := &reviews[j]
-				if r.TemplateID == t.ID && r.TemplateVersion == t.Version && r.ModelID == model.ID {
-					latest = r
-				}
-			}
-			if latest != nil && latest.Approved && latest.Score >= 85 && latest.ModelSignature == templateModelSignature(model) {
-				t.VerifiedModelIDs = append(t.VerifiedModelIDs, model.ID)
-			}
-		}
-	}
-	return templates, nil
+	return out, nil
 }
 func findVideoTemplate(templates []VideoTemplate, id, version string) (VideoTemplate, error) {
 	for _, t := range templates {
@@ -203,7 +197,7 @@ func validateTemplateSelection(b Brief, templates []VideoTemplate) (VideoTemplat
 	}
 	return t, nil
 }
-func (s *Service) validateAdaptivePlan(ctx context.Context, b Brief, p Plan, models []Model) error {
+func (s *Service) validateAdaptivePlan(ctx context.Context, b Brief, p Plan, models []Model, snapshots ...*TemplateSnapshot) error {
 	if err := validateStoryPlan(b, p); err != nil {
 		return err
 	}
@@ -216,6 +210,19 @@ func (s *Service) validateAdaptivePlan(ctx context.Context, b Brief, p Plan, mod
 	selected := b
 	selected.TemplateID = p.Research.TemplateID
 	selected.TemplateVersion = p.Research.TemplateVersion
+	if len(snapshots) > 0 && snapshots[0] != nil {
+		snapshot := snapshots[0]
+		if !frozenTemplateMatches(selected, snapshot) {
+			return adaptiveResearchError()
+		}
+		if _, err := validateTemplateSelection(selected, []VideoTemplate{snapshot.Template}); err != nil {
+			return err
+		}
+		if p.Research.Mode == "template" && !snapshotAllowsTemplateMode(b, snapshot) {
+			return adaptiveResearchError()
+		}
+		return nil
+	}
 	// 执行使用项目冻结快照，不能按同ID的当前目录映射借用另一模型签名的批准。
 	templates, err := s.videoTemplatesForModels(ctx, models)
 	if err != nil {
@@ -225,7 +232,7 @@ func (s *Service) validateAdaptivePlan(ctx context.Context, b Brief, p Plan, mod
 	if err != nil {
 		return err
 	}
-	if p.Research.Mode == "template" && !slices.Contains(t.VerifiedModelIDs, b.VideoModel) {
+	if len(t.SkillIDs) > 0 || p.Research.Mode == "template" && !slices.Contains(t.VerifiedModelIDs, b.VideoModel) {
 		return adaptiveResearchError()
 	}
 	return nil
@@ -238,7 +245,8 @@ func (s *Service) ReviewVideoTemplate(ctx context.Context, reviewer string, inpu
 	if err != nil {
 		return TemplateReview{}, err
 	}
-	if _, err = findVideoTemplate(templates, input.TemplateID, input.TemplateVersion); err != nil {
+	definition, err := findVideoTemplate(templates, input.TemplateID, input.TemplateVersion)
+	if err != nil {
 		return TemplateReview{}, err
 	}
 	p, err := s.Repo.Get(ctx, input.ProjectTeamID, input.ProjectID)
@@ -266,7 +274,13 @@ func (s *Service) ReviewVideoTemplate(ctx context.Context, reviewer string, inpu
 	if err != nil {
 		return TemplateReview{}, err
 	}
+	if len(definition.SkillIDs) > 0 && !frozenTemplateMatches(p.Brief, p.TemplateSnapshot) {
+		return TemplateReview{}, adaptiveResearchError()
+	}
 	review := TemplateReview{TemplateReviewInput: input, ModelID: model.ID, ModelSignature: templateModelSignature(model), OutputAssetID: p.OutputAssetID, ReviewerID: reviewer, ReviewedAt: time.Now().UTC()}
+	if p.TemplateSnapshot != nil {
+		review.RecipeDigest = p.TemplateSnapshot.Digest
+	}
 	err = updateJSON(ctx, s.Repo.Store, TemplateReviewsKey, []TemplateReview{}, func(rows *[]TemplateReview) error {
 		if len(*rows) >= 10000 {
 			return fmt.Errorf("template_review_limit")

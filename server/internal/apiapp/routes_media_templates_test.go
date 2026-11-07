@@ -58,6 +58,9 @@ func TestTemplateOverviewVerificationRespectsTeamModelWhitelist(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := sourceRequest(f, token, "GET", "/api/v1/media/overview", nil)
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("overview must not cache mutable catalog metadata")
+	}
 	if response.Code != 200 {
 		t.Fatal(response.Body.String())
 	}

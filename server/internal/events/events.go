@@ -15,13 +15,14 @@ import (
 
 // Domain 常量与 TS config-events 的六个域一致(排序用于稳定输出)。
 const (
-	DomainModels         = "models"
-	DomainProviders      = "providers"
-	DomainTeams          = "teams"
-	DomainDevices        = "devices"
-	DomainPlatformConfig = "platform-config"
-	DomainReleases       = "releases"
-	DomainPreferences    = "preferences"
+	DomainModels          = "models"
+	DomainProviders       = "providers"
+	DomainTeams           = "teams"
+	DomainDevices         = "devices"
+	DomainPlatformConfig  = "platform-config"
+	DomainReleases        = "releases"
+	DomainPreferences     = "preferences"
+	DomainTemplateLibrary = "template-library"
 )
 
 const coalesceWindow = 300 * time.Millisecond

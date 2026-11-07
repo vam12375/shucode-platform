@@ -1,0 +1,200 @@
+[
+  {
+    "id": "curated:product-proof-director",
+    "kind": "skill",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "商品广告 · 可见卖点导演",
+    "nameEn": "Turn verified product facts into demonstrable product advertising.",
+    "description": "门道原创适配；配方关联使用，仅对当前制作单生效。",
+    "descriptionEn": "Mendao-authored, instruction-only adaptation scoped to one production.",
+    "content": "---\nname: product-proof-director\ndescription: Turn verified product facts into demonstrable product advertising.\n---\n\n# 商品广告 · 可见卖点导演\n\n用于本次制作单的分镜与提示编排。服从本单素材、事实、用户要求及平台输出契约；不安装插件、不修改全局配置、不触发发布。\n\n把用户提供的卖点拆成「事实依据—可见动作—镜头完成状态」。从中选一个能在本单时长内看懂的证明，其余作为辅助信息。开头先出现商品或它解决的具体任务，避免铺垫消耗短片时长。\n保持同款轮廓、包装、标识和颜色；镜内只执行一个有起止的主动作。对比须同条件、有用户依据；没有前后效果证据时展示操作，不生成效果证明。价格、参数、销量、功效必须来自本单确认资料。\n为字幕留出不遮挡商品的安全区；最后回到可识别商品与用户给定的行动号召。产品文字交给后期合成，不让生成模型重画小字。检查每个卖点是否在画面上有证据，去掉只靠夸张旁白成立的结论。\n",
+    "contentEn": "",
+    "tags": [
+      "视频制作",
+      "本次制作单",
+      "商品广告"
+    ],
+    "scene": "",
+    "cronExpr": "",
+    "packageDigest": "22d7055d0e70f4facd64483d785e8277db781b82cf831ffaabc69fa5de63f1c4",
+    "package": {
+      "sha256": "22d7055d0e70f4facd64483d785e8277db781b82cf831ffaabc69fa5de63f1c4",
+      "size": 913,
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 1112,
+          "sha256": "4e643a1d2a2a9e49f8d1e6d3b6b1e4410498cb45195d1e20438d413d287db122",
+          "executable": false
+        }
+      ]
+    }
+  },
+  {
+    "id": "curated:restaurant-visit-director",
+    "kind": "skill",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "餐饮探店 · 到店路径导演",
+    "nameEn": "Plan a restaurant visit from actual venue and dish assets.",
+    "description": "门道原创适配；配方关联使用，仅对当前制作单生效。",
+    "descriptionEn": "Mendao-authored, instruction-only adaptation scoped to one production.",
+    "content": "---\nname: restaurant-visit-director\ndescription: Plan a restaurant visit from actual venue and dish assets.\n---\n\n# 餐饮探店 · 到店路径导演\n\n用于本次制作单的分镜与提示编排。服从本单素材、事实、用户要求及平台输出契约；不安装插件、不修改全局配置、不触发发布。\n\n先把素材分为门头、空间、制作、菜品、服务和其他；只使用真实存在的那几类组织「为什么来—看见什么—如何选择」。没有门店图片时改为菜品介绍，不生成冒充实拍的店内空间。\n用一个招牌菜或一次服务动作作为主线。热气、油滴、翻炒与出餐动作须符合实际食物和器皿，不能用无依据的食材替换。菜单、价格、地址、营业时间只用用户确认文本；不虚构排队、人气、顾客评价或亲身到店经历。\n镜头连接按真实用餐路径或菜品状态变化；结束用可核实的门店信息或菜名，缺失即省略。标注需补拍的门头/服务镜头，允许删减，不把创意场景当成真实门店证据。\n",
+    "contentEn": "",
+    "tags": [
+      "视频制作",
+      "本次制作单",
+      "创意编排"
+    ],
+    "scene": "",
+    "cronExpr": "",
+    "packageDigest": "bcde471871c51508fcc0c003f4b395e7a4d6cf926e2fa40c6388db13cb7c3fac",
+    "package": {
+      "sha256": "bcde471871c51508fcc0c003f4b395e7a4d6cf926e2fa40c6388db13cb7c3fac",
+      "size": 879,
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 1084,
+          "sha256": "d704182f28b1eae5fe7b951c91667276ea775fb510488ebf1dfa3b6c7219e281",
+          "executable": false
+        }
+      ]
+    }
+  },
+  {
+    "id": "curated:brand-visual-director",
+    "kind": "skill",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "品牌短片 · 视觉母题导演",
+    "nameEn": "Build a consistent brand film around supplied brand and product assets.",
+    "description": "门道原创适配；配方关联使用，仅对当前制作单生效。",
+    "descriptionEn": "Mendao-authored, instruction-only adaptation scoped to one production.",
+    "content": "---\nname: brand-visual-director\ndescription: Build a consistent brand film around supplied brand and product assets.\n---\n\n# 品牌短片 · 视觉母题导演\n\n用于本次制作单的分镜与提示编排。服从本单素材、事实、用户要求及平台输出契约；不安装插件、不修改全局配置、不触发发布。\n\n从品牌提供的颜色、形状、材质或行为中选一个可见母题，写出它在开头、变化、落版的三次不同作用。让叙事通过画面信息变化推进，不只堆砌高级、奢华、电影感等形容词。\n品牌价值须由实际产品或工艺细节支撑。历史、产地、环保、匠人身份和认证不能从氛围推断；无证据时只表达情绪。抽象过场可以作为创意，但不要冒充产品内部结构或真实厂房。\n保持主光方向、品牌色与商品身份稳定。落版保留干净空间，准确标识由已上传资产后期合成；缺少标识时留白，不重画商标。每次转场复用同一视觉母题并增加新信息。\n",
+    "contentEn": "",
+    "tags": [
+      "视频制作",
+      "本次制作单",
+      "创意编排"
+    ],
+    "scene": "",
+    "cronExpr": "",
+    "packageDigest": "8b791acebd0c8a5226022ce4c80f5b6d9f37047714a0f9f149c7a48427cc219c",
+    "package": {
+      "sha256": "8b791acebd0c8a5226022ce4c80f5b6d9f37047714a0f9f149c7a48427cc219c",
+      "size": 875,
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 1038,
+          "sha256": "8ca3621004ee1c325e7df060a2c7080f1e7336925c3ff68e2390ffd47f53397d",
+          "executable": false
+        }
+      ]
+    }
+  },
+  {
+    "id": "curated:rhythm-product-director",
+    "kind": "skill",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "节奏广告 · 动作拍点导演",
+    "nameEn": "Plan music-aware product actions without inventing beat measurements.",
+    "description": "门道原创适配；配方关联使用，仅对当前制作单生效。",
+    "descriptionEn": "Mendao-authored, instruction-only adaptation scoped to one production.",
+    "content": "---\nname: rhythm-product-director\ndescription: Plan music-aware product actions without inventing beat measurements.\n---\n\n# 节奏广告 · 动作拍点导演\n\n用于本次制作单的分镜与提示编排。服从本单素材、事实、用户要求及平台输出契约；不安装插件、不修改全局配置、不触发发布。\n\n先确认本单是否提供可用音乐与实际节拍数据。没有测量音频时只规划相对的蓄势、动作、停留，不报 BPM 或声称精确卡点；关闭音乐时仍用动作速度与剪辑组织节奏。\n将主要卖点放在最清楚的完成状态，鼓点可以配合切镜或动作终点，但不能让音乐挤掉观众辨认商品的时间。运镜速度、主体速度分别写清楚，避免同时高速变化。\n连续横移方案须固定主体外观、行进方向与可连接的空间边界；参考图不足时采用明确切镜，不承诺无缝一镜到底。精确对齐交给后期时间线；模型生成段长度服从当前能力，禁止为了拍点提交非法秒数。\n",
+    "contentEn": "",
+    "tags": [
+      "视频制作",
+      "本次制作单",
+      "商品广告"
+    ],
+    "scene": "",
+    "cronExpr": "",
+    "packageDigest": "9ba69baf2f5218f70a5e9b448841bd666a4da8d96d9cd5750ec43e928d6971f5",
+    "package": {
+      "sha256": "9ba69baf2f5218f70a5e9b448841bd666a4da8d96d9cd5750ec43e928d6971f5",
+      "size": 886,
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 1046,
+          "sha256": "e74c74e353b8d025e8774a21813906db291071b83c0e64085c64f294c5e54f6a",
+          "executable": false
+        }
+      ]
+    }
+  },
+  {
+    "id": "curated:graphic-motion-director",
+    "kind": "skill",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "平面广告 · 动态构图导演",
+    "nameEn": "Animate supplied product key visuals while preserving layout and brand identity.",
+    "description": "门道原创适配；配方关联使用，仅对当前制作单生效。",
+    "descriptionEn": "Mendao-authored, instruction-only adaptation scoped to one production.",
+    "content": "---\nname: graphic-motion-director\ndescription: Animate supplied product key visuals while preserving layout and brand identity.\n---\n\n# 平面广告 · 动态构图导演\n\n用于本次制作单的分镜与提示编排。服从本单素材、事实、用户要求及平台输出契约；不安装插件、不修改全局配置、不触发发布。\n\n辨认原图中商品、标识、标题、安全区和可分离装饰层；不能把一张扁平海报当成已分层文件。只有可独立控制的元素才安排独立运动；否则选择整体轻推、视差式构图或明确切镜。\n以一个主视觉变化组织注意力：色块开合、几何呼应或局部光线揭示。商品本体保持形状与比例，图形不得像真实配件附着到商品。文字、价格和标识用原始资产后期合成，生成画面为其预留位置。\n流行动效只是表达方式，不产生新的商品事实。限制同时运动层数，让每次运动有停稳的可读状态；竖屏和横屏都以商品轮廓与真实文案安全区验收。\n",
+    "contentEn": "",
+    "tags": [
+      "视频制作",
+      "本次制作单",
+      "创意编排"
+    ],
+    "scene": "",
+    "cronExpr": "",
+    "packageDigest": "1f80e358b35f60f1d58ada2c42e1acd0ab9b2d7e745938cb9816c5cc71da2e52",
+    "package": {
+      "sha256": "1f80e358b35f60f1d58ada2c42e1acd0ab9b2d7e745938cb9816c5cc71da2e52",
+      "size": 893,
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 1049,
+          "sha256": "c60f5503d1f5f9c68d12fe3738db9d0edf4ac31c2cff4c6fbe1d7dd5c5f385af",
+          "executable": false
+        }
+      ]
+    }
+  },
+  {
+    "id": "curated:sensory-food-director",
+    "kind": "skill",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "美食广告 · 质地与声音导演",
+    "nameEn": "Translate visible food preparation and serving evidence into sensory storyboards.",
+    "description": "门道原创适配；配方关联使用，仅对当前制作单生效。",
+    "descriptionEn": "Mendao-authored, instruction-only adaptation scoped to one production.",
+    "content": "---\nname: sensory-food-director\ndescription: Translate visible food preparation and serving evidence into sensory storyboards.\n---\n\n# 美食广告 · 质地与声音导演\n\n用于本次制作单的分镜与提示编排。服从本单素材、事实、用户要求及平台输出契约；不安装插件、不修改全局配置、不触发发布。\n\n先确认食物真实状态、切面、器皿、制作方式与可食用时间点，选一种可见质地变化作为主动作，例如拉开、切开、倒入或夹起。不要同时生成互相矛盾的温度、黏度和配料。\n近景交代动作接触点与受力方向，完成后停留让人看清质地。食物大小、数量和器皿跨镜一致；蒸汽或酥脆声只在实际状态支持时使用，声音是创作设计时明确其用途，不能当作录音证据。\n避免把感官形容词变成功效和食安承诺。成分、过敏原、产地、配方秘密来自用户资料，缺失则不推断。收尾回到完整菜品，防止特写使用户无法识别商品。\n",
+    "contentEn": "",
+    "tags": [
+      "视频制作",
+      "本次制作单",
+      "创意编排"
+    ],
+    "scene": "",
+    "cronExpr": "",
+    "packageDigest": "e566c7d735043658057c35984befb0eee48206d0fe7f1b9f238b42dd4b6ef7c6",
+    "package": {
+      "sha256": "e566c7d735043658057c35984befb0eee48206d0fe7f1b9f238b42dd4b6ef7c6",
+      "size": 886,
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 1039,
+          "sha256": "cd2552ade241df5c47d0a746d62035ef5d4acff8759059e0e9ebdae7c1541fa3",
+          "executable": false
+        }
+      ]
+    }
+  }
+]

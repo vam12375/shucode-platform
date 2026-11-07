@@ -1,0 +1,111 @@
+{
+  "template": {
+    "id": "black-gold-reveal",
+    "version": "1.0.0",
+    "family": "brand",
+    "name": {
+      "zh": "黑金轮廓揭幕",
+      "en": "Black and gold reveal"
+    },
+    "description": {
+      "zh": "用暗部轮廓、一道掠光和完整落版呈现品牌辨识，适合已有清晰包装图的美妆与珠宝。",
+      "en": "Black and gold reveal: a storyboard-first recipe using supplied assets and verified facts."
+    },
+    "industries": [
+      "美妆",
+      "香水",
+      "珠宝"
+    ],
+    "objectives": [
+      "商品理解",
+      "品牌辨识"
+    ],
+    "keywords": [
+      "黑金",
+      "奢华",
+      "香水",
+      "珠宝",
+      "品牌",
+      "Black and gold reveal"
+    ],
+    "requiredFacts": [
+      "包装正面与金属边缘",
+      "准确商品或门店身份；可用于本单的品牌资料",
+      "涉及功能、价格、成分和地址时需用户确认依据"
+    ],
+    "assetRequirements": [
+      "黑色背景上的同款商品的清晰素材",
+      "包装正面与金属边缘的对应近景或正式资料"
+    ],
+    "avoidWhen": [
+      "主要动作缺少对应素材或事实依据时改配方",
+      "用户要求与本配方的风格或叙事冲突时不采用",
+      "生成模型无法保持主体身份时先补素材并审分镜"
+    ],
+    "minAssets": 1,
+    "aspectRatios": [
+      "9:16",
+      "16:9",
+      "1:1",
+      "3:4",
+      "4:3"
+    ],
+    "durationRange": {
+      "min": 12,
+      "max": 60
+    },
+    "beats": [
+      {
+        "purpose": "光从侧后方露出轮廓",
+        "framing": "中景交代主体和承托关系",
+        "action": "起态：黑色背景上的同款商品保持上一状态，包装正面与金属边缘可辨。动作：光从侧后方露出轮廓，仅执行这一项主要变化。完成：动作结束后主体停稳，保留可读的结果。",
+        "camera": "起幅：主体与环境同框。路径：沿正面轴线缓慢接近。落幅：主体轮廓仍完整。",
+        "weight": 1
+      },
+      {
+        "purpose": "窄光沿真实边缘掠过",
+        "framing": "近景突出接触点与主要变化",
+        "action": "起态：黑色背景上的同款商品保持上一状态，包装正面与金属边缘可辨。动作：窄光沿真实边缘掠过，仅执行这一项主要变化。完成：动作结束后主体停稳，保留可读的结果。",
+        "camera": "起幅：主动作接触点可见。路径：沿动作方向短距离跟随。落幅：停在结果最清晰的位置。",
+        "weight": 1.4
+      },
+      {
+        "purpose": "商品全貌与留白落版",
+        "framing": "中景保留完整主体与文案安全区",
+        "action": "起态：黑色背景上的同款商品保持上一状态，包装正面与金属边缘可辨。动作：商品全貌与留白落版，仅执行这一项主要变化。完成：动作结束后主体停稳，保留可读的结果。",
+        "camera": "起幅：上一动作结果近景。路径：缓慢后退露出整体关系。落幅：完整主体与留白同框。",
+        "weight": 1
+      }
+    ],
+    "qualityChecks": [
+      "轮廓不能被黑位吞没",
+      "金光不改变商品本色",
+      "落版不增加不存在的金属零件",
+      "同款外观、颜色和数量跨镜一致",
+      "主动作具有清楚的开始和完成状态",
+      "每段使用当前模型合法秒数",
+      "字幕、旁白、音乐遵守本单开关",
+      "缺失事实不以创意画面补造"
+    ],
+    "verifiedModelIds": [],
+    "skillIds": [
+      "curated:brand-visual-director"
+    ],
+    "provenance": {
+      "platform": "LibTV",
+      "url": "https://www.liblib.tv/detail/6be9c54022e94d05a6288b715bab6e6f",
+      "observation": "公开案例标题与创意说明；非完整成片复刻",
+      "adaptation": "门道原创适配：仅借鉴创作结构，未复制第三方成片、音乐或平台工具链。"
+    }
+  },
+  "skills": [
+    {
+      "id": "curated:brand-visual-director",
+      "name": "品牌短片 · 视觉母题导演",
+      "version": "8ca3621004ee1c325e7df060a2c7080f1e7336925c3ff68e2390ffd47f53397d",
+      "packageDigest": "8b791acebd0c8a5226022ce4c80f5b6d9f37047714a0f9f149c7a48427cc219c",
+      "content": "---\nname: brand-visual-director\ndescription: Build a consistent brand film around supplied brand and product assets.\n---\n\n# 品牌短片 · 视觉母题导演\n\n用于本次制作单的分镜与提示编排。服从本单素材、事实、用户要求及平台输出契约；不安装插件、不修改全局配置、不触发发布。\n\n从品牌提供的颜色、形状、材质或行为中选一个可见母题，写出它在开头、变化、落版的三次不同作用。让叙事通过画面信息变化推进，不只堆砌高级、奢华、电影感等形容词。\n品牌价值须由实际产品或工艺细节支撑。历史、产地、环保、匠人身份和认证不能从氛围推断；无证据时只表达情绪。抽象过场可以作为创意，但不要冒充产品内部结构或真实厂房。\n保持主光方向、品牌色与商品身份稳定。落版保留干净空间，准确标识由已上传资产后期合成；缺少标识时留白，不重画商标。每次转场复用同一视觉母题并增加新信息。\n"
+    }
+  ],
+  "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}

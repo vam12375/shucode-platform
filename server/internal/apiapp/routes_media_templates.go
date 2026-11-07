@@ -2,6 +2,7 @@ package apiapp
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/vam12375/shucode-platform/server/internal/events"
 	"github.com/vam12375/shucode-platform/server/internal/media"
 )
 
@@ -49,6 +50,7 @@ func registerMediaTemplateRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		writeAudit(c.Request.Context(), deps, actor, "media.template.review", "video_template", input.TemplateID, gin.H{"templateVersion": input.TemplateVersion, "modelId": review.ModelID, "approved": review.Approved, "score": review.Score})
+		deps.ConfigEvents.Emit(events.DomainTemplateLibrary)
 		c.JSON(200, okData(review))
 	})
 }

@@ -6,7 +6,7 @@ import {
   type FormEvent,
 } from "react";
 import {
-  BookOpen,
+  LayoutTemplate,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -195,6 +195,22 @@ function LibraryContent() {
       if (active.current) setBusy(false);
     }
   };
+  const uploadPreview = async (file: File, slot: "cover" | "video") => {
+    if (!selected || busy || file.size > 64 * 1024 * 1024) {
+      if (file.size > 64 * 1024 * 1024) setError("素材不得超过 64 MiB");
+      return;
+    }
+    setBusy(true);
+    try {
+      const uploaded = await api<{ name: string }>("/template-library/previews", {
+        method: "POST", body: file, headers: { "content-type": file.type || "application/octet-stream" },
+      });
+      await mutate(selected, "PUT", { expectedVersion: selected.expectedVersion,
+        preview: { cover: selected.preview?.cover ?? "", video: selected.preview?.video ?? "", [slot]: uploaded.name },
+      }, "预览素材已更新");
+    } catch (reason) { setError(errorMessage(reason)); }
+    finally { if (active.current) setBusy(false); }
+  };
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (!fields || !kind || conflict) return;
@@ -326,7 +342,7 @@ function LibraryContent() {
       <header className="page-head">
         <div>
           <p className="eyebrow">参考 / 内容资产</p>
-          <PageTitle icon={BookOpen}>模板库</PageTitle>
+          <PageTitle icon={LayoutTemplate}>模板库</PageTitle>
         </div>
         <div className="form-row">
           <button
@@ -349,7 +365,7 @@ function LibraryContent() {
       </header>
       <p className="readout">
         管理视频配方、自动化、提示词与
-        Skill。开关保存后，客户端下次刷新目录时生效。
+        Skill。视频模板保存后，在线客户端自动更新；离线客户端恢复连接后更新。
       </p>
       <div className="library-register">
         <span>
@@ -437,7 +453,7 @@ function LibraryContent() {
           ) : null}
           {!loading && !visible.length ? (
             <div className="library-empty">
-              <Glyph icon={BookOpen} size={28} />
+              <Glyph icon={LayoutTemplate} size={28} />
               <p>{entries.length ? "没有符合筛选的模板" : "暂无模板"}</p>
               <span className="readout">
                 调整筛选，或点击「收录模板」添加内容。
@@ -462,6 +478,8 @@ function LibraryContent() {
                       {sceneLabels[entry.scene] ??
                         (entry.source === "builtin-video"
                           ? "内置配方"
+                          : entry.source === "curated"
+                            ? "门道创作配方"
                           : entry.source === "dineops"
                             ? "旧门道"
                             : "自建")}
@@ -531,7 +549,7 @@ function LibraryContent() {
         >
           {!fields ? (
             <div className="library-empty">
-              <Glyph icon={BookOpen} size={32} />
+              <Glyph icon={LayoutTemplate} size={32} />
               <h2>选一条模板，查看完整内容</h2>
               <p className="readout">
                 保留来源、双语正文与使用场景。
@@ -604,6 +622,15 @@ function LibraryContent() {
                       视频配方按版本维护。启用后可供选择，自动采用仍需通过对应模型的成片审核。
                     </Notice>
                     <a href="#/media-models">前往媒体模型查看模板审核</a>
+                    <section className="library-preview-editor">
+                      <h3>封面与示例视频</h3>
+                      <p className="muted">公开展示素材，单个文件最多 64 MiB。发布后使用内容指纹地址缓存一年；更新素材自动换址。</p>
+                      {selected?.preview?.cover && <img style={{ maxWidth: "100%", maxHeight: 240 }} src={"/api/v1/media/template-assets/" + selected.preview.cover} alt="模板封面" />}
+                      {selected?.preview?.video && <video style={{ maxWidth: "100%", maxHeight: 240 }} src={"/api/v1/media/template-assets/" + selected.preview.video} controls preload="none" />}
+                      <label className="field"><span className="field-label">上传封面</span><input aria-label="上传模板封面" type="file" accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadPreview(file,"cover"); event.target.value = ""; }} /></label>
+                      <label className="field"><span className="field-label">上传示例视频</span><input aria-label="上传模板示例视频" type="file" accept="video/mp4,video/webm" disabled={busy} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadPreview(file,"video"); event.target.value = ""; }} /></label>
+                      {selected?.preview && <button type="button" className="btn" disabled={busy} onClick={() => void mutate(selected,"PUT",{ expectedVersion:selected.expectedVersion, preview:{cover:"",video:""}},"预览关联已清除")}>清除预览关联</button>}
+                    </section>
                     <pre className="library-content">{fields.content}</pre>
                   </>
                 ) : (
