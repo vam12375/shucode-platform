@@ -385,13 +385,14 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		var body struct {
-			Version        int64                `json:"version"`
-			Analysis       media.Analysis       `json:"analysis"`
-			InputID        string               `json:"inputId"`
-			Error          string               `json:"error"`
-			Plan           media.Plan           `json:"plan"`
-			Brief          media.Brief          `json:"brief"`
-			SourceAnalysis media.SourceAnalysis `json:"sourceAnalysis"`
+			Version        int64                    `json:"version"`
+			Analysis       media.Analysis           `json:"analysis"`
+			InputID        string                   `json:"inputId"`
+			Error          string                   `json:"error"`
+			Plan           media.Plan               `json:"plan"`
+			Brief          media.Brief              `json:"brief"`
+			SourceAnalysis media.SourceAnalysis     `json:"sourceAnalysis"`
+			ImageAnalysis  media.AssetUnderstanding `json:"imageAnalysis"`
 		}
 		if !mediaBody(c, &body) {
 			return
@@ -422,6 +423,8 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			p, e = s.SetPlan(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.InputID, body.Plan)
 		case "source-analysis":
 			p, e = s.SetSourceAnalysis(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.InputID, body.SourceAnalysis)
+		case "image-analysis":
+			p, e = s.SetImageAnalysis(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.InputID, body.ImageAnalysis)
 		case "configure":
 			p, e = s.ConfigureReference(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.Brief)
 		case "revise":

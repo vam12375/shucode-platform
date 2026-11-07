@@ -29,16 +29,21 @@ func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int
 	if p == nil {
 		return nil, ErrInvalid
 	}
-	if p.Brief.ReferenceAssetID != "" && p.Status == "analyzing" && p.Analysis != nil && reflect.DeepEqual(*p.Analysis, a) {
+	if (p.Brief.ReferenceAssetID != "" || p.Brief.ImageAnalysisFirst) && p.Status == "analyzing" && p.Analysis != nil && reflect.DeepEqual(*p.Analysis, a) {
 		return p, nil
 	}
-	if p.Version != version || (p.Status != "draft" && p.Status != "analysis_failed") {
+	if p.Version != version || (p.Status != "draft" && p.Status != "analysis_failed" && !(p.Brief.ImageAnalysisFirst && p.Status == "image_review")) || p.CancelRequested {
 		return nil, ErrConflict
 	}
 	if a.TaskID == "" || a.InputID == "" || a.WorkspacePath == "" {
 		return nil, ErrInvalid
 	}
-	if (p.Brief.SourceOnly && a.Kind != "source") || (p.SourceAnalysis != nil && !p.Brief.SourceOnly && a.Kind != "adaptation") || (!p.Brief.SourceOnly && p.SourceAnalysis == nil && a.Kind != "") {
+	if p.Brief.ImageAnalysisFirst {
+		// 阶段与任务身份由平台绑定所有；UI 不能跳过看图或换任务继续规划。
+		if !validImageAnalysisBinding(p, a) {
+			return nil, ErrConflict
+		}
+	} else if (p.Brief.SourceOnly && a.Kind != "source") || (p.SourceAnalysis != nil && !p.Brief.SourceOnly && a.Kind != "adaptation") || (!p.Brief.SourceOnly && p.SourceAnalysis == nil && a.Kind != "") {
 		return nil, ErrInvalid
 	}
 	adaptation := a.Kind == "adaptation"
@@ -77,7 +82,7 @@ func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int
 		}
 	}
 	bound, err := s.Mutate(ctx, team, id, version, func(v *Project) error {
-		if v.Status != "draft" && v.Status != "analysis_failed" {
+		if v.Status != "draft" && v.Status != "analysis_failed" && !(v.Brief.ImageAnalysisFirst && v.Status == "image_review") {
 			return ErrConflict
 		}
 		v.Analysis = &a
@@ -114,6 +119,9 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 	}
 	if current == nil {
 		return nil, ErrInvalid
+	}
+	if current.Brief.ImageAnalysisFirst && (current.ImageAnalysis == nil || current.Analysis == nil || current.Analysis.Kind != "planning") {
+		return nil, ErrConflict
 	}
 	if current.Brief.CreativeExpansion != "" {
 		if current.PlanReview == nil || current.PlanReview.InputID != input || !slices.Contains([]string{"passed", "warning", "unavailable"}, current.PlanReview.Status) {

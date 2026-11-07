@@ -1,0 +1,60 @@
+{
+  "id": "staged-image-fixture",
+  "version": 3,
+  "status": "image_review",
+  "brief": {
+    "mode": "auto",
+    "product": "Cup",
+    "sellingPoints": "",
+    "assetIds": [
+      "E2E_IMAGE"
+    ],
+    "referenceUrls": [],
+    "platforms": [],
+    "researchPolicy": "disabled",
+    "creativeExpansion": "related",
+    "generationPolicy": "whole-first",
+    "videoModel": "E2E_V30",
+    "resolution": "720p",
+    "aspectRatio": "9:16",
+    "duration": 30,
+    "reviewPlan": false,
+    "finishing": {
+      "voiceover": false,
+      "music": false,
+      "nativeAudio": true,
+      "subtitles": "none"
+    },
+    "imageAnalysisFirst": true
+  },
+  "analysis": {
+    "kind": "images",
+    "taskId": "same-task",
+    "inputId": "images-input",
+    "workspacePath": "/fixture"
+  },
+  "imageAnalysis": {
+    "product": "Cup",
+    "category": "Drinkware",
+    "summary": "White cup with a handle",
+    "keywords": [
+      "cup"
+    ],
+    "ambiguity": "",
+    "assets": [
+      {
+        "assetId": "E2E_IMAGE",
+        "role": "product",
+        "subjectGroup": "cup",
+        "description": "White cup"
+      }
+    ],
+    "templateCandidates": []
+  },
+  "shots": [],
+  "quoteMicro": 0,
+  "chargedMicro": 0,
+  "cancelRequested": false,
+  "createdAt": "2026-11-07T00:00:00Z",
+  "updatedAt": "2026-11-07T00:00:00Z"
+}

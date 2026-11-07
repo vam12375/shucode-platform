@@ -155,6 +155,9 @@ const (
 )
 
 func ValidateBrief(b Brief, models []Model, assets []Asset) error {
+	if b.ImageAnalysisFirst && (b.Mode != "auto" || b.GenerationPolicy != "whole-first" || b.ReviewPlan || b.AssetUnderstanding != nil) {
+		return fmt.Errorf("video_understanding_flow_invalid")
+	}
 	if err := validateAssetUnderstanding(b); err != nil {
 		return err
 	}
