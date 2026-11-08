@@ -114,7 +114,7 @@ func validateResearchPlan(b Brief, p Plan) error {
 		}
 		return nil
 	}
-	if r == nil || !slices.Contains([]string{"reference", "template", "original"}, r.Mode) || !boundedNonempty(r.Reason, 1000) || !boundedNonempty(r.IntentSummary, 1000) || len(r.AssetObservations) < 1 || len(r.AssetObservations) > 20 || r.CreativeGaps == nil || len(r.CreativeGaps) > 5 || p.References == nil {
+	if r == nil || !slices.Contains([]string{"reference", "template", "original"}, r.Mode) || !boundedNonempty(r.Reason, 1000) || !boundedNonempty(r.IntentSummary, 1000) || r.AssetObservations == nil || len(r.AssetObservations) > 20 || r.CreativeGaps == nil || len(r.CreativeGaps) > 5 || p.References == nil {
 		return adaptiveResearchError()
 	}
 	seen := map[string]bool{}

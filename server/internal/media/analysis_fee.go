@@ -86,6 +86,7 @@ func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int
 			return ErrConflict
 		}
 		v.Analysis = &a
+		v.PlanningResult = nil
 		v.PlanReview = nil
 		v.AnalysisFee = fee
 		v.Status = "analyzing"
@@ -161,7 +162,7 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 		}
 	}
 	p, err := s.Mutate(ctx, team, id, version, func(v *Project) error {
-		if (v.Status != "analyzing" && !(recovering && v.Status == "analysis_failed")) || v.CancelRequested || v.Analysis == nil || v.Analysis.InputID != input {
+		if (v.Status != "analyzing" && !(v.Status == "analysis_ready" && planningResultEligible(v, input)) && !(recovering && v.Status == "analysis_failed")) || v.CancelRequested || v.Analysis == nil || v.Analysis.InputID != input {
 			return ErrConflict
 		}
 		if v.Brief.SourceOnly || (v.SourceAnalysis != nil && v.Analysis.Kind != "adaptation") {
@@ -181,6 +182,9 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 			return err
 		}
 		v.Plan = &plan
+		if v.PlanningResult != nil {
+			v.PlanningResult.Issues = []PlanningIssue{}
+		}
 		v.Shots = shots
 		v.QuoteMicro = total
 		v.Error = ""

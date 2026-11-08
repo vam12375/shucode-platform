@@ -1,0 +1,52 @@
+{
+  "id": "staged-image-fixture",
+  "version": 3,
+  "status": "analysis_ready",
+  "brief": {
+    "mode": "auto",
+    "product": "Cup",
+    "sellingPoints": "",
+    "assetIds": ["E2E_IMAGE"],
+    "referenceUrls": [],
+    "platforms": [],
+    "researchPolicy": "disabled",
+    "creativeExpansion": "related",
+    "generationPolicy": "whole-first",
+    "videoModel": "E2E_V30",
+    "resolution": "720p",
+    "aspectRatio": "9:16",
+    "duration": 30,
+    "reviewPlan": false,
+    "finishing": {
+      "voiceover": false,
+      "music": false,
+      "nativeAudio": true,
+      "subtitles": "none"
+    },
+    "imageAnalysisFirst": true
+  },
+  "analysis": {
+    "kind": "planning",
+    "taskId": "same-task",
+    "inputId": "planning-result-fixture",
+    "workspacePath": "/fixture"
+  },
+  "imageAnalysis": {
+    "text": "## 图片内容\n橙色机器人形象和中英文标识。\n## 用途\n角色展示与品牌识别。\n## 推荐模板\n暂无匹配，可用原创方案。\n## 说明\n推广主体尚不明确。"
+  },
+  "shots": [],
+  "quoteMicro": 0,
+  "chargedMicro": 0,
+  "cancelRequested": false,
+  "createdAt": "2026-11-07T00:00:00Z",
+  "updatedAt": "2026-11-07T00:00:00Z",
+  "planningResult": {
+    "text": "完整视频方案：橙色角色自然招手，最后保持全身画面。声音以对白与音效描述。",
+    "issues": [
+      {
+        "path": "shots.0.duration",
+        "code": "invalid_type"
+      }
+    ]
+  }
+}

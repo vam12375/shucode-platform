@@ -270,7 +270,7 @@ func (s *Service) action(ctx context.Context, team, id string, version int64, ac
 				return ErrConflict
 			}
 			p.CancelRequested = true
-			if p.Status == "draft" || p.Status == "analyzing" || p.Status == "source_ready" || p.Status == "image_review" || p.Status == "review" || p.Status == "analysis_failed" {
+			if p.Status == "draft" || p.Status == "analyzing" || p.Status == "analysis_ready" || p.Status == "source_ready" || p.Status == "image_review" || p.Status == "review" || p.Status == "analysis_failed" {
 				p.Status = "cancelled"
 			}
 		case "analysis-failed":

@@ -82,7 +82,7 @@ func (s *Service) PlanReview(ctx context.Context, team, id string, input PlanRev
 		}
 		started := false
 		p, err := s.Mutate(ctx, team, id, input.Version, func(p *Project) error {
-			if p.Status != "analyzing" || p.Analysis == nil || p.Analysis.InputID != input.InputID || p.CancelRequested {
+			if (p.Status != "analyzing" && !(p.Status == "analysis_ready" && planningResultEligible(p, input.InputID))) || p.Analysis == nil || p.Analysis.InputID != input.InputID || p.CancelRequested {
 				return ErrConflict
 			}
 			if p.PlanReview != nil {
@@ -114,7 +114,7 @@ func (s *Service) PlanReview(ctx context.Context, team, id string, input PlanRev
 		}
 		p, err := s.Mutate(ctx, team, id, input.Version, func(p *Project) error {
 			r := p.PlanReview
-			if p.Status != "analyzing" || p.Analysis == nil || p.Analysis.InputID != input.InputID || r == nil || r.Status != "pending" || r.RequestID != input.RequestID || r.InputID != input.InputID || r.CandidateHash != input.CandidateHash {
+			if (p.Status != "analyzing" && !(p.Status == "analysis_ready" && planningResultEligible(p, input.InputID))) || p.Analysis == nil || p.Analysis.InputID != input.InputID || r == nil || r.Status != "pending" || r.RequestID != input.RequestID || r.InputID != input.InputID || r.CandidateHash != input.CandidateHash {
 				return fmt.Errorf("video_story_review_conflict")
 			}
 			r.Status = input.Review.Status

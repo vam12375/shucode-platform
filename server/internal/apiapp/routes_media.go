@@ -393,6 +393,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			Brief          media.Brief          `json:"brief"`
 			SourceAnalysis media.SourceAnalysis `json:"sourceAnalysis"`
 			ImageAnalysis  media.ImageAnalysis  `json:"imageAnalysis"`
+			PlanningResult media.PlanningResult `json:"planningResult"`
 		}
 		if !mediaBody(c, &body) {
 			return
@@ -425,6 +426,8 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			p, e = s.SetSourceAnalysis(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.InputID, body.SourceAnalysis)
 		case "image-analysis":
 			p, e = s.SetImageAnalysis(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.InputID, body.ImageAnalysis)
+		case "planning-result":
+			p, e = s.SetPlanningResult(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.InputID, body.PlanningResult)
 		case "configure":
 			p, e = s.ConfigureReference(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.Brief)
 		case "revise":
@@ -535,7 +538,11 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 	})
 }
 func mediaBody(c *gin.Context, out any) bool {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 256<<10)
+	limit := int64(256 << 10)
+	if c.Param("action") == "planning-result" {
+		limit = 1 << 20
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
 	d := json.NewDecoder(c.Request.Body)
 	d.DisallowUnknownFields()
 	if e := d.Decode(out); e != nil {

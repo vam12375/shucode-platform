@@ -68,6 +68,15 @@ func TestAdaptiveResearchRejectsInvalidSourceAndMissingObservation(t *testing.T)
 	}
 }
 
+func TestAdaptiveOriginalAllowsEmptyObservationList(t *testing.T) {
+	b, p, models := adaptivePlanFixture()
+	// 空观察表不等于没有完整方案；没有观察事实时不能编造条目，也不能阻止已有镜头。
+	p.Research.AssetObservations = []AssetObservation{}
+	if _, _, err := BuildShots(b, p, models); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAdaptiveReferenceHonorsExplicitLinksAndDisabledPolicy(t *testing.T) {
 	b, p, models := adaptivePlanFixture()
 	b.ReferenceURLs = []string{"https://www.douyin.com/video/1"}
