@@ -189,13 +189,12 @@ func storyNeedsReview(b Brief, p Plan) bool {
 	if !storyPlanning(b) {
 		return false
 	}
-	// 图片一键生成已明确选择自动制作；复核意见保留展示，不能再追加一次隐式人工门槛。
-	// 实际素材绑定、模型能力与字幕/音轨参数仍由生成准入校验。
-	if b.ImageAnalysisFirst && !b.ReviewPlan && p.Story != nil && p.Story.Review != nil && slices.Contains([]string{"passed", "warning"}, p.Story.Review.Status) {
+	// 关闭生成前独立复核，缺少复核结果不能阻塞生成；素材和模型仍经原准入校验。
+	if b.ImageAnalysisFirst && !b.ReviewPlan {
 		return false
 	}
-	if p.Story == nil || p.Story.Review == nil || p.Story.Review.Status != "passed" {
-		return true
+	if p.Story == nil {
+		return false // validateStoryPlan 负责拒绝缺失的故事。
 	}
 	for _, g := range p.Story.Gaps {
 		if g.Resolution == "upload" {

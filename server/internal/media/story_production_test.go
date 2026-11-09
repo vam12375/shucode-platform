@@ -61,14 +61,14 @@ func TestStoryRejectsMissingFactsIllegalReferencesAndFrames(t *testing.T) {
 	}
 }
 
-func TestStoryReviewRequiredForMissingIndependentReviewOrUpload(t *testing.T) {
+func TestStoryReviewRequiredOnlyForUpload(t *testing.T) {
 	b, p, _ := storyFixture()
 	if storyNeedsReview(b, p) {
 		t.Fatal("passed plan forced review")
 	}
 	p.Story.Review = nil
-	if !storyNeedsReview(b, p) {
-		t.Fatal("missing independent review accepted")
+	if storyNeedsReview(b, p) {
+		t.Fatal("missing independent review blocked production")
 	}
 	p.Story.Review = &StoryPlanReview{Status: "passed", Issues: []string{}}
 	p.Story.Gaps = []StoryGap{{Description: "缺真实布局", Suggestion: "上传店内照片", Resolution: "upload"}}
@@ -173,7 +173,7 @@ func TestPlanReviewBindsCandidateAndRetriesUnavailableOnlyWithNewRequest(t *test
 		t.Fatalf("complete err=%v review=%+v", err, completed.PlanReview)
 	}
 	accepted, err := f.s.SetPlan(ctx, f.team, p.ID, completed.Version, p.Analysis.InputID, plan)
-	if err != nil || accepted.Plan == nil || accepted.Plan.Story.Review == nil || accepted.Plan.Story.Review.Status != "warning" {
+	if err != nil || accepted.Plan == nil || accepted.Plan.Story.Review != nil || accepted.PlanReview == nil || accepted.PlanReview.Status != "warning" {
 		t.Fatalf("plan acceptance err=%v", err)
 	}
 }

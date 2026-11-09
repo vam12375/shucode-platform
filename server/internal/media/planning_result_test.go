@@ -70,7 +70,7 @@ func TestPlanningResultWire(t *testing.T) {
 }
 
 func TestPlanningResultContinuesExistingPlanAdmission(t *testing.T) {
-	for _, review := range []string{"passed", "warning", "unavailable"} {
+	for _, review := range []string{"none", "passed", "warning", "unavailable", "pending", "stale"} {
 		t.Run(review, func(t *testing.T) {
 			f := setup(t)
 			ctx := context.Background()
@@ -83,7 +83,12 @@ func TestPlanningResultContinuesExistingPlanAdmission(t *testing.T) {
 				v.Plan, v.Shots, v.AnalysisFee = nil, []Shot{}, nil
 				v.Analysis = &Analysis{TaskID: "task", InputID: "input", Kind: "planning", WorkspacePath: "/fixture"}
 				v.ImageAnalysis = &ImageAnalysis{Text: "角色素材"}
-				v.PlanReview = &PlanReview{InputID: "input", RequestID: "review", CandidateHash: hash, Status: review, Issues: []string{"创作建议"}}
+				if review != "none" {
+					if review == "stale" {
+						hash = "stale"
+					}
+					v.PlanReview = &PlanReview{InputID: "input", RequestID: "review", CandidateHash: hash, Status: review, Issues: []string{"创作建议"}}
+				}
 				return nil
 			})
 			if err != nil {
