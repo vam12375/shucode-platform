@@ -126,12 +126,26 @@ func videoContent(prompt string, images []string, referenceVideo string, referen
 func videoSubmitBodyWithImages(m Model, b Brief, s ShotPlan, images []string, referenceVideo string, referenceAudio ...string) map[string]any {
 	// 原 true 会启用供应商可见水印；制作视频统一显式关闭，保留原首帧和视频参考语义。
 	body := map[string]any{"model": m.UpstreamModel, "content": videoContent(s.Prompt, images, referenceVideo, referenceAudio...), "resolution": b.Resolution, "ratio": providerVideoRatio(b.AspectRatio), "duration": s.Duration, "watermark": false}
+	applyArkSeedance25TaskOptions(body, m, images, referenceVideo != "" || len(referenceAudio) > 0 && referenceAudio[0] != "")
 	// 只在模型显式开启时下发；Seedance 1.0 等不支持该参数的模型保持原请求不变。
 	if m.GenerateAudio {
 		// 新后期拥有唯一声音主轨；除非用户保留原声，支持原生音频的模型必须显式关掉，省略会沿用上游默认。
 		body["generate_audio"] = finishingWantsNativeAudio(b)
 	}
 	return body
+}
+
+func applyArkSeedance25TaskOptions(body map[string]any, m Model, images []string, multimodal bool) {
+	if m.Adapter != "" && m.Adapter != "ark" || !seedance25Model(m.UpstreamModel) {
+		return
+	}
+	if multimodal {
+		// 平台按确定时长执行参考生成，显式声明任务类型；编辑/延长需要另一套参数，不能默认混用。
+		body["omni_reference_task_type"] = "reference"
+	} else if len(images) > 0 {
+		// 2.5 首尾帧任务只接受 adaptive，输出比例由首帧确定，不能沿用 2.0 的固定 ratio。
+		body["ratio"] = "adaptive"
+	}
 }
 
 // finishingWantsNativeAudio：旧制作单沿用模型默认原声；新后期只有用户显式保留时才请求原声。
@@ -275,6 +289,7 @@ func (p Provider) CanvasVideo(ctx context.Context, m Model, r CanvasRequest, ima
 	}
 	// 原 true 会把供应商水印写入视频；画布各生成模式也需显式关闭，不能依赖默认值。
 	body := map[string]any{"model": m.UpstreamModel, "content": videoContent(r.Prompt, images, video), "resolution": r.Resolution, "ratio": providerVideoRatio(r.AspectRatio), "duration": r.Duration, "watermark": false}
+	applyArkSeedance25TaskOptions(body, m, images, video != "")
 	if m.GenerateAudio {
 		body["generate_audio"] = true
 		if r.GenerateAudio != nil {

@@ -32,6 +32,35 @@ func TestValidateModelsAcceptsSeedanceMini(t *testing.T) {
 	}
 }
 
+func TestValidateModelsArkSeedance25ReferenceAndResolutionLimits(t *testing.T) {
+	for _, upstream := range []string{"doubao-seedance-2-5-260628", "doubao-seedance-2-5-pro-260128"} {
+		for _, tc := range []struct {
+			name       string
+			resolution string
+			reference  int
+			accept     bool
+		}{
+			{"480p", "480p", 30, true},
+			{"720p", "720p", 30, true},
+			{"1080p", "1080p", 30, true},
+			{"4k", "4k", 30, false},
+			{"reference-too-short", "720p", 1, false},
+			{"reference-too-long", "720p", 31, false},
+		} {
+			t.Run(upstream+"/"+tc.name, func(t *testing.T) {
+				m := fixtureVideoModel()
+				m.UpstreamModel = upstream
+				m.MinDuration, m.MaxDuration = 4, 30
+				m.Resolutions = []string{tc.resolution}
+				m.VideoReference = &VideoReferenceCapability{MaxDurationSeconds: tc.reference, MaxImages: 8, PriceMicro: 1}
+				if err := ValidateModels([]Model{m}); (err == nil) != tc.accept {
+					t.Fatalf("accept=%v, got err=%v", tc.accept, err)
+				}
+			})
+		}
+	}
+}
+
 func TestAutoMultimodalBuildShotsUsesGlobalImagesWithoutFirstFrame(t *testing.T) {
 	m := fixtureVideoModel()
 	b := Brief{Mode: "auto", ReferenceMode: "multimodal", Product: "产品", AssetIDs: []string{"asset-a", "asset-a", "asset-b"}, Platforms: []string{"douyin"}, VideoModel: m.ID, Resolution: "720p", AspectRatio: "16:9", Duration: 5, MaxCreditsMicro: 10_000_000}

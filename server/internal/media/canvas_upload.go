@@ -61,7 +61,8 @@ func (s *Service) UploadCanvasMedia(ctx context.Context, team, name, product str
 			}
 		}
 		metadata, e := probe(ctx, path)
-		if e != nil || !finitePositive(metadata.DurationSeconds) || metadata.DurationSeconds < 2 || metadata.DurationSeconds > 15 {
+		// 上传未选择模型，先容纳已接入型号的最大参考时长；生成准入再按冻结型号限制总时长。
+		if e != nil || !finitePositive(metadata.DurationSeconds) || metadata.DurationSeconds < 2 || metadata.DurationSeconds > maxCanvasReferenceSeconds {
 			return Asset{}, fmt.Errorf("canvas_reference_duration_limit")
 		}
 		if kind == "video" && (metadata.Width <= 0 || metadata.Height <= 0 || metadata.Width > 16384 || metadata.Height > 16384) {

@@ -2,6 +2,8 @@ package media
 
 import "slices"
 
+const maxCanvasReferenceSeconds = 30
+
 type CanvasCapabilities struct {
 	Modes              []string `json:"modes"`
 	MaxImages          int      `json:"maxImages"`
@@ -26,11 +28,15 @@ func CanvasCapabilitiesFor(m Model) *CanvasCapabilities {
 	if m.Kind != "video" || !(adapter == "ark" && (seedance20Model(m.UpstreamModel) || ark25) || adapter == "toapis" && (toapisSeedanceModel(m.UpstreamModel) || m.UpstreamModel == "kling-4.0")) {
 		return nil
 	}
-	maxImages, maxVideos, maxAudios, maxVideoSeconds := 9, 0, 3, 15
+	maxImages, maxVideos, maxAudios, maxVideoSeconds, maxAudioSeconds := 9, 0, 3, 15, 15
 	maxTotalReferences := 12
 	if ark25 || toapis25 {
 		// Seedance 2.5：单次最多 50 个参考素材（30 图 + 10 视频 + 10 音频）。
 		maxImages, maxAudios, maxTotalReferences = 30, 10, 50
+	}
+	if ark25 {
+		// 原先共用 2.0 的 15 秒限制，导致合法的 2.5 视频与音频参考在准入时被拒绝。
+		maxVideoSeconds, maxAudioSeconds = maxCanvasReferenceSeconds, maxCanvasReferenceSeconds
 	}
 	if adapter == "toapis" && m.UpstreamModel == "kling-4.0" {
 		if capability, ok := toapisModelCapabilities(m.UpstreamModel); ok {
@@ -38,7 +44,7 @@ func CanvasCapabilitiesFor(m Model) *CanvasCapabilities {
 			maxAudios = 0
 		}
 	}
-	c := &CanvasCapabilities{Modes: []string{"frames", "multimodal"}, MaxImages: maxImages, MaxAudios: maxAudios, MaxTotalReferences: maxTotalReferences, MaxVideoSeconds: maxVideoSeconds, MaxVideos: maxVideos, MaxAudioSeconds: 15, GenerateAudio: m.GenerateAudio, ReturnLastFrame: adapter == "ark"}
+	c := &CanvasCapabilities{Modes: []string{"frames", "multimodal"}, MaxImages: maxImages, MaxAudios: maxAudios, MaxTotalReferences: maxTotalReferences, MaxVideoSeconds: maxVideoSeconds, MaxVideos: maxVideos, MaxAudioSeconds: maxAudioSeconds, GenerateAudio: m.GenerateAudio, ReturnLastFrame: adapter == "ark"}
 	// 含视频报价必须有可用的计费口径：按次请求已含全部输入；按秒/Token 仍需配置参考费率。
 	referencePriced := m.VideoReference != nil && (m.VideoReference.PriceMicro > 0 || m.VideoReference.TokenPriceMicroPerMillion > 0 || m.EffectiveBillingUnit() == BillingUnitRequest)
 	if referencePriced {

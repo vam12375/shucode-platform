@@ -73,7 +73,7 @@ func mediaVideoReferenceQuoteMicro(model Model, reference *VideoReferenceCapabil
 		return videoReferenceQuoteMicro(reference, resolution, ratio, duration)
 	}
 	if model.EffectiveBillingUnit() == BillingUnitToken {
-		return videoTokenChargeMicro(estimateVideoTokens(resolution, ratio, 15, float64(duration)), model.TokenPriceMicroPerMillion)
+		return videoTokenChargeMicro(estimateVideoTokens(resolution, ratio, referenceInputSeconds(reference), float64(duration)), model.TokenPriceMicroPerMillion)
 	}
 	if reference != nil {
 		return videoReferenceQuoteMicro(reference, resolution, ratio, duration)
@@ -91,19 +91,22 @@ func mediaVideoTokenRates(p *Project, model Model) (price, cost int64, ok bool) 
 	return 0, 0, false
 }
 
-// videoReferenceQuoteMicro 使用 15 秒输入上限报价，覆盖 Ark 短输入最低 token 门槛；
+// videoReferenceQuoteMicro 按目录声明的参考输入上限报价；旧实现截到 15 秒，低估了 2.5 的 30 秒输入。
 // 实际结算会按 completion_tokens 重算，通常低于这个上限。
 func videoReferenceQuoteMicro(ref *VideoReferenceCapability, resolution, ratio string, outputSeconds int) int64 {
 	if ref == nil {
 		return 0
 	}
 	if ref.TokenPriceMicroPerMillion > 0 {
-		inputSeconds := float64(ref.MaxDurationSeconds)
-		if inputSeconds <= 0 || inputSeconds > 15 {
-			inputSeconds = 15
-		}
-		tokens := estimateVideoTokens(resolution, ratio, inputSeconds, float64(outputSeconds))
+		tokens := estimateVideoTokens(resolution, ratio, referenceInputSeconds(ref), float64(outputSeconds))
 		return videoTokenChargeMicro(tokens, ref.TokenPriceMicroPerMillion)
 	}
 	return ref.PriceMicro * int64(outputSeconds)
+}
+
+func referenceInputSeconds(ref *VideoReferenceCapability) float64 {
+	if ref != nil && ref.MaxDurationSeconds > 0 {
+		return float64(ref.MaxDurationSeconds)
+	}
+	return 15
 }

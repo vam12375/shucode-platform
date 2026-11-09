@@ -156,6 +156,7 @@ func (p Provider) CanvasMultimodalVideo(ctx context.Context, m Model, r CanvasRe
 	} else if p.Adapter == "ark" || p.Adapter == "" {
 		body["content"] = referenceContent(r.Prompt, images, videos, audios)
 		body["ratio"] = providerVideoRatio(r.AspectRatio)
+		applyArkSeedance25TaskOptions(body, m, images, len(images)+len(videos)+len(audios) > 0)
 	} else {
 		return "", ErrInvalid
 	}

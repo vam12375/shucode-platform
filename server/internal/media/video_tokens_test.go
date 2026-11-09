@@ -2,7 +2,7 @@ package media
 
 import "testing"
 
-func TestVideoReferenceQuoteUsesFifteenSecondUpperBound(t *testing.T) {
+func TestVideoReferenceQuoteUsesConfiguredInputUpperBound(t *testing.T) {
 	ref := &VideoReferenceCapability{
 		MaxDurationSeconds:        15,
 		MaxImages:                 4,
@@ -21,10 +21,18 @@ func TestVideoReferenceQuoteUsesFifteenSecondUpperBound(t *testing.T) {
 		t.Fatalf("480p square quote = %d, want 7680000", got)
 	}
 
-	capped := *ref
-	capped.MaxDurationSeconds = 90
-	if got := videoReferenceQuoteMicro(&capped, "480p", "16:9", 5); got != 8_035_200 {
-		t.Fatalf("input duration above 15s was not capped: %d", got)
+	long := *ref
+	long.MaxDurationSeconds = 30
+	if got := videoReferenceQuoteMicro(&long, "480p", "16:9", 5); got != 14_061_600 {
+		t.Fatalf("30s input quote = %d, want 14061600", got)
+	}
+	model := Model{Kind: "video", Adapter: "ark", UpstreamModel: "doubao-seedance-2-5-260628", BillingUnit: BillingUnitToken, TokenPriceMicroPerMillion: 40_000_000}
+	if got := mediaVideoReferenceQuoteMicro(model, &long, "480p", "16:9", 5); got != 14_061_600 {
+		t.Fatalf("30s reference token quote = %d", got)
+	}
+	long.TokenPriceMicroPerMillion = 0
+	if got := mediaVideoReferenceQuoteMicro(model, &long, "480p", "16:9", 5); got != 14_061_600 {
+		t.Fatalf("30s base token quote = %d", got)
 	}
 }
 

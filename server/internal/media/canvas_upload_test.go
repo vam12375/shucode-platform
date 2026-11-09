@@ -3,6 +3,7 @@ package media
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"testing"
 )
 
@@ -26,10 +27,23 @@ func TestCanvasUploadSniffsAndProbesPublicVideoAndAudio(t *testing.T) {
 	if _, err := f.s.UploadCanvasMedia(context.Background(), f.team, "fake.mp4", "canvas", bytes.NewBufferString("not a video")); err == nil {
 		t.Fatal("extension trusted without media signature")
 	}
-	f.s.ReferenceProbe = func(context.Context, string) (ReferenceMetadata, error) {
-		return ReferenceMetadata{DurationSeconds: 16, Width: 720, Height: 1280}, nil
-	}
-	if _, err := f.s.UploadCanvasMedia(context.Background(), f.team, "long.wav", "canvas", bytes.NewReader(audio)); err == nil {
-		t.Fatal("overlong reference accepted")
+	for _, duration := range []float64{30, 30.001} {
+		f.s.ReferenceProbe = func(context.Context, string) (ReferenceMetadata, error) {
+			return ReferenceMetadata{DurationSeconds: duration, Width: 720, Height: 1280}, nil
+		}
+		for _, tc := range []struct {
+			name string
+			data []byte
+		}{{"reference.mp4", video}, {"reference.mov", mov}, {"reference.wav", audio}} {
+			t.Run(fmt.Sprintf("%s/%g", tc.name, duration), func(t *testing.T) {
+				a, err := f.s.UploadCanvasMedia(context.Background(), f.team, tc.name, "canvas", bytes.NewReader(tc.data))
+				if duration == 30 && (err != nil || a.DurationSeconds != duration) {
+					t.Fatalf("30s reference rejected: asset=%+v err=%v", a, err)
+				}
+				if duration > 30 && err == nil {
+					t.Fatal("overlong reference accepted")
+				}
+			})
+		}
 	}
 }

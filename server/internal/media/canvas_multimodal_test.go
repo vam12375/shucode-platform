@@ -304,7 +304,7 @@ func TestCanvasSeedance25ReferenceLimitsAndDuration(t *testing.T) {
 		model    Model
 		maxVideo int
 	}{
-		{"ark", Model{Kind: "video", Adapter: "ark", UpstreamModel: "doubao-seedance-2-5-pro-260128", GenerateAudio: true, VideoReference: &VideoReferenceCapability{MaxDurationSeconds: 15, MaxImages: 8, TokenPriceMicroPerMillion: 1}}, 10},
+		{"ark", Model{Kind: "video", Adapter: "ark", UpstreamModel: "doubao-seedance-2-5-260628", GenerateAudio: true, VideoReference: &VideoReferenceCapability{MaxDurationSeconds: 30, MaxImages: 8, TokenPriceMicroPerMillion: 1}}, 10},
 		{"toapis-standard", Model{Kind: "video", Adapter: "toapis", UpstreamModel: "seedance-2-5", BillingUnit: BillingUnitToken, TokenPriceMicroPerMillion: 1, VideoReference: &VideoReferenceCapability{MaxDurationSeconds: 15, MaxImages: 8, TokenPriceMicroPerMillion: 1}}, 10},
 		{"toapis-ext", Model{Kind: "video", Adapter: "toapis", UpstreamModel: "seedance-2.5-ext", BillingUnit: BillingUnitRequest, PriceMicro: 1, VideoReference: &VideoReferenceCapability{MaxDurationSeconds: 15, MaxImages: 8}}, 10},
 	} {
@@ -313,6 +313,13 @@ func TestCanvasSeedance25ReferenceLimitsAndDuration(t *testing.T) {
 			if c == nil || c.MaxImages != 30 || c.MaxVideos != test.maxVideo || c.MaxAudios != 10 || c.MaxTotalReferences != 50 {
 				t.Fatalf("caps = %+v", c)
 			}
+			wantSeconds := 15
+			if test.name == "ark" {
+				wantSeconds = 30
+			}
+			if c.MaxVideoSeconds != wantSeconds || c.MaxAudioSeconds != wantSeconds {
+				t.Fatalf("reference timing caps = %+v", c)
+			}
 			if err := validateCanvasOptions(test.model, CanvasRequest{Kind: "video", ReferenceMode: "multimodal", Duration: 30, AssetIDs: make([]string, 30), VideoReferences: make([]CanvasVideoReference, 10), AudioAssetIDs: make([]string, 10)}); err != nil {
 				t.Fatalf("30 refs/duration rejected: %v", err)
 			}
@@ -320,5 +327,67 @@ func TestCanvasSeedance25ReferenceLimitsAndDuration(t *testing.T) {
 				t.Fatal("31s accepted")
 			}
 		})
+	}
+}
+
+func TestCanvasSeedance25AdmissionUsesThirtySecondReferenceTotals(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	m := fixtureVideoModel()
+	m.UpstreamModel = "doubao-seedance-2-5-260628"
+	m.VideoReference = &VideoReferenceCapability{MaxDurationSeconds: 30, MaxImages: 8, PriceMicro: 1}
+	image := canvasReferenceAsset(t, f, "image", 0)
+	for _, tc := range []struct {
+		name   string
+		kind   string
+		times  []float64
+		accept bool
+	}{
+		{"single-video-at-limit", "video", []float64{30}, true},
+		{"combined-videos-at-limit", "video", []float64{14, 16}, true},
+		{"combined-videos-over-limit", "video", []float64{14, 16.001}, false},
+		{"single-audio-at-limit", "audio", []float64{30}, true},
+		{"combined-audios-at-limit", "audio", []float64{14, 16}, true},
+		{"combined-audios-over-limit", "audio", []float64{14, 16.001}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := CanvasRequest{Kind: "video", ReferenceMode: "multimodal", Duration: 5, AssetIDs: []string{image.ID}}
+			for _, duration := range tc.times {
+				a := canvasReferenceAsset(t, f, tc.kind, duration)
+				if tc.kind == "video" {
+					r.VideoReferences = append(r.VideoReferences, CanvasVideoReference{AssetID: a.ID})
+				} else {
+					r.AudioAssetIDs = append(r.AudioAssetIDs, a.ID)
+				}
+			}
+			_, err := f.s.validateCanvasMultimodal(ctx, f.team, m, r)
+			if (err == nil) != tc.accept {
+				t.Fatalf("accept=%v, got err=%v", tc.accept, err)
+			}
+		})
+	}
+	for _, model := range []Model{
+		{Kind: "video", Adapter: "ark", UpstreamModel: "doubao-seedance-2-0-260128"},
+		{Kind: "video", Adapter: "toapis", UpstreamModel: "seedance-2-5"},
+		{Kind: "video", Adapter: "toapis", UpstreamModel: "seedance-2.5-ext"},
+	} {
+		model.VideoReference = &VideoReferenceCapability{MaxDurationSeconds: 15, MaxImages: 8, PriceMicro: 1}
+		for _, kind := range []string{"video", "audio"} {
+			a := canvasReferenceAsset(t, f, kind, 16)
+			r := CanvasRequest{Kind: "video", ReferenceMode: "multimodal", Duration: 5, AssetIDs: []string{image.ID}}
+			if kind == "video" {
+				r.VideoReferences = []CanvasVideoReference{{AssetID: a.ID}}
+			} else {
+				r.AudioAssetIDs = []string{a.ID}
+			}
+			if _, err := f.s.validateCanvasMultimodal(ctx, f.team, model, r); err == nil {
+				t.Fatalf("%s accepted overlong %s", model.UpstreamModel, kind)
+			}
+		}
+	}
+	// 管理员配置的更小视频上限仍生效，不能被型号的 30 秒能力反向扩大。
+	m.VideoReference.MaxDurationSeconds = 20
+	if c := CanvasCapabilitiesFor(m); c.MaxVideoSeconds != 20 || c.MaxAudioSeconds != 30 {
+		t.Fatalf("configured reference limit changed: %+v", c)
 	}
 }

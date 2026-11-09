@@ -125,3 +125,22 @@ func TestPublicSeedance25ModelsExposeThirtySecondsAndRequestTiers(t *testing.T) 
 		}
 	}
 }
+
+func TestPublicArkSeedance25ReferenceInputLimits(t *testing.T) {
+	models := publicMediaModels([]media.Model{{
+		ID: "ark25", Name: "Seedance 2.5", Kind: "video", Adapter: "ark", UpstreamModel: "doubao-seedance-2-5-260628",
+		Resolutions: []string{"480p", "720p", "1080p"}, MinDuration: 4, MaxDuration: 30,
+		VideoReference: &media.VideoReferenceCapability{MaxDurationSeconds: 30, MaxImages: 8, TokenPriceMicroPerMillion: 1, TokenCostMicroPerMillion: 1},
+	}})
+	capability, ok := models[0]["canvasCapabilities"].(*media.CanvasCapabilities)
+	if !ok || capability.MaxVideoSeconds != 30 || capability.MaxAudioSeconds != 30 || capability.MaxVideos != 10 || capability.MaxAudios != 10 {
+		t.Fatalf("Ark 2.5 canvas limits: %+v", models[0])
+	}
+	reference, ok := models[0]["videoReference"].(gin.H)
+	if !ok || reference["maxDurationSeconds"] != 30 {
+		t.Fatalf("Ark 2.5 video reference limits: %+v", models[0])
+	}
+	if _, leaked := reference["tokenCostMicroPerMillion"]; leaked {
+		t.Fatal("reference cost leaked")
+	}
+}

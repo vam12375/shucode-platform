@@ -45,6 +45,7 @@ func ValidateModels(models []Model) error {
 		}
 		displayNames[group] = m.DisplayName
 		unit := m.EffectiveBillingUnit()
+		ark25 := m.Adapter == "ark" && seedance25Model(m.UpstreamModel)
 		priceMissing := m.PriceMicro <= 0 && !(m.Kind == "video" && unit == BillingUnitToken && m.TokenPriceMicroPerMillion > 0)
 		if strings.TrimSpace(m.ID) == "" || m.Name == "" || seen[m.ID] || m.ProviderID == "" || m.UpstreamModel == "" || (m.Adapter != "ark" && m.Adapter != "toapis") || m.PriceVersion == "" || m.PriceMicro < 0 || priceMissing || m.PriceMicro > 100_000_000 || m.CostMicro < 0 || m.CostMicro > 100_000_000 {
 			return ErrInvalid
@@ -101,6 +102,10 @@ func ValidateModels(models []Model) error {
 		}
 		if m.VideoReference != nil {
 			c := m.VideoReference
+			// 2.5 参考输入最多 30 秒，不能沿用平台原片存储的 90 秒上限开放上游不支持的请求。
+			if ark25 && (c.MaxDurationSeconds < 2 || c.MaxDurationSeconds > maxCanvasReferenceSeconds) {
+				return ErrInvalid
+			}
 			maxReferenceImages := 8
 			if m.Adapter == "toapis" && m.UpstreamModel == "kling-4.0" {
 				maxReferenceImages = 10
@@ -139,6 +144,9 @@ func ValidateModels(models []Model) error {
 			}
 		}
 		for _, r := range m.Resolutions {
+			if ark25 && r != "480p" && r != "720p" && r != "1080p" {
+				return ErrInvalid
+			}
 			if (m.Kind == "image" && !slices.Contains(imageTiers(m), r)) || (m.Kind == "video" && m.Adapter != "toapis" && r != "480p" && r != "720p" && r != "1080p" && r != "4k") {
 				return ErrInvalid
 			}
