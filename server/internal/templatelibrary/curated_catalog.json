@@ -196,5 +196,505 @@
         }
       ]
     }
+  },
+  {
+    "id": "curated:dish-image-analyst",
+    "kind": "skill",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "餐饮一键成片 · 菜品图分析（看图阶段）",
+    "nameEn": "",
+    "description": "分析商家上传的餐饮图片（菜品、门头、店内、菜单、人物、logo）：逐张分类、判断能否用于 AI 视频、提取菜品要素，并为每道菜写一句「外观锁定句」，让生成的视频与实物一致。在为餐厅或美食制作视频、写视频提示词之前先用它看图。",
+    "descriptionEn": "",
+    "content": "---\nname: dish-image-analyst\ndescription: 分析商家上传的餐饮图片（菜品、门头、店内、菜单、人物、logo）：逐张分类、判断能否用于 AI 视频、提取菜品要素，并为每道菜写一句「外观锁定句」，让生成的视频与实物一致。在为餐厅或美食制作视频、写视频提示词之前先用它看图。\n---\n\n# 菜品图分析（看图阶段）\n\n输入：brief（含 `images` 列表和可选 `hint`）+ 图片本身。输出：`assets` JSON（字段与枚举见 `../restaurant-video-director/references/contracts.md`）。\n\n## 步骤\n\n1. **分类**：每张图归入 `kind`：dish / storefront / interior / person / menu / logo / other。一张图里有多种内容时，按画面主体归类。\n2. **质量**：给 1–5 分并列出问题。长边 < 720px、严重模糊、过暗或过曝、有水印、带他店 logo 或招牌、手指遮挡主体，都写进 `issues`。≤2 分的图不进入 hero，并提示重拍。\n3. **菜品要素**（`kind = dish`）：\n   - `name`：先看 `hint`；与画面冲突时以画面为准并标 `name_confidence = low`；看不清就写\"待确认：疑似……\"。\n   - `category`（14 选 1）、`state`（7 选 1）、`vessel`、`visible_ingredients`（只写看得见的）、`colors`。\n   - 生肉、血水、酒类、明显的过敏原，写进 `risks`。\n4. **外观锁定句**：按 `references/appearance-lock.md` 写 ≤45 字的一句话。门头、店内图也写，但只描述造型与光线，不写招牌上的字。\n5. **角色**：最清晰、最有\"钩子\"的菜 = `hero`；其余 = `support`；门头 = `establishing`；店内 = `atmosphere`；菜单 = `info_only`（只 OCR 出 `menu_items`，不进视频）；logo 与人物按授权和用途标注。\n6. **竖构图提示**：横图或方图要转 9:16 时，写 `crop_note`（取哪里、保留什么）。不拉伸。\n7. **汇总**：`coverage`（各类数量）、`warnings`（缺门头 / 只有一张菜 / 太暗……）。\n\n## 规则\n\n- 只描述看得见的，不脑补食材、做法、产地、口味。\n- 不确定的菜名别当事实写进旁白，让界面请商家确认。\n- 人物图：只记录有无人脸，不识别身份；没有授权标记的人物图 `role = exclude`。\n- 菜单与价目表只用于提取 `menu_items` 和价格，不当作视觉参考。\n- 输出严格 JSON，不夹带解释文字。\n",
+    "contentEn": "",
+    "tags": [
+      "餐饮一键成片",
+      "视频制作",
+      "餐饮探店"
+    ],
+    "scene": "",
+    "cronExpr": "",
+    "packageDigest": "7bb2e9f031b7a14f298342783f533ce58b752fa0ba49d09f61cae62c4c5e28c7",
+    "package": {
+      "sha256": "7bb2e9f031b7a14f298342783f533ce58b752fa0ba49d09f61cae62c4c5e28c7",
+      "size": 3451,
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 2402,
+          "sha256": "cec984a0c7e46ec24e9116551210df12b5cb22fbf6f1a0d07b78238ce1942d75",
+          "executable": false
+        },
+        {
+          "path": "references/appearance-lock.md",
+          "size": 2722,
+          "sha256": "a361a8b4e4cec748b54c91d04d364e3575e921c799621ec1c78589825d93b8b7",
+          "executable": false
+        }
+      ]
+    }
+  },
+  {
+    "id": "curated:food-video-qa",
+    "kind": "skill",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "餐饮一键成片 · 预检（生成前把关）",
+    "nameEn": "",
+    "description": "餐饮视频生成前的预检：用脚本检查提示词结构（时间轴连续、@图片分工、字数、对白数量、极限词），并按所选模型检查单段时长上限、参考图数量上限和时间段数；再按清单检查菜品真实度、广告合规、人像授权、AI 标识和多段接缝，输出可执行的修改建议。在 seedance-prompt-composer 写完提示词、真正生成视频（花积分）之前使用；也可用来扫描优惠文案、字卡和发布文案里的违规用语。",
+    "descriptionEn": "",
+    "content": "---\nname: food-video-qa\ndescription: 餐饮视频生成前的预检：用脚本检查提示词结构（时间轴连续、@图片分工、字数、对白数量、极限词），并按所选模型检查单段时长上限、参考图数量上限和时间段数；再按清单检查菜品真实度、广告合规、人像授权、AI 标识和多段接缝，输出可执行的修改建议。在 seedance-prompt-composer 写完提示词、真正生成视频（花积分）之前使用；也可用来扫描优惠文案、字卡和发布文案里的违规用语。\n---\n\n# 预检（生成前把关）\n\n生成一次 15–30 秒视频成本不低，多段更是成倍，先把能拦的拦住。\n\n## 1. 脚本检查（确定性）\n\n```bash\npython3 scripts/lint_prompt.py <提示词.txt 或 示例.md> --duration 30 --model seedance-2.5\npython3 scripts/lint_prompt.py <文件.md> --duration 15,15 --model seedance-2.0   # 多段：每段一个时长\npython3 scripts/lint_prompt.py <文件> --duration 30 --json                         # 供程序调用\npython3 scripts/lint_prompt.py --scan-text <文案.txt>                               # 扫字卡、旁白、发布文案\n```\n\n- `--model` 读 `../restaurant-video-director/references/model-profiles.json`；省略时用档案的 default。\n- `--duration` 是**每段**的时长，不是整片时长。\n- `.md` 文件检查其中每个含【时间轴】的代码块；第 2 段起自动要求【承接】，多段自动按 `sfx_only` 检查。\n- 单段 `.txt` 是第 2 段起时加 `--continuation`。\n\n检查项：区块齐全（规格 / 素材分工 / 连续性 / 时间轴 / 声音 / 禁止）· 时间轴从 0 起连续、末端 = 该段时长、每段 ≥2s、时间段数 ≤ 档案的 `max_ranges`、每段有\"镜头\"和\"结束画面\" · **单段时长 ≤ 档案的 `single_pass_max`** · @图片声明与使用一致、每个声明带\"不取\"、**数量 ≤ 档案的 `refs.image`** · 规格含 9:16 与时长 · 对白 ≤3 句且每句 ≤12 字 · 对白里的极限词 · 禁止区块含\"文字\" · 菜品保真句（不增减）· 字数软 / 硬上限。\n\n## 2. 人工清单（逐条判断）\n\n| 类别 | 检查 | 不通过时 |\n|---|---|---|\n| 菜品真实 | 每个菜品 @图片有外观锁定句；没有\"更大 / 更丰盛 / 满满\"；菜品镜头 ≤3s；cold / iced 没有热气 | 改写素材行与菜品 beat |\n| 不编造 | 画面里没有菜单上没有的菜；价格与优惠来自 brief | 删除或改回商家原文 |\n| 文案合规 | 旁白、字卡、发布文案过 `--scan-text`；\"限时 / 免费 / 0 元\"带条件 | 用 `references/banned-words.md` 的替换建议 |\n| 人像 | 人物图有授权才用；无明星或公众人物；无儿童近景 | 降级为 pov / foodie_ai |\n| 模型与人脸 | 外接缝 ≥2 时出镜方式已降级（foodie_ai / owner → pov）；档案 `face_reference = blocked_reported` 时没有用真人照片做参考 | 按 `../restaurant-story-planner/references/hosts.md` 降级 |\n| 他店元素 | 无他店招牌与品牌 logo；无可读文字 | 加虚化或删除 |\n| AI 标识 | `post.ai_label = true` | 补上 |\n| 后厨卫生 | 有后厨镜头时：干净、厨师戴帽 | 补充描述 |\n| 接缝 | 每个外接缝有类型，出口写进上一段的结束画面，入口写进下一段的【承接】；段尾是静态或半静态构图；冷菜没有用 `steam_wipe`；`match_cut` 两侧写明形状、位置、大小、主色；对白没有跨接缝；`post.transitions` 列全 | 按 `../restaurant-story-planner/references/seams-and-transitions.md` 修改 |\n| 多段声音 | 多段 `sound_mode = sfx_only`，BGM 与旁白后期统一加 | 改成 `BGM：无（后期统一配乐）` |\n\n## 3. 输出 qa_report\n\n`{pass, blockers[], warnings[], fixes[]}`（格式见 `../restaurant-video-director/references/contracts.md`）。有 blockers 就不放行。blockers = lint 的 ERROR + 人工清单里\"菜品真实 / 不编造 / 文案合规 / 人像 / 模型与人脸\"类不通过。warnings 不阻塞，但要展示给用户。\n\n## 注意\n\n- 极限词清单是常见风险提示，不是法律意见；上线前由商家或法务按平台规则复核。\n- 改词只改 `references/banned-words.md`，脚本从那里读取。\n- 模型上限只改 `model-profiles.json`，脚本从那里读取；档案里的数值来自第三方资料，先试拍再放量。\n",
+    "contentEn": "",
+    "tags": [
+      "餐饮一键成片",
+      "视频制作",
+      "餐饮探店"
+    ],
+    "scene": "",
+    "cronExpr": "",
+    "packageDigest": "3fce447ab355714542482db3c70dfae1ac5c765b281e1f150d1f85b170e597db",
+    "package": {
+      "sha256": "3fce447ab355714542482db3c70dfae1ac5c765b281e1f150d1f85b170e597db",
+      "size": 9614,
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 4370,
+          "sha256": "50185fe4d3bf9cfd1e00486dd3cdaea8f334f9ea4ef160de8f922cf726feb93d",
+          "executable": false
+        },
+        {
+          "path": "references/banned-words.md",
+          "size": 1548,
+          "sha256": "c0765df0bdf3465dc53db1180e557cf5ca2cd600de5dacdef233a2ac2d49e657",
+          "executable": false
+        },
+        {
+          "path": "scripts/lint_prompt.py",
+          "size": 16169,
+          "sha256": "7fefc4625c28979a475b9ca22deb3890129748fd48b2721483e31fca7607253a",
+          "executable": false
+        }
+      ]
+    }
+  },
+  {
+    "id": "curated:restaurant-publish-copy",
+    "kind": "skill",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "餐饮一键成片 · 发布文案",
+    "nameEn": "",
+    "description": "为餐饮探店短视频生成发布文案：标题（悬念/数字/情绪/反差四类）、正文、话题标签、封面大字、置顶评论、发布时段建议，按抖音、小红书、视频号、快手的语气区分，并避开极限词和夸大承诺。在视频方案确定后使用，也可单独给已有视频写文案。",
+    "descriptionEn": "",
+    "content": "---\nname: restaurant-publish-copy\ndescription: 为餐饮探店短视频生成发布文案：标题（悬念/数字/情绪/反差四类）、正文、话题标签、封面大字、置顶评论、发布时段建议，按抖音、小红书、视频号、快手的语气区分，并避开极限词和夸大承诺。在视频方案确定后使用，也可单独给已有视频写文案。\n---\n\n# 发布文案\n\n输入：`brief` + `shot_plan`（含所用菜品、店名、区域、优惠）。输出 `copy` JSON：`titles[3]`、`caption`、`hashtags[]`、`cover_text`、`pinned_comment`、`post_time`、`disclosure`。\n\n## 规则\n\n1. 事实只来自 brief 与 assets：菜名、人均、区域、优惠、营业时间；不编造、不夸大。\n2. 不使用极限词与功效词（见 `../food-video-qa/references/banned-words.md`）；写完用 `--scan-text` 扫一遍。\n3. 优惠必须带条件和有效期；写\"限时\"就要写截止时间。\n4. 声明 AI 生成：`disclosure = \"本视频由 AI 辅助生成\"`，并提醒在平台开启 AI 生成标识。\n5. 地址写区域 + 道路简称，不写手机号、微信号（多数平台限制外部联系方式）。\n\n## 标题公式（各出 1 条，共 3 条，≤20 字）\n\n| 类型 | 公式 | 例 |\n|---|---|---|\n| 悬念 | {区域}这家{品类}，路过差点没忍住 | 玉林路这家火锅，路过差点没忍住 |\n| 数字 | 人均{价}，{n}道菜吃到扶墙 | 人均88，三道菜吃到扶墙 |\n| 情绪 | 加班到{时间}，{菜名}救了我 | 加班到十点，这碗牛肉面救了我 |\n| 反差 | 本来只想{小事}，结果{大事} | 本来只想路过，结果在这坐了俩小时 |\n\n人均、道数必须是真实数据；没有就换别的公式。\n\n## 正文结构（≤150 字）\n\n钩子句 → 3 个具体细节（菜 / 口感 / 环境，来自画面）→ 信息（人均 / 时段 / 区域）→ 互动问句。\n\n- 抖音：口语短句，少 emoji，结尾问句引评论。\n- 小红书：首行带 1–2 个 emoji，分行，信息放最后，关键词自然出现。\n- 视频号：偏朋友圈语气，克制，不堆话题。\n- 快手：直白、实在，突出分量与价格（须真实）。\n\n## 话题\n\n3–6 个：`#{城市}美食` `#{区域}探店` `#{品类}` `#探店` + 1–2 个场景词（`#深夜食堂` `#打工人午餐`）。不蹭无关热点。\n\n## 封面字（≤8 字）\n\nhero 菜名 + 一个情绪词：「毛肚下锅」「深夜这碗面」。不放价格，不放极限词。\n\n## 置顶评论\n\n营业时间 + 团购或到店方式（如有）+ 一句诚实的提醒（如\"晚高峰要排队\"）。\n\n## 发布时段建议\n\n午市前 10:30–11:30；晚市前 16:30–18:00；夜宵 20:30–22:00。\n",
+    "contentEn": "",
+    "tags": [
+      "餐饮一键成片",
+      "视频制作",
+      "餐饮探店"
+    ],
+    "scene": "",
+    "cronExpr": "",
+    "packageDigest": "74ce203512a992fe72df65e63b7f2b3aff21bbfdaf9532c5192a03334a490c0b",
+    "package": {
+      "sha256": "74ce203512a992fe72df65e63b7f2b3aff21bbfdaf9532c5192a03334a490c0b",
+      "size": 1772,
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 2702,
+          "sha256": "b99dc7aecc55a6a3549eee0eab918dc7aaa754f811f85ebaab1f53b0c7a5ed81",
+          "executable": false
+        }
+      ]
+    }
+  },
+  {
+    "id": "curated:restaurant-story-planner",
+    "kind": "skill",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "餐饮一键成片 · 剧情与分镜规划",
+    "nameEn": "",
+    "description": "为餐饮探店短视频选剧情模板并生成逐幕分镜计划：先按所选模型的单段上限把 15/30/45/60 秒拆成「幕」（每幕 15 秒）和生成段，设计段间转场接缝，再在 6 个探店剧情（闻香路过、一道菜的诞生、双人盲测、深夜食堂、午餐救星、吃货闯关）中选型，把菜品图和门头图绑定到具体镜头，产出旁白与后期字卡计划。在看图之后、写视频提示词之前使用。",
+    "descriptionEn": "",
+    "content": "---\nname: restaurant-story-planner\ndescription: 为餐饮探店短视频选剧情模板并生成逐幕分镜计划：先按所选模型的单段上限把 15/30/45/60 秒拆成「幕」（每幕 15 秒）和生成段，设计段间转场接缝，再在 6 个探店剧情（闻香路过、一道菜的诞生、双人盲测、深夜食堂、午餐救星、吃货闯关）中选型，把菜品图和门头图绑定到具体镜头，产出旁白与后期字卡计划。在看图之后、写视频提示词之前使用。\n---\n\n# 剧情与分镜规划\n\n输入：`brief` + `assets`。输出：`shot_plan` JSON（见 `../restaurant-video-director/references/contracts.md`）。**不写模型提示词**，那是 seedance-prompt-composer 的事。\n\n## 步骤\n\n1. **取拆法**：`python3 scripts/plan_segments.py --model <brief.model> --duration <brief.duration>`（加 `--json` 给程序用）。它按模型的单段上限算出幕、生成段、每个接缝是内接缝还是外接缝。**不要手算，也不要改结果。**\n2. **选剧情**：`story = auto` 时按下面的矩阵选；用户指定就尊重，素材不满足时说明并给替代。\n3. **选出镜方式**：读 `references/hosts.md`；默认 `pov`（第一视角，无正脸）。外接缝 ≥2 或模型 `face_reference = blocked_reported` 时按里面的规则降级。\n4. **读剧情模板的幕表**：`references/stories/<id>.md`。15 秒用幕 Z；30 秒 = A + B；45 秒 = A + X + B；60 秒 = A + X + X + B。每个 X 幕绑定一道 support 菜，不够就降一档（`references/duration-profiles.md`）。\n5. **设计接缝**：读 `references/seams-and-transitions.md` 和剧情的「接缝」表。每个接缝定类型（序号 k 奇数用主、偶数用备；冷菜、饮品、甜品不用 `steam_wipe`），写出口与入口；外接缝再写剪辑执行（叠化时长、声音桥）。\n6. **绑定素材**：每个菜品镜头指定 image id 和 job；缺素材时按模板里的\"降级\"处理。\n7. **写旁白与字卡计划**：旁白 ≤3 句（后期 TTS，用整片绝对时间）；字卡写 type / text / 时间；价格与优惠只用 brief 里的原文；对白不跨接缝。\n8. **自检**：对照下面的\"分镜硬规则\"和\"输出前检查\"，不过就改。\n\n## 剧情模板\n\n| id | 名称 | 适合 | 出镜 | 文件 |\n|---|---|---|---|---|\n| `pov-smell-detour` | 闻香路过（第一视角探店） | 火锅 / 烧烤 / 小炒 / 面 / 饮品，引流 | pov | `references/stories/01-pov-smell-detour.md` |\n| `fire-to-table` | 一道菜的诞生（一镜到底出菜） | 现炒 / 铁板 / 海鲜 / 日料，强调手艺 | 只拍手与背影 | `references/stories/02-fire-to-table.md` |\n| `duo-blind-rating` | 双人盲测 PK | 聚餐类，要笑点 | foodie_ai ×2 / 叮当裁判 | `references/stories/03-duo-blind-rating.md` |\n| `late-night-canteen` | 深夜食堂（治愈向） | 面 / 粥 / 小馆 / 夜宵，要情绪 | 背影 | `references/stories/04-late-night-canteen.md` |\n| `lunch-rescue` | 打工人午餐救星 | 快餐 / 简餐，推套餐 | foodie_ai / pov | `references/stories/05-lunch-rescue.md` |\n| `dish-quest` | 吃货闯关（30 秒起） | 火锅 / 烧烤，聚餐、开业 | 三双手 / 叮当向导 | `references/stories/06-dish-quest.md` |\n\n## 选择矩阵\n\n| 条件 | 首选 | 次选 |\n|---|---|---|\n| 火锅 / 烧烤 / 串串 / 川菜，目标引流 | pov-smell-detour | dish-quest |\n| 火锅 / 烧烤，多人聚餐、想要笑点 | duo-blind-rating | dish-quest |\n| 面 / 粉 / 粥 / 小馆 / 夜宵，要情绪 | late-night-canteen | pov-smell-detour |\n| 快餐 / 简餐 / 盖饭 / 工作餐，推套餐 | lunch-rescue | pov-smell-detour |\n| 炒菜 / 铁板 / 烤鱼 / 海鲜，强调现做与锅气 | fire-to-table | pov-smell-detour |\n| 日料 / 高客单 / 创意菜 | fire-to-table（`insert` 模式） | late-night-canteen |\n| 茶饮 / 咖啡 / 甜品 | pov-smell-detour（短） | fire-to-table |\n| 新店开业 | pov-smell-detour 或 dish-quest（结尾带福利镜头） | — |\n| 只有 1 张菜图 | 15 秒 pov-smell-detour | — |\n| `host = dingdang` | dish-quest 或 duo-blind-rating（叮当当裁判） | 其余见 hosts.md |\n| 外接缝 ≥2 且需要人物脸 | 换 `pov` 或叮当，或降一档时长 | — |\n\n## 分镜硬规则\n\n- 一个主角、一个地点（街 → 店算一条动线）、一个目标。\n- 每幕 ≤15 秒；接缝只放在幕的边界；段尾\"结束画面\"是静态或半静态构图，不让动作在半空断开。\n- 第一个 beat 是钩子：2–4 秒内出现最强视觉（热气 / 拉丝 / 火焰 / 淋汁）。\n- 最后一个 beat 是收尾：≥3 秒，留给店名与优惠字卡的干净画面。\n- 菜品镜头合计 ≥40% 时长；每个菜品镜头 ≤3 秒；同一道菜一次只做一个轻动作。\n- 每个 beat 只写一个主动作 + 一个主运镜，并写\"结束画面\"。\n- 出镜人物 ≤2；对白（模型内）≤3 句、每句 ≤8 字、不跨接缝；POV 或无人出镜时无对白，旁白放后期。\n- 画面里不出现价格、优惠、店名文字。\n- 不在画面里编造菜单上没有的菜。\n\n## 输出前检查\n\n- `ref_map` 里每张图有且只有一个 job；每个 beat 的 `image` 都在 `ref_map` 里。\n- `acts`、`segments`、`seams` 与 `plan_segments.py` 的结果一致。\n- 时间连续：t0 = 0，每个 beat 的起点 = 上一个的终点，终点 = 总时长；每个幕边界上都有 beat 边界。\n- 每个外接缝：有类型、出口、入口、剪辑执行；冷菜没有用 `steam_wipe`；同一类型没有连续出现 3 次。\n- 多段时：每段末 beat 的 `end_frame` = 该接缝的出口，下一段首 beat 从该接缝的入口开始。\n",
+    "contentEn": "",
+    "tags": [
+      "餐饮一键成片",
+      "视频制作",
+      "餐饮探店"
+    ],
+    "scene": "",
+    "cronExpr": "",
+    "packageDigest": "c63e62aeeb2ebb08491ac11ddcac321ac667c95b6aa01860e95b13538a5a19c9",
+    "package": {
+      "sha256": "c63e62aeeb2ebb08491ac11ddcac321ac667c95b6aa01860e95b13538a5a19c9",
+      "size": 32533,
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 5689,
+          "sha256": "3b72aea83804f1fef66b2ef5544bcb87295a20e2e797fdc667dbaf13949fb2f8",
+          "executable": false
+        },
+        {
+          "path": "references/duration-profiles.md",
+          "size": 2344,
+          "sha256": "6fb9108783d81109e9358fde4904b157a9a3a4c7938172ef24efb06e4f6f097a",
+          "executable": false
+        },
+        {
+          "path": "references/hosts.md",
+          "size": 4360,
+          "sha256": "af33e78e3976bcb84a400ad7acd7e8388b7cbb8b5836e9c645aa8b97a21b4bfb",
+          "executable": false
+        },
+        {
+          "path": "references/seams-and-transitions.md",
+          "size": 6772,
+          "sha256": "6223e1fc96a20fb434d9eb490a983892bd8d0c3294469703686ccee51094e134",
+          "executable": false
+        },
+        {
+          "path": "references/stories/01-pov-smell-detour.md",
+          "size": 6179,
+          "sha256": "9c092469d1a7e5d6b0078d73e7740dfd711147aafd6edb7c83258f5b41702641",
+          "executable": false
+        },
+        {
+          "path": "references/stories/02-fire-to-table.md",
+          "size": 5377,
+          "sha256": "12ec23af7ad742dd5b49e9ca0f05fa9902690f16220aad72d85fc67f3a0a906b",
+          "executable": false
+        },
+        {
+          "path": "references/stories/03-duo-blind-rating.md",
+          "size": 5612,
+          "sha256": "8bed0d133646632a14324682d4dec745aa7363ccc10737dadda04e906d73319a",
+          "executable": false
+        },
+        {
+          "path": "references/stories/04-late-night-canteen.md",
+          "size": 5519,
+          "sha256": "4ff6f059552e32befe23c1a985ef49e0db77f399bb3e9083a174804928d42c9a",
+          "executable": false
+        },
+        {
+          "path": "references/stories/05-lunch-rescue.md",
+          "size": 5056,
+          "sha256": "6bc813517347535a8ba8c57771179f06d4db3b2777f7105c109fabf0043b2151",
+          "executable": false
+        },
+        {
+          "path": "references/stories/06-dish-quest.md",
+          "size": 5225,
+          "sha256": "90ab2742f7da6d09ec3a373cb76cdfba02febea55da1e49940070b58c9cadf70",
+          "executable": false
+        },
+        {
+          "path": "scripts/plan_segments.py",
+          "size": 7493,
+          "sha256": "9ffb182d5a3ed372c63545b4a03dc98b6f95839c0492f247a7064e865626ff34",
+          "executable": false
+        }
+      ]
+    }
+  },
+  {
+    "id": "curated:restaurant-video-director",
+    "kind": "skill",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "餐饮一键成片（总控）",
+    "nameEn": "",
+    "description": "餐饮「一键成片」总控。商家上传菜品图、门头图后，按固定流水线（选模型并拆段 → 看图 → 选剧情与分镜 → 写提示词 → 预检 → 后期层与发布文案）产出 15/30/45/60 秒竖屏探店视频的完整方案；按所选模型的单段上限自动处理拼接（Seedance 2.5 单段 30 秒，2.0 单段 15 秒，需要转场拼接）。用户说\"做个探店视频\"\"用菜品图生成短视频\"\"餐厅宣传片\"\"一键生成视频\"时使用；负责串联各阶段、定义数据契约、处理降级。",
+    "descriptionEn": "",
+    "content": "---\nname: restaurant-video-director\ndescription: 餐饮「一键成片」总控。商家上传菜品图、门头图后，按固定流水线（选模型并拆段 → 看图 → 选剧情与分镜 → 写提示词 → 预检 → 后期层与发布文案）产出 15/30/45/60 秒竖屏探店视频的完整方案；按所选模型的单段上限自动处理拼接（Seedance 2.5 单段 30 秒，2.0 单段 15 秒，需要转场拼接）。用户说\"做个探店视频\"\"用菜品图生成短视频\"\"餐厅宣传片\"\"一键生成视频\"时使用；负责串联各阶段、定义数据契约、处理降级。\n---\n\n# 餐饮一键成片（总控）\n\n## 你交付什么\n\n一个「成片方案包」：`prompt_pack`（每段提示词 + 参考图分工 + 接缝）、`post`（后期层清单，含转场）、`copy`（发布文案）、`qa_report`。**不直接生成视频**：生成由调用方的视频接口完成，你负责把方案写对、写省。\n\n## 流水线（严格按序，上一步产物是下一步输入）\n\n| # | 阶段 | 输入 | 输出 |\n|---|---|---|---|\n| 0 | 选模型并拆段：`../restaurant-story-planner/scripts/plan_segments.py` | brief.model + brief.duration | 幕、生成段、接缝 |\n| 1 | dish-image-analyst | brief + 图片 | assets |\n| 2 | restaurant-story-planner | brief + assets + 拆段结果 | shot_plan |\n| 3 | seedance-prompt-composer | shot_plan + assets + 模型档案 | prompt_pack |\n| 4 | food-video-qa | prompt_pack（+ post、copy） | qa_report |\n| 5 | restaurant-publish-copy | brief + shot_plan | copy |\n\n字段与枚举见 `references/contracts.md`；模型参数见 `references/model-profiles.md`；后期层规范见 `references/post-layer.md`。\n\n## 哪些跟模型有关\n\n只有三处：模型档案 `references/model-profiles.json`、composer 的 `references/models/<模型>.md`、`plan_segments.py` 按档案算出的拆法。看图、剧情、预检规则、发布文案都按「幕」（每幕 15 秒）写，**换模型不用改**。\n\n| 总时长 | Seedance 2.5（单段 30 秒） | Seedance 2.0（单段 15 秒） |\n|---|---|---|\n| 15 | 1 段 | 1 段 |\n| 30 | 1 段，不用拼接 | 2 段，1 个转场 |\n| 45 | 2 段，1 个转场 | 3 段，2 个转场 |\n| 60 | 2 段，1 个转场 | 4 段，3 个转场 |\n\n## 入口检查（缺什么就问或降级，别硬做）\n\n1. 至少 1 张可用的菜品图；没有就停下，请用户补图（没有菜品图就无法保证菜品真实）。\n2. `brief.model` 缺省取模型档案的默认值，并在摘要里告诉用户选了哪个；用户换模型，从第 0 步重来。\n3. 时长只取 15 / 30 / 45 / 60，其他数值用 `plan_segments.py --snap` 就近取档。\n4. 图片数量与时长匹配：15s ≥1 张菜品图；30s ≥2（推荐 3）；45–60s ≥3（推荐 4–5）。不足时降一档，或复用 hero 图（≤2 次，换动作和景别）。\n5. 出镜方式按模型和外接缝数降级（见 `../restaurant-story-planner/references/hosts.md`）：外接缝 ≥2 只用 `pov` 或 `dingdang`；`owner` 需要 `authorization.owner_face = true`，且模型档案的 `face_reference` 不是 `blocked_reported`。\n6. 用户自填的优惠与文案，先过 food-video-qa 的 `--scan-text`；价格、条件、有效期只用商家原文。\n\n## 关键决策\n\n- **拆段由脚本算，不要手算。** `plan_segments.py` 给出每段包含的幕、每个接缝是内接缝还是外接缝。多段统一 `sound_mode = sfx_only`，BGM 与旁白后期统一加。\n- **剧情**：`story = auto` 时用 planner 的选择矩阵；用户指定就尊重，素材不满足时说明并给替代。\n- **保真模式**：默认 `inline`。以下情况用 `insert`（菜品特写单独图生视频，后期插入）：高客单 / 日料 / 甜品 / 酒水；用户选了\"保真优先\"；试拍发现菜品走样。\n- **试拍**：`preview_first = true` 时，先输出一条菜品插入模板的 5 秒提示词，让商家确认\"这是我家的菜\"，再生成全片。\n- **文字与声音**：店名、价格、优惠、地址、精确旁白全部放后期层；画面里不生成任何可读文字。\n- **多段的代价要告诉用户**：段数越多，生成次数越多、接缝越多、人物脸跨段越容易漂；好处是单段失败只重跑那一段。选 2.0 做 45/60 秒时，建议同时给出\"换 2.5 只需 2 段\"的对比。\n\n## 失败与降级\n\n| 情况 | 处理 |\n|---|---|\n| 无门头图 | 用虚化光斑 / 灯箱泛化，不生成招牌文字（各剧情有降级写法） |\n| 菜品图 ≤2 分或严重模糊 | 不作 hero，提示重拍；全部不合格则停止 |\n| 菜名无法确认 | 字卡和旁白先不写菜名，让商家确认后再补 |\n| 图片里是人物但无授权 | `role = exclude`，改 `pov` 或 `foodie_ai` |\n| 模型档案里没有该模型 | 停止，按 `model-profiles.md` 先新增档案 |\n| lint 报错 | 按 qa_report 修改提示词后重检，不要直接生成 |\n| 平台不支持\"首帧传递\" | 用 `cut` 型接缝，不依赖首帧（默认就是这样） |\n\n## 输出包\n\n`prompt_pack`（含 `preview`）+ `post`（字卡、TTS、BGM、`transitions`、`ai_label = true`）+ `copy` + `qa_report`。给用户看的摘要用大白话：选了哪个模型和剧情、分几段、每段多长、接缝怎么转场、哪些图用在哪、试拍建议、需要商家确认的事项。\n\n## 不做\n\n- 不写\"最 / 第一 / 唯一\"等极限词，不承诺功效。\n- 不替商家编造优惠、价格、营业时间、菜名。\n- 不生成真实品牌 logo、他店招牌；不使用明星、公众人物的肖像或声音。\n- 不绕过 qa：有 blockers 就不放行。\n",
+    "contentEn": "",
+    "tags": [
+      "餐饮一键成片",
+      "视频制作",
+      "餐饮探店"
+    ],
+    "scene": "",
+    "cronExpr": "",
+    "packageDigest": "c8b0c8d2b9fb835b3828d407f99280310892236c1add0a7f39c6815187951e3a",
+    "package": {
+      "sha256": "c8b0c8d2b9fb835b3828d407f99280310892236c1add0a7f39c6815187951e3a",
+      "size": 14090,
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 5631,
+          "sha256": "9ae65057b0fe76236f6e7ca08aa48f682e55972f3ec8475090728511b6d39a4f",
+          "executable": false
+        },
+        {
+          "path": "references/contracts.md",
+          "size": 11160,
+          "sha256": "8e82fec5cb88b43c0a1554487a08574af416b0cdab5e584b7728e09446d05e45",
+          "executable": false
+        },
+        {
+          "path": "references/model-profiles.json",
+          "size": 2368,
+          "sha256": "b66c76b9dd95ab059713fe7bdac5a5f65eee6a16cf1697530e69279cc9931842",
+          "executable": false
+        },
+        {
+          "path": "references/model-profiles.md",
+          "size": 3947,
+          "sha256": "e3e7048f91b3ddfecb6353fa6cf0ca50183aea3e591bcf13f604608f59b10d7c",
+          "executable": false
+        },
+        {
+          "path": "references/post-layer.md",
+          "size": 3394,
+          "sha256": "a9ed9cd58738513014e50fab6232fe56ab9ce3aa69a93d13b68dbaa55e624695",
+          "executable": false
+        }
+      ]
+    }
+  },
+  {
+    "id": "curated:seedance-prompt-composer",
+    "kind": "skill",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "餐饮一键成片 · Seedance 提示词编写（模型语言层）",
+    "nameEn": "",
+    "description": "把分镜计划写成可直接投喂 Seedance 的竖屏提示词（时间轴 + @图片分工 + 连续性 + 声音 + 禁止），按所选模型分别处理：Seedance 2.5 单段 30 秒，Seedance 2.0 单段 15 秒、30/45/60 秒要拆成多段并写接缝出口与【承接】入口。含菜品保真锁定、菜品镜头库、4–6 秒菜品插入模板和多段拼接规则。在餐饮视频的分镜计划确定之后使用。",
+    "descriptionEn": "",
+    "content": "---\nname: seedance-prompt-composer\ndescription: 把分镜计划写成可直接投喂 Seedance 的竖屏提示词（时间轴 + @图片分工 + 连续性 + 声音 + 禁止），按所选模型分别处理：Seedance 2.5 单段 30 秒，Seedance 2.0 单段 15 秒、30/45/60 秒要拆成多段并写接缝出口与【承接】入口。含菜品保真锁定、菜品镜头库、4–6 秒菜品插入模板和多段拼接规则。在餐饮视频的分镜计划确定之后使用。\n---\n\n# Seedance 提示词编写（模型语言层）\n\n输入：`shot_plan` + `assets` + 模型档案。输出：`prompt_pack`（见 `../restaurant-video-director/references/contracts.md`）。**新增或换视频模型只改本 skill 的 `references/models/` 和模型档案。**\n\n## 步骤\n\n1. **读模型档案和写法说明**：`../restaurant-video-director/references/model-profiles.json` 取 `single_pass_max`、`max_ranges`、`refs`、`ref_tag`、`face_reference`；再读 `references/models/<model>.md`。\n2. **逐段写**：`shot_plan.segments` 里每个 segment 一条独立的提示词。\n   - 把该段包含的幕的 beat 按顺序接起来，**时间重定基到 0 起**。\n   - 时间段数不超过 `max_ranges`，每段 ≥2 秒；段内 beat 太多就合并最短的相邻 beat。\n3. **编号参考图**：每段重新编号 `@图片1..N`，只放本段用到的图，**总数 ≤ `refs.image`**；每张图只有一个 job；菜品图的 job 行 = 用途 + 外观锁定句 + \"不增减食材，不改变摆盘与器皿\" + \"不取背景和文字\"。\n4. **确定 `sound_mode`**：单段 `full`；多段 `sfx_only`。\n5. **写接缝**（多段时）：\n   - 上一段最后一个时间段的\"结束画面\" = 接缝出口。\n   - 下一段加【承接】：`本段接上一段：画面从{入口}开始。` + 复述地点、人物、菜品、色调的锁定；第一个时间段从入口之后开始。\n   - 同一段内的内接缝（如 2.5 的 A+B）：不写【承接】，把出口、入口写进相邻两个时间段。\n   - 默认 `cut` 型接缝，不传首帧；`frame_chain` 才把上一段尾帧列进 `refs`（见 `models/seedance-2.0.md`）。\n6. **菜品镜头**：从 `references/food-shot-library.md` 按 category / state 选\"钩子 / 高潮\"动作；每镜 ≤3 秒、一个轻动作；cold / iced 不加热气；raw 不做咬食。\n7. **`fidelity_mode = insert`**：菜品特写用 `references/dish-insert-template.md` 单独成条；主片里该处写\"切入菜品特写（后期插入）\"的占位 beat。\n8. **试拍**：`preview_first` 时，输出一条菜品插入模板的 5 秒提示词放进 `preview`。\n9. **长度**：目标 ≤2000 字；超出按骨架里的删减顺序处理。\n10. **填写 `prompt_pack`**：每个 segment 的 `seam_in / seam_out`；外接缝逐条列进 `post.transitions`（类型、剪辑、声音桥）。\n11. **交给 food-video-qa**：对每段运行 `lint_prompt.py --model <model> --duration <该段时长>`（多段加 `--continuation` 或用 `.md` 多段文件），不通过就按 qa_report 改，别直接生成。\n\n## 写作要点\n\n- 动词具体、可拍：写\"热气缓缓升起、筷子挑起一缕面条\"，不写\"好吃的面\"。\n- 一个 beat 一个主动作、一个主运镜；复合动作拆到相邻 beat。\n- 人物只写身份锁定句 + 动作；POV 只写手和视线。\n- 文字一律不让模型生成：招牌只作远景虚化，菜单、价格、店名全部留给后期。\n- 【禁止】必带防翻车句（筷子、面条、汤汁、热气、食物凭空增加、器皿变形、手指）。\n- 叮当等 IP 角色：外观锁定块原样引用 `../restaurant-story-planner/references/hosts.md`，不改写；**多段时每段都带设定图和姿势图**。\n- 对白不跨外接缝；一句话在一段内说完。\n- 冷菜、饮品、甜品的接缝不用热气类转场（`seams-and-transitions.md`）。\n\n## 参考与示例\n\n- 区块与格式：`references/prompt-skeleton.md`\n- 模型写法：`references/models/seedance-2.5.md`、`references/models/seedance-2.0.md`\n- 菜品镜头与防翻车：`references/food-shot-library.md`\n- 菜品插入 / 试拍模板：`references/dish-insert-template.md`\n- 多段与接缝写法：`references/long-video-splicing.md`\n- 完整示例：\n  - `examples/hotpot-15s.md`（15 秒，两个模型通用）\n  - `examples/noodle-30s-seedance2.5.md`（30 秒，Seedance 2.5 单段）\n  - `examples/noodle-30s-seedance2.0.md`（同一份输入，Seedance 2.0 拆成 2 段 + 1 个接缝）\n  - `examples/bbq-60s-seedance2.5.md`（60 秒，Seedance 2.5 两段；文末有同一故事在 2.0 上的 4 段拆法）\n",
+    "contentEn": "",
+    "tags": [
+      "餐饮一键成片",
+      "视频制作",
+      "餐饮探店"
+    ],
+    "scene": "",
+    "cronExpr": "",
+    "packageDigest": "674b1110d1a5f8f031948376a65b35d6e2f772304373cff5b35ed7b27d57ea3e",
+    "package": {
+      "sha256": "674b1110d1a5f8f031948376a65b35d6e2f772304373cff5b35ed7b27d57ea3e",
+      "size": 31284,
+      "files": [
+        {
+          "path": "SKILL.md",
+          "size": 4625,
+          "sha256": "e4b81cf8461f240941c07baabcafb7829c80c7df1539c206fe473d1d28508aea",
+          "executable": false
+        },
+        {
+          "path": "examples/bbq-60s-seedance2.5.md",
+          "size": 14072,
+          "sha256": "0d0b71084d77867e098e6a5089e492a24ea8c725600985e1146c0abd53e69f18",
+          "executable": false
+        },
+        {
+          "path": "examples/hotpot-15s.md",
+          "size": 5274,
+          "sha256": "42a9a7f9ff44ff81df07afbc5d1cdd6129036b88ffa968f09542c873e4bad7ea",
+          "executable": false
+        },
+        {
+          "path": "examples/noodle-30s-seedance2.0.md",
+          "size": 8800,
+          "sha256": "66de1245648644a6ef25f7d86d2a630d7732c168778672d2f678531a13806f7a",
+          "executable": false
+        },
+        {
+          "path": "examples/noodle-30s-seedance2.5.md",
+          "size": 5853,
+          "sha256": "b3b2dfb0d2fc2299ed3eaa03c69db9ababef9d07bcc6ba1e239d081f08d27097",
+          "executable": false
+        },
+        {
+          "path": "references/dish-insert-template.md",
+          "size": 2742,
+          "sha256": "39783201e0cd86d63dfcfe7b7d62b5f4c20f4407bd3509baa1ea70a1d32e4def",
+          "executable": false
+        },
+        {
+          "path": "references/food-shot-library.md",
+          "size": 5146,
+          "sha256": "f07b7746c0f06ed22bcc697fba84ae4fbfcc08b68a3e3e4597429249ce7b1169",
+          "executable": false
+        },
+        {
+          "path": "references/long-video-splicing.md",
+          "size": 4762,
+          "sha256": "35dc7111487d375d392f4f373d880dddecc5ac08d5bc969506823dd796755363",
+          "executable": false
+        },
+        {
+          "path": "references/models/seedance-2.0.md",
+          "size": 4009,
+          "sha256": "d56a6b6819170bfbcf9485752aa091436412ff08b609c1bcccac5f9a2d4a0eef",
+          "executable": false
+        },
+        {
+          "path": "references/models/seedance-2.5.md",
+          "size": 2284,
+          "sha256": "b65f11ee82fea093cc721a3228aa74795be7c5de4ff82de69af97322b395a98c",
+          "executable": false
+        },
+        {
+          "path": "references/prompt-skeleton.md",
+          "size": 4555,
+          "sha256": "33200f6495f272a3667c7eba25617f0b647373ec1950ed70f0ded55c60f478b5",
+          "executable": false
+        }
+      ]
+    }
+  },
+  {
+    "id": "curated:template:pov-smell-detour",
+    "kind": "template",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "探店剧情 · 闻香路过（第一视角探店）",
+    "nameEn": "",
+    "description": "下班路上的\"我\"被一缕看得见的香味牵着鼻子，拐进巷子，推开门，点了 {{hero_dish}}，第一口之后，第二天门还没开，\"我\"已经站在门口。\n适用 15/30/45/60 秒竖屏；调性：轻松、馋、带点搞笑；含幕表与接缝表，配合「餐饮一键成片」Skills 使用。",
+    "descriptionEn": "",
+    "content": "---\nid: pov-smell-detour\nname: 闻香路过（第一视角探店）\nfits: [hotpot, bbq, stirfry, noodle, rice, fried, hotplate, seafood, drink, dessert]\ngoals: [traffic, opening, new_dish]\ntone: 轻松、馋、带点搞笑\nhosts: [pov, foodie_ai, dingdang]\ndurations: [15, 30, 45, 60]\nneeds: {required: [\"dish×1\"], recommended: [\"storefront\", \"dish×2–3\"], optional: [\"interior\"]}\nseam: {primary: steam_wipe, alt: whip_pan}\n---\n\n# 闻香路过（第一视角探店）\n\n**一句话**：下班路上的\"我\"被一缕看得见的香味牵着鼻子，拐进巷子，推开门，点了 {{hero_dish}}，第一口之后，第二天门还没开，\"我\"已经站在门口。\n\n**为什么有效**：香味丝带把\"闻到香味→走进去\"这个真实心理变成可见又好笑的画面；第一视角不需要人脸；结尾彩蛋给回头客留记忆点。\n\n## 槽位\n\n| 槽位 | 来源 | 示例 |\n|---|---|---|\n| {{shop_name}} | brief.shop.name | 红姐牛油火锅 |\n| {{area}} | brief.shop.area | 玉林路 |\n| {{hero_dish}} / {{dish_2}} / {{dish_3}} / {{dish_k}} | assets 的 hero / support（每个 X 幕按顺序各取一道） | 牛油红汤锅、毛肚、红糖糍粑 |\n| {{street_time}} | 按营业时段 | 傍晚 / 深夜 |\n| {{hook_motion}} / {{climax_motion_N}} | composer 的 food-shot-library，按 category 与 state 选 | 红油翻滚 / 毛肚下锅涮三下 |\n| {{closing_line}} | 旁白 | 明天，我还来。 |\n\n## 幕结构（与模型无关）\n\n15 秒 = Z｜30 秒 = A + B｜45 秒 = A + X + B｜60 秒 = A + X + X + B。每幕 ≤15 秒，幕与幕的边界是接缝（`../seams-and-transitions.md`）。表里的【接缝出口】/【接缝入口】按下面「接缝」表取画面。时间列：A、B 是整片绝对时间，X 是幕内相对时间。\n\n### 幕 A（0–15）开场：钩子 → 被勾走 → 进店\n\n| 时间 | 目的 | 画面与动作 | 运镜 | 结束画面 | 素材 |\n|---|---|---|---|---|---|\n| 0–3 | 钩子 | {{hero_dish}} 微距：{{hook_motion}}；热气升起，变成一缕半透明的金橙色\"香味丝带\"，从后厨排风口钻出，飘向街道 | 微距缓推，随丝带上升拉出 | 丝带穿过窗口，飘进{{street_time}}的街 | hero |\n| 3–8 | 被勾走 | 第一视角行走：丝带绕过路边另两家店（虚化、无字），勾住镜头往前拽，镜头轻微被拉扯；到店门口 | 第一视角跟拍，微晃 | 店门口，门帘被热气顶起一角 | storefront |\n| 8–15 | 进店落座 | 推门，门铃叮当；店内暖光；服务员背影把 {{hero_dish}} 放到桌上，落桌瞬间热气扑向镜头 | 第一视角推门，落桌后定机位 | 【接缝出口】 | interior（可选）+ hero |\n\n### 幕 B（15–30）收尾：开吃 → 上头 → 彩蛋\n\n| 时间 | 目的 | 画面与动作 | 运镜 | 结束画面 | 素材 |\n|---|---|---|---|---|---|\n| 15–23 | 开吃 | 【接缝入口】后：三连快切（每切 ≤2.5s）：{{hero_dish}} 的 {{climax_motion_1}}；{{dish_2}} 的 {{climax_motion_2}}；{{dish_3}} 的 {{climax_motion_3}}；最后一口：筷子送向镜头 → 黑场 0.2 秒 → \"睁眼\"。45/60 秒时三连快切改为 {{hero_dish}} 的三个不同动作，不重复 X 幕演过的菜 | 微距 / 45° 侧拍 / 第一视角 | \"睁眼\"，眼前是空了一半的桌面 | hero + support |\n| 23–26 | 上头 | 桌面残局，\"我\"的双手比拇指；窗外天已黑，街灯亮起；柜台后老板背影笑着擦杯 | 缓慢拉远 | 拇指入镜，窗外灯火 | atmosphere |\n| 26–30 | 彩蛋收尾 | 第二天同一街角，丝带又来，\"我\"没拐弯直接撞到门口，卷帘门才拉到一半；画面定格在门头 | 第一视角跟拍 → 定格 | 门头干净构图（留给店名字卡） | storefront |\n\n### 加餐幕 X（15 秒，幕内相对时间；45 秒用 1 个，60 秒用 2 个）：同桌再来一道\n\n| 时间 | 目的 | 画面与动作 | 运镜 | 结束画面 | 素材 |\n|---|---|---|---|---|---|\n| 0–4 | 朋友加入 | 【接缝入口】后：一位朋友的背影在对面坐下，招手加点；{{dish_k}} 被端上桌 | 第一视角，轻微晃动 | 菜落桌 | support（{{dish_k}}） |\n| 4–11 | 一道菜 | {{dish_k}} 的 {{climax_motion_k}}；第一视角夹起、吹气、入口前停顿；对面朋友偷笑 | 微距 → 第一视角 | 筷子夹着菜停在镜头前 | support |\n| 11–15 | 干杯 | 朋友举杯，\"我\"也举杯碰一下 | 固定近景 | 【接缝出口】 | — |\n\n### 幕 Z（15 秒压缩）\n\n0–3 钩子 / 3–7 被勾走 + 到店（合并为一次运镜）/ 7–12 开吃（{{hero_dish}} 的一个动作 + 最后一口）/ 12–15 彩蛋 + 收尾。\n\n### 接缝（序号 k 奇数用主、偶数用备）\n\n| 序号 | 类型 | 出口（上一幕的最后 1–2 秒） | 入口（下一幕的最初 1–2 秒） |\n|---|---|---|---|\n| S1、S3 | `steam_wipe` | 桌上菜的热气越来越浓，涌向镜头，直到充满整个画面，近乎一片柔白 | 柔白的热气缓缓散开 |\n| S2 | `whip_pan` | 镜头向右快速甩出，运动模糊拉满，画面成一片横向色带 | 镜头从左侧快速甩入，运动模糊逐渐收住 |\n\n冷菜、饮品、甜品没有热气：S1、S3 也用 `whip_pan`，不要无中生有的热气。\n\n## 素材绑定与降级\n\n- 无门头图：街景用虚化光斑 + 丝带代替，不生成可读招牌；收尾用\"门帘热气\"构图。\n- 只有 1 张菜图：用 15 秒（幕 Z）；开吃只做 {{hero_dish}} 的两个轻动作。\n- 无店内图：进店段用\"暖色虚化光斑 + 桌面\"带过。\n- 45/60 秒的 X 幕每个绑定一道 support 菜；不够就降一档。\n\n## 旁白与后期层（均后期；≤3 句，每句 ≤14 字）\n\n- 第 1 句在 t≈1：「{{area}}这条街，我鼻子一向很灵。」\n- 第 2 句在 B 幕开吃后约 3 秒：「{{hero_dish}}，我服了。」\n- 第 3 句在片尾前 3 秒：「{{closing_line}}」\n- 字卡：每道菜 `dish_tag` 1.2s；结尾 `shop_card` + `offer` + `address`。\n\n## 风险\n\n- 丝带必须是\"香气\"：半透明金橙色气流，不是烟、不是火、不是魔法特效。\n- 路边他店不得出现可读招牌或品牌。\n- 第一视角的手：五指、筷子两根；手部镜头短。\n",
+    "contentEn": "",
+    "tags": [
+      "餐饮一键成片",
+      "剧情模板",
+      "9:16"
+    ],
+    "scene": "",
+    "cronExpr": ""
+  },
+  {
+    "id": "curated:template:fire-to-table",
+    "kind": "template",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "探店剧情 · 一道菜的诞生（从火到桌，一镜到底出菜）",
+    "nameEn": "",
+    "description": "一道 {{hero_dish}} 从食材、火候到端上桌，镜头贴着盘子穿过后厨、推开弹簧门，停在客人面前。\n适用 15/30/45/60 秒竖屏；调性：有锅气、专业、馋；偏\"手艺\"；含幕表与接缝表，配合「餐饮一键成片」Skills 使用。",
+    "descriptionEn": "",
+    "content": "---\nid: fire-to-table\nname: 一道菜的诞生（从火到桌，一镜到底出菜）\nfits: [stirfry, hotplate, noodle, rice, seafood, japanese, soup, bbq, fried]\ngoals: [traffic, brand, new_dish]\ntone: 有锅气、专业、馋；偏\"手艺\"\nhosts: [pov, dingdang]\ndurations: [15, 30, 45, 60]\nneeds: {required: [\"dish×1（成品图）\"], recommended: [\"dish×2\", \"storefront\"], optional: [\"interior\"]}\nseam: {primary: steam_wipe, alt: object_cover}\n---\n\n# 一道菜的诞生\n\n**一句话**：一道 {{hero_dish}} 从食材、火候到端上桌，镜头贴着盘子穿过后厨、推开弹簧门，停在客人面前。\n\n**为什么有效**：手艺感建立信任；\"盘子之旅\"一镜到底是 Seedance 的强项；成品图决定最终装盘，菜品最保真。\n\n## 出镜\n\n默认只出现**厨师的双手与背影**（白色厨师服、帽子，不出现正脸）和客人的手与背影。后厨必须干净整洁：不锈钢台面、明亮顶灯、无污渍。\n\n## 槽位\n\n{{hero_dish}}、{{dish_2}}、{{dish_k}}（每个 X 幕取一道 support）、{{shop_name}}、{{fire_moment}}（来自 food-shot-library 的\"钩子镜头\"）、{{climax_motion}}（来自\"高潮镜头\"）、{{plating_detail}}（取自 appearance_lock）。\n\n## 幕结构（与模型无关）\n\n15 秒 = Z｜30 秒 = A + B｜45 秒 = A + X + B｜60 秒 = A + X + X + B。每幕 ≤15 秒，幕与幕的边界是接缝（`../seams-and-transitions.md`）。表里的【接缝出口】/【接缝入口】按下面「接缝」表取画面。时间列：A、B 是整片绝对时间，X 是幕内相对时间。\n\n### 幕 A（0–15）开场：钩子 → 食材与刀工 → 火候\n\n| 时间 | 目的 | 画面与动作 | 运镜 | 结束画面 | 素材 |\n|---|---|---|---|---|---|\n| 0–3 | 钩子 | {{fire_moment}}（锅气 / 油沸 / 刀落等最强的第一秒） | 侧拍近景，微慢动作 | 火光或热气充满画面一瞬 | — |\n| 3–9 | 食材与刀工 | 新鲜食材落案板，刀起刀落，葱姜蒜入碗；只拍与成品一致的食材 | 横移掠过案台 | 切好的食材码在不锈钢盘里 | hero（取材参考） |\n| 9–15 | 火候 | 入锅、翻炒 / 淋汁 / 沸腾，锅气升腾；调料落入的瞬间 | 45° 近景，微环绕 | 【接缝出口】 | — |\n\n### 幕 B（15–30）收尾：盘子之旅 → 第一口 → 收尾\n\n| 时间 | 目的 | 画面与动作 | 运镜 | 结束画面 | 素材 |\n|---|---|---|---|---|---|\n| 15–21 | 盘子之旅（一镜到底） | 【接缝入口】后：成品在出菜口装盘（摆盘与 hero 一致）→ 镜头贴着盘子 → 推开弹簧门 → 穿过后厨 → 进入餐厅 → 落在桌上 | 一镜到底，低机位贴盘跟拍 | 盘子落桌，热气腾起，客人的手入镜 | hero |\n| 21–27 | 第一口 | 筷子夹起 {{climax_motion}}；热气；客人的背影或手，轻轻点头 | 微距推近 → 焦点转移到客人背影 | 第一口入嘴前的定格 | hero |\n| 27–30 | 收尾 | 后厨出菜口\"叮\"的铃声；厨师背影擦手；切到门头夜景 | 拉远 | 门头干净构图 | storefront |\n\n### 加餐幕 X（15 秒，幕内相对时间；45 秒用 1 个，60 秒用 2 个）：隔壁灶台，另一道菜起锅\n\n| 时间 | 目的 | 画面与动作 | 运镜 | 结束画面 | 素材 |\n|---|---|---|---|---|---|\n| 0–5 | 另一口锅 | 【接缝入口】后：镜头来到隔壁灶台，{{dish_k}} 的一个火候动作（来自镜头库的钩子镜头） | 侧拍近景 | 动作定格在最强一瞬 | support（{{dish_k}}） |\n| 5–11 | 装盘端出 | 装盘，服务员背影端起托盘走向弹簧门，穿过 | 低机位贴盘 | 托盘穿过弹簧门 | support |\n| 11–15 | 落桌 | 菜落在客人桌上，热气升起；客人的手拿起筷子 | 微距 | 【接缝出口】 | support |\n\n### 幕 Z（15 秒压缩）\n\n0–3 钩子 / 3–8 火候（合并食材）/ 8–12 盘子之旅 + 落桌 / 12–15 第一口 + 收尾。\n\n### 接缝（序号 k 奇数用主、偶数用备）\n\n| 序号 | 类型 | 出口（上一幕的最后 1–2 秒） | 入口（下一幕的最初 1–2 秒） |\n|---|---|---|---|\n| S1、S3 | `steam_wipe` | 锅里的热气和锅气越来越浓，翻涌向镜头，直到充满整个画面，近乎一片柔白 | 柔白的热气缓缓散去 |\n| S2 | `object_cover` | 一块搭在厨师肩上的干净白毛巾（或一只托盘）从画面一侧扫过，完全遮住镜头 | 毛巾（或托盘）从镜头前移开 |\n\n没有火候的冷菜（凉菜、刺身）：幕 A 的\"火候\"改成\"拌料 + 淋红油（或淋酱）\"，所有接缝都用 `object_cover`。\n\n## 保真提示\n\n装盘镜头和成品特写最容易走样：**`fidelity_mode` 建议 `insert`**（成品特写单独图生视频，后期插入）。\n\n## 降级\n\n- 无门头图：收尾用\"出菜口铃声 + 后厨灯光渐暗\"，不拍门头。\n- 菜品是冷菜 / 凉菜：见上面接缝一节。\n\n## 旁白与后期层\n\n- 旁白（≤2 句）：t≈2「一道{{hero_dish}}，从火到桌。」 片尾前 3 秒「{{shop_name}}，等你来尝。」\n- 若要写\"X 分钟出餐\"等承诺，必须有商家提供的依据，否则不写。\n- 字卡：菜名 `dish_tag`；结尾 `shop_card` + `address`。\n\n## 风险\n\n- 后厨卫生：禁止出现污渍、杂物、苍蝇、未戴帽的厨师。\n- 火焰：只在锅内和灶口，不蔓延到衣物与台面。\n- 厨师不出正脸；手五指完整。\n",
+    "contentEn": "",
+    "tags": [
+      "餐饮一键成片",
+      "剧情模板",
+      "9:16"
+    ],
+    "scene": "",
+    "cronExpr": ""
+  },
+  {
+    "id": "curated:template:duo-blind-rating",
+    "kind": "template",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "探店剧情 · 双人盲测 PK（谁先夸谁买单）",
+    "nameEn": "",
+    "description": "两个互相嘴硬的朋友打赌，谁先夸这家的菜谁买单。结果一个嘴上说\"一般般\"，筷子却停不下来。\n适用 15/30/45/60 秒竖屏；调性：俏皮、反差、口嫌体正直；含幕表与接缝表，配合「餐饮一键成片」Skills 使用。",
+    "descriptionEn": "",
+    "content": "---\nid: duo-blind-rating\nname: 双人盲测 PK（谁先夸谁买单）\nfits: [hotpot, bbq, stirfry, noodle, fried, dessert, hotplate]\ngoals: [traffic, brand, festival]\ntone: 俏皮、反差、口嫌体正直\nhosts: [foodie_ai, dingdang]\ndurations: [15, 30, 45, 60]\nneeds: {required: [\"dish×2\"], recommended: [\"dish×3\", \"storefront\"], optional: [\"interior\"]}\nseam: {primary: object_cover, alt: whip_pan}\n---\n\n# 双人盲测 PK\n\n**一句话**：两个互相嘴硬的朋友打赌，谁先夸这家的菜谁买单。结果一个嘴上说\"一般般\"，筷子却停不下来。\n\n**为什么有效**：反差笑点天然有传播性；\"口嫌体正直\"把\"好吃\"演出来而不是说出来，也就避开了极限词。\n\n## 角色（foodie_ai，虚构）\n\n- 阿K：嘴硬派，二十代后期男生，短发，深蓝连帽卫衣。\n- 小满：吃货派，二十代后期女生，低马尾，黄色针织开衫。\n- 同屏只有这两人；服装主色全程不变；没有第三人。\n- `host = dingdang`：叮当当裁判，站在桌边，头顶气泡打分；两人改成\"只出现双手 + 声音\"。\n- 每段提示词都复述两人的身份锁定句。外接缝 ≥2（如 Seedance 2.0 的 45/60 秒）时人物脸容易漂，写实人物的参考图还可能被人脸审核拒绝（见 `../hosts.md`）：优先 `host = dingdang`，或风格化形象。\n\n## 对白（模型内，≤3 句，每句 ≤8 字，不跨接缝）\n\n1. 阿K（拍桌）：「先夸的买单！」（幕 A）\n2. 阿K（嘴硬）：「一般般。」（幕 A）\n3. 阿K（破防）：「……好吃。」（幕 B）\n\n小满不说话，只用表情和笑声；X 幕没有对白。\n\n## 槽位\n\n{{hero_dish}}、{{dish_2}}、{{dish_3}}、{{dish_k}}（每个 X 幕取一道）、{{shop_name}}、{{closing_line}}。\n\n## 幕结构（与模型无关）\n\n15 秒 = Z｜30 秒 = A + B｜45 秒 = A + X + B｜60 秒 = A + X + X + B。每幕 ≤15 秒，幕与幕的边界是接缝（`../seams-and-transitions.md`）。表里的【接缝出口】/【接缝入口】按下面「接缝」表取画面。时间列：A、B 是整片绝对时间，X 是幕内相对时间。\n\n### 幕 A（0–15）开场：赌约 → 第一轮 → 第二轮开罩\n\n| 时间 | 目的 | 画面与动作 | 运镜 | 结束画面 | 素材 |\n|---|---|---|---|---|---|\n| 0–4 | 钩子 + 赌约 | 隔桌对坐，桌上三道菜被不锈钢罩盖着，阿K 拍桌立赌约，小满挑眉；两人击掌成约 | 固定中景，轻推 | 两人击掌 | storefront（可选，窗外） |\n| 4–11 | 第一轮 | 揭罩：{{hero_dish}} 热气扑出；阿K 夹一口，皱眉说\"一般般\"，但筷子又伸向盘子；小满偷笑 | 中景 → 阿K 特写 → 菜品特写 | 阿K 嘴上嫌弃、筷子已夹起第二口 | hero |\n| 11–15 | 第二轮·开罩 | 揭开 {{dish_2}}；小满吃得眼睛发亮，阿K 假装淡定，筷子偷偷伸过去 | 交叉特写，快切 | 【接缝出口】 | support |\n\n### 幕 B（15–30）收尾：第三轮 → 破防 → 结算\n\n| 时间 | 目的 | 画面与动作 | 运镜 | 结束画面 | 素材 |\n|---|---|---|---|---|---|\n| 15–19 | 第三轮·开罩 | 【接缝入口】后：揭开 {{dish_3}}；阿K 夹得越来越快，小满笑出声；桌面在快进里变空 | 交叉特写，快切 | 盘子见底 | support |\n| 19–25 | 破防 | 最后一口招牌 {{hero_dish}} 击中阿K：筷子\"当啷\"掉在桌上，他愣住，憋出\"……好吃\" | 阿K 脸部特写 → 慢动作 | 阿K 举手投降 | hero |\n| 25–30 | 结算 | 小满举起手机做收款动作（屏幕不可读），阿K 苦笑掏手机，小满竖拇指；镜头拉远到门头 | 拉远 | 门头干净构图 | storefront |\n\n### 加餐幕 X（15 秒，幕内相对时间；45 秒用 1 个，60 秒用 2 个）：辣度 / 甜度挑战\n\n| 时间 | 目的 | 画面与动作 | 运镜 | 结束画面 | 素材 |\n|---|---|---|---|---|---|\n| 0–4 | 开罩 | 【接缝入口】后：揭开 {{dish_k}}；小满用筷子指一指盘子，挑眉，示意阿K 先来 | 中景 | 阿K 硬着头皮拿起筷子 | support（{{dish_k}}） |\n| 4–11 | 挑战 | 阿K 吃下去，表情管理失败：眼睛瞪大，手去抓水杯又强装淡定；小满憋笑 | 阿K 特写 → 小满特写 | 阿K 举起水杯停在半空 | support |\n| 11–15 | 反转 | 阿K 放下水杯，又夹了一筷子（口嫌体正直） | 中景 | 【接缝出口】 | support |\n\n### 幕 Z（15 秒压缩）\n\n0–3 赌约 / 3–9 一轮嘴硬（hero）/ 9–13 破防 / 13–15 买单 + 收尾。对白只留第 2、3 句。\n\n### 接缝（序号 k 奇数用主、偶数用备）\n\n| 序号 | 类型 | 出口（上一幕的最后 1–2 秒） | 入口（下一幕的最初 1–2 秒） |\n|---|---|---|---|\n| S1、S3 | `object_cover` | 一个不锈钢罩从画面一侧扫过，完全遮住镜头 | 不锈钢罩从镜头前移开 |\n| S2 | `whip_pan` | 镜头向右快速甩出，运动模糊拉满，画面成一片横向色带 | 镜头从左侧快速甩入，运动模糊逐渐收住 |\n\n## 降级\n\n- 只有 2 张菜图：第二轮与第三轮合并为一轮。\n- 不想要真人感：`host = dingdang`，或只拍\"双手 + 桌面 + 声音\"。\n\n## 旁白与后期层\n\n- 无旁白（对白已够）；结尾可选一句 TTS「{{closing_line}}」。\n- 字卡：菜名；结尾 `shop_card` + `offer` + `address`。\n\n## 风险\n\n- 口型：对白用短句；若口型不稳，删对白改后期配音，保留表情。\n- 双人一致性：每个时间段重复\"阿K：深蓝卫衣短发 / 小满：黄色针织低马尾\"。\n- 不出现\"全网最好吃\"\"第一名\"等字眼；\"好吃\"可以，\"最好吃\"不行。\n",
+    "contentEn": "",
+    "tags": [
+      "餐饮一键成片",
+      "剧情模板",
+      "9:16"
+    ],
+    "scene": "",
+    "cronExpr": ""
+  },
+  {
+    "id": "curated:template:late-night-canteen",
+    "kind": "template",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "探店剧情 · 深夜食堂（治愈向）",
+    "nameEn": "",
+    "description": "加班到深夜的人推开巷口亮着暖灯的小店，一碗 {{hero_dish}} 把一天的疲惫冒成了热气。\n适用 15/30/45/60 秒竖屏；调性：温暖、克制、有雨夜氛围；含幕表与接缝表，配合「餐饮一键成片」Skills 使用。",
+    "descriptionEn": "",
+    "content": "---\nid: late-night-canteen\nname: 深夜食堂（治愈向）\nfits: [noodle, rice, soup, bbq, stirfry, dimsum, hotplate]\ngoals: [brand, traffic, new_dish]\ntone: 温暖、克制、有雨夜氛围\nhosts: [pov, foodie_ai]\ndurations: [15, 30, 45, 60]\nneeds: {required: [\"dish×1\"], recommended: [\"storefront\", \"dish×2\", \"interior\"], optional: []}\nseam: {primary: steam_wipe, alt: match_cut}\n---\n\n# 深夜食堂\n\n**一句话**：加班到深夜的人推开巷口亮着暖灯的小店，一碗 {{hero_dish}} 把一天的疲惫冒成了热气。\n\n**为什么有效**：情绪价值大于促销；慢镜头和热气是 AI 视频里最稳、最美的部分；适合品牌向与深夜消费场景。\n\n## 出镜\n\n客人只出现**背影、侧影、双手**（灰色大衣、肩背电脑包）；老板只出现背影或侧影，白围裙，不说话。无正脸，无对白。\n\n## 色彩与声音\n\n冷蓝雨夜 → 暖黄店内；窗外霓虹散景；雨声、汤沸声、筷碗轻碰；BGM 钢琴 + 雨声（后期；单段生成时可写进提示词）。\n\n## 槽位\n\n{{hero_dish}}、{{dish_2}}、{{dish_k}}（每个 X 幕取一道小菜）、{{city_night}}（如：上海的雨夜）、{{cook_motion}}（来自 food-shot-library 的钩子镜头：面入汤 / 铁板淋汁 / 炭火翻面……）、{{hero_motion_slowmo}}（来自\"高潮镜头\"，用慢动作版）、{{closing_line}}（如：有一碗面，在等你。）\n\n## 幕结构（与模型无关）\n\n15 秒 = Z｜30 秒 = A + B｜45 秒 = A + X + B｜60 秒 = A + X + X + B。每幕 ≤15 秒，幕与幕的边界是接缝（`../seams-and-transitions.md`）。表里的【接缝出口】/【接缝入口】按下面「接缝」表取画面。时间列：A、B 是整片绝对时间，X 是幕内相对时间。\n\n### 幕 A（0–15）开场：雨夜暖灯 → 进店落座 → 起锅\n\n| 时间 | 目的 | 画面与动作 | 运镜 | 结束画面 | 素材 |\n|---|---|---|---|---|---|\n| 0–4 | 钩子 | 雨夜小巷，湿路面倒映着门头暖灯；门帘被风掀起一角，热气涌出 | 低机位缓推 | 热气从门缝涌出 | storefront |\n| 4–8 | 进店落座 | 疲惫的客人背影推门，门铃，抖落伞上的雨珠，坐下；老板背影转向灶台 | 背后跟拍 | 客人坐下，老板背影转向灶台 | interior |\n| 8–15 | 起锅 | 老板背影点火，灶火亮起；{{cook_motion}} | 微距慢动作 + 缓推 | 【接缝出口】 | hero（取材参考） |\n\n### 幕 B（15–30）收尾：一碗的诞生 → 第一口 → 余温\n\n| 时间 | 目的 | 画面与动作 | 运镜 | 结束画面 | 素材 |\n|---|---|---|---|---|---|\n| 15–20 | 一份的诞生 | 【接缝入口】后：抒情慢镜头，{{hero_dish}} 装碗（盘）：浇头一片片落下，葱花和香菜轻轻飘落，端到客人面前 | 微距慢动作 | 碗（盘）落桌，与 hero 一致 | hero |\n| 20–25 | 第一口 | 筷子挑起一口，吹气，入口；客人闭上眼，肩膀松了下来；窗外雨渐渐小了 | 微距推近 → 侧面 | 客人放松的背影，雨声渐轻 | hero |\n| 25–30 | 余温 | 空碗和一杯热茶；有 {{dish_2}} 时，老板背影推来一碟（≤2 秒）；窗外雨停，霓虹在水洼里晃；镜头缓缓拉出到门头灯箱 | 缓慢拉远 | 门头灯箱干净构图 | support（可选）+ storefront |\n\n### 加餐幕 X（15 秒，幕内相对时间；45 秒用 1 个，60 秒用 2 个）：先上的小菜\n\n| 时间 | 目的 | 画面与动作 | 运镜 | 结束画面 | 素材 |\n|---|---|---|---|---|---|\n| 0–4 | 小菜 | 【接缝入口】后：老板背影把一碟 {{dish_k}} 轻轻放在客人面前，一句话没说 | 低机位，缓推 | 小菜落桌 | support（{{dish_k}}） |\n| 4–11 | 一口 | 客人夹起一口，慢慢嚼；肩膀第一次松下来；窗外的雨打在玻璃上 | 微距 → 侧面 | 客人放松的背影 | support |\n| 11–15 | 等 | 灶上的锅又响起来，老板背影在灶前忙碌 | 缓慢推近灶台 | 【接缝出口】 | — |\n\n### 幕 Z（15 秒压缩）\n\n0–3 热气门帘 / 3–8 起锅 + 一份的诞生 / 8–12 第一口 / 12–15 灯箱收尾。\n\n### 接缝（序号 k 奇数用主、偶数用备）\n\n| 序号 | 类型 | 出口（上一幕的最后 1–2 秒） | 入口（下一幕的最初 1–2 秒） |\n|---|---|---|---|\n| S1、S3 | `steam_wipe` | 灶上锅里的热气越来越浓，涌向镜头，直到充满整个画面，近乎一片柔白 | 柔白的热气缓缓散开 |\n| S2 | `match_cut` | 镜头垂直俯拍一个圆形锅口，圆形居中、约占画面三分之二宽度，里面是奶白色的汤面 | 镜头正对墙上的圆形挂钟，圆形钟面居中、约占画面三分之二宽度，钟面也是奶白色 |\n\n`match_cut` 要求前后两段提示词都写明形状、位置、大小、主色。冷饮甜品店（没有热气）：所有接缝用 `match_cut`，圆形物体换成杯口与挂钟。\n\n## 降级\n\n- 无门头图：用\"灯笼 / 灯箱 + 雨幕\"的泛化暖灯，不生成招牌文字。\n- 无店内图：店内用\"木桌 + 暖黄灯 + 蒸汽\"的通用构图。\n- 冷饮甜品店：改为\"雨后的玻璃窗 + 一杯冰饮的水珠\"，不要热气。\n\n## 旁白与后期层\n\n- 旁白（≤1 句，结尾）：「{{closing_line}}」\n- 字卡：菜名；结尾 `shop_card` + `address`；`offer` 可选且克制。\n\n## 风险\n\n- 避免悲情：疲惫要被\"治愈\"，不出现哭泣、绝望、崩溃。\n- 烟与雾：热气是白色柔雾，不是烟；雨不要淹没主体。\n- 老板形象温暖：不要冷脸、不要凶。\n",
+    "contentEn": "",
+    "tags": [
+      "餐饮一键成片",
+      "剧情模板",
+      "9:16"
+    ],
+    "scene": "",
+    "cronExpr": ""
+  },
+  {
+    "id": "curated:template:lunch-rescue",
+    "kind": "template",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "探店剧情 · 打工人午餐救星（限时午市）",
+    "nameEn": "",
+    "description": "午休只剩一点时间，选择困难的打工人被同事拖进一家小店，几道菜下肚，吃完还赶上了下午的会。\n适用 15/30/45/60 秒竖屏；调性：紧凑、快节奏、解压；含幕表与接缝表，配合「餐饮一键成片」Skills 使用。",
+    "descriptionEn": "",
+    "content": "---\nid: lunch-rescue\nname: 打工人午餐救星（限时午市）\nfits: [rice, noodle, stirfry, fried, hotplate, drink, soup]\ngoals: [traffic, delivery, opening]\ntone: 紧凑、快节奏、解压\nhosts: [pov, foodie_ai, dingdang]\ndurations: [15, 30, 45, 60]\nneeds: {required: [\"dish×1（最好是套餐或托盘图）\"], recommended: [\"dish×2\", \"storefront\"], optional: [\"interior\"]}\nseam: {primary: whip_pan, alt: object_cover}\n---\n\n# 打工人午餐救星\n\n**一句话**：午休只剩一点时间，选择困难的打工人被同事拖进一家小店，几道菜下肚，吃完还赶上了下午的会。\n\n**为什么有效**：时间压力是午市痛点；节奏快、笑点密；天然带套餐和价格的收尾。\n\n## 角色（foodie_ai 或 pov）\n\n- 阿宁：打工人，二十代后期，衬衫 + 工牌（不可读）+ 电脑包。\n- 同事：只出现手和背影，负责\"拖人\"。\n- 办公室背景人物全部虚化，不入焦点。\n- `host = pov` 时：第一视角被拽着冲进店，双手与背影出镜。\n- 外接缝 ≥2（如 Seedance 2.0 的 45/60 秒）时，阿宁的脸容易漂：优先 `pov`，或只拍背影与手。\n\n## 槽位\n\n{{minutes}}（商家真实的出餐或午休表述，没有依据就写\"午休这点时间\"）、{{set_meal}}（brief.offer 里的套餐名）、{{hero_dish}}、{{dish_2}}、{{dish_k}}（每个 X 幕取一道）、{{shop_name}}。\n\n## 幕结构（与模型无关）\n\n15 秒 = Z｜30 秒 = A + B｜45 秒 = A + X + B｜60 秒 = A + X + X + B。每幕 ≤15 秒，幕与幕的边界是接缝（`../seams-and-transitions.md`）。表里的【接缝出口】/【接缝入口】按下面「接缝」表取画面。时间列：A、B 是整片绝对时间，X 是幕内相对时间。\n\n### 幕 A（0–15）开场：钟声 → 被拖走 → 秒上菜\n\n| 时间 | 目的 | 画面与动作 | 运镜 | 结束画面 | 素材 |\n|---|---|---|---|---|---|\n| 0–4 | 钩子 | 办公室挂钟指向十二点，全办公室\"咻\"地起立冲出，唯独阿宁被\"吃什么\"困住，头顶飘出一堆食物图标气泡 | 固定中景 → 轻推 | 阿宁被同事一把拽起 | — |\n| 4–9 | 被拖走 | 街景快进，速度线；同事拽着阿宁冲进店 | 跟拍，快速 | 店门口，门铃叮当 | storefront |\n| 9–15 | 秒上菜 | 点单；盘子像发牌一样\"嗖嗖\"滑到桌上：{{hero_dish}} 与 {{dish_2}}；热气 | 俯拍桌面，快切 | 【接缝出口】 | hero + support |\n\n### 幕 B（15–30）收尾：大口吃 → 赶回去 → 收尾\n\n| 时间 | 目的 | 画面与动作 | 运镜 | 结束画面 | 素材 |\n|---|---|---|---|---|---|\n| 15–23 | 大口吃 | 【接缝入口】后：快切吃饭，咀嚼卡鼓点；套餐托盘俯拍（{{set_meal}}）；阿宁眼睛发亮 | 微距 / 俯拍 | 托盘近半空 | hero + support |\n| 23–27 | 赶回去 | 挂钟指向十二点四十；拍拍肚子，与同事击掌，冲回办公室 | 跟拍 | 阿宁冲进办公室门 | — |\n| 27–30 | 收尾 | 工位上阿宁对镜头偷偷竖拇指，手边是打包的饮品 | 固定 | 干净构图（留字卡） | support（饮品，可选） |\n\n### 加餐幕 X（15 秒，幕内相对时间；45 秒用 1 个，60 秒用 2 个）：同事又加了一道\n\n| 时间 | 目的 | 画面与动作 | 运镜 | 结束画面 | 素材 |\n|---|---|---|---|---|---|\n| 0–4 | 加一道 | 【接缝入口】后：同事把 {{dish_k}} 推到桌中间，阿宁摆手说不用，手却把盘子拉近 | 俯拍桌面 | 盘子被拉到面前 | support（{{dish_k}}） |\n| 4–11 | 抢着吃 | 大口吃，咀嚼卡鼓点；两人的筷子在盘里交叉，抢最后一块 | 微距 / 俯拍快切 | 盘子见底 | support |\n| 11–15 | 看表 | 挂钟指向十二点二十；两人对视，同时站起 | 中景 | 【接缝出口】 | — |\n\n### 幕 Z（15 秒压缩）\n\n0–3 钟声 + 冲出 / 3–7 拖进店 / 7–12 秒上菜 + 大口吃 / 12–15 赶回工位 + 竖拇指。\n\n### 接缝（序号 k 奇数用主、偶数用备）\n\n| 序号 | 类型 | 出口（上一幕的最后 1–2 秒） | 入口（下一幕的最初 1–2 秒） |\n|---|---|---|---|\n| S1、S3 | `whip_pan` | 镜头向右快速甩出，运动模糊拉满，画面成一片横向色带 | 镜头从左侧快速甩入，运动模糊逐渐收住 |\n| S2 | `object_cover` | 一只端着托盘的手从画面一侧扫过，托盘完全遮住镜头 | 托盘从镜头前移开 |\n\n## 降级\n\n- 无套餐图：只用单品，字卡写菜名与价格。\n- 不想要人：`host = pov`（第一视角冲进店）。\n\n## 旁白与后期层\n\n- 旁白（≤2 句）：t≈20「午休这点时间，够吃顿好的。」 片尾前 3 秒「{{shop_name}}，工作日午市。」\n- 字卡：套餐名 + 价格（来自 brief.offer）；有效时间（如\"周一至周五 11:00–14:00\"）。\n- 所有时间、价格、\"出餐快\"类承诺都必须来自商家，否则不写。\n\n## 风险\n\n- 挂钟指针与数字可能错乱：只要求\"十二点\"\"十二点二十\"\"十二点四十\"的大致位置，不要求精确。\n- 办公室路人不要抢焦点。\n",
+    "contentEn": "",
+    "tags": [
+      "餐饮一键成片",
+      "剧情模板",
+      "9:16"
+    ],
+    "scene": "",
+    "cronExpr": ""
+  },
+  {
+    "id": "curated:template:dish-quest",
+    "kind": "template",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "探店剧情 · 吃货闯关（三关通关领福利）",
+    "nameEn": "",
+    "description": "一支吃货小队闯关：香气结界、辣度 Boss、招牌宝箱，通关奖励是满桌空盘和一张福利券。\n适用 30/45/60 秒竖屏；调性：游戏感、夸张、好玩；含幕表与接缝表，配合「餐饮一键成片」Skills 使用。",
+    "descriptionEn": "",
+    "content": "---\nid: dish-quest\nname: 吃货闯关（三关通关领福利）\nfits: [hotpot, bbq, hotplate, seafood, stirfry, drink]\ngoals: [traffic, opening, festival]\ntone: 游戏感、夸张、好玩\nhosts: [pov, foodie_ai, dingdang]\ndurations: [30, 45, 60]\nneeds: {required: [\"dish×2\"], recommended: [\"dish×3（含饮品）\", \"storefront\"], optional: [\"interior\"]}\nseam: {primary: soft_flash, alt: object_cover}\n---\n\n# 吃货闯关\n\n**一句话**：一支吃货小队闯关：香气结界、辣度 Boss、招牌宝箱，通关奖励是满桌空盘和一张福利券。\n\n**为什么有效**：游戏化叙事适合聚餐与团购人群；视觉夸张，但菜品镜头仍保持真实；尾部的福利镜头自然引到优惠。\n\n## 出镜\n\n默认 `pov` + 三双手（食客）；`host = dingdang` 时叮当做\"向导\"；`host = foodie_ai` 时最多 2 人。三双手的肤色和袖口要有区别（灰卫衣袖 / 黑夹克袖 / 白衬衫袖），避免融合。\n\n## 视觉规则\n\n奇幻元素（结界、火龙、宝箱光）**只出现在菜品之外的空间**；菜品镜头本身保持写实，不加特效、不变形。HUD 一律用图标（星星、金币、血条形状），不出现文字或数字。\n\n## 槽位\n\n{{hero_dish}}（招牌，\"宝箱\"）、{{drink}}（灭火饮品，第二关用）、{{dish_k}}（每个 X 幕的额外关卡取一道 support）、{{reward}}（brief.offer，画面里只用无字的\"福利券\"图标）。\n\n## 幕结构（与模型无关）\n\n30 秒 = A + B｜45 秒 = A + X + B｜60 秒 = A + X + X + B。**15 秒不适用**（太挤），需要 15 秒时改用 pov-smell-detour。每幕 ≤15 秒，幕与幕的边界是接缝（`../seams-and-transitions.md`）。表里的【接缝出口】/【接缝入口】按下面「接缝」表取画面。时间列：A、B 是整片绝对时间，X 是幕内相对时间。\n\n### 幕 A（0–15）开场：召集 → 第一关 → 第二关\n\n| 时间 | 目的 | 画面与动作 | 运镜 | 结束画面 | 素材 |\n|---|---|---|---|---|---|\n| 0–3 | 召集 | 俯拍桌面，三双手同时伸入画面叠在一起，像游戏开局，炉火 / 锅在桌中央 | 俯拍缓降 | 三只手叠成拳头，碰一下 | — |\n| 3–8 | 第一关·香气结界 | 门口一层金色\"香气结界\"拦住排队的人群；筷子或笔一划劈开，光屑洒落，进店 | 低机位跟拍 | 结界裂开，门内暖光 | storefront |\n| 8–15 | 第二关·辣度 Boss | 烤架或锅上腾起一条红辣椒组成的卡通火龙；三人举起 {{drink}} 干杯，冰雾压住火龙，化作火星 | 中景固定 → 微环绕 | 【接缝出口】 | support（饮品） |\n\n### 幕 B（15–30）收尾：招牌宝箱 → 结算福利\n\n| 时间 | 目的 | 画面与动作 | 运镜 | 结束画面 | 素材 |\n|---|---|---|---|---|---|\n| 15–24 | 第三关·招牌宝箱 | 【接缝入口】后：盖子合着的 {{hero_dish}} 在桌中央，缝里透出金光；掀盖，金光四射，慢镜夹起 | 推近 → 慢动作 | 金光中的 {{hero_dish}} | hero |\n| 24–30 | 结算 + 福利 | 满桌空盘，三人瘫在椅背；头顶弹出三颗星；一张发光的无字\"福利券\"图标飘落到镜头前；镜头拉出到门头 | 拉远 | 门头干净构图 | storefront |\n\n### 加餐幕 X（15 秒，幕内相对时间；45 秒用 1 个，60 秒用 2 个）：额外关卡\n\n| 时间 | 目的 | 画面与动作 | 运镜 | 结束画面 | 素材 |\n|---|---|---|---|---|---|\n| 0–3 | 新关卡 | 【接缝入口】后：桌面中央亮起一个无字的\"关卡\"光圈图标，三双手同时指向 {{dish_k}} | 俯拍 | 光圈亮起 | support（{{dish_k}}） |\n| 3–11 | 通关 | 三双手轮流夹起 {{dish_k}}（{{climax_motion_k}}），每人一口，头顶弹出星星 | 微距快切 | 盘子里的菜少了一半 | support |\n| 11–15 | 奖励 | 光圈化成一枚金币图标飘起，被一只手接住 | 中景 | 【接缝出口】 | — |\n\n### 接缝（序号 k 奇数用主、偶数用备）\n\n| 序号 | 类型 | 出口（上一幕的最后 1–2 秒） | 入口（下一幕的最初 1–2 秒） |\n|---|---|---|---|\n| S1、S3 | `soft_flash` | 一团柔和的金光从桌子中央升起，由小变大，充满整个画面，近乎一片柔金白（只闪一次，不闪烁） | 金光缓缓收回 |\n| S2 | `object_cover` | 烤架上的铁盖从画面一侧扫过，完全遮住镜头 | 铁盖从镜头前移开 |\n\n## 降级\n\n- 无饮品图：第二关改为\"辣度 Boss 被一碗米饭或凉菜压住\"，用现有菜品图。\n- 无门头图：第一关改为\"香气结界在桌面上空展开\"，不拍门口。\n- 外接缝 ≥2（如 Seedance 2.0 的 45/60 秒）：三双手容易融合、人物容易漂，优先 `host = dingdang`（叮当是风格化 IP，参考图可用）。\n\n## 旁白与后期层\n\n- 无对白；旁白后期 1–2 句：t≈1「三个人，闯一关。」（可选） 片尾前 3 秒「{{closing_line}}」\n- 字卡：福利（来自 brief.offer）；`shop_card`；`address`。\n\n## 风险\n\n- 火龙不要蔓延到食客与菜品；冰雾是白色柔雾。\n- HUD 不要出现可读文字或数字。\n- 手：三双手需要肤色和袖口有区别，避免融合；手部镜头短。\n- 金光只闪一次，不连闪、不频闪。\n",
+    "contentEn": "",
+    "tags": [
+      "餐饮一键成片",
+      "剧情模板",
+      "9:16"
+    ],
+    "scene": "",
+    "cronExpr": ""
+  },
+  {
+    "id": "curated:template:dish-insert",
+    "kind": "template",
+    "source": "curated",
+    "enabled": true,
+    "expectedVersion": "",
+    "name": "餐饮一键成片 · 菜品插入模板（保真优先 / 试拍用）",
+    "nameEn": "",
+    "description": "把一张菜品图做成 4–6 秒的\"活\"特写：菜品外观以图为准，只加热气、一个轻动作和缓慢运镜。\n试拍与 insert 模式使用，配合「餐饮一键成片」Skills 使用。",
+    "descriptionEn": "",
+    "content": "# 菜品插入模板（保真优先 / 试拍用）\n\n用途：把**一张菜品图**做成 4–6 秒的\"活\"特写：菜品外观以图为准，只加热气、一个轻动作和缓慢运镜。\n\n- **试拍**：先跑这一条（积分少），让商家确认\"这就是我家的菜\"，再跑全片。\n- **insert 模式**：成片里的菜品特写镜头全部用它单独生成，后期插入主片；主片对应位置在提示词里写成\"切入菜品特写（后期插入）\"的占位 beat。\n\n## 模板\n\n```\n【规格】竖屏9:16，{N}秒，1080P。真实美食短视频质感；{光线}；浅景深。\n\n【素材分工】\n@图片1：{菜名}，作为首帧，菜品外观严格以此为准：{外观锁定句}。不增减食材，不改变摆盘、颜色与器皿。不取背景和文字。\n\n【连续性】菜品与器皿在整个镜头中保持不变；背景保持虚化的暖色光斑。\n\n【时间轴】\n0–{N}秒 {菜名}特写：{一个轻动作}。镜头：{缓推 / 微环绕}，幅度很小。结束画面：{菜品清晰，热气余韵}。\n\n【声音】BGM：无。音效：{ASMR 音效}。\n对白：无（旁白由后期配音）\n\n【禁止】菜品变形、变色、增减食材；筷子多于两根或弯折；画面出现可读文字、字幕、水印；手指畸形；食物凭空出现或消失。\n```\n\n## 轻动作怎么选\n\n按 category / state，从 `food-shot-library.md` 的\"高潮镜头\"里选**一个**：\n\n- `cold / iced / dry` 不加热气。\n- `raw` 只做\"下锅 / 下炉\"，不做咬食。\n- 一个镜头只允许：热气 + 一个动作 + 一个缓慢运镜。\n\n## 示例（牛肉面，hot_steaming）\n\n```\n【规格】竖屏9:16，5秒，1080P。真实美食短视频质感；暖色侧逆光，蒸汽背光；浅景深。\n\n【素材分工】\n@图片1：牛肉面，作为首帧，菜品外观严格以此为准：深口黑碗里的牛肉面，清亮红汤，牛腱片叠放，撒葱花和香菜，冒白色热气。不增减食材，不改变摆盘、颜色与器皿。不取背景和文字。\n\n【连续性】碗与面在整个镜头中保持不变；背景保持虚化的暖色光斑。\n\n【时间轴】\n0–5秒 牛肉面特写：热气缓缓升起，一双筷子从画面下方入镜，轻轻挑起一缕面条，红汤顺着面条滴落。镜头：微距缓缓推近，幅度很小。结束画面：面条停在半空，碗中汤面微微晃动，热气仍在升起。\n\n【声音】BGM：无。音效：汤面轻响、筷子触碗声、细微吸气声。\n对白：无（旁白由后期配音）\n\n【禁止】菜品变形、变色、增减食材；面条无限拉长或打结；筷子多于两根或弯折；画面出现可读文字、字幕、水印；手指畸形；食物凭空出现或消失。\n```\n",
+    "contentEn": "",
+    "tags": [
+      "餐饮一键成片",
+      "视频提示词模板",
+      "9:16"
+    ],
+    "scene": "",
+    "cronExpr": ""
   }
 ]

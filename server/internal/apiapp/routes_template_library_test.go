@@ -34,7 +34,7 @@ func TestLibraryPermissionsAndPublishing(t *testing.T) {
 		t.Fatal(response.Body.String())
 	}
 	entries := dataOf(t, response)["entries"].([]any)
-	if len(entries) != 139 {
+	if len(entries) != 152 {
 		t.Fatalf("incomplete catalog: %d", len(entries))
 	}
 	var selected map[string]any

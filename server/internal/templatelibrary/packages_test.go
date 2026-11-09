@@ -3,6 +3,7 @@ package templatelibrary
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"io/fs"
 	"reflect"
 	"testing"
@@ -34,6 +35,46 @@ func TestPackageSeedsAreComplete(t *testing.T) {
 	}
 	if count != 13 || files != 44 {
 		t.Fatalf("import incomplete: %d skills, %d files", count, files)
+	}
+}
+
+// 精选目录的 Skill 包与文本模板同样须完整可校验，且保持可在后台编辑。
+func TestCuratedSeedsAreComplete(t *testing.T) {
+	raw, err := legacyFiles.ReadFile("curated_catalog.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []Entry
+	if err = json.Unmarshal(raw, &entries); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, entry := range entries {
+		if seen[entry.ID] {
+			t.Fatalf("duplicate identity: %s", entry.ID)
+		}
+		seen[entry.ID] = true
+		fields := entry.Fields
+		if err := validateFields(entry.Kind, &fields); err != nil {
+			t.Fatalf("%s cannot be edited: %v", entry.ID, err)
+		}
+		if entry.Kind != "skill" {
+			if entry.PackageDigest != "" || entry.Package != nil {
+				t.Fatalf("%s: only skills carry packages", entry.ID)
+			}
+			continue
+		}
+		archive, err := legacyFiles.ReadFile("packages/" + entry.PackageDigest + ".zip")
+		if err != nil {
+			t.Fatal(err)
+		}
+		info, _, content, err := inspectPackage(archive)
+		if err != nil {
+			t.Fatalf("%s: %v", entry.ID, err)
+		}
+		if !reflect.DeepEqual(&info, entry.Package) || content != entry.Content {
+			t.Fatalf("%s: manifest or content mismatch", entry.ID)
+		}
 	}
 }
 func packageFixture(t *testing.T, files []packageContent) []byte {
