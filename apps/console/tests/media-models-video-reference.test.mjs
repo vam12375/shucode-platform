@@ -500,7 +500,7 @@ test("adding preset tiers inherits the existing family shared configuration", as
     priceVersion: "custom-version",
     videoReference: capability,
   }]);
-  let tree = clickPreset(f, "Seedance 2.0 / 2.5");
+  let tree = clickPreset(f, "Seedance 2.0");
   for (const input of nodes(tree, (node) => (node.props?.["aria-label"] ?? "").endsWith("售价") && node.props.value === "")) {
     input.props.onChange({ target: { value: "0.5" } });
   }
@@ -1135,4 +1135,115 @@ test("Ext preset upgrades an existing fixed-price request SKU to duration tiers"
     { minDuration: 4, maxDuration: 14, costMicro: 8_750_000, priceMicro: 8_750_000 },
     { minDuration: 15, maxDuration: 30, costMicro: 17_500_000, priceMicro: 17_500_000 },
   ]);
+});
+
+const arkSeedance25Model = () => ({
+  ...model,
+  id: "seedance-2.5-720p",
+  name: "Seedance 2.5 720p",
+  upstreamModel: "doubao-seedance-2-5-260628",
+  durations: undefined,
+  minDuration: 4,
+  maxDuration: 30,
+});
+
+test("Ark Seedance 2.5 preset uses the official model and three explicitly priced token resolution tiers", async () => {
+  const f = await mountModels([]);
+  let tree = clickPreset(f, "火山 Seedance 2.5");
+  const units = nodes(tree, (node) => node.type === "Select" && (node.props.ariaLabel ?? "").endsWith("计费单位"));
+  assert.equal(units.length, 3);
+  assert.ok(units.every((unit) => unit.props.value === "token"));
+  const prices = nodes(tree, (node) => node.type === "input" && (node.props?.["aria-label"] ?? "").endsWith("Token 售价 credit/1M token"));
+  const costs = nodes(tree, (node) => node.type === "input" && (node.props?.["aria-label"] ?? "").endsWith("Token 成本 credit/1M token"));
+  assert.equal(prices.length, 3);
+  assert.equal(costs.length, 3);
+  assert.ok(prices.every((input) => input.props.value === ""), "administrator must set prices");
+  assert.ok(costs.every((input) => input.props.value === ""), "administrator must set costs");
+  for (const input of prices) input.props.onChange({ target: { value: "0.5" } });
+  for (const input of costs) input.props.onChange({ target: { value: "0" } });
+  tree = f.render();
+  const resolution = nodes(tree, (node) => node.type === "Select" && (node.props.ariaLabel ?? "").includes("第 1 档分辨率"))[0];
+  assert.deepEqual(Array.from(resolution.props.options, (option) => option.value), ["480p", "720p", "1080p"]);
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "保存配置")[0].props.onClick();
+  await f.settle();
+  const saved = JSON.parse(f.calls.find((call) => call.options).options.body);
+  assert.deepEqual(saved.map((tier) => [tier.upstreamModel, tier.resolutions[0], tier.minDuration, tier.maxDuration]), [
+    ["doubao-seedance-2-5-260628", "480p", 4, 30],
+    ["doubao-seedance-2-5-260628", "720p", 4, 30],
+    ["doubao-seedance-2-5-260628", "1080p", 4, 30],
+  ]);
+  assert.ok(saved.every((tier) => tier.billingUnit === "token" && tier.tokenPriceMicroPerMillion === 500_000));
+  assert.ok(saved.every((tier) => tier.videoReference === undefined));
+});
+
+test("enabling Ark Seedance 2.5 reference defaults to 30 seconds and saves the entered token price", async () => {
+  const f = await mountModels([arkSeedance25Model()]);
+  let tree = f.render();
+  nodes(tree, (node) => node.props?.["aria-label"] === "模型 Seedance 2.5 启用视频参考")[0].props.onChange({ target: { checked: true } });
+  tree = f.render();
+  const referenceDuration = nodes(tree, (node) => node.props?.["aria-label"] === "模型 Seedance 2.5 视频参考时长上限")[0];
+  assert.equal(referenceDuration.props.value, "30");
+  assert.equal(referenceDuration.props.max, 30);
+  nodes(tree, (node) => node.props?.["aria-label"] === "模型 Seedance 2.5 视频参考 token 售价")[0].props.onChange({ target: { value: "2" } });
+  tree = f.render();
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "保存配置")[0].props.onClick();
+  await f.settle();
+  const saved = JSON.parse(f.calls.find((call) => call.options).options.body)[0];
+  assert.equal(saved.videoReference.maxDurationSeconds, 30);
+  assert.equal(saved.videoReference.tokenPriceMicroPerMillion, 2_000_000);
+});
+
+test("Ark Seedance 2.5 preset explicitly repairs the previous invalid model without replacing existing prices", async () => {
+  const f = await mountModels([{
+    ...arkSeedance25Model(),
+    upstreamModel: "doubao-seedance-2-5-pro-260128",
+    priceVersion: "existing-version",
+  }]);
+  let tree = clickPreset(f, "火山 Seedance 2.5");
+  for (const input of nodes(tree, (node) => node.type === "input" && (node.props?.["aria-label"] ?? "").endsWith("售价") && node.props.value === "")) {
+    input.props.onChange({ target: { value: "0.5" } });
+  }
+  tree = f.render();
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "保存配置")[0].props.onClick();
+  await f.settle();
+  const saved = JSON.parse(f.calls.find((call) => call.options).options.body);
+  assert.equal(saved.length, 3);
+  assert.ok(saved.every((tier) => tier.upstreamModel === "doubao-seedance-2-5-260628"));
+  assert.ok(saved.every((tier) => tier.priceVersion === "existing-version"));
+  assert.equal(saved.find((tier) => tier.id === "seedance-2.5-720p").priceMicro, model.priceMicro);
+  assert.ok(saved.every((tier) => tier.billingUnit === undefined), "existing second billing remains unchanged on repaired and added tiers");
+});
+
+test("Ark Seedance 2.5 preset preserves an existing second-billed family when adding missing tiers", async () => {
+  const f = await mountModels([arkSeedance25Model()]);
+  let tree = clickPreset(f, "火山 Seedance 2.5");
+  for (const input of nodes(tree, (node) => node.type === "input" && (node.props?.["aria-label"] ?? "").endsWith("售价") && node.props.value === "")) {
+    input.props.onChange({ target: { value: "0.5" } });
+  }
+  tree = f.render();
+  const units = nodes(tree, (node) => node.type === "Select" && (node.props.ariaLabel ?? "").endsWith("计费单位"));
+  assert.equal(units.length, 3);
+  assert.ok(units.every((unit) => unit.props.value === "second"));
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "保存配置")[0].props.onClick();
+  await f.settle();
+  const saved = JSON.parse(f.calls.find((call) => call.options).options.body);
+  assert.ok(saved.every((tier) => tier.billingUnit === undefined));
+  assert.equal(saved.find((tier) => tier.id === "seedance-2.5-720p").priceMicro, model.priceMicro);
+});
+
+test("Ark Seedance 2.5 rejects unsupported resolution and reference lengths while retaining 30-second audio through JSON", () => {
+  const draft = output.toDraft({
+    ...arkSeedance25Model(),
+    videoReference: { ...capability, maxDurationSeconds: 30, maxAudioSeconds: 30 },
+  });
+  assert.equal(output.validateDrafts([draft], [provider]), null);
+  for (const duration of ["1", "31"]) {
+    assert.match(output.validateDrafts([{ ...draft, videoReference: { ...draft.videoReference, maxDurationSeconds: duration } }], [provider]), /视频参考片段上限必须为 2–30 秒/);
+  }
+  assert.match(output.validateDrafts([{ ...draft, resolutions: ["4k"] }], [provider]), /仅支持 480p、720p、1080p/);
+  const imported = output.draftsFromJson(JSON.stringify([output.toApiModel(draft)]))[0];
+  assert.equal(imported.videoReference.maxAudioSeconds, "30");
+  assert.equal(output.toApiModel(imported).videoReference.maxAudioSeconds, 30);
+  assert.equal(output.validateDrafts([imported], [provider]), null);
+  assert.match(output.validateDrafts([{ ...imported, videoReference: { ...imported.videoReference, maxAudioSeconds: "31" } }], [provider]), /参考音频上限/);
 });

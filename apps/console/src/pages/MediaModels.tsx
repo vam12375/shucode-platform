@@ -32,10 +32,11 @@ const RESOLUTIONS = ["480p", "720p", "1080p", "4k"];
 const DEFAULT_MIN_DURATION = 4;
 const DEFAULT_MAX_DURATION = 15;
 const SEEDANCE_25_MAX_DURATION = 30;
+const LEGACY_ARK_SEEDANCE_25_MODEL = "doubao-seedance-2-5-pro-260128";
 
 /** Seedance 2.5（Ark / ToAPIs 标准版与 Ext）已开放 4–30 秒；其余 2.0 仍为 4–15 秒。 */
 function isArkSeedance25(upstreamModel: string): boolean {
-  // Ark 型号形如 doubao-seedance-2-5-pro-260128，以六位日期结尾。
+  // Ark 官方型号为 doubao-seedance-2-5-260628；同家族带日期的型号共享时长能力。
   return /^doubao-seedance-2-5-(?:[a-z0-9]+-)*\d{6}$/.test(upstreamModel.trim());
 }
 
@@ -87,7 +88,8 @@ const ARK_SEEDANCE_25_PRESETS = [
   {
     key: "seedance-25",
     name: "Seedance 2.5",
-    upstreamModel: "doubao-seedance-2-5-pro-260128",
+    upstreamModel: "doubao-seedance-2-5-260628",
+    billingUnit: "token",
     minDuration: 4,
     maxDuration: SEEDANCE_25_MAX_DURATION,
     tiers: [
@@ -360,6 +362,9 @@ function hasResolutionTiers(draft: MediaModelDraft): boolean {
 
 function modelResolutions(draft: MediaModelDraft): readonly string[] {
   if (isToapisGptImage(draft)) return TOAPIS_IMAGE_RESOLUTIONS;
+  if ((draft.adapter ?? "ark") === "ark" && draft.kind === "video" && isArkSeedance25(draft.upstreamModel)) {
+    return ["480p", "720p", "1080p"];
+  }
   if (draft.adapter === "toapis") {
     const minimax = minimaxCapability(draft.upstreamModel.trim());
     if (minimax) return minimax.resolutions;
@@ -759,6 +764,10 @@ function tierProblem(
   if (draft.billingUnit !== "second" && draft.billingUnit !== "request" && draft.billingUnit !== "token") {
     return `「${label}」计费单位不受支持。`;
   }
+  if (adapter === "ark" && draft.kind === "video" && isArkSeedance25(upstreamModel) &&
+    draft.resolutions.some((resolution) => !modelResolutions(draft).includes(resolution))) {
+    return `「${label}」火山 Seedance 2.5 仅支持 480p、720p、1080p。`;
+  }
   if (adapter === "toapis") {
     if (draft.kind === "image") {
       if (!isToapisGptImage(draft)) return `「${label}」ToAPIs 仅支持已接入的 GPT Image 2 / 2.5 图片模型。`;
@@ -877,18 +886,20 @@ function tierProblem(
   if (draft.videoReference?.enabled) {
     if (draft.kind !== "video") return `「${label}」只有视频模型可以启用视频参考。`;
     const klingReference = draft.adapter === "toapis" && draft.upstreamModel.trim() === "kling-4.0";
-    const referenceMaxDuration = klingReference ? 30 : 90;
+    const arkSeedance25Reference = adapter === "ark" && isArkSeedance25(upstreamModel);
+    const referenceMinDuration = arkSeedance25Reference ? 2 : 1;
+    const referenceMaxDuration = klingReference || arkSeedance25Reference ? 30 : 90;
     const referenceMaxImages = klingReference ? 10 : 8;
     if (!/^\d+$/.test(draft.videoReference.maxDurationSeconds.trim())) {
-      return `「${label}」视频参考片段上限必须为 1–${referenceMaxDuration} 秒的整数。`;
+      return `「${label}」视频参考片段上限必须为 ${referenceMinDuration}–${referenceMaxDuration} 秒的整数。`;
     }
     const maxDurationSeconds = Number(draft.videoReference.maxDurationSeconds);
     if (
       !Number.isSafeInteger(maxDurationSeconds) ||
-      maxDurationSeconds < 1 ||
+      maxDurationSeconds < referenceMinDuration ||
       maxDurationSeconds > referenceMaxDuration
     ) {
-      return `「${label}」视频参考片段上限必须为 1–${referenceMaxDuration} 秒的整数。`;
+      return `「${label}」视频参考片段上限必须为 ${referenceMinDuration}–${referenceMaxDuration} 秒的整数。`;
     }
     if (!/^\d+$/.test(draft.videoReference.maxImages.trim())) {
       return `「${label}」视频参考图上限必须为 1–${referenceMaxImages} 张的整数。`;
@@ -1056,6 +1067,8 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
         maxDurationSeconds: String(capability.maxDurationSeconds),
         maxImages: String(capability.maxImages),
         ...(typeof capability.maxSegments === "number" && capability.maxSegments > 0 ? { maxSegments: String(capability.maxSegments) } : {}),
+        // 导入曾漏掉参考音轨上限，导致 JSON 往返后已启用的原片音轨被关闭。
+        ...(capability.maxAudioSeconds !== undefined ? { maxAudioSeconds: String(capability.maxAudioSeconds) } : {}),
         tokenCostCredits: priceInputValue(tokenCost),
         tokenPriceCredits: priceInputValue(tokenPrice),
         ...(referenceCost > 0 ? { costCredits: priceInputValue(referenceCost) } : {}),
@@ -1491,19 +1504,21 @@ export function MediaModelsPage() {
     const presets = family === "minimax"
       ? TOAPIS_MINIMAX_PRESETS
       : family === "seedance25"
-        ? TOAPIS_SEEDANCE_25_PRESETS.filter((preset) => preset.upstreamModel === "seedance-2-5")
+        ? adapter === "ark" ? ARK_SEEDANCE_25_PRESETS : TOAPIS_SEEDANCE_25_PRESETS.filter((preset) => preset.upstreamModel === "seedance-2-5")
         : family === "seedance25ext"
           ? TOAPIS_SEEDANCE_25_PRESETS.filter((preset) => preset.upstreamModel === "seedance-2.5-ext")
           : family === "kling"
             ? TOAPIS_KLING_PRESETS
-            : adapter === "toapis" ? TOAPIS_SEEDANCE_PRESETS : [...SEEDANCE_PRESETS, ...ARK_SEEDANCE_25_PRESETS];
+            : adapter === "toapis" ? TOAPIS_SEEDANCE_PRESETS : SEEDANCE_PRESETS;
     for (const preset of presets) {
+      const repairsArkSeedance25 = adapter === "ark" && family === "seedance25";
       const existingFamily = drafts.find(
         (draft) =>
           draft.kind === "video" &&
           (draft.adapter ?? "ark") === adapter &&
           draft.providerId === providerId &&
-          draft.upstreamModel.trim() === preset.upstreamModel,
+          (draft.upstreamModel.trim() === preset.upstreamModel ||
+            repairsArkSeedance25 && draft.upstreamModel.trim() === LEGACY_ARK_SEEDANCE_25_MODEL),
       );
       const familyId = existingFamily?.familyId ?? nextFamilyId();
       const before = additions.length;
@@ -1530,6 +1545,11 @@ export function MediaModelsPage() {
           const target = drafts.find((draft) => (draft.id.trim() || draft.upstreamModel.trim()) === tier.id);
           if (target) {
             const patch: Partial<MediaModelDraft> = {};
+            // 旧预设曾填写不存在的型号；显式补齐预设时修正，保留自定义型号与价格。
+            if (repairsArkSeedance25 && (target.adapter ?? "ark") === "ark" &&
+              target.upstreamModel.trim() === LEGACY_ARK_SEEDANCE_25_MODEL) {
+              patch.upstreamModel = preset.upstreamModel;
+            }
             if ("minDuration" in preset && "maxDuration" in preset) {
               patch.minDuration = String(preset.minDuration);
               patch.maxDuration = String(preset.maxDuration);
@@ -1562,8 +1582,8 @@ export function MediaModelsPage() {
           maxDuration: String(family === "kling" ? 30 : "maxDuration" in preset ? preset.maxDuration : DEFAULT_MAX_DURATION),
           costCredits: tierPricing.costCredits ?? "0",
           billingUnit: "billingUnit" in preset ? preset.billingUnit : "second",
-          tokenCostCredits: tierPricing.tokenCostCredits ?? "0",
-          tokenPriceCredits: tierPricing.tokenPriceCredits ?? "0",
+          tokenCostCredits: tierPricing.tokenCostCredits ?? (repairsArkSeedance25 ? "" : "0"),
+          tokenPriceCredits: tierPricing.tokenPriceCredits ?? (repairsArkSeedance25 ? "" : "0"),
           generateAudio: family !== "minimax" && family !== "kling",
           priceCredits: tierPricing.priceCredits ?? "",
           priceVersion: "v1",
@@ -1601,6 +1621,7 @@ export function MediaModelsPage() {
           } : {}),
           // 补档必须继承卡片共享配置；默认值会与旧枚举、音频或价格版本冲突并阻塞保存。
           ...(existingFamily ? sharedConfiguration(existingFamily) : {}),
+          ...(repairsArkSeedance25 ? { upstreamModel: preset.upstreamModel } : {}),
           ...(existingFamily && "videoReferenceTokenPriceCredits" in tierPricing ? {
             videoReference: {
               ...(existingFamily.videoReference ?? {
@@ -1921,9 +1942,14 @@ export function MediaModelsPage() {
 
   const presetActions: { label: string; title: string; run: () => void }[] = [
     {
-      label: "Seedance 2.0 / 2.5",
-      title: "补齐 mini / fast / 基础版的 Seedance 2.0 档位，并加入 Seedance 2.5（4–30 秒）",
+      label: "Seedance 2.0",
+      title: "补齐 mini / fast / 基础版的 Seedance 2.0 档位",
       run: () => addVideoPresets("ark"),
+    },
+    {
+      label: "火山 Seedance 2.5",
+      title: "加入火山 Seedance 2.5 的 480p / 720p / 1080p Token 计费档位（输出 4–30 秒，参考视频最高 30 秒），请填写费率",
+      run: () => addVideoPresets("ark", "seedance25"),
     },
     {
       label: "ToAPIs Seedance 2.0",
@@ -2389,7 +2415,8 @@ function MediaFamilyCard({
   const isVideo = lead.kind === "video";
   const hasTiers = hasResolutionTiers(lead);
   const isToapis = lead.adapter === "toapis";
-  const seedance25 = isArkSeedance25(lead.upstreamModel) ||
+  const arkSeedance25 = !isToapis && isArkSeedance25(lead.upstreamModel);
+  const seedance25 = arkSeedance25 ||
     (isToapis && (lead.upstreamModel.trim() === "seedance-2-5" || lead.upstreamModel.trim() === "seedance-2.5-ext"));
   const minimax = isToapis ? minimaxCapability(lead.upstreamModel.trim()) : undefined;
   const kling = isToapis && lead.upstreamModel.trim() === "kling-4.0";
@@ -3147,7 +3174,8 @@ function MediaFamilyCard({
                   videoReference: event.target.checked
                     ? lead.videoReference ?? {
                         enabled: true,
-                        maxDurationSeconds: "15",
+                        // 2.5 的输入上限独立于旧 2.0 默认值，避免把 30 秒参考片误限为 15 秒。
+                        maxDurationSeconds: arkSeedance25 ? "30" : "15",
                         maxImages: "8",
                         maxSegments: "1",
                         tokenCostCredits: isToapis ? "0" : "",
@@ -3180,7 +3208,7 @@ function MediaFamilyCard({
                     type="number"
                     inputMode="numeric"
                     min={2}
-                    max={isToapis ? (kling ? 30 : 15) : 90}
+                    max={isToapis ? (kling ? 30 : 15) : arkSeedance25 ? 30 : 90}
                     step={1}
                     aria-label={`模型 ${name} 视频参考时长上限`}
                     value={reference.maxDurationSeconds}
@@ -3252,7 +3280,7 @@ function MediaFamilyCard({
                       })
                     }
                   />
-                  <span className="video-reference-note">0 = 不发送原片音轨；Ark 2.0 单段上限 15 秒</span>
+                  <span className="video-reference-note">0 = 不发送原片音轨；{arkSeedance25 ? "Ark 2.5 单段上限 30 秒" : "Ark 2.0 单段上限 15 秒"}</span>
                 </label> : null}
                 {!isToapis ? <label className="field">
                   <span className="field-label">Token 成本（Credit/1M token）</span>
