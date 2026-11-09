@@ -37,6 +37,12 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	}
 	shot := p.Shots[index]
 	if !p.CancelRequested && (shot.Status == "pending" || shot.Status == "image_ready") {
+		if p.Plan != nil {
+			// 历史项目仍可读取；只有新的付费提交才复验全部选图的实际输入覆盖。
+			if err := validateSelectedImageUsage(p.Brief, *p.Plan); err != nil {
+				return s.failVideoReference(ctx, p, index, shot, err.Error())
+			}
+		}
 		if err := validateFinishingPlan(p.Brief, narrationPlan(p)); err != nil {
 			return s.failVideoReference(ctx, p, index, shot, err.Error())
 		}
@@ -215,7 +221,15 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		if err := validateBriefReferenceMode(p.Brief); err != nil {
 			return s.failVideoReference(ctx, p, index, shot, "provider_input_unsupported")
 		}
-		if err := validateBriefReferenceImages(p.Brief, m); err != nil {
+		referenceBrief := p.Brief
+		if p.Brief.ImageAnalysisFirst {
+			referenceBrief = storyShotBrief(referenceBrief, shot.Plan)
+			referenceBrief.ImageAnalysisFirst = false
+			if shot.Plan.Creative != nil && shot.Plan.Creative.Source == "generated" {
+				referenceBrief.ReferenceMode = ""
+			}
+		}
+		if err := validateBriefReferenceImages(referenceBrief, m); err != nil {
 			return s.failVideoReference(ctx, p, index, shot, err.Error())
 		}
 		submissionPlan, e = finishingGenerationPlan(p, shot.Plan)
@@ -429,9 +443,13 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		return fmt.Errorf("invalid_shot_state")
 	}
 	var replacementImageIDs []string
+	submissionBrief := p.Brief
 	if kind == "video" && globalReferences {
-		// auto、分镜和原片复刻复用同一组全局参考，不从镜头绑定推导首帧。
-		replacementImageIDs = uniqueReferenceImageIDs(videoProductAssetIDs(p.Brief))
+		// 图片优先必须发送该段冻结子集；全局集合会超过单段上限并污染镜头职责。
+		if p.Brief.ImageAnalysisFirst {
+			submissionBrief = storyShotBrief(p.Brief, shot.Plan)
+		}
+		replacementImageIDs = uniqueReferenceImageIDs(videoProductAssetIDs(submissionBrief))
 	} else if kind == "video" && isWholeVideoReferenceExecution(p) {
 		replacementImageIDs = wholeReferenceImageIDs(p, shot)
 		if len(replacementImageIDs) == 0 || len(replacementImageIDs) > m.VideoReference.MaxImages {
@@ -571,12 +589,19 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		} else {
 			id, e = provider.CanvasVideo(ctx, m, directRequest, images)
 		}
+	} else if p.Brief.ImageAnalysisFirst && shot.Plan.Creative != nil && shot.Plan.Creative.Source == "generated" {
+		request := CanvasRequest{Kind: "video", Prompt: submissionPlan.Prompt, Resolution: p.Brief.Resolution, AspectRatio: p.Brief.AspectRatio, Duration: submissionPlan.Duration}
+		if m.GenerateAudio {
+			nativeAudio := finishingWantsNativeAudio(p.Brief)
+			request.GenerateAudio = &nativeAudio
+		}
+		id, e = provider.CanvasVideo(ctx, m, request, nil)
 	} else if replacementImageIDs != nil {
 		images := make([]string, 0, len(replacementImageIDs))
 		for _, assetID := range replacementImageIDs {
 			images = append(images, s.Blobs.URL(p.TeamID, assetID))
 		}
-		id, e = provider.SubmitWithReferenceImages(ctx, m, p.Brief, submissionPlan, images, referenceVideoURL, referenceAudioURL)
+		id, e = provider.SubmitWithReferenceImages(ctx, m, submissionBrief, submissionPlan, images, referenceVideoURL, referenceAudioURL)
 	} else {
 		id, e = provider.SubmitWithReference(ctx, m, p.Brief, submissionPlan, image, referenceVideoURL)
 	}

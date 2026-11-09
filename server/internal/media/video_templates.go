@@ -203,6 +203,9 @@ func (s *Service) validateAdaptivePlan(ctx context.Context, b Brief, p Plan, mod
 	if err := validateStoryPlan(b, p); err != nil {
 		return err
 	}
+	if err := validateSelectedImageUsage(b, p); err != nil {
+		return err
+	}
 	if err := validateResearchPlan(b, p); err != nil {
 		return err
 	}

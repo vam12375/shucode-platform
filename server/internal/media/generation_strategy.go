@@ -52,7 +52,7 @@ func (v *Segmentation) UnmarshalJSON(raw []byte) error {
 }
 
 // 拍点不能决定生成请求数；与客户端同序比较任务数、生成余量、段长均衡。
-func planGenerationDurations(total int, model Model) []int {
+func planGenerationDurations(total int, model Model, minimumSegments ...int) []int {
 	if total < 1 || total > 300 {
 		return nil
 	}
@@ -69,9 +69,13 @@ func planGenerationDurations(total int, model Model) []int {
 	}
 	longest := options[len(options)-1]
 	count := (total + longest - 1) / longest
-	if count > 30 {
+	if len(minimumSegments) > 0 {
+		count = max(count, minimumSegments[0])
+	}
+	if count < 1 || count > 30 || count > total*2 {
 		return nil
 	}
+	maximumSum := max(total+longest, count*options[0])
 	type candidate struct {
 		score     int
 		durations []int
@@ -88,7 +92,7 @@ func planGenerationDurations(total int, model Model) []int {
 			previous := states[sum]
 			for _, d := range options {
 				length, score := sum+d, previous.score+d*d
-				if length > total+longest {
+				if length > maximumSum {
 					continue
 				}
 				if existing, ok := next[length]; ok && score >= existing.score {
@@ -99,7 +103,7 @@ func planGenerationDurations(total int, model Model) []int {
 		}
 		states = next
 	}
-	for sum := total; sum <= total+longest; sum++ {
+	for sum := total; sum <= maximumSum; sum++ {
 		if result, ok := states[sum]; ok {
 			slices.Sort(result.durations)
 			slices.Reverse(result.durations)
@@ -109,11 +113,32 @@ func planGenerationDurations(total int, model Model) []int {
 	return nil
 }
 
+func imageReferenceLimit(b Brief, m Model) int {
+	if b.ReferenceMode != "multimodal" {
+		return 1
+	}
+	if caps := CanvasCapabilitiesFor(m); caps != nil {
+		return min(caps.MaxImages, caps.MaxTotalReferences)
+	}
+	return MaxReferenceImages(m)
+}
+
+func planImageGenerationDurations(b Brief, m Model) []int {
+	if !b.ImageAnalysisFirst {
+		return planGenerationDurations(b.Duration, m)
+	}
+	limit := imageReferenceLimit(b, m)
+	if limit < 1 {
+		return nil
+	}
+	return planGenerationDurations(b.Duration, m, max(1, (len(b.AssetIDs)+limit-1)/limit))
+}
+
 func validateGenerationPlan(b Brief, p Plan, m Model) error {
 	if b.GenerationPolicy != "whole-first" {
 		return nil
 	}
-	minimum := planGenerationDurations(b.Duration, m)
+	minimum := planImageGenerationDurations(b, m)
 	if len(minimum) == 0 {
 		return fmt.Errorf("video_generation_capability_missing")
 	}
@@ -134,6 +159,9 @@ func validateGenerationPlan(b Brief, p Plan, m Model) error {
 	}
 	frames := 0
 	for _, shot := range p.Shots {
+		if b.ImageAnalysisFirst && shot.Creative != nil && len(shot.Creative.AssetIDs) > imageReferenceLimit(b, m) {
+			return fmt.Errorf("video_generation_reference_images_exceeded")
+		}
 		if !m.DurationSupported(shot.Duration) {
 			return fmt.Errorf("video_generation_duration_unsupported")
 		}

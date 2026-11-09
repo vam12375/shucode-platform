@@ -93,6 +93,10 @@ func validateBriefReferenceImages(b Brief, m Model) error {
 	if len(images) == 0 {
 		return fmt.Errorf("reference_images_required")
 	}
+	// 图片优先允许全部素材分布到多个合法生成段；单段容量由方案和发送前逐段校验。
+	if b.ImageAnalysisFirst && b.GenerationMode != "video_reference" {
+		return nil
+	}
 	references := len(images)
 	if b.GenerationMode == "video_reference" {
 		if m.VideoReference == nil || caps.MaxVideos < 1 {
@@ -107,6 +111,17 @@ func validateBriefReferenceImages(b Brief, m Model) error {
 		return fmt.Errorf("video_reference_image_limit")
 	}
 	return nil
+}
+
+func validateShotReferenceImages(b Brief, shot ShotPlan, m Model) error {
+	b = storyShotBrief(b, shot)
+	if b.ImageAnalysisFirst {
+		b.ImageAnalysisFirst = false
+		if shot.Creative != nil && shot.Creative.Source == "generated" {
+			return nil
+		}
+	}
+	return validateBriefReferenceImages(b, m)
 }
 
 func videoReferenceMaxSegments(capability *VideoReferenceCapability) int {

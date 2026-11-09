@@ -324,6 +324,9 @@ func buildShotsWithReferenceScript(b Brief, plan Plan, models []Model, scriptVer
 	if err := validateStoryPlan(b, plan); err != nil {
 		return nil, 0, err
 	}
+	if err := validateSelectedImageUsage(b, plan); err != nil {
+		return nil, 0, err
+	}
 	if err := validateBriefReferenceMode(b); err != nil {
 		return nil, 0, err
 	}
@@ -382,7 +385,7 @@ func buildShotsWithReferenceScript(b Brief, plan Plan, models []Model, scriptVer
 			}
 			shotBrief := storyShotBrief(b, shot)
 			if shotBrief.ReferenceMode == "multimodal" {
-				if err := validateBriefReferenceImages(shotBrief, v); err != nil {
+				if err := validateShotReferenceImages(b, shot, v); err != nil {
 					return nil, 0, err
 				}
 			} else if len(creative.AssetIDs) > 1 {
