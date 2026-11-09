@@ -142,8 +142,15 @@ func (s *Service) Mutate(ctx context.Context, team, id string, version int64, fn
 	}
 	return p, nil
 }
-func (s *Service) Bind(ctx context.Context, team, id string, version int64, a Analysis) (*Project, error) {
-	return s.bindAnalysis(ctx, team, id, version, a)
+func (s *Service) Bind(ctx context.Context, team, id string, version int64, a Analysis, selections ...*TemplateSelection) (*Project, error) {
+	if len(selections) > 1 {
+		return nil, ErrInvalid
+	}
+	var selection *TemplateSelection
+	if len(selections) == 1 {
+		selection = selections[0]
+	}
+	return s.bindAnalysis(ctx, team, id, version, a, selection)
 }
 func (s *Service) SetPlan(ctx context.Context, team, id string, version int64, input string, plan Plan) (*Project, error) {
 	p, err := s.Repo.Get(ctx, team, id)

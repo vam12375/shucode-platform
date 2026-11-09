@@ -385,17 +385,22 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		var body struct {
-			Version        int64                `json:"version"`
-			Analysis       media.Analysis       `json:"analysis"`
-			InputID        string               `json:"inputId"`
-			Error          string               `json:"error"`
-			Plan           media.Plan           `json:"plan"`
-			Brief          media.Brief          `json:"brief"`
-			SourceAnalysis media.SourceAnalysis `json:"sourceAnalysis"`
-			ImageAnalysis  media.ImageAnalysis  `json:"imageAnalysis"`
-			PlanningResult media.PlanningResult `json:"planningResult"`
+			Version           int64                    `json:"version"`
+			Analysis          media.Analysis           `json:"analysis"`
+			InputID           string                   `json:"inputId"`
+			Error             string                   `json:"error"`
+			Plan              media.Plan               `json:"plan"`
+			Brief             media.Brief              `json:"brief"`
+			SourceAnalysis    media.SourceAnalysis     `json:"sourceAnalysis"`
+			ImageAnalysis     media.ImageAnalysis      `json:"imageAnalysis"`
+			PlanningResult    media.PlanningResult     `json:"planningResult"`
+			TemplateSelection *media.TemplateSelection `json:"templateSelection"`
 		}
 		if !mediaBody(c, &body) {
+			return
+		}
+		if body.TemplateSelection != nil && c.Param("action") != "analysis" {
+			mediaError(c, deps, media.ErrInvalid)
 			return
 		}
 		if body.Version <= 0 {
@@ -419,7 +424,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		var e error
 		switch c.Param("action") {
 		case "analysis":
-			p, e = s.Bind(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.Analysis)
+			p, e = s.Bind(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.Analysis, body.TemplateSelection)
 		case "plan":
 			p, e = s.SetPlan(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.InputID, body.Plan)
 		case "source-analysis":

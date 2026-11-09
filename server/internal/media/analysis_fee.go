@@ -20,7 +20,7 @@ func equalAnalysisPlan(left, right Plan) bool {
 	return err == nil && bytes.Equal(a, b)
 }
 
-func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int64, a Analysis) (*Project, error) {
+func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int64, a Analysis, selection *TemplateSelection) (*Project, error) {
 	p, err := s.Repo.Get(ctx, team, id)
 	if err != nil {
 		return nil, err
@@ -28,7 +28,14 @@ func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int
 	if p == nil {
 		return nil, ErrInvalid
 	}
+	selection = selection.normalized()
+	if !selection.valid() {
+		return nil, ErrInvalid
+	}
 	if (p.Brief.ReferenceAssetID != "" || p.Brief.ImageAnalysisFirst) && p.Status == "analyzing" && p.Analysis != nil && reflect.DeepEqual(*p.Analysis, a) {
+		if !selection.matches(p) {
+			return nil, ErrConflict
+		}
 		return p, nil
 	}
 	if p.Version != version || (p.Status != "draft" && p.Status != "analysis_failed" && !(p.Brief.ImageAnalysisFirst && p.Status == "image_review")) || p.CancelRequested {
@@ -44,6 +51,10 @@ func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int
 		}
 	} else if (p.Brief.SourceOnly && a.Kind != "source") || (p.SourceAnalysis != nil && !p.Brief.SourceOnly && a.Kind != "adaptation") || (!p.Brief.SourceOnly && p.SourceAnalysis == nil && a.Kind != "") {
 		return nil, ErrInvalid
+	}
+	brief, snapshot, err := s.prepareImageTemplateSelection(ctx, p, a, selection)
+	if err != nil {
+		return nil, err
 	}
 	adaptation := a.Kind == "adaptation"
 	if adaptation {
@@ -85,6 +96,8 @@ func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int
 			return ErrConflict
 		}
 		v.Analysis = &a
+		// 旧流程在创建时尚不知道模板；识图后的显式选择与新输入必须作为一个版本受理。
+		v.Brief, v.TemplateSnapshot = brief, cloneTemplateSnapshot(snapshot)
 		v.PlanningResult = nil
 		v.PlanReview = nil
 		v.AnalysisFee = fee

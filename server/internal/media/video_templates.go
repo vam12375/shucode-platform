@@ -192,7 +192,9 @@ func validateTemplateSelection(b Brief, templates []VideoTemplate) (VideoTemplat
 	if assetCount < t.MinAssets || !slices.Contains(t.AspectRatios, b.AspectRatio) || b.Duration < t.DurationRange.Min || b.Duration > t.DurationRange.Max {
 		return VideoTemplate{}, adaptiveResearchError()
 	}
-	if !slices.Contains(t.VerifiedModelIDs, b.VideoModel) && !b.ReviewPlan {
+	// 图片优先流程已明确点击直接成片；未验证配方只作原创结构，不增加人工审阅门槛。
+	imageFirstRecipe := b.Mode == "auto" && b.ImageAnalysisFirst && b.GenerationPolicy == "whole-first"
+	if !slices.Contains(t.VerifiedModelIDs, b.VideoModel) && !b.ReviewPlan && !imageFirstRecipe {
 		return VideoTemplate{}, adaptiveResearchError()
 	}
 	return t, nil
