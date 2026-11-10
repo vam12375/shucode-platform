@@ -58,6 +58,12 @@ type Mutation struct {
 type Repository struct{ Store ConfigStore }
 
 func VideoID(id string) string { return "video:" + id }
+
+// 旧视频提示词曾按通用模板导入；分类与正文格式分开，避免归类后丢失原文编辑能力。
+func (e Entry) IsVideoRecipe() bool { return e.Kind == "video" && e.Source == "builtin-video" }
+func (e Entry) IsTextTemplate() bool {
+	return e.Kind == "template" || e.Kind == "video" && e.Source == "dineops" && strings.HasPrefix(e.ID, "dineops:video-template:")
+}
 func version(e Entry) string {
 	e.ExpectedVersion = ""
 	raw, _ := json.Marshal(e)
@@ -103,12 +109,14 @@ func catalog(seeds []Entry, overrides map[string]Entry) []Entry {
 			if override.Deleted {
 				continue
 			}
-			if seed.Kind == "video" {
+			if seed.IsVideoRecipe() {
 				entry.Enabled = override.Enabled
 				entry.Preview = override.Preview
 				entry.ExpectedVersion = override.ExpectedVersion
 			} else {
 				entry = override
+				// 旧覆盖记录仍带 template 分类；只迁移类型，保留正文、开关与版本用于并发校验。
+				entry.Kind = seed.Kind
 			}
 		}
 		if entry.ExpectedVersion == "" {
@@ -281,7 +289,7 @@ func (r Repository) Save(ctx context.Context, videos []Entry, id string, input M
 				current.Preview = &preview
 			}
 			if input.Fields != nil {
-				if current.Kind == "video" {
+				if current.IsVideoRecipe() {
 					return Entry{}, ErrInvalid
 				}
 				fields := *input.Fields
@@ -313,7 +321,7 @@ func (r Repository) Save(ctx context.Context, videos []Entry, id string, input M
 			}
 			current.ExpectedVersion = uuid.NewString()
 			stored := current
-			if current.Kind == "video" {
+			if current.IsVideoRecipe() {
 				stored.Fields = Fields{}
 			}
 			overrides[id] = stored

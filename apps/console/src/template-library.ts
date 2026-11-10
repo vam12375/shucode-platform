@@ -37,6 +37,10 @@ export const kindLabels: Record<TemplateKind, string> = {
   prompt: "提示词",
   skill: "Skill",
 };
+// 视频分类同时收录 Markdown 提示词与结构化配方，只有后者按版本只读维护。
+export function isVideoRecipe(entry: LibraryEntry | undefined): boolean {
+  return entry?.kind === "video" && entry.source === "builtin-video";
+}
 export const sceneLabels: Record<string, string> = {
   "draft-suggestion": "对话推荐",
   "scheduled-task": "定时任务",

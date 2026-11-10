@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"sync"
@@ -28,6 +29,50 @@ func TestPostgresTemplateLibrary(t *testing.T) {
 func runTemplateLibrary(t *testing.T, s PlatformStore) {
 	ctx := context.Background()
 	r := library.Repository{Store: s}
+	t.Run("legacy-video-category-migration", func(t *testing.T) {
+		id := "dineops:video-template:template-e1a44b99bce72581ba54464f"
+		original := library.Entry{ID: id, Kind: "template", Source: "dineops", Enabled: true, ExpectedVersion: "before-migration", Fields: library.Fields{Name: "已编辑的视频模板", Content: "管理员修改后的完整原文", Tags: []string{"视频提示词模板"}}}
+		raw, _ := json.Marshal(map[string]library.Entry{id: original})
+		if swapped, err := s.CompareAndSwapConfigValue(ctx, library.ConfigKey, nil, raw); err != nil || !swapped {
+			t.Fatalf("seed legacy override: %v %v", swapped, err)
+		}
+		items, err := r.List(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var migrated library.Entry
+		for _, item := range items {
+			if item.ID == id {
+				migrated = item
+			}
+		}
+		if migrated.Kind != "video" || !migrated.Enabled || migrated.Content != original.Content || migrated.ExpectedVersion != original.ExpectedVersion || !migrated.IsTextTemplate() {
+			t.Fatalf("migration lost saved state: %+v", migrated)
+		}
+		fields := migrated.Fields
+		fields.Content = "归类后仍可编辑正文"
+		saved, err := r.Save(ctx, nil, id, library.Mutation{ExpectedVersion: migrated.ExpectedVersion, Fields: &fields}, false)
+		if err != nil || saved.Kind != "video" || saved.Content != fields.Content {
+			t.Fatalf("save migrated text: %+v %v", saved, err)
+		}
+		fresh, err := r.List(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range fresh {
+			if item.ID == id && item.Content != fields.Content {
+				t.Fatal("saved video text discarded")
+			}
+		}
+		// 清理本用例的配置，后续统一套件继续从原始目录验证。
+		current, err := s.GetConfigValue(ctx, library.ConfigKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if swapped, err := s.CompareAndSwapConfigValue(ctx, library.ConfigKey, current, []byte(`{}`)); err != nil || !swapped {
+			t.Fatalf("reset: %v %v", swapped, err)
+		}
+	})
 	entries, err := r.List(ctx, nil)
 	if err != nil || len(entries) != 94 {
 		t.Fatalf("catalog: %d %v", len(entries), err)

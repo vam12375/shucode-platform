@@ -24,3 +24,11 @@ test("编辑正文保留完整包身份，不把管理字段或包清单作为�
   fields.tags.push("changed");
   assert.equal(entry.tags.length, 1);
 });
+
+test("旧视频提示词归入视频筛选并保留文本编辑语义", () => {
+  const video = { ...entry, id: "dineops:video-template:original", kind: "video" };
+  assert.equal(library.filterTemplates([video], "video", "all", "").length, 1);
+  assert.equal(library.filterTemplates([video], "template", "all", "").length, 0);
+  assert.equal(library.isVideoRecipe(video), false);
+  assert.equal(library.isVideoRecipe({ ...video, source: "builtin-video" }), true);
+});

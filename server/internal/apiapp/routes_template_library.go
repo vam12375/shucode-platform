@@ -202,7 +202,7 @@ func registerTemplatePackageRoutes(router *gin.Engine, deps *Deps, repo template
 		}
 		out := []gin.H{}
 		for _, entry := range entries {
-			if entry.Kind == "template" && entry.Enabled {
+			if entry.IsTextTemplate() && entry.Enabled {
 				out = append(out, gin.H{"id": entry.ID, "name": entry.Name, "description": entry.Description, "content": entry.Content})
 			}
 		}

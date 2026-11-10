@@ -33,8 +33,8 @@ func TestLegacyVideoOriginalsRemainCompleteAndUnpublished(t *testing.T) {
 			t.Fatalf("duplicate, unknown or modified original: %s", entry.ID)
 		}
 		seen[slug] = true
-		if entry.Enabled || entry.Kind != "template" || entry.Source != "dineops" || !slices.Contains(entry.Tags, "视频提示词模板") {
-			t.Fatalf("legacy original must remain an unpublished text template: %s", entry.ID)
+		if entry.Enabled || entry.Kind != "video" || !entry.IsTextTemplate() || entry.IsVideoRecipe() || entry.Source != "dineops" || !slices.Contains(entry.Tags, "视频提示词模板") {
+			t.Fatalf("legacy original must remain an editable video prompt: %s", entry.ID)
 		}
 		if err := validateFields(entry.Kind, &entry.Fields); err != nil {
 			t.Fatalf("original cannot be edited: %s: %v", entry.ID, err)

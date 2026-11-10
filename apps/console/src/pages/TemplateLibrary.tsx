@@ -28,6 +28,7 @@ import {
   entryFields,
   filterTemplates,
   kindLabels,
+  isVideoRecipe,
   sceneLabels,
   type PackageInfo,
   type LibraryEntry,
@@ -315,8 +316,8 @@ function LibraryContent() {
         return;
       }
     }
-    let isJSON = kind === "video";
-    if (kind === "template") {
+    let isJSON = isVideoRecipe(selected);
+    if (kind === "template" || kind === "video" && !isJSON) {
       try {
         JSON.parse(fields.content);
         isJSON = true;
@@ -614,7 +615,7 @@ function LibraryContent() {
                     <span>{selected?.id}</span>
                   </p>
                 )}
-                {kind === "video" ? (
+                {isVideoRecipe(selected) ? (
                   <>
                     <h3>{fields.name}</h3>
                     <p>{fields.description}</p>
@@ -839,7 +840,7 @@ function LibraryContent() {
                   </>
                 )}
                 <div className="library-save">
-                  {kind !== "video" ? (
+                  {!isVideoRecipe(selected) ? (
                     <button
                       className="btn btn-sm"
                       type="submit"
