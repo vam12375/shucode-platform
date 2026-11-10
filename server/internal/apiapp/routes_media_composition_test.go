@@ -144,7 +144,7 @@ func TestMediaRecomposeChecksProjectAccountAndTeamBeforeReplay(t *testing.T) {
 	}
 }
 
-func TestMediaOverviewOnlySignsReferencedSameTeamQualityFrames(t *testing.T) {
+func TestMediaOverviewExcludesAllInternalAssetsAndPreservesHistoricalEvidence(t *testing.T) {
 	f, token, team, p, _ := compositionAPIFixture(t)
 	ctx := context.Background()
 	add := func(id, kind string) {
@@ -152,6 +152,9 @@ func TestMediaOverviewOnlySignsReferencedSameTeamQualityFrames(t *testing.T) {
 		mime := "image/jpeg"
 		if kind == "audio" {
 			mime = "audio/wav"
+		}
+		if _, _, err := f.deps.Media.Blobs.PutWithID(team, id, strings.NewReader("historical-internal"), media.MaxUpload); err != nil {
+			t.Fatal(err)
 		}
 		if err := f.deps.Media.Repo.AddAsset(ctx, team, media.Asset{ID: id, Kind: kind, Mime: mime, Internal: true, CreatedAt: time.Now()}); err != nil {
 			t.Fatal(err)
@@ -203,15 +206,26 @@ func TestMediaOverviewOnlySignsReferencedSameTeamQualityFrames(t *testing.T) {
 	for _, asset := range envelope.Data.Assets {
 		visible[asset.ID] = asset.URL
 	}
-	if visible[shown] == "" {
-		t.Fatal("referenced frame not signed")
+	if len(visible) != 1 || visible[p.OutputAssetID] == "" {
+		t.Fatalf("overview must contain only the public delivery: %v", visible)
 	}
-	for _, id := range []string{hidden, narration, cross, canvas} {
-		if visible[id] != "" {
-			t.Fatal("unreferenced/cross-domain internal asset exposed", id)
+	for _, id := range []string{shown, hidden, narration, cross, canvas} {
+		if _, exists := visible[id]; exists {
+			t.Fatal("internal asset exposed", id)
+		}
+		if raw, err := os.ReadFile(f.deps.Media.Blobs.Path(team, id)); err != nil || string(raw) != "historical-internal" {
+			t.Fatalf("overview deleted historical blob %s: %v", id, err)
 		}
 	}
-	signed := strings.TrimPrefix(visible[shown], f.deps.Env.PublicAPIOrigin)
+	stored, err := f.deps.Media.Repo.Assets(ctx, team)
+	if err != nil || len(stored) != 6 {
+		t.Fatalf("overview deleted historical assets: %+v %v", stored, err)
+	}
+	project, err := f.deps.Media.Repo.Get(ctx, team, p.ID)
+	if err != nil || project.QualityReport == nil || project.QualityReport.Keyframes[0].AssetID != shown {
+		t.Fatalf("overview changed historical report: %+v %v", project, err)
+	}
+	signed := strings.TrimPrefix(visible[p.OutputAssetID], f.deps.Env.PublicAPIOrigin)
 	request := httptest.NewRequest("GET", strings.Replace(signed, team, uuid.NewString(), 1), nil)
 	rec := httptest.NewRecorder()
 	f.engine.ServeHTTP(rec, request)

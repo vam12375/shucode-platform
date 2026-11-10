@@ -7,7 +7,6 @@ import (
 	"math"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -101,11 +100,8 @@ func (s *Service) inspectCompositionQuality(ctx context.Context, p *Project, pat
 		report.Checks = append(report.Checks, VideoQualityCheck{Code: "silent_audio", Status: "passed"})
 	}
 	appendCompositionReadability(report, p, segments)
-	keyframes, err := s.extractCompositionQualityFrames(ctx, p, path, segments)
-	if err != nil {
-		return fail("keyframes")
-	}
-	report.Keyframes = keyframes
+	// 审阅帧由客户端从成片本地提取；服务端只保留定位信息，避免重复落盘污染素材目录。
+	report.Keyframes = compositionQualityFrames(p, segments)
 	report.Checks = append(report.Checks, VideoQualityCheck{Code: "visual_review", Status: "unverified"})
 	return report, nil
 }
@@ -211,53 +207,4 @@ func (s *Service) removeCompositionQualityFrames(ctx context.Context, p, latest 
 		}
 	}
 	return nil
-}
-
-func (s *Service) extractCompositionQualityFrames(ctx context.Context, p *Project, path string, segments []compositionSegment) ([]VideoQualityKeyframe, error) {
-	if err := os.MkdirAll(s.Blobs.Root, 0700); err != nil {
-		return nil, err
-	}
-	dir, err := os.MkdirTemp(s.Blobs.Root, ".quality-*")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(dir)
-	frames := compositionQualityFrames(p, segments)
-	selects := make([]string, 0, len(frames))
-	for _, frame := range frames {
-		selects = append(selects, fmt.Sprintf("eq(n,%d)", frame.Frame))
-	}
-	// 先按展示时间归一化抽样；原片24/25fps或VFR时，n不能当作历史时间刻度。
-	filter := "setpts=PTS-STARTPTS,fps=30,select='" + strings.Join(selects, "+") + "',scale=w='min(1280,iw)':h=-2"
-	if err := runFinishingCommand(ctx, dir, "composition_quality_failed", "-protocol_whitelist", "file,pipe", "-i", path, "-map", "0:v:0", "-vf", filter, "-fps_mode", "vfr", "-frames:v", strconv.Itoa(len(frames)), "-q:v", "3", "-threads", "1", "frame-%03d.jpg"); err != nil {
-		return nil, err
-	}
-	complete := false
-	defer func() {
-		if complete {
-			return
-		}
-		// 稳定帧可能已被接管worker复用，pre-stat不能证明独占；仅退休pending身份后统一回收。
-		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-		defer cancel()
-		_ = s.cleanupUnboundCompositionQuality(cleanup, p, p.CompositionAssetID)
-	}()
-	for i := range frames {
-		file, err := os.Open(filepath.Join(dir, fmt.Sprintf("frame-%03d.jpg", i+1)))
-		if err != nil {
-			return nil, err
-		}
-		id := frames[i].AssetID
-		_, size, err := s.Blobs.PutWithID(p.TeamID, id, file, MaxUpload)
-		file.Close()
-		if err != nil {
-			return nil, err
-		}
-		asset := Asset{ID: id, Name: fmt.Sprintf("review-frame-%d.jpg", frames[i].Frame), Kind: "image", Mime: "image/jpeg", Size: size, Internal: true, CreatedAt: time.Now().UTC()}
-		if err := s.Repo.AddAsset(ctx, p.TeamID, asset); err != nil {
-			return nil, err
-		}
-	}
-	complete = true
-	return frames, nil
 }

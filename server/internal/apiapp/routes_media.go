@@ -243,20 +243,13 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, e)
 			return
 		}
-		// QA关键帧仅由同团队制作单显式引用；内部音轨和临时素材继续隔离。
-		evidenceIDs := map[string]bool{}
-		for _, p := range all {
-			if p.TeamID == m.Team.ID && p.Agent == nil && p.Canvas == nil && p.QualityReport != nil {
-				for _, frame := range p.QualityReport.Keyframes {
-					evidenceIDs[frame.AssetID] = true
-				}
-			}
-		}
+		// 素材目录只展示用户素材；历史 QA 帧等内部资产不因报告引用而例外暴露。
 		visibleAssets := make([]media.Asset, 0, len(assets))
 		for _, asset := range assets {
-			if asset.Internal && !(asset.Kind == "image" && evidenceIDs[asset.ID]) {
+			if asset.Internal {
 				continue
 			}
+
 			asset.URL = s.Blobs.URL(m.Team.ID, asset.ID)
 			asset = s.Blobs.WithPreviewURL(m.Team.ID, asset)
 			visibleAssets = append(visibleAssets, asset)

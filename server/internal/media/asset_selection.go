@@ -14,7 +14,8 @@ func matchProductAssets(product string, assets []Asset) []string {
 	best := 2
 	matches := []Asset{}
 	for _, asset := range assets {
-		if asset.Kind != "image" {
+		// 历史质检帧属于内部资产，商品名相同也不能作为用户选图进入新制作单。
+		if asset.Internal || asset.Kind != "image" {
 			continue
 		}
 		label := strings.ToLower(strings.TrimSpace(asset.Product))

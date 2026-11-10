@@ -22,6 +22,7 @@ func TestAutomaticAssetSelectionFreezesTeamMatchesAndHonorsManualChoice(t *testi
 		{ID: "newer", Product: "Brand SKU", Kind: "image", CreatedAt: time.Unix(2, 0)},
 		{ID: "fallback", Name: "Brand SKU-front.png", Kind: "image", CreatedAt: time.Unix(3, 0)},
 		{ID: "movie", Product: "Brand SKU", Kind: "video", CreatedAt: time.Unix(4, 0)},
+		{ID: "internal-review", Product: "Brand SKU", Kind: "image", Internal: true, CreatedAt: time.Unix(6, 0)},
 	} {
 		if e := f.s.Repo.AddAsset(ctx, f.team, a); e != nil {
 			t.Fatal(e)
@@ -66,6 +67,12 @@ func TestAutomaticAssetSelectionFallsBackToNamesAndLimitsToTwenty(t *testing.T) 
 	b := f.project(t).Brief
 	b.Product = "SHOE"
 	b.AssetIDs = nil
+	if e := f.s.Repo.AddAsset(ctx, f.team, Asset{ID: "internal-exact", Product: "shoe", Kind: "image", Internal: true}); e != nil {
+		t.Fatal(e)
+	}
+	if e := f.s.Repo.AddAsset(ctx, f.team, Asset{ID: "internal-fallback", Name: "shoe-review.jpg", Kind: "image", Internal: true, CreatedAt: time.Unix(100, 0)}); e != nil {
+		t.Fatal(e)
+	}
 	for i := range 23 {
 		if e := f.s.Repo.AddAsset(ctx, f.team, Asset{ID: fmt.Sprintf("shoe-%02d", i), Name: fmt.Sprintf("shoe-%02d.png", i), Kind: "image", CreatedAt: time.Unix(int64(i), 0)}); e != nil {
 			t.Fatal(e)
@@ -86,6 +93,9 @@ func TestAutomaticAssetSelectionRejectsMissingProductAssets(t *testing.T) {
 	b := f.project(t).Brief
 	b.Product = "missing SKU"
 	b.AssetIDs = nil
+	if err := f.s.Repo.AddAsset(ctx, f.team, Asset{ID: "internal-only", Product: b.Product, Kind: "image", Internal: true}); err != nil {
+		t.Fatal(err)
+	}
 	id := uuid.NewString()
 	if _, e := f.s.Create(ctx, f.team, f.user, "", id, b); e == nil || e.Error() != "product_assets_not_found" {
 		t.Fatalf("missing assets: %v", e)

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -85,18 +86,10 @@ func (s *blockedQualityWriteStore) CompareAndSwapConfigValue(ctx context.Context
 }
 
 func TestCompositionQualityFailedOldWorkerKeepsPendingEvidenceReusedByNewWorker(t *testing.T) {
-	if !BrandCompositionAvailable() {
-		t.Skip("real branded renderer unavailable")
-	}
 	f := setup(t)
-	ctx, dir := context.Background(), t.TempDir()
-	path := filepath.Join(dir, "delivery.mp4")
-	finishingFFmpegFixture(t, "-f", "lavfi", "-i", "color=c=red:s=160x90:r=30", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "5", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", path)
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	id, _, err := f.s.Blobs.Put(f.team, bytes.NewReader(raw), MaxVideo)
+	ctx := context.Background()
+	// 新报告不再写帧，手工构造历史worker的迟到写入以继续验证cleanup并发保护。
+	id, _, err := f.s.Blobs.Put(f.team, strings.NewReader("historical-output"), MaxVideo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,9 +101,20 @@ func TestCompositionQualityFailedOldWorkerKeepsPendingEvidenceReusedByNewWorker(
 	f.s.Repo.Store = barrier
 	segments := []compositionSegment{{start: 0, end: 5, frames: 150}}
 	failed := make(chan error, 1)
+	frames := compositionQualityFrames(p, segments)
 	go func() {
-		_, err := f.s.extractCompositionQualityFrames(context.WithValue(ctx, staleQualityWriteKey{}, true), p, path, segments)
-		failed <- err
+		staleCtx := context.WithValue(ctx, staleQualityWriteKey{}, true)
+		for _, frame := range frames {
+			_, _, err := f.s.Blobs.PutWithID(f.team, frame.AssetID, strings.NewReader("historical-frame"), MaxUpload)
+			if err == nil {
+				err = f.s.Repo.AddAsset(staleCtx, f.team, Asset{ID: frame.AssetID, Kind: "image", Internal: true})
+			}
+			if err != nil {
+				failed <- errors.Join(err, f.s.cleanupUnboundCompositionQuality(ctx, p, id))
+				return
+			}
+		}
+		failed <- nil
 	}()
 	released := false
 	defer func() {
@@ -132,10 +136,15 @@ func TestCompositionQualityFailedOldWorkerKeepsPendingEvidenceReusedByNewWorker(
 	}
 	workerB := *f.s
 	workerB.WorkerID = "worker-b"
-	report, err := workerB.inspectCompositionQuality(ctx, next, path, segments, 160, 90)
-	if err != nil || len(report.Keyframes) != 3 {
-		t.Fatalf("new worker failed to reuse pending evidence: %+v %v", report, err)
+	for _, frame := range frames {
+		if _, _, err := workerB.Blobs.PutWithID(f.team, frame.AssetID, strings.NewReader("historical-frame"), MaxUpload); err != nil {
+			t.Fatal(err)
+		}
+		if err := workerB.Repo.AddAsset(ctx, f.team, Asset{ID: frame.AssetID, Kind: "image", Internal: true}); err != nil {
+			t.Fatal(err)
+		}
 	}
+	report := &VideoQualityReport{Keyframes: compositionQualityFrames(next, segments)}
 	close(barrier.release)
 	released = true
 	select {
@@ -450,61 +459,64 @@ func TestEditableCompositionRealFFmpegRendersReorderedTrimmedClipsAndQuality(t *
 	if first[2] < 220 || first[0] > 20 || second[0] < 220 || second[2] > 20 {
 		t.Fatalf("source order/trim incorrect: %v %v", first, second)
 	}
+	beforeAssets, err := f.s.Repo.Assets(ctx, p.TeamID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeFiles := compositionQualityTestFiles(t, f.s.Blobs.Root)
 	report, err := f.s.inspectCompositionQuality(ctx, p, output, segments, 160, 90)
 	if err != nil || report.TotalFrames != 150 || report.VisualReview != "unverified" || len(report.Keyframes) != 6 {
 		t.Fatalf("report: %+v, %v", report, err)
 	}
-	for _, frame := range report.Keyframes {
-		if info, err := os.Stat(f.s.Blobs.Path(f.team, frame.AssetID)); err != nil || info.Size() == 0 {
-			t.Fatalf("missing evidence: %+v %v", frame, err)
+	wantFrames := []int{4, 45, 86, 94, 120, 146}
+	for i, frame := range report.Keyframes {
+		wantSource := []int{1, 0}[i/3]
+		if frame.Frame != wantFrames[i] || frame.SourceShotIndex == nil || *frame.SourceShotIndex != wantSource || frame.AssetID == "" {
+			t.Fatalf("wrong evidence position/source: %+v", frame)
+		}
+		if _, err := os.Stat(f.s.Blobs.Path(f.team, frame.AssetID)); !os.IsNotExist(err) {
+			t.Fatalf("report created evidence blob: %+v %v", frame, err)
 		}
 	}
 	if report.Status != "passed" {
 		t.Fatalf("explicit silent output should not warn: %+v", report)
 	}
+	repeated, err := f.s.inspectCompositionQuality(ctx, p, output, segments, 160, 90)
+	if err != nil || !reflect.DeepEqual(report.Keyframes, repeated.Keyframes) {
+		t.Fatalf("same delivery changed evidence IDs: %+v %v", repeated, err)
+	}
+	p.CompositionAssetID = uuid.NewString()
+	replacement, err := f.s.inspectCompositionQuality(ctx, p, output, segments, 160, 90)
+	if err != nil || len(replacement.Keyframes) != len(report.Keyframes) {
+		t.Fatalf("replacement report: %+v %v", replacement, err)
+	}
+	for i, frame := range replacement.Keyframes {
+		if frame.AssetID == report.Keyframes[i].AssetID || frame.Frame != report.Keyframes[i].Frame {
+			t.Fatal("replacement delivery reused prior evidence identity")
+		}
+	}
 	if _, err := f.s.inspectCompositionQuality(ctx, p, output, segments, 90, 160); err == nil {
 		t.Fatal("wrong expected dimensions accepted")
 	}
-	// 第三个稳定文件已损坏时，保留当前pending的部分证据供恢复；退休后才统一清理，旧报告始终可读。
-	beforeAssets, err := f.s.Repo.Assets(ctx, p.TeamID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	p.ID, p.Status, p.CompositionAssetID, p.QualityReport = uuid.NewString(), "composing", uuid.NewString(), report
-	if err := f.s.Repo.Save(ctx, p, nil); err != nil {
-		t.Fatal(err)
-	}
-	newFrames := compositionQualityFrames(p, segments)
-	if err := os.WriteFile(f.s.Blobs.Path(p.TeamID, newFrames[2].AssetID), nil, 0600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.s.extractCompositionQualityFrames(ctx, p, output, segments); err == nil {
-		t.Fatal("invalid stable evidence blob accepted")
-	}
 	assets, err := f.s.Repo.Assets(ctx, p.TeamID)
-	if err != nil || len(assets) != len(beforeAssets)+2 {
-		t.Fatalf("partial pending evidence was not retained for recovery: %d, %v", len(assets), err)
+	if err != nil || !reflect.DeepEqual(assets, beforeAssets) {
+		t.Fatalf("quality inspection changed assets: %+v %v", assets, err)
 	}
-	retired := *p
-	retired.CompositionAssetID = uuid.NewString()
-	if err := f.s.Repo.Save(ctx, &retired, p); err != nil {
+	if files := compositionQualityTestFiles(t, f.s.Blobs.Root); !reflect.DeepEqual(files, beforeFiles) {
+		t.Fatalf("quality inspection changed files: %v -> %v", beforeFiles, files)
+	}
+}
+
+func compositionQualityTestFiles(t *testing.T, root string) []string {
+	t.Helper()
+	files := []string{}
+	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err == nil {
+			files = append(files, path)
+		}
+		return err
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.s.cleanupUnboundCompositionQuality(ctx, p, p.CompositionAssetID); err != nil {
-		t.Fatal(err)
-	}
-	assets, err = f.s.Repo.Assets(ctx, p.TeamID)
-	if err != nil || len(assets) != len(beforeAssets) {
-		t.Fatalf("retired partial evidence registration leaked: %d, %v", len(assets), err)
-	}
-	for _, frame := range newFrames[:2] {
-		if _, err := os.Stat(f.s.Blobs.Path(p.TeamID, frame.AssetID)); !os.IsNotExist(err) {
-			t.Fatalf("partial evidence blob leaked: %v", err)
-		}
-	}
-	for _, frame := range report.Keyframes {
-		if info, err := os.Stat(f.s.Blobs.Path(p.TeamID, frame.AssetID)); err != nil || info.Size() <= 0 {
-			t.Fatalf("delivered evidence removed: %v", err)
-		}
-	}
+	return files
 }
