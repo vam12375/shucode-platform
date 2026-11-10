@@ -14,7 +14,7 @@ func toapisSeedanceModel(upstream string) bool {
 // also used by the Seedance-only duration normalizer and must not make
 // unrelated models look like Seedance.
 func toapisVideoModel(upstream string) bool {
-	return toapisSeedanceModel(upstream) || toapisMiniMaxModel(upstream) || upstream == "kling-4.0"
+	return toapisSeedanceModel(upstream) || toapisMiniMaxModel(upstream) || toapisWanModel(upstream) || upstream == "kling-4.0"
 }
 
 func validateToAPIsModel(m Model) error {
@@ -41,6 +41,9 @@ func validateToAPIsModel(m Model) error {
 		}
 	}
 	unit := m.EffectiveBillingUnit()
+	if toapisWanModel(m.UpstreamModel) && (unit != BillingUnitSecond || m.VideoReference != nil && m.VideoReference.MaxDurationSeconds > 15) {
+		return ErrInvalid
+	}
 	if unit != BillingUnitSecond && unit != BillingUnitRequest && unit != BillingUnitToken {
 		return ErrInvalid
 	}
@@ -63,6 +66,9 @@ func validateToAPIsModel(m Model) error {
 }
 
 func (p Provider) submitToAPIs(ctx context.Context, m Model, r CanvasRequest, images []string, video string) (string, error) {
+	if toapisWanModel(m.UpstreamModel) && r.ReferenceMode == "frames" && video != "" {
+		return "", ErrInvalid
+	}
 	if validateToAPIsInput(m, r.Resolution, r.AspectRatio, r.Duration, len(images), video != "") != nil {
 		return "", ErrInvalid
 	}
@@ -111,6 +117,7 @@ func (p Provider) submitToAPIs(ctx context.Context, m Model, r CanvasRequest, im
 	var out struct {
 		ID string `json:"id"`
 	}
+	applyToAPIsWanParameters(body, m)
 	if err := p.request(ctx, "POST", "/v1/videos/generations", body, &out); err != nil {
 		return "", err
 	}

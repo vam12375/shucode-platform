@@ -170,6 +170,35 @@ const TOAPIS_KLING_PRESETS = [
   },
 ] as const;
 
+const TOAPIS_WAN_PRESETS = [
+  {
+    upstreamModel: "wan3.0-video",
+    name: "ToAPIs Wan 3.0",
+    minDuration: 2,
+    maxDuration: 30,
+    tiers: [
+      { id: "toapis-wan3.0-video-480p", resolution: "480p", costCredits: "0.2303", priceCredits: "0.35" },
+      { id: "toapis-wan3.0-video-720p", resolution: "720p", costCredits: "0.4606", priceCredits: "0.7" },
+      { id: "toapis-wan3.0-video-1080p", resolution: "1080p", costCredits: "0.9205", priceCredits: "1.4" },
+    ],
+  },
+  {
+    upstreamModel: "wan3.0-video-prime",
+    name: "ToAPIs Wan 3.0 Prime",
+    minDuration: 2,
+    maxDuration: 30,
+    tiers: [
+      { id: "toapis-wan3.0-video-prime-480p", resolution: "480p", costCredits: "0.3598", priceCredits: "0.476" },
+      { id: "toapis-wan3.0-video-prime-720p", resolution: "720p", costCredits: "0.7203", priceCredits: "0.98" },
+      { id: "toapis-wan3.0-video-prime-1080p", resolution: "1080p", costCredits: "1.44", priceCredits: "1.96" },
+    ],
+  },
+] as const;
+
+function isWanModel(upstream: string): boolean {
+  return TOAPIS_WAN_PRESETS.some((preset) => preset.upstreamModel === upstream.trim());
+}
+
 const TOAPIS_MINIMAX_CAPABILITIES: Record<string, { resolutions: readonly string[]; minDuration: number; videoReference: boolean }> = {
   "MiniMax-H3": { resolutions: ["768p", "2K"], minDuration: 4, videoReference: true },
   "MiniMax-H3-Max": { resolutions: ["480p", "768p"], minDuration: 4, videoReference: true },
@@ -366,6 +395,7 @@ function modelResolutions(draft: MediaModelDraft): readonly string[] {
     return ["480p", "720p", "1080p"];
   }
   if (draft.adapter === "toapis") {
+    if (isWanModel(draft.upstreamModel)) return ["480p", "720p", "1080p"];
     const minimax = minimaxCapability(draft.upstreamModel.trim());
     if (minimax) return minimax.resolutions;
     const seedance25 = TOAPIS_SEEDANCE_25_PRESETS.find((preset) => preset.upstreamModel === draft.upstreamModel.trim());
@@ -778,14 +808,16 @@ function tierProblem(
     } else {
       const minimax = minimaxCapability(upstreamModel);
       const kling = upstreamModel === "kling-4.0";
-      if (!minimax && !kling && !TOAPIS_SEEDANCE_PRESETS.some((preset) => preset.upstreamModel === upstreamModel) && !TOAPIS_SEEDANCE_25_PRESETS.some((preset) => preset.upstreamModel === upstreamModel)) {
-        return `「${label}」ToAPIs 仅支持已接入的 Seedance 2.0 / 2.5、Kling 4.0 和 MiniMax H3 系列视频模型。`;
+      const wan = isWanModel(upstreamModel);
+      if (!minimax && !kling && !wan && !TOAPIS_SEEDANCE_PRESETS.some((preset) => preset.upstreamModel === upstreamModel) && !TOAPIS_SEEDANCE_25_PRESETS.some((preset) => preset.upstreamModel === upstreamModel)) {
+        return `「${label}」ToAPIs 仅支持已接入的 Seedance 2.0 / 2.5、Kling 4.0、Wan 3.0 和 MiniMax H3 系列视频模型。`;
       }
       if (draft.resolutions.some((resolution) => !modelResolutions(draft).includes(resolution))) {
         return `「${label}」分辨率不受该 ToAPIs 模型支持。`;
       }
-      const minDuration = kling ? TOAPIS_KLING_CAPABILITY.minDuration : minimax?.minDuration ?? 4;
-      const maxDuration = kling
+      if (wan && draft.billingUnit !== "second") return `「${label}」Wan 3.0 使用按秒计费。`;
+      const minDuration = wan ? 2 : kling ? TOAPIS_KLING_CAPABILITY.minDuration : minimax?.minDuration ?? 4;
+      const maxDuration = wan ? 30 : kling
         ? TOAPIS_KLING_CAPABILITY.maxDuration
         : minimax
           ? 15
@@ -886,10 +918,11 @@ function tierProblem(
   if (draft.videoReference?.enabled) {
     if (draft.kind !== "video") return `「${label}」只有视频模型可以启用视频参考。`;
     const klingReference = draft.adapter === "toapis" && draft.upstreamModel.trim() === "kling-4.0";
+    const wanReference = adapter === "toapis" && isWanModel(upstreamModel);
     const arkSeedance25Reference = adapter === "ark" && isArkSeedance25(upstreamModel);
     const referenceMinDuration = arkSeedance25Reference ? 2 : 1;
-    const referenceMaxDuration = klingReference || arkSeedance25Reference ? 30 : 90;
-    const referenceMaxImages = klingReference ? 10 : 8;
+    const referenceMaxDuration = wanReference ? 15 : klingReference || arkSeedance25Reference ? 30 : 90;
+    const referenceMaxImages = klingReference || wanReference ? 10 : 8;
     if (!/^\d+$/.test(draft.videoReference.maxDurationSeconds.trim())) {
       return `「${label}」视频参考片段上限必须为 ${referenceMinDuration}–${referenceMaxDuration} 秒的整数。`;
     }
@@ -1479,11 +1512,11 @@ export function MediaModelsPage() {
     return ark?.id ?? providers.find((provider) => provider.enabled)?.id ?? providers[0]?.id ?? "";
   };
 
-  const addVideoPresets = (adapter: "ark" | "toapis", family: "seedance" | "minimax" | "seedance25" | "seedance25ext" | "kling" = "seedance"): void => {
-    const familyName = family === "minimax" ? "MiniMax H3" : family === "seedance25" ? "Seedance 2.5" : family === "seedance25ext" ? "Seedance 2.5 Ext" : family === "kling" ? "Kling 4.0" : "Seedance 2.0";
+  const addVideoPresets = (adapter: "ark" | "toapis", family: "seedance" | "minimax" | "seedance25" | "seedance25ext" | "kling" | "wan" = "seedance"): void => {
+    const familyName = family === "wan" ? "Wan 3.0 / Prime" : family === "minimax" ? "MiniMax H3" : family === "seedance25" ? "Seedance 2.5" : family === "seedance25ext" ? "Seedance 2.5 Ext" : family === "kling" ? "Kling 4.0" : "Seedance 2.0";
     const toapisProvider = providers.find((provider) => {
       try {
-        return provider.enabled && ["toapis.com", "toapis.cn"].includes(new URL(provider.baseUrl).hostname);
+        return provider.enabled && ["toapis.com", "toapis.cn", "api.toapis.com", "api.toapis.cn"].includes(new URL(provider.baseUrl).hostname);
       } catch {
         return false;
       }
@@ -1501,7 +1534,7 @@ export function MediaModelsPage() {
     const additions: MediaModelDraft[] = [];
     const upgrades = new Map<string, Partial<MediaModelDraft>>();
     const touched: string[] = [];
-    const presets = family === "minimax"
+    const presets = family === "wan" ? TOAPIS_WAN_PRESETS : family === "minimax"
       ? TOAPIS_MINIMAX_PRESETS
       : family === "seedance25"
         ? adapter === "ark" ? ARK_SEEDANCE_25_PRESETS : TOAPIS_SEEDANCE_25_PRESETS.filter((preset) => preset.upstreamModel === "seedance-2-5")
@@ -1587,6 +1620,16 @@ export function MediaModelsPage() {
           generateAudio: family !== "minimax" && family !== "kling",
           priceCredits: tierPricing.priceCredits ?? "",
           priceVersion: "v1",
+          ...(family === "wan" ? {
+            videoReference: {
+              enabled: true,
+              maxDurationSeconds: "15",
+              maxImages: "10",
+              maxSegments: "1",
+              tokenCostCredits: "0",
+              tokenPriceCredits: "0",
+            },
+          } : {}),
           ...(tierPricing.requestPriceTiers?.length
             ? {
                 requestPriceTiers: tierPricing.requestPriceTiers.map((band) => ({
@@ -1658,7 +1701,7 @@ export function MediaModelsPage() {
       [
         additions.length ? `已加入 ${additions.length} 个档位条目` : "",
         upgrades.size ? `已升级 ${upgrades.size} 个存量档位的时长/分档` : "",
-      ].filter(Boolean).join("，") + (additions.length ? "，请确认供应商并填写成本和售价" : ""),
+      ].filter(Boolean).join("，") + (additions.length ? family === "wan" ? "，已填入成本与售价，请确认后保存" : "，请确认供应商并填写成本和售价" : ""),
       `已处理 ${adapter === "toapis" ? "ToAPIs " : ""}${familyName} 系列`,
     );
   };
@@ -1975,6 +2018,11 @@ export function MediaModelsPage() {
       label: "ToAPIs Kling 4.0",
       title: "加入 Kling 4.0 的 720p / 1080p 档位（3–30 秒，含视频参考价格）",
       run: () => addVideoPresets("toapis", "kling"),
+    },
+    {
+      label: "ToAPIs Wan 3.0 / Prime",
+      title: "加入 Wan 3.0 与 Prime 两款六档（2–30 秒，按秒计费），预填成本与售价",
+      run: () => addVideoPresets("toapis", "wan"),
     },
     {
       label: "ToAPIs GPT Image",
@@ -2420,6 +2468,7 @@ function MediaFamilyCard({
     (isToapis && (lead.upstreamModel.trim() === "seedance-2-5" || lead.upstreamModel.trim() === "seedance-2.5-ext"));
   const minimax = isToapis ? minimaxCapability(lead.upstreamModel.trim()) : undefined;
   const kling = isToapis && lead.upstreamModel.trim() === "kling-4.0";
+  const wan = isToapis && isWanModel(lead.upstreamModel);
   const resolutions = modelResolutions(lead);
   const name = familyNameOf(lead);
   const tiers = indexes.map((index) => drafts[index]);
@@ -2674,7 +2723,7 @@ function MediaFamilyCard({
                 className={"choice-chip" + (lead.generateAudio ? " selected" : "")}
                 type="button"
                 aria-pressed={lead.generateAudio}
-                title="向供应商请求 generate_audio"
+                title="请求生成原生音频"
                 onClick={() =>
                   onUpdateFamily(indexes, { generateAudio: !lead.generateAudio })
                 }
@@ -3230,7 +3279,7 @@ function MediaFamilyCard({
                     type="number"
                     inputMode="numeric"
                     min={1}
-                    max={kling ? 10 : 8}
+                    max={kling || wan ? 10 : 8}
                     step={1}
                     aria-label={`模型 ${name} 视频参考图上限`}
                     value={reference.maxImages}
@@ -3262,7 +3311,7 @@ function MediaFamilyCard({
                   />
                   <span className="video-reference-note">1 = 仅整段；多段只在事实镜头边界自动拆分</span>
                 </label>
-                {!isToapis ? <label className="field">
+                {!isToapis || wan ? <label className="field">
                   <span className="field-label">参考音频上限（秒）</span>
                   <input
                     className="input num"
@@ -3280,7 +3329,7 @@ function MediaFamilyCard({
                       })
                     }
                   />
-                  <span className="video-reference-note">0 = 不发送原片音轨；{arkSeedance25 ? "Ark 2.5 单段上限 30 秒" : "Ark 2.0 单段上限 15 秒"}</span>
+                  <span className="video-reference-note">0 = 不发送原片音轨；{wan ? "Wan 3.0 参考音频合计上限 15 秒" : arkSeedance25 ? "Ark 2.5 单段上限 30 秒" : "Ark 2.0 单段上限 15 秒"}</span>
                 </label> : null}
                 {!isToapis ? <label className="field">
                   <span className="field-label">Token 成本（Credit/1M token）</span>

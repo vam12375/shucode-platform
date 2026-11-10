@@ -17,8 +17,18 @@ func toapisMiniMaxModel(upstream string) bool {
 	return upstream == "MiniMax-H3" || upstream == "MiniMax-H3-Max" || upstream == "MiniMax-H3-Max-Turbo"
 }
 
+func toapisWanModel(upstream string) bool {
+	return upstream == "wan3.0-video" || upstream == "wan3.0-video-prime"
+}
+
+func toapisVideoOnlyReference(m Model) bool {
+	return m.Adapter == "toapis" && (m.UpstreamModel == "kling-4.0" || toapisWanModel(m.UpstreamModel))
+}
+
 func toapisModelCapabilities(upstream string) (toapisModelCapability, bool) {
 	switch upstream {
+	case "wan3.0-video", "wan3.0-video-prime":
+		return toapisModelCapability{resolutions: []string{"480p", "720p", "1080p"}, minDuration: 2, maxDuration: 30, videoReference: true, nativeAudioToggle: true, referenceMaxBytes: 100 << 20, maxImages: 10, maxVideos: 5}, true
 	case "seedance-2":
 		return toapisModelCapability{resolutions: []string{"480p", "720p", "1080p", "4k"}, minDuration: 4, maxDuration: 15, videoReference: true, nativeAudioToggle: true, referenceMaxBytes: 100 << 20, maxImages: 2, maxVideos: 3}, true
 	case "seedance-2-fast", "seedance-2-mini":
@@ -68,10 +78,13 @@ func validateToAPIsInput(m Model, resolution, ratio string, duration, images int
 		return ErrInvalid
 	}
 	if video {
-		if !capability.videoReference || m.VideoReference == nil || images > m.VideoReference.MaxImages || images > capability.maxImages || images == 0 && m.UpstreamModel != "kling-4.0" {
+		if !capability.videoReference || m.VideoReference == nil || images > m.VideoReference.MaxImages || images > capability.maxImages || images == 0 && !toapisVideoOnlyReference(m) {
 			return ErrInvalid
 		}
 	} else if images > capability.maxImages || toapisMiniMaxModel(m.UpstreamModel) && images == 0 && ratio == "auto" {
+		return ErrInvalid
+	}
+	if toapisWanModel(m.UpstreamModel) && !video && images > 2 {
 		return ErrInvalid
 	}
 	return nil

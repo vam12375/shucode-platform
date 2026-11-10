@@ -107,7 +107,7 @@ func ValidateModels(models []Model) error {
 				return ErrInvalid
 			}
 			maxReferenceImages := 8
-			if m.Adapter == "toapis" && m.UpstreamModel == "kling-4.0" {
+			if m.Adapter == "toapis" && (m.UpstreamModel == "kling-4.0" || toapisWanModel(m.UpstreamModel)) {
 				maxReferenceImages = 10
 			}
 			if m.Kind != "video" || c.MaxDurationSeconds < 1 || c.MaxDurationSeconds > MaxReferenceSeconds || c.MaxImages < 1 || c.MaxImages > maxReferenceImages || c.MaxSegments < 0 || c.MaxSegments > 30 || c.PriceMicro < 0 || c.PriceMicro > 100_000_000 || c.CostMicro < 0 || c.CostMicro > 100_000_000 || c.TokenPriceMicroPerMillion < 0 || c.TokenPriceMicroPerMillion > 1_000_000_000 || c.TokenCostMicroPerMillion < 0 || c.TokenCostMicroPerMillion > 1_000_000_000 || (c.PriceMicro == 0 && c.TokenPriceMicroPerMillion == 0) {
@@ -118,8 +118,8 @@ func ValidateModels(models []Model) error {
 			if c.MaxAudioSeconds < 0 || c.MaxAudioSeconds > c.MaxDurationSeconds || c.MaxAudioSeconds == 1 {
 				return ErrInvalid
 			}
-			// ToAPIs 的多模态协议没有参考音频槽位，声明了能力却静默丢弃会造成误导。
-			if m.Adapter == "toapis" && c.MaxAudioSeconds > 0 {
+			// 已适配的 ToAPIs 型号中只有 Wan 有参考音频槽位，其他型号不能声明后静默丢弃。
+			if m.Adapter == "toapis" && !toapisWanModel(m.UpstreamModel) && c.MaxAudioSeconds > 0 {
 				return ErrInvalid
 			}
 		}

@@ -1247,3 +1247,28 @@ test("Ark Seedance 2.5 rejects unsupported resolution and reference lengths whil
   assert.equal(output.validateDrafts([imported], [provider]), null);
   assert.match(output.validateDrafts([{ ...imported, videoReference: { ...imported.videoReference, maxAudioSeconds: "31" } }], [provider]), /参考音频上限/);
 });
+
+test("Wan 3.0 presets save both models with exact resolution prices and reference capabilities", async () => {
+  const toapisProvider = { id: "toapis", name: "ToAPIs", baseUrl: "https://toapis.cn/v1", enabled: true };
+  const f = await mountModels([], [provider, toapisProvider]);
+  let tree = clickPreset(f, "ToAPIs Wan 3.0 / Prime");
+  nodes(tree, (node) => node.type === "button" && nodeText(node) === "保存配置")[0].props.onClick();
+  await f.settle();
+  const saved = JSON.parse(f.calls.find((call) => call.options).options.body);
+  assert.deepEqual(saved.map((m) => [m.upstreamModel, m.resolutions[0], m.costMicro, m.priceMicro]), [
+    ["wan3.0-video", "480p", 230300, 350000],
+    ["wan3.0-video", "720p", 460600, 700000],
+    ["wan3.0-video", "1080p", 920500, 1400000],
+    ["wan3.0-video-prime", "480p", 359800, 476000],
+    ["wan3.0-video-prime", "720p", 720300, 980000],
+    ["wan3.0-video-prime", "1080p", 1440000, 1960000],
+  ]);
+  assert.ok(saved.every((m) => m.minDuration === 2 && m.maxDuration === 30 && m.generateAudio));
+  assert.ok(saved.every((m) => m.videoReference.maxDurationSeconds === 15 && m.videoReference.maxImages === 10));
+  assert.ok(saved.every((m) => m.videoReference.priceMicro === m.priceMicro && m.videoReference.costMicro === m.costMicro));
+  assert.ok(saved.every((m) => output.validateDrafts([output.toDraft(m)], [toapisProvider]) === null));
+  const draft = output.toDraft(saved[0]);
+  assert.match(output.validateDrafts([{ ...draft, resolutions: ["4k"] }], [toapisProvider]), /分辨率/);
+  assert.match(output.validateDrafts([{ ...draft, minDuration: "1" }], [toapisProvider]), /2–30/);
+  assert.match(output.validateDrafts([{ ...draft, billingUnit: "token" }], [toapisProvider]), /按秒/);
+});

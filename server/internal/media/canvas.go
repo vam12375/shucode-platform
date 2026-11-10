@@ -101,7 +101,7 @@ func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id strin
 			return nil, ErrInvalid
 		}
 	} else {
-		if m.VideoReference == nil || len(r.VideoReferences) != 1 || len(r.AssetIDs) == 0 || len(r.AssetIDs) > m.VideoReference.MaxImages {
+		if m.VideoReference == nil || len(r.VideoReferences) != 1 || len(r.AssetIDs) == 0 && !toapisVideoOnlyReference(m) || len(r.AssetIDs) > m.VideoReference.MaxImages {
 			return nil, fmt.Errorf("video_reference_unsupported")
 		}
 		ref := r.VideoReferences[0]

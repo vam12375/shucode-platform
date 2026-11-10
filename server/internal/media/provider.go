@@ -166,7 +166,7 @@ func (p Provider) SubmitWithReferenceImages(ctx context.Context, m Model, b Brie
 	if b.ReferenceMode == "multimodal" {
 		missingImage = "reference_images_required"
 	}
-	if len(images) == 0 && !(referenceVideo != "" && m.Adapter == "toapis" && m.UpstreamModel == "kling-4.0") {
+	if len(images) == 0 && !(referenceVideo != "" && toapisVideoOnlyReference(m)) {
 		return "", fmt.Errorf("%s", missingImage)
 	}
 	for _, image := range images {
@@ -174,10 +174,10 @@ func (p Provider) SubmitWithReferenceImages(ctx context.Context, m Model, b Brie
 			return "", fmt.Errorf("%s", missingImage)
 		}
 	}
-	if referenceVideo != "" && (m.VideoReference == nil || len(images) > m.VideoReference.MaxImages || len(images) == 0 && !(m.Adapter == "toapis" && m.UpstreamModel == "kling-4.0")) {
+	if referenceVideo != "" && (m.VideoReference == nil || len(images) > m.VideoReference.MaxImages || len(images) == 0 && !(toapisVideoOnlyReference(m))) {
 		return "", fmt.Errorf("video_reference_unsupported")
 	}
-	if b.ReferenceMode == "multimodal" {
+	if b.ReferenceMode == "multimodal" || toapisWanModel(m.UpstreamModel) && m.Adapter == "toapis" && len(referenceAudio) > 0 && referenceAudio[0] != "" {
 		// 单张图片也属于参考集合；原 videoContent 按有无参考视频选择角色，会误把纯图请求写成首尾帧。
 		r := CanvasRequest{Kind: "video", ReferenceMode: "multimodal", Prompt: s.Prompt, Resolution: b.Resolution, AspectRatio: b.AspectRatio, Duration: s.Duration, AssetIDs: uniqueReferenceImageIDs(videoProductAssetIDs(b))}
 		videos, audios := []string{}, []string{}
@@ -276,7 +276,7 @@ func (p Provider) CanvasVideo(ctx context.Context, m Model, r CanvasRequest, ima
 	}
 	video := ""
 	if len(referenceVideos) > 0 && referenceVideos[0] != "" {
-		if m.VideoReference == nil || len(images) > m.VideoReference.MaxImages || len(images) == 0 && !(m.Adapter == "toapis" && m.UpstreamModel == "kling-4.0") {
+		if m.VideoReference == nil || len(images) > m.VideoReference.MaxImages || len(images) == 0 && !(toapisVideoOnlyReference(m)) {
 			return "", fmt.Errorf("video_reference_unsupported")
 		}
 		video = referenceVideos[0]

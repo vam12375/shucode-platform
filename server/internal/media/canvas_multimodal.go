@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 )
 
 const MaxCanvasVideoBytes int64 = 50 << 20
@@ -118,6 +119,9 @@ func referenceContent(prompt string, images, videos, audios []string) []any {
 }
 
 func (p Provider) CanvasMultimodalVideo(ctx context.Context, m Model, r CanvasRequest, images, videos, audios []string) (string, error) {
+	if m.Adapter == "toapis" && toapisWanModel(m.UpstreamModel) && (validateToAPIsModel(m) != nil || !m.DurationSupported(r.Duration) || !toapisResolutionSupported(m.UpstreamModel, r.Resolution) || !slices.Contains(m.Resolutions, r.Resolution) || !slices.Contains(ModelAspectRatios(m), r.AspectRatio)) {
+		return "", ErrInvalid
+	}
 	if err := validateCanvasOptions(m, r); err != nil {
 		return "", err
 	}
@@ -174,6 +178,9 @@ func (p Provider) CanvasMultimodalVideo(ctx context.Context, m Model, r CanvasRe
 	}
 	var out struct {
 		ID string `json:"id"`
+	}
+	if p.Adapter == "toapis" {
+		applyToAPIsWanParameters(body, m)
 	}
 	if err := p.request(ctx, "POST", path, body, &out); err != nil {
 		return "", err

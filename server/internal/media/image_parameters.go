@@ -13,6 +13,9 @@ var fixedVideoRatios = []string{"16:9", "4:3", "1:1", "3:4", "9:16", "21:9"}
 // 官方 ratio 能力依赖真实模型，原 kind 三项常量遗漏了 Seedance 的固定比例与 adaptive。
 // 目录、控制台和准入共用此入口；未知型号保持历史集合，不能凭名称相似推测开放新任务能力。
 func ModelAspectRatios(m Model) []string {
+	if m.Kind == "video" && m.Adapter == "toapis" && toapisWanModel(m.UpstreamModel) {
+		return []string{"auto", "16:9", "9:16", "1:1", "4:3", "3:4"}
+	}
 	if m.Kind == "image" {
 		if m.Adapter == "toapis" && toapisImageModelSupported(m.UpstreamModel) {
 			return toapisImageRatios(m.UpstreamModel)

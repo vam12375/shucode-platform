@@ -18,6 +18,14 @@ type CanvasCapabilities struct {
 
 // 能力来自明确适配的上游型号；旧目录的两图首尾帧能力不能冒充全能参考。
 func CanvasCapabilitiesFor(m Model) *CanvasCapabilities {
+	if m.Kind == "video" && m.Adapter == "toapis" && toapisWanModel(m.UpstreamModel) {
+		c := &CanvasCapabilities{Modes: []string{"frames", "multimodal"}, MaxImages: 10, MaxAudios: 5, MaxTotalReferences: 20, MaxVideoSeconds: 15, MaxAudioSeconds: 15, GenerateAudio: m.GenerateAudio}
+		if m.VideoReference != nil && m.VideoReference.PriceMicro > 0 {
+			c.MaxVideos = 5
+			c.MaxVideoSeconds = min(15, m.VideoReference.MaxDurationSeconds)
+		}
+		return c
+	}
 	adapter := m.Adapter
 	if adapter == "" {
 		// 历史目录未写adapter时provider一直默认Ark，能力投影必须与真实执行协议一致。
@@ -68,6 +76,9 @@ func validateCanvasOptions(m Model, r CanvasRequest) error {
 		return nil
 	}
 	c := CanvasCapabilitiesFor(m)
+	if m.Adapter == "toapis" && toapisWanModel(m.UpstreamModel) && r.ReferenceMode == "frames" && (len(r.AssetIDs) > 2 || len(r.VideoReferences) > 0 || len(r.AudioAssetIDs) > 0) {
+		return ErrInvalid
+	}
 	if r.Kind == "video" && r.Duration != 0 {
 		minDuration, maxDuration := 4, 15
 		if minimum, maximum, ok := SeedanceDurationRange(m); ok {
