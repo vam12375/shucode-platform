@@ -158,6 +158,26 @@ test("catalog and history load together and expose recipe constraints without in
   assert.match(text(tree), /无纹理图片/);
 });
 
+test("timed recipes show nominal length, acts, tiers, style and sound so reviewers see the whole structure", async () => {
+  const timed = {
+    ...template, id: "gift", version: "2.0.0", durationRange: { min: 20, max: 60 }, nominalSeconds: 45,
+    style: { look: "低饱和暖调", lens: "50毫米自然视角", motion: "一镜一动作", sound: "轻音乐托底", narration: "送礼人的短句" },
+    beats: [
+      { ...template.beats[0], weight: 3, seconds: 3, tier: "core", act: "收到一盒", sound: "无旁白，保留纸面摩擦" },
+      { ...template.beats[0], weight: 2, seconds: 2, tier: "extra", act: "收到一盒", sound: "无旁白" },
+    ],
+  };
+  const tree = text(await mount({ templates: [timed] }).settle());
+  assert.match(tree, /标称 45 秒，可压缩到 20 秒、拉伸到 60 秒/);
+  assert.match(tree, /整体风格：低饱和暖调；50毫米自然视角；一镜一动作；轻音乐托底；送礼人的短句/);
+  assert.match(tree, /【收到一盒 · 3秒 · 核心】细节钩子/);
+  assert.match(tree, /【收到一盒 · 2秒 · 可删】/);
+  assert.match(tree, /声画：无旁白，保留纸面摩擦/);
+  // 旧配方没有这些字段，页面不凭空补出标称时长或风格。
+  const legacy = text(await mount().settle());
+  assert.doesNotMatch(legacy, /标称|整体风格|声画：|【/);
+});
+
 test("load failures are visible and retry fetches fresh platform facts", async () => {
   let fail = true;
   const ui = mount({ handler: async (path) => {

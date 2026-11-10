@@ -19,7 +19,10 @@ interface VideoTemplate {
   minAssets: number;
   aspectRatios: string[];
   durationRange: { min: number; max: number };
-  beats: { purpose: string; framing: string; action: string; camera: string }[];
+  // v2 配方才有的可选字段：标称整片秒数、整体拍摄风格，以及节拍的秒数/取舍层级/幕名/声画。
+  nominalSeconds?: number;
+  style?: { look: string; lens: string; motion: string; sound: string; narration?: string };
+  beats: { purpose: string; framing: string; action: string; camera: string; seconds?: number; tier?: string; act?: string; sound?: string }[];
   qualityChecks: string[];
   verifiedModelIds: string[];
 }
@@ -42,6 +45,9 @@ const identity = (item: VideoTemplate) => JSON.stringify([item.id, item.version]
 const reviewIdentity = (item: TemplateReview) => JSON.stringify([item.templateId, item.templateVersion, item.modelId]);
 const decisionOptions = [{ value: "approved", label: "通过（至少85分）" }, { value: "rejected", label: "未通过" }];
 const message = (error: unknown) => error instanceof Error ? error.message : "操作失败，请重试";
+// 压缩时 core 永不删，先删 extra 再删 support；评审时据此判断缩短后的片子是否还成立。
+const tierLabels: Record<string, string> = { core: "核心", support: "补充", extra: "可删" };
+const beatMeta = (beat: VideoTemplate["beats"][number]) => beat.seconds ? `【${beat.act ?? ""} · ${beat.seconds}秒 · ${tierLabels[beat.tier ?? ""] ?? beat.tier ?? ""}】` : "";
 
 export function MediaTemplateReviews() {
   const { isRoot, user } = useAuth();
@@ -166,8 +172,10 @@ function TemplateReviewsContent() {
           <summary>{item.name.zh} <code>{item.id} · {item.version}</code> <Chip tone={item.verifiedModelIds.length ? "ok" : "mute"}>{item.verifiedModelIds.length ? "已验证模型：" + item.verifiedModelIds.join("、") : "未验证"}</Chip></summary>
           <div className="pane-b form-stack">
             <p>{item.description.zh}</p><p>{item.industries.join("、")} · {item.aspectRatios.join(" / ")} · {item.durationRange.min}–{item.durationRange.max}秒 · 至少{item.minAssets}张素材</p>
+            {item.nominalSeconds ? <p>标称 {item.nominalSeconds} 秒，可压缩到 {item.durationRange.min} 秒、拉伸到 {item.durationRange.max} 秒</p> : null}
+            {item.style ? <p>整体风格：{[item.style.look, item.style.lens, item.style.motion, item.style.sound, item.style.narration].filter(Boolean).join("；")}</p> : null}
             <p>商品事实：{item.requiredFacts.join("；")}</p><p>素材要求：{item.assetRequirements.join("；")}</p>
-            <ol>{item.beats.map((beat, index) => <li key={index}>{beat.purpose} · {beat.framing} · {beat.action} · {beat.camera}</li>)}</ol>
+            <ol>{item.beats.map((beat, index) => <li key={index}>{beatMeta(beat)}{beat.purpose} · {beat.framing} · {beat.action} · {beat.camera}{beat.sound ? " · 声画：" + beat.sound : ""}</li>)}</ol>
             <p>质量检查：{item.qualityChecks.join("；")}</p><p>不适用：{item.avoidWhen.join("；")}</p>
           </div>
         </details>)}

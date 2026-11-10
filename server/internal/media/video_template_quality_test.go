@@ -13,16 +13,20 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 	if err := json.Unmarshal(videoTemplateCatalogJSON, &templates); err != nil {
 		t.Fatal(err)
 	}
-	if len(templates) != 58 {
-		t.Fatalf("expected fifty-eight recipes, got %d", len(templates))
+	if len(templates) != 59 {
+		t.Fatalf("expected fifty-nine recipes, got %d", len(templates))
 	}
 	seen := map[string]bool{}
 	actions := map[string]bool{}
 	checks := map[string]bool{}
 	for _, recipe := range templates {
 		t.Run(recipe.ID, func(t *testing.T) {
-			if seen[recipe.ID] || (recipe.Version != "1.1.0" && !(len(recipe.SkillIDs) > 0 && recipe.Version == "1.0.0")) || len(recipe.Beats) != 3 || len(recipe.VerifiedModelIDs) != 0 {
-				t.Fatalf("identity or verification changed: %+v", recipe)
+			// 旧配方固定三拍；带标称秒数的 v2 配方是细分镜（约 15 镜，见 video_template_timing_test.go 的写作规则）。
+			timed := recipe.NominalSeconds != 0
+			legacyVersion := recipe.Version == "1.1.0" || len(recipe.SkillIDs) > 0 && recipe.Version == "1.0.0"
+			structureOK := !timed && legacyVersion && len(recipe.Beats) == 3 || timed && recipe.Version == "2.0.0" && len(recipe.Beats) >= 12 && len(recipe.Beats) <= 16
+			if seen[recipe.ID] || !structureOK || len(recipe.VerifiedModelIDs) != 0 {
+				t.Fatalf("identity or verification changed: id=%s version=%s beats=%d verified=%v duplicate=%v", recipe.ID, recipe.Version, len(recipe.Beats), recipe.VerifiedModelIDs, seen[recipe.ID])
 			}
 			seen[recipe.ID] = true
 			if len(recipe.RequiredFacts) < 3 || len(recipe.AssetRequirements) < 2 || len(recipe.AvoidWhen) < 3 || len(recipe.QualityChecks) < 8 || len(recipe.QualityChecks) > 12 {
