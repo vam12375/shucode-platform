@@ -13,8 +13,8 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 	if err := json.Unmarshal(videoTemplateCatalogJSON, &templates); err != nil {
 		t.Fatal(err)
 	}
-	if len(templates) != 59 {
-		t.Fatalf("expected fifty-nine recipes, got %d", len(templates))
+	if len(templates) != 60 {
+		t.Fatalf("expected sixty recipes, got %d", len(templates))
 	}
 	seen := map[string]bool{}
 	actions := map[string]bool{}

@@ -402,7 +402,7 @@ func TestLegacyRecipesSerializeWithoutTimingFields(t *testing.T) {
 			}
 		}
 	}
-	if legacy != len(templates)-13 {
-		t.Fatalf("expected %d legacy recipes, got %d", len(templates)-13, legacy)
+	if legacy != len(templates)-14 {
+		t.Fatalf("expected %d legacy recipes, got %d", len(templates)-14, legacy)
 	}
 }
