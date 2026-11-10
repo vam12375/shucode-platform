@@ -107,76 +107,32 @@ func validateResearchPlan(b Brief, p Plan) error {
 	if err := validateAdaptiveBrief(b); err != nil {
 		return err
 	}
-	r := p.Research
 	if !adaptiveResearch(b) {
-		if r != nil {
+		if p.Research != nil {
 			return adaptiveResearchError()
 		}
 		return nil
 	}
-	if r == nil || !slices.Contains([]string{"reference", "template", "original"}, r.Mode) || !boundedNonempty(r.Reason, 1000) || !boundedNonempty(r.IntentSummary, 1000) || r.AssetObservations == nil || len(r.AssetObservations) > 20 || r.CreativeGaps == nil || len(r.CreativeGaps) > 5 || p.References == nil {
-		return adaptiveResearchError()
-	}
-	seen := map[string]bool{}
-	for _, a := range r.AssetObservations {
-		if !slices.Contains(videoProductAssetIDs(b), a.AssetID) || seen[a.AssetID] || !boundedNonempty(a.Description, 1000) {
-			return adaptiveResearchError()
-		}
-		seen[a.AssetID] = true
-	}
-	for _, gap := range r.CreativeGaps {
-		if !boundedNonempty(gap, 300) {
-			return adaptiveResearchError()
-		}
-	}
-	if (r.TemplateID == "") != (r.TemplateVersion == "") || utf8.RuneCountInString(r.TemplateID) > 100 || utf8.RuneCountInString(r.TemplateVersion) > 100 {
-		return adaptiveResearchError()
-	}
-	if b.TemplateID != "" && (b.TemplateID != r.TemplateID || b.TemplateVersion != r.TemplateVersion) {
-		return adaptiveResearchError()
-	}
-	if r.Mode == "template" && r.TemplateID == "" {
-		return adaptiveResearchError()
-	}
-	if b.ResearchPolicy == "disabled" && r.Mode == "reference" || (b.ResearchPolicy == "required" || len(b.ReferenceURLs) > 0) && r.Mode != "reference" {
-		return adaptiveResearchError()
-	}
-	if r.Mode != "reference" {
-		if len(p.References) != 0 {
-			return adaptiveResearchError()
-		}
+	// 研究策略是分析输入，不是完整镜头的二次内容审核；这里只检查真实来源结构。
+	// 不删除或伪造来源，原片/复刻仍由独立的来源边界与执行参数校验负责。
+	if len(p.References) == 0 {
 		for _, shot := range p.Shots {
 			if shot.hasAnySource() {
-				return adaptiveResearchError()
+				return fmt.Errorf("video_reference_plan_invalid")
 			}
 		}
 		return nil
-	}
-	if len(p.References) == 0 {
-		return adaptiveResearchError()
 	}
 	refs := map[string]bool{}
 	for _, ref := range p.References {
 		if refs[ref.URL] {
-			return adaptiveResearchError()
+			return fmt.Errorf("video_reference_plan_invalid")
 		}
 		refs[ref.URL] = true
-		if len(b.ReferenceURLs) > 0 {
-			if !slices.Contains(b.ReferenceURLs, ref.URL) {
-				return adaptiveResearchError()
-			}
-		} else if !researchURLAllowed(ref.URL, b.Platforms) {
-			return adaptiveResearchError()
-		}
-	}
-	for _, u := range b.ReferenceURLs {
-		if !refs[u] {
-			return adaptiveResearchError()
-		}
 	}
 	for _, shot := range p.Shots {
-		if !shot.hasCompleteSource() {
-			return adaptiveResearchError()
+		if !shot.hasCompleteSource() || !refs[shot.SourceURL] {
+			return fmt.Errorf("video_reference_plan_invalid")
 		}
 	}
 	return nil

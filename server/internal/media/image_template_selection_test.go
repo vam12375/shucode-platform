@@ -153,8 +153,8 @@ func TestImageTemplateSelectionCannotChangeAfterBindingOrClaimVerification(t *te
 	_, plan, _ := wholeDurationFixture([]int{15}, 15)
 	plan.Research.Mode = "template"
 	plan.Research.TemplateID, plan.Research.TemplateVersion = selection.TemplateID, selection.TemplateVersion
-	if _, err = f.s.acceptAnalysisPlan(ctx, f.team, p.ID, p.Version, a.InputID, plan); err == nil {
-		t.Fatal("unverified recipe claimed verified template mode")
+	if accepted, err := f.s.acceptAnalysisPlan(ctx, f.team, p.ID, p.Version, a.InputID, plan); err != nil || accepted.Plan.Research.Mode != "original" {
+		t.Fatal("unverified recipe failed original execution", err)
 	}
 	advanced := p.Brief
 	advanced.ImageAnalysisFirst = false

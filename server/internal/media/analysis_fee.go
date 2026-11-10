@@ -133,6 +133,7 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 	if current == nil {
 		return nil, ErrInvalid
 	}
+	plan = normalizeAutoPlanMetadata(current.Brief, plan, current.TemplateSnapshot)
 	if current.Brief.ImageAnalysisFirst && (current.ImageAnalysis == nil || current.Analysis == nil || current.Analysis.Kind != "planning") {
 		return nil, ErrConflict
 	}
@@ -142,12 +143,13 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 		story.Review = nil
 		plan.Story = &story
 	}
-	if current.AnalysisFee != nil && current.Analysis != nil && current.Analysis.InputID == input && current.Plan != nil && equalAnalysisPlan(*current.Plan, plan) {
+	// 原计划请求可能已成功但响应丢失；无固定分析费的图片任务同样需要同 input 幂等恢复。
+	if !current.CancelRequested && current.Analysis != nil && current.Analysis.InputID == input && current.Plan != nil && equalAnalysisPlan(normalizeAutoPlanMetadata(current.Brief, *current.Plan, current.TemplateSnapshot), plan) {
 		if current.Status == "analysis_settling" {
 			return s.finishAnalysisFee(ctx, current)
 		}
-		// 0 价也有成功结算终态，不能用金额大于零判断已受理计划的重放。
-		if current.Status == "review" || current.AnalysisChargedMicro == current.AnalysisFee.Micro {
+		// 0 价及未设置固定分析费都是合法受理结果，不重新创建镜头或进入队列。
+		if current.AnalysisFee == nil || current.Status == "review" || current.AnalysisChargedMicro == current.AnalysisFee.Micro {
 			return current, nil
 		}
 	}
@@ -236,7 +238,7 @@ func (s *Service) finishAnalysisFee(ctx context.Context, p *Project) (*Project, 
 			if v.Brief.SourceOnly && v.SourceAnalysis != nil {
 				v.Status = "source_ready"
 			} else if !v.Brief.ReviewPlan && v.Plan != nil && !storyNeedsReview(v.Brief, *v.Plan) {
-				// 结算恢复仍遵守素材缺口与显式审阅要求。
+				// 结算恢复仍服从用户冻结的审阅设置，不因模型补图建议暂停。
 				v.Status = "queued"
 			}
 			if v.CancelRequested {

@@ -32,8 +32,8 @@ func TestImageFirstSelectedImagesRequireActualUsage(t *testing.T) {
 		t.Fatal("seven photos should fit real nine-image capability", err)
 	}
 	plan.Story.AssetRoles[6].Role = "unused"
-	if _, _, err := BuildShots(b, plan, models); err == nil || err.Error() != "video_story_selected_asset_unused" {
-		t.Fatal("selected photo was marked unused", err)
+	if _, _, err := BuildShots(b, plan, models); err != nil {
+		t.Fatal("actual input was blocked by advisory role", err)
 	}
 	plan.Story.AssetRoles[6].Role = "scene"
 	plan.Shots[0].Creative.AssetIDs = plan.Shots[0].Creative.AssetIDs[:6]

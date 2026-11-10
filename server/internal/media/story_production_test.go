@@ -41,10 +41,8 @@ func TestStoryGenerationSecondsAreSeparateFromDeliveryFrames(t *testing.T) {
 	}
 }
 
-func TestStoryRejectsMissingFactsIllegalReferencesAndFrames(t *testing.T) {
+func TestStoryRejectsIllegalInputsAndFrames(t *testing.T) {
 	for name, mutate := range map[string]func(*Brief, *Plan){
-		"missing-story":            func(_ *Brief, p *Plan) { p.Story = nil },
-		"foreign-role":             func(_ *Brief, p *Plan) { p.Story.AssetRoles[0].AssetID = "foreign" },
 		"foreign-shot":             func(_ *Brief, p *Plan) { p.Shots[0].Creative.AssetIDs = []string{"foreign"} },
 		"generated-with-reference": func(_ *Brief, p *Plan) { p.Shots[1].Creative.AssetIDs = []string{"a"} },
 		"invalid-trim":             func(_ *Brief, p *Plan) { p.Shots[0].Creative.OutFrame = 181 },
@@ -61,7 +59,7 @@ func TestStoryRejectsMissingFactsIllegalReferencesAndFrames(t *testing.T) {
 	}
 }
 
-func TestStoryReviewRequiredOnlyForUpload(t *testing.T) {
+func TestStoryReviewOnlyFollowsFrozenUserSelection(t *testing.T) {
 	b, p, _ := storyFixture()
 	if storyNeedsReview(b, p) {
 		t.Fatal("passed plan forced review")
@@ -72,8 +70,12 @@ func TestStoryReviewRequiredOnlyForUpload(t *testing.T) {
 	}
 	p.Story.Review = &StoryPlanReview{Status: "passed", Issues: []string{}}
 	p.Story.Gaps = []StoryGap{{Description: "缺真实布局", Suggestion: "上传店内照片", Resolution: "upload"}}
+	if storyNeedsReview(b, p) {
+		t.Fatal("upload advice blocked executable plan")
+	}
+	b.ReviewPlan = true
 	if !storyNeedsReview(b, p) {
-		t.Fatal("required upload bypassed review")
+		t.Fatal("explicit user review lost")
 	}
 }
 

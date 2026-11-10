@@ -171,6 +171,7 @@ func (s *Service) Revise(ctx context.Context, team, id string, version int64, pl
 		if p.Status != "review" {
 			return ErrConflict
 		}
+		plan = normalizeAutoPlanMetadata(p.Brief, plan, p.TemplateSnapshot)
 		if err := s.validateAdaptivePlan(ctx, p.Brief, plan, p.Models, p.TemplateSnapshot); err != nil {
 			return err
 		}
@@ -262,6 +263,8 @@ func (s *Service) action(ctx context.Context, team, id string, version int64, ac
 			if p.Plan == nil {
 				return ErrInvalid
 			}
+			normalized := normalizeAutoPlanMetadata(p.Brief, *p.Plan, p.TemplateSnapshot)
+			p.Plan = &normalized
 			if err := s.validateAdaptivePlan(ctx, p.Brief, *p.Plan, p.Models, p.TemplateSnapshot); err != nil {
 				return err
 			}

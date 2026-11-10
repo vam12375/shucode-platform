@@ -484,8 +484,14 @@ func TestCreateIsolationStalePlanAndIdempotency(t *testing.T) {
 	if e != nil || other != nil {
 		t.Fatal("cross-team read")
 	}
-	if _, e = f.s.SetPlan(context.Background(), f.team, p.ID, 1, "input", *p.Plan); e != ErrConflict {
-		t.Fatalf("stale plan: %v", e)
+	if replay, err := f.s.SetPlan(context.Background(), f.team, p.ID, 1, "input", *p.Plan); err != nil || replay.Version != p.Version {
+		t.Fatalf("same accepted plan replay: %v", err)
+	}
+	changed := *p.Plan
+	changed.Shots = append([]ShotPlan(nil), p.Plan.Shots...)
+	changed.Shots[0].Prompt += " changed"
+	if _, e = f.s.SetPlan(context.Background(), f.team, p.ID, 1, "input", changed); e != ErrConflict {
+		t.Fatalf("stale changed plan: %v", e)
 	}
 }
 func TestUnknownSubmissionNeverResubmitsOrChangesBalance(t *testing.T) {

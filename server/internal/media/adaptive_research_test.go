@@ -41,23 +41,28 @@ func TestAdaptiveOriginalOmitsSourceFieldsAndKeepsLegacyStrict(t *testing.T) {
 	}
 }
 
-func TestAdaptiveResearchRejectsInvalidSourceAndMissingObservation(t *testing.T) {
+func TestAdaptiveResearchKeepsExecutionSourcesStrict(t *testing.T) {
 	for _, mutation := range []func(*Brief, *Plan){
-		func(b *Brief, p *Plan) { p.Research = nil },
-		func(b *Brief, p *Plan) { p.Research.AssetObservations = nil },
-		func(b *Brief, p *Plan) { p.Research.AssetObservations[0].AssetID = "foreign" },
-		func(b *Brief, p *Plan) { p.Shots[0].SourceStart = 1 },
-		func(b *Brief, p *Plan) { p.Research.Mode = "template" },
-		func(b *Brief, p *Plan) { b.ResearchPolicy = "required"; b.Platforms = []string{"douyin"} },
-		func(b *Brief, p *Plan) { b.ReferenceURLs = []string{"https://www.douyin.com/video/1"} },
+		func(_ *Brief, p *Plan) { p.Research = nil },
+		func(_ *Brief, p *Plan) { p.Research.AssetObservations = nil },
+		func(_ *Brief, p *Plan) { p.Research.AssetObservations[0].AssetID = "foreign" },
+		func(_ *Brief, p *Plan) { p.Research.Mode = "template" },
+		func(b *Brief, _ *Plan) { b.ResearchPolicy = "required"; b.Platforms = []string{"douyin"} },
+		func(b *Brief, _ *Plan) { b.ReferenceURLs = []string{"https://www.douyin.com/video/1"} },
 	} {
 		b, p, models := adaptivePlanFixture()
 		mutation(&b, &p)
-		if _, _, err := BuildShots(b, p, models); err == nil {
-			t.Fatal("invalid adaptive plan accepted")
+		if _, _, err := BuildShots(b, p, models); err != nil {
+			t.Fatal("metadata blocked executable shots", err)
 		}
 	}
 	b, p, models := adaptivePlanFixture()
+	p.Shots[0].SourceStart = 1
+	if _, _, err := BuildShots(b, p, models); err == nil {
+		t.Fatal("partial source accepted")
+	}
+
+	b, p, models = adaptivePlanFixture()
 	raw, _ := json.Marshal(p)
 	raw = []byte(strings.Replace(string(raw), "\"duration\":10", "\"duration\":10,\"sourceStart\":0", 1))
 	if err := json.Unmarshal(raw, &p); err != nil {
@@ -77,7 +82,7 @@ func TestAdaptiveOriginalAllowsEmptyObservationList(t *testing.T) {
 	}
 }
 
-func TestAdaptiveReferenceHonorsExplicitLinksAndDisabledPolicy(t *testing.T) {
+func TestAdaptiveReferencePreservesSourcesAndRejectsConflictingBrief(t *testing.T) {
 	b, p, models := adaptivePlanFixture()
 	b.ReferenceURLs = []string{"https://www.douyin.com/video/1"}
 	p.Research.Mode = "reference"
@@ -94,8 +99,8 @@ func TestAdaptiveReferenceHonorsExplicitLinksAndDisabledPolicy(t *testing.T) {
 	b.ResearchPolicy = "auto"
 	p.References[0].URL = "https://www.douyin.com/video/2"
 	p.Shots[0].SourceURL = p.References[0].URL
-	if _, _, err := BuildShots(b, p, models); err == nil {
-		t.Fatal("explicit source silently changed")
+	if _, _, err := BuildShots(b, p, models); err != nil {
+		t.Fatal("research scope blocked structurally valid completed shots", err)
 	}
 }
 

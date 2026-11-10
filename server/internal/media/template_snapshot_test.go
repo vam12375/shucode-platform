@@ -115,7 +115,7 @@ func TestProductionSkillSnapshotIsolationAndReplay(t *testing.T) {
 		t.Fatalf("old order cannot continue: %v", err)
 	}
 	plan.Research.Mode = "template"
-	if err = f.s.validateAdaptivePlan(ctx, b, plan, p.Models, p.TemplateSnapshot); err == nil {
+	if normalized := normalizeAutoPlanMetadata(b, plan, p.TemplateSnapshot); normalized.Research.Mode != "original" {
 		t.Fatal("unreviewed draft promoted to verified template")
 	}
 	b.TemplateID, b.TemplateVersion = "", ""

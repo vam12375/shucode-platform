@@ -7,15 +7,8 @@ func validateSelectedImageUsage(b Brief, p Plan) error {
 	if !b.ImageAnalysisFirst {
 		return nil
 	}
-	roles, used := map[string]bool{}, map[string]bool{}
-	if p.Story != nil {
-		for _, role := range p.Story.AssetRoles {
-			if role.Role == "unused" {
-				return fmt.Errorf("video_story_selected_asset_unused")
-			}
-			roles[role.AssetID] = true
-		}
-	}
+	// 说明表不能代替或否定供应商的实际输入；只有实际遗漏图片才阻断。
+	used := map[string]bool{}
 	for _, shot := range p.Shots {
 		if shot.Creative != nil && shot.Creative.Source == "generated" {
 			continue
@@ -31,7 +24,7 @@ func validateSelectedImageUsage(b Brief, p Plan) error {
 		}
 	}
 	for _, id := range b.AssetIDs {
-		if !roles[id] || !used[id] {
+		if !used[id] {
 			return fmt.Errorf("video_story_selected_asset_missing")
 		}
 	}

@@ -199,48 +199,15 @@ func validateTemplateSelection(b Brief, templates []VideoTemplate) (VideoTemplat
 	}
 	return t, nil
 }
-func (s *Service) validateAdaptivePlan(ctx context.Context, b Brief, p Plan, models []Model, snapshots ...*TemplateSnapshot) error {
+func (s *Service) validateAdaptivePlan(_ context.Context, b Brief, p Plan, _ []Model, _ ...*TemplateSnapshot) error {
 	if err := validateStoryPlan(b, p); err != nil {
 		return err
 	}
 	if err := validateSelectedImageUsage(b, p); err != nil {
 		return err
 	}
-	if err := validateResearchPlan(b, p); err != nil {
-		return err
-	}
-	if !adaptiveResearch(b) || p.Research.TemplateID == "" {
-		return nil
-	}
-	selected := b
-	selected.TemplateID = p.Research.TemplateID
-	selected.TemplateVersion = p.Research.TemplateVersion
-	if len(snapshots) > 0 && snapshots[0] != nil {
-		snapshot := snapshots[0]
-		if !frozenTemplateMatches(selected, snapshot) {
-			return adaptiveResearchError()
-		}
-		if _, err := validateTemplateSelection(selected, []VideoTemplate{snapshot.Template}); err != nil {
-			return err
-		}
-		if p.Research.Mode == "template" && !snapshotAllowsTemplateMode(b, snapshot) {
-			return adaptiveResearchError()
-		}
-		return nil
-	}
-	// 执行使用项目冻结快照，不能按同ID的当前目录映射借用另一模型签名的批准。
-	templates, err := s.videoTemplatesForModels(ctx, models)
-	if err != nil {
-		return err
-	}
-	t, err := validateTemplateSelection(selected, templates)
-	if err != nil {
-		return err
-	}
-	if len(t.SkillIDs) > 0 || p.Research.Mode == "template" && !slices.Contains(t.VerifiedModelIDs, b.VideoModel) {
-		return adaptiveResearchError()
-	}
-	return nil
+	// 模板已在制作单创建/选择时冻结；目录、验证与研究说明不重复否决已完成镜头。
+	return validateResearchPlan(b, p)
 }
 func (s *Service) ReviewVideoTemplate(ctx context.Context, reviewer string, input TemplateReviewInput) (TemplateReview, error) {
 	if reviewer == "" || input.Score < 1 || input.Score > 100 || input.Approved && input.Score < 85 || !boundedNonempty(input.Note, 2000) {

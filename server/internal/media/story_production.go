@@ -125,31 +125,32 @@ func validateStoryPlan(b Brief, p Plan) error {
 		return err
 	}
 	st := p.Story
-	if st == nil || !storyText(st.Goal, 1000, true) || !storyText(st.Progression, 2000, true) || !storyText(st.Ending, 1000, true) || len(st.AssetRoles) != len(b.AssetIDs) || st.Gaps == nil || len(st.Gaps) > 5 {
-		return storyError()
-	}
-	seen := map[string]bool{}
-	for _, role := range st.AssetRoles {
-		if !slices.Contains(b.AssetIDs, role.AssetID) || seen[role.AssetID] || !slices.Contains([]string{"product", "scene", "style", "unused"}, role.Role) || !storyText(role.Facts, 1000, true) || !storyText(role.Retain, 1000, false) || !storyText(role.Allow, 1000, false) {
+	if st != nil {
+		if !storyText(st.Goal, 1000, true) || !storyText(st.Progression, 2000, true) || !storyText(st.Ending, 1000, true) || len(st.AssetRoles) > 20 || st.Gaps == nil || len(st.Gaps) > 5 {
 			return storyError()
 		}
-		seen[role.AssetID] = true
-	}
-	for _, gap := range st.Gaps {
-		if !storyText(gap.Description, 500, true) || !storyText(gap.Suggestion, 500, true) || !slices.Contains([]string{"generate", "upload", "omit"}, gap.Resolution) {
-			return storyError()
-		}
-	}
-	if st.Review != nil {
-		if !slices.Contains([]string{"passed", "warning"}, st.Review.Status) || st.Review.Issues == nil || len(st.Review.Issues) > 20 {
-			return storyError()
-		}
-		for _, issue := range st.Review.Issues {
-			if !storyText(issue, 500, true) {
+		for _, role := range st.AssetRoles {
+			if !slices.Contains([]string{"product", "scene", "style", "unused"}, role.Role) || !storyText(role.Facts, 1000, true) || !storyText(role.Retain, 1000, false) || !storyText(role.Allow, 1000, false) {
 				return storyError()
 			}
 		}
+		for _, gap := range st.Gaps {
+			if !storyText(gap.Description, 500, true) || !storyText(gap.Suggestion, 500, true) || !slices.Contains([]string{"generate", "upload", "omit"}, gap.Resolution) {
+				return storyError()
+			}
+		}
+		if st.Review != nil {
+			if !slices.Contains([]string{"passed", "warning"}, st.Review.Status) || st.Review.Issues == nil || len(st.Review.Issues) > 20 {
+				return storyError()
+			}
+			for _, issue := range st.Review.Issues {
+				if !storyText(issue, 500, true) {
+					return storyError()
+				}
+			}
+		}
 	}
+	// 故事元数据缺失不影响镜头执行；素材与裁剪范围必须完整合法。
 	frames := 0
 	for _, shot := range p.Shots {
 		c := shot.Creative
@@ -185,23 +186,9 @@ func validateStoryPlan(b Brief, p Plan) error {
 	}
 	return nil
 }
-func storyNeedsReview(b Brief, p Plan) bool {
-	if !storyPlanning(b) {
-		return false
-	}
-	// 关闭生成前独立复核，缺少复核结果不能阻塞生成；素材和模型仍经原准入校验。
-	if b.ImageAnalysisFirst && !b.ReviewPlan {
-		return false
-	}
-	if p.Story == nil {
-		return false // validateStoryPlan 负责拒绝缺失的故事。
-	}
-	for _, g := range p.Story.Gaps {
-		if g.Resolution == "upload" {
-			return true
-		}
-	}
-	return false
+func storyNeedsReview(b Brief, _ Plan) bool {
+	// 仅用户冻结的审阅选择控制暂停；模型补图建议不能添加新的人工步骤。
+	return b.ReviewPlan
 }
 
 // 根因：全局图片污染每镜参考，导致模型只能重复摆拍；新计划只使用冻结的镜头子集。

@@ -26,6 +26,8 @@ func templateReviewFixture(t *testing.T) (*fixture, *Project, TemplateReviewInpu
 	b.TemplateID = template.ID
 	b.TemplateVersion = template.Version
 	b.ReviewPlan = true
+	b.ReferenceMode = "frames"
+	p.Shots[0].AssetID = "a"
 	b.Duration = template.DurationRange.Min
 	p.Shots[0].Duration = b.Duration
 	p.Research.TemplateID = template.ID
@@ -62,8 +64,8 @@ func TestTemplateReviewDerivesModelFromCompletedEvidenceAndCanRevoke(t *testing.
 		t.Fatal(err)
 	}
 	p.Plan.Research.Mode = "template"
-	if err = f.s.validateAdaptivePlan(ctx, p.Brief, *p.Plan, p.Models); err == nil {
-		t.Fatal("unreviewed template was accepted")
+	if err = f.s.validateAdaptivePlan(ctx, p.Brief, *p.Plan, p.Models); err != nil {
+		t.Fatal("unreviewed template blocked executable plan", err)
 	}
 	review, err := f.s.ReviewVideoTemplate(ctx, "root-fixture", input)
 	if err != nil || review.ModelID != p.Brief.VideoModel || review.OutputAssetID != p.OutputAssetID || review.ReviewerID != "root-fixture" {
@@ -152,8 +154,8 @@ func TestTemplateReviewForChangedModelCannotVerifyEarlierFrozenProject(t *testin
 	decision := *plan.Research
 	decision.Mode = "template"
 	plan.Research = &decision
-	// 制作单已冻结旧映射A，不能借用同ID的新映射B的真实审核证据。
-	if err = f.s.validateAdaptivePlan(ctx, frozen.Brief, plan, frozen.Models); err == nil || err.Error() != "video_research_invalid" {
+	// 旧映射 A 可继续原创执行，但不能借用同 ID 的 B 验证或信任模型自评。
+	if normalized := normalizeAutoPlanMetadata(frozen.Brief, plan, frozen.TemplateSnapshot); normalized.Research.Mode != "original" {
 		t.Fatal("model B approval incorrectly verified frozen model A")
 	}
 	if err = f.s.validateAdaptivePlan(ctx, evidence.Brief, plan, evidence.Models); err != nil {
@@ -187,8 +189,12 @@ func TestTemplateReviewForChangedModelCannotVerifyEarlierFrozenProject(t *testin
 			case "generate":
 				_, err = f.s.action(ctx, f.team, project.ID, project.Version, "generate", "", "")
 			}
-			if err == nil || err.Error() != "video_research_invalid" {
-				t.Fatalf("%s used current B approval for frozen A: %v", entry, err)
+			if err != nil {
+				t.Fatalf("%s blocked executable frozen A: %v", entry, err)
+			}
+			stored, readErr := f.s.Repo.Get(ctx, f.team, project.ID)
+			if readErr != nil || stored.Plan.Research.Mode != "original" {
+				t.Fatal("model B approval leaked into A", readErr)
 			}
 		})
 	}
@@ -223,8 +229,8 @@ func TestTemplateLibraryDisableBlocksAdmissionAndPreservesReview(t *testing.T) {
 	if err = f.s.validateTemplateBrief(ctx, p.Brief, p.Models); err == nil {
 		t.Fatal("disabled template admitted")
 	}
-	if err = f.s.validateAdaptivePlan(ctx, p.Brief, *p.Plan, p.Models); err == nil {
-		t.Fatal("disabled template plan accepted")
+	if err = f.s.validateAdaptivePlan(ctx, p.Brief, *p.Plan, p.Models); err != nil {
+		t.Fatal("disabled current catalog blocked frozen plan", err)
 	}
 	all, err := f.s.AllVideoTemplates(ctx, p.Models)
 	if err != nil || !slices.Contains(all[0].VerifiedModelIDs, p.Brief.VideoModel) {
@@ -244,8 +250,8 @@ func TestTemplateLibraryDisableBlocksAdmissionAndPreservesReview(t *testing.T) {
 	if err = f.s.validateTemplateBrief(ctx, p.Brief, p.Models); err == nil {
 		t.Fatal("deleted template admitted")
 	}
-	if err = f.s.validateAdaptivePlan(ctx, p.Brief, *p.Plan, p.Models); err == nil {
-		t.Fatal("deleted template plan accepted")
+	if err = f.s.validateAdaptivePlan(ctx, p.Brief, *p.Plan, p.Models); err != nil {
+		t.Fatal("deleted current catalog blocked frozen plan", err)
 	}
 	all, err = f.s.AllVideoTemplates(ctx, p.Models)
 	if err != nil || !slices.Contains(all[0].VerifiedModelIDs, p.Brief.VideoModel) {

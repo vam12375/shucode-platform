@@ -318,6 +318,7 @@ func buildShotsWithReferenceScript(b Brief, plan Plan, models []Model, scriptVer
 	if scriptVersion != 0 && scriptVersion != 1 {
 		return nil, 0, ErrInvalid
 	}
+	plan = normalizeAutoPlanMetadata(b, plan, nil)
 	if err := validateResearchPlan(b, plan); err != nil {
 		return nil, 0, err
 	}
