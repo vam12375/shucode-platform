@@ -150,7 +150,12 @@ func (s *Service) Bind(ctx context.Context, team, id string, version int64, a An
 	if len(selections) == 1 {
 		selection = selections[0]
 	}
-	return s.bindAnalysis(ctx, team, id, version, a, selection)
+	return s.bindAnalysis(ctx, team, id, version, a, selection, nil)
+}
+
+// BindWithDirection 将分析后的用户方向和模板选择作为同一 planning 版本受理。
+func (s *Service) BindWithDirection(ctx context.Context, team, id string, version int64, a Analysis, selection *TemplateSelection, direction *string) (*Project, error) {
+	return s.bindAnalysis(ctx, team, id, version, a, selection, direction)
 }
 func (s *Service) SetPlan(ctx context.Context, team, id string, version int64, input string, plan Plan) (*Project, error) {
 	p, err := s.Repo.Get(ctx, team, id)

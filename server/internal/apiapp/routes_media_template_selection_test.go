@@ -27,7 +27,7 @@ func TestImageReviewAnalysisRouteFreezesSelectedRecipeAndSkills(t *testing.T) {
 	}
 	prefix := "/api/v1/media/projects/" + p.ID
 	selection := map[string]any{"templateId": "black-gold-reveal", "templateVersion": "1.0.0"}
-	body := map[string]any{"version": p.Version, "analysis": media.Analysis{Kind: "planning", TaskID: "same-task", InputID: "planning-input", WorkspacePath: "/fixture"}, "templateSelection": selection}
+	body := map[string]any{"version": p.Version, "analysis": media.Analysis{Kind: "planning", TaskID: "same-task", InputID: "planning-input", WorkspacePath: "/fixture"}, "templateSelection": selection, "creativeDirection": "突出窗边雨景，节奏放慢"}
 	bad := sourceRequest(f, token, "POST", prefix+"/analysis", map[string]any{"version": p.Version, "analysis": body["analysis"], "templateSelection": map[string]any{"templateId": "black-gold-reveal"}})
 	if bad.Code == 200 {
 		t.Fatal("partial selection accepted")
@@ -39,7 +39,7 @@ func TestImageReviewAnalysisRouteFreezesSelectedRecipeAndSkills(t *testing.T) {
 	data := dataOf(t, response)
 	brief := data["brief"].(map[string]any)
 	snapshot := data["templateSnapshot"].(map[string]any)
-	if data["status"] != "analyzing" || brief["templateId"] != selection["templateId"] || brief["reviewPlan"] != false || len(snapshot["skills"].([]any)) != 1 || data["imageAnalysis"] == nil {
+	if brief["sellingPoints"] != body["creativeDirection"] || data["status"] != "analyzing" || brief["templateId"] != selection["templateId"] || brief["reviewPlan"] != false || len(snapshot["skills"].([]any)) != 1 || data["imageAnalysis"] == nil {
 		t.Fatal("route lost accepted template, skill or image facts")
 	}
 	replay := sourceRequest(f, token, "POST", prefix+"/analysis", body)

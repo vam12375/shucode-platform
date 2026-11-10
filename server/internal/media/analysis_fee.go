@@ -20,7 +20,7 @@ func equalAnalysisPlan(left, right Plan) bool {
 	return err == nil && bytes.Equal(a, b)
 }
 
-func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int64, a Analysis, selection *TemplateSelection) (*Project, error) {
+func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int64, a Analysis, selection *TemplateSelection, direction *string) (*Project, error) {
 	p, err := s.Repo.Get(ctx, team, id)
 	if err != nil {
 		return nil, err
@@ -29,14 +29,18 @@ func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int
 		return nil, ErrInvalid
 	}
 	selection = selection.normalized()
-	if !selection.valid() {
+	if !selection.valid() || (direction != nil && len([]rune(*direction)) > 4000) {
 		return nil, ErrInvalid
 	}
 	if (p.Brief.ReferenceAssetID != "" || p.Brief.ImageAnalysisFirst) && p.Status == "analyzing" && p.Analysis != nil && reflect.DeepEqual(*p.Analysis, a) {
-		if !selection.matches(p) {
+		if !selection.matches(p) || (direction != nil && p.Brief.SellingPoints != *direction) {
 			return nil, ErrConflict
 		}
 		return p, nil
+	}
+	// 方向只在识图完成到首次规划之间可写；已受理 input 的重放在上面只比较，不改内容。
+	if direction != nil && (p.Brief.Mode != "auto" || !p.Brief.ImageAnalysisFirst || p.Status != "image_review" || a.Kind != "planning" || p.ImageAnalysis == nil || p.Plan != nil || p.PlanningResult != nil || len(p.Shots) != 0 || p.OutputAssetID != "") {
+		return nil, ErrConflict
 	}
 	if p.Version != version || (p.Status != "draft" && p.Status != "analysis_failed" && !(p.Brief.ImageAnalysisFirst && p.Status == "image_review")) || p.CancelRequested {
 		return nil, ErrConflict
@@ -55,6 +59,9 @@ func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int
 	brief, snapshot, err := s.prepareImageTemplateSelection(ctx, p, a, selection)
 	if err != nil {
 		return nil, err
+	}
+	if direction != nil {
+		brief.SellingPoints = *direction
 	}
 	adaptation := a.Kind == "adaptation"
 	if adaptation {

@@ -388,11 +388,12 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			ImageAnalysis     media.ImageAnalysis      `json:"imageAnalysis"`
 			PlanningResult    media.PlanningResult     `json:"planningResult"`
 			TemplateSelection *media.TemplateSelection `json:"templateSelection"`
+			CreativeDirection *string                  `json:"creativeDirection"`
 		}
 		if !mediaBody(c, &body) {
 			return
 		}
-		if body.TemplateSelection != nil && c.Param("action") != "analysis" {
+		if (body.TemplateSelection != nil || body.CreativeDirection != nil) && c.Param("action") != "analysis" {
 			mediaError(c, deps, media.ErrInvalid)
 			return
 		}
@@ -417,7 +418,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		var e error
 		switch c.Param("action") {
 		case "analysis":
-			p, e = s.Bind(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.Analysis, body.TemplateSelection)
+			p, e = s.BindWithDirection(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.Analysis, body.TemplateSelection, body.CreativeDirection)
 		case "plan":
 			p, e = s.SetPlan(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.InputID, body.Plan)
 		case "source-analysis":

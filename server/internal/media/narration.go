@@ -179,6 +179,7 @@ func (s *Service) FinishingCapabilities(ctx context.Context) map[string]any {
 	capabilities["imageDrivenCreation"] = available
 	capabilities["stagedImageAnalysis"] = available
 	capabilities["stagedTemplateSelection"] = available
+	capabilities["stagedCreativeDirection"] = available
 	capabilities["planningResults"] = true
 	capabilities["cinematicComposition"], capabilities["subtitleStyle"] = available, available
 	branded := BrandCompositionAvailable()
