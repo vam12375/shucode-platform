@@ -1,6 +1,7 @@
 package media
 
 import (
+	"github.com/vam12375/shucode-platform/server/internal/contracts"
 	"slices"
 	"time"
 )
@@ -179,22 +180,23 @@ type VideoReferenceCapability struct {
 }
 
 type Asset struct {
-	ID              string    `json:"id"`
-	Name            string    `json:"name"`
-	Product         string    `json:"product"`
-	Kind            string    `json:"kind"`
-	Mime            string    `json:"mime"`
-	Size            int64     `json:"size"`
-	CreatedAt       time.Time `json:"createdAt"`
-	URL             string    `json:"url,omitempty"`
-	ThumbnailURL    string    `json:"thumbnailUrl,omitempty"`
-	PosterURL       string    `json:"posterUrl,omitempty"`
-	DurationSeconds float64   `json:"durationSeconds,omitempty"`
-	Width           int       `json:"width,omitempty"`
-	Height          int       `json:"height,omitempty"`
-	SourceURL       string    `json:"sourceUrl,omitempty"`
-	Checksum        string    `json:"checksum,omitempty"`
-	Internal        bool      `json:"internal,omitempty"`
+	Management      *contracts.MediaAssetManagement `json:"management,omitempty"`
+	ID              string                          `json:"id"`
+	Name            string                          `json:"name"`
+	Product         string                          `json:"product"`
+	Kind            string                          `json:"kind"`
+	Mime            string                          `json:"mime"`
+	Size            int64                           `json:"size"`
+	CreatedAt       time.Time                       `json:"createdAt"`
+	URL             string                          `json:"url,omitempty"`
+	ThumbnailURL    string                          `json:"thumbnailUrl,omitempty"`
+	PosterURL       string                          `json:"posterUrl,omitempty"`
+	DurationSeconds float64                         `json:"durationSeconds,omitempty"`
+	Width           int                             `json:"width,omitempty"`
+	Height          int                             `json:"height,omitempty"`
+	SourceURL       string                          `json:"sourceUrl,omitempty"`
+	Checksum        string                          `json:"checksum,omitempty"`
+	Internal        bool                            `json:"internal,omitempty"`
 }
 type Brief struct {
 	AssetUnderstanding       *AssetUnderstanding `json:"assetUnderstanding,omitempty"`

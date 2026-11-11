@@ -121,7 +121,7 @@ func (s *Service) reconcileCanvasArchives(ctx context.Context, p Project) Projec
 		}
 		p = *next
 	}
-	assets, err := s.Repo.Assets(ctx, p.TeamID)
+	assets, err := s.Repo.AssetsForPlayback(ctx, p.TeamID)
 	if err != nil {
 		return p
 	}

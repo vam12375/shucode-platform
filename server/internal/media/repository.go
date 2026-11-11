@@ -131,18 +131,23 @@ func (r Repository) All(ctx context.Context) ([]Project, error) {
 	return out, nil
 }
 func (r Repository) Assets(ctx context.Context, team string) ([]Asset, error) {
-	out := []Asset{}
-	raw, err := r.Store.GetConfigValue(ctx, assetKey(team))
+	records, err := r.assetRecords(ctx, team)
 	if err != nil {
 		return nil, err
 	}
-	if len(raw) > 0 {
-		err = json.Unmarshal(raw, &out)
+	out := []Asset{}
+	for _, record := range records {
+		if record.DeletedAt == "" {
+			out = append(out, record.Asset)
+		}
 	}
-	return out, err
+	return out, nil
 }
 func (r Repository) AddAsset(ctx context.Context, team string, a Asset) error {
-	return updateJSON(ctx, r.Store, assetKey(team), []Asset{}, func(v *[]Asset) error {
+	return r.addOwnedAsset(ctx, team, a, AssetActor{})
+}
+func (r Repository) addOwnedAsset(ctx context.Context, team string, a Asset, actor AssetActor) error {
+	return updateJSON(ctx, r.Store, assetKey(team), []assetRecord{}, func(v *[]assetRecord) error {
 		for _, item := range *v {
 			if item.ID == a.ID {
 				return nil
@@ -151,16 +156,16 @@ func (r Repository) AddAsset(ctx context.Context, team string, a Asset) error {
 		if len(*v) >= 10000 {
 			return fmt.Errorf("asset_limit")
 		}
-		*v = append(*v, a)
+		*v = append(*v, assetRecord{Asset: a, UploaderID: actor.UserID, UploaderName: actor.Name})
 		return nil
 	})
 }
 
 func (r Repository) RemoveAsset(ctx context.Context, team, id string) error {
-	return updateJSON(ctx, r.Store, assetKey(team), []Asset{}, func(v *[]Asset) error {
+	return updateJSON(ctx, r.Store, assetKey(team), []assetRecord{}, func(v *[]assetRecord) error {
 		kept := (*v)[:0]
 		for _, item := range *v {
-			if item.ID != id {
+			if item.ID != id || item.DeletedAt != "" {
 				kept = append(kept, item)
 			}
 		}
@@ -173,20 +178,20 @@ func (r Repository) UpsertInternalAsset(ctx context.Context, team string, asset 
 	if !asset.Internal || asset.ID == "" || asset.Kind != "video" {
 		return ErrInvalid
 	}
-	return updateJSON(ctx, r.Store, assetKey(team), []Asset{}, func(assets *[]Asset) error {
+	return updateJSON(ctx, r.Store, assetKey(team), []assetRecord{}, func(assets *[]assetRecord) error {
 		for i := range *assets {
 			if (*assets)[i].ID == asset.ID {
 				if !(*assets)[i].Internal {
 					return ErrConflict
 				}
-				(*assets)[i] = asset
+				(*assets)[i].Asset = asset
 				return nil
 			}
 		}
 		if len(*assets) >= 10000 {
 			return fmt.Errorf("asset_limit")
 		}
-		*assets = append(*assets, asset)
+		*assets = append(*assets, assetRecord{Asset: asset})
 		return nil
 	})
 }

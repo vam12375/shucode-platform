@@ -276,7 +276,7 @@ func (s *Service) prepareNarration(ctx context.Context, p *Project, dir string) 
 	}
 	// 配置变化只作用于新脚本；同制作单重试必须复用已经确认的音轨，不得再次付费。
 	if current.Narration != nil && current.Narration.Text == text && current.Narration.Status == "ready" {
-		assets, readErr := s.Repo.Assets(ctx, p.TeamID)
+		assets, readErr := s.Repo.AssetsForPlayback(ctx, p.TeamID)
 		if readErr != nil {
 			return "", readErr
 		}

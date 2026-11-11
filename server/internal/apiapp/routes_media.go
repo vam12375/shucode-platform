@@ -173,6 +173,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		deps.Media = NewMediaService(deps)
 	}
 	s := deps.Media
+	registerMediaLibraryRoutes(router, deps)
 	registerMediaPreviewRoutes(router, deps)
 	registerMediaReferenceRoutes(router, deps)
 	registerReferencePricingRoutes(router, deps)
@@ -188,7 +189,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			c.Status(403)
 			return
 		}
-		assets, e := s.Repo.Assets(c.Request.Context(), team)
+		assets, e := s.Repo.AssetsForPlayback(c.Request.Context(), team)
 		if e != nil {
 			internalError(c, deps, e)
 			return
@@ -233,7 +234,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			}
 		}
 		models = allowed
-		assets, e := s.Repo.Assets(ctx, m.Team.ID)
+		assets, library, e := s.Repo.MediaLibrary(ctx, m.Team.ID, mediaAssetActor(a, m))
 		if e != nil {
 			internalError(c, deps, e)
 			return
@@ -292,10 +293,10 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			}
 			templates[i].VerifiedModelIDs = visible
 		}
-		c.JSON(200, okData(gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": quota - used, "reservedMicro": int64(0), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "videoTemplates": templates, "assets": assets, "projects": projects, "generations": generations, "compositionAvailable": media.CompositionAvailable(), "referencePricing": pricing, "capabilities": s.FinishingCapabilities(ctx), "mediaOrigin": s.Blobs.Origin}))
+		c.JSON(200, okData(gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": quota - used, "reservedMicro": int64(0), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "videoTemplates": templates, "assets": assets, "mediaLibrary": library, "projects": projects, "generations": generations, "compositionAvailable": media.CompositionAvailable(), "referencePricing": pricing, "capabilities": s.FinishingCapabilities(ctx), "mediaOrigin": s.Blobs.Origin}))
 	})
 	router.POST("/api/v1/media/assets", func(c *gin.Context) {
-		_, m, ok := mediaIdentity(c, deps)
+		a, m, ok := mediaIdentity(c, deps)
 		if !ok {
 			return
 		}
@@ -313,7 +314,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		defer f.Close()
-		asset, e := s.UploadCanvasMedia(c.Request.Context(), m.Team.ID, h.Filename, c.Request.FormValue("product"), f)
+		asset, e := s.UploadCanvasMediaForUser(c.Request.Context(), m.Team.ID, h.Filename, c.Request.FormValue("product"), f, mediaAssetActor(a, m))
 		if e != nil {
 			mediaError(c, deps, e)
 			return

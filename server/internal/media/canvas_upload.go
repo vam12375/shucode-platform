@@ -15,6 +15,9 @@ import (
 
 // 先识别真实文件头再按媒体类型限额，扩展名和客户端MIME都不构成上传授权。
 func (s *Service) UploadCanvasMedia(ctx context.Context, team, name, product string, reader io.Reader) (Asset, error) {
+	return s.UploadCanvasMediaForUser(ctx, team, name, product, reader, AssetActor{})
+}
+func (s *Service) UploadCanvasMediaForUser(ctx context.Context, team, name, product string, reader io.Reader, actor AssetActor) (Asset, error) {
 	buffered := bufio.NewReader(reader)
 	head, _ := buffered.Peek(512)
 	mime := http.DetectContentType(head)
@@ -78,12 +81,12 @@ func (s *Service) UploadCanvasMedia(ctx context.Context, team, name, product str
 	if err != nil {
 		return Asset{}, err
 	}
-	if err = s.Repo.AddAsset(ctx, team, a); err != nil {
+	if err = s.Repo.addOwnedAsset(ctx, team, a, actor); err != nil {
 		return Asset{}, err
 	}
 	saved = true
 	a.URL = s.Blobs.URL(team, id)
-	return a, nil
+	return (assetRecord{Asset: a, UploaderID: actor.UserID, UploaderName: actor.Name}).public(actor), nil
 }
 
 // Go的通用MIME探测不识别QuickTime；仅容器头还不足够，后续ffprobe必须确认真实视频流。

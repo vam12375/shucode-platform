@@ -147,7 +147,7 @@ func (s *Service) compositionBrandLogoPath(ctx context.Context, p *Project, bran
 	if !slices.Contains(p.Brief.AssetIDs, brand.LogoAssetID) {
 		return "", fmt.Errorf("composition_logo_invalid")
 	}
-	assets, err := s.Repo.Assets(ctx, p.TeamID)
+	assets, err := s.Repo.AssetsForPlayback(ctx, p.TeamID)
 	if err != nil {
 		return "", err
 	}
