@@ -24,7 +24,7 @@ COPY --chown=node:node . .
 RUN pnpm --filter @shucode-platform/console build
 
 # Go 后端：静态编译四个二进制（linux/amd64，生产镜像无 CGO 依赖）。
-FROM golang:1.26.11-alpine@sha256:ae52b5bc6ed045a9ed26ab03dc19327a802a9cc9aa8b27ed57f5c6b60579b0bb AS go-builder
+FROM golang:1.27.0-alpine@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc AS go-builder
 WORKDIR /src
 ENV CGO_ENABLED=0
 # 本地中转构建可能无法直连官方模块源；允许显式覆盖代理，依赖仍受 go.sum 校验。
