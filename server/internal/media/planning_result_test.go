@@ -176,3 +176,69 @@ func TestCompletePlanUsesFrozenMetadataAndReplaysWithoutNewAdmission(t *testing.
 		})
 	}
 }
+
+func TestCompleteChinesePlanKeepsAllImagesAndOneGeneration(t *testing.T) {
+	for _, shape := range []string{"compiled-prose", "corrected-json"} {
+		t.Run(shape, func(t *testing.T) {
+			f := setup(t)
+			ctx := context.Background()
+			p := f.project(t)
+			b, plan, models := wholeDurationFixture([]int{15}, 15)
+			b.ImageAnalysisFirst, b.ReviewPlan = true, false
+			b.AssetIDs = []string{"fixture-character", "fixture-mark", "fixture-name"}
+			b.TemplateID, b.TemplateVersion = "fixture-unverified", "1.0.0"
+			b.Finishing.NativeAudio = true
+			models[0].GenerateAudio = true
+			plan.Story, plan.Research = nil, nil
+			shot := &plan.Shots[0]
+			shot.AssetID, shot.ImagePrompt = "", ""
+			shot.Prompt = "图片1中的角色走入暖色舞台，向镜头挥手；随后展示图片2的图形标识与图片3的文字标识。保持素材原貌，镜头缓慢推近，角色说出欢迎词，配合轻快音乐，最后在同框画面停稳收尾。"
+			shot.Creative.Source, shot.Creative.AssetIDs = "asset", append([]string(nil), b.AssetIDs...)
+			if shape == "corrected-json" {
+				shot.Beats = nil
+				for _, span := range [][2]int{{0, 60}, {60, 120}, {120, 180}, {180, 270}, {270, 360}, {360, 450}} {
+					shot.Beats = append(shot.Beats, GenerationBeat{InFrame: span[0], OutFrame: span[1], Description: "连续表演中的叙事拍点"})
+				}
+			}
+			// 原文可能包含先行说明或自我纠正；后台消费 Host 已编译的方案，不能按原文格式再次拦截。
+			original := "完整中文声画方案：\n" + shot.Prompt
+			if shape == "corrected-json" {
+				original = "{\"research\":{\"reason\":\"初步研究说明\"}}\n重新整理完整方案：\n" + original
+			}
+			p, err := f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
+				v.Brief, v.Models, v.Status = b, models, "analyzing"
+				v.Plan, v.Shots, v.AnalysisFee = nil, []Shot{}, nil
+				v.Analysis = &Analysis{TaskID: "same-task", InputID: "same-input", Kind: "planning", WorkspacePath: "/fixture"}
+				v.ImageAnalysis = &ImageAnalysis{Text: "已识别三张合成测试素材"}
+				v.TemplateSnapshot = &TemplateSnapshot{Template: VideoTemplate{ID: b.TemplateID, Version: b.TemplateVersion, VerifiedModelIDs: []string{}}}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			p, err = f.s.SetPlanningResult(ctx, f.team, p.ID, p.Version, "same-input", PlanningResult{Text: original, Issues: []PlanningIssue{{Path: "$", Code: "invalid_json"}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			version := p.Version
+			accepted, err := f.s.acceptAnalysisPlan(ctx, f.team, p.ID, version, "same-input", plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if accepted.Status != "queued" || len(accepted.Shots) != 1 || accepted.QuoteMicro <= 0 || len(accepted.PlanningResult.Issues) != 0 || accepted.PlanningResult.Text != original {
+				t.Fatal("complete output did not continue as one generation")
+			}
+			actual := accepted.Shots[0].Plan
+			if actual.Prompt != shot.Prompt || actual.Duration != 15 || actual.AssetID != "" || !reflect.DeepEqual(actual.Creative.AssetIDs, b.AssetIDs) || !reflect.DeepEqual(actual.Beats, shot.Beats) {
+				t.Fatal("compiled execution content changed")
+			}
+			if accepted.Plan.Research.Mode != "original" || accepted.Plan.Research.TemplateID != b.TemplateID || accepted.Plan.Research.TemplateVersion != b.TemplateVersion {
+				t.Fatal("unverified template changed the frozen identity or execution mode")
+			}
+			again, err := f.s.acceptAnalysisPlan(ctx, f.team, p.ID, version, "same-input", plan)
+			if err != nil || again.Version != accepted.Version || !reflect.DeepEqual(again.Shots, accepted.Shots) || again.QuoteMicro != accepted.QuoteMicro {
+				t.Fatalf("replay created another generation: %v", err)
+			}
+		})
+	}
+}
