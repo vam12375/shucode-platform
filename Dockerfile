@@ -3,7 +3,7 @@
 #   tools：migrate / seed 一次性任务
 # console 仍由 Node 构建(前端仓库未变),后端构建与运行均为 Go。
 
-FROM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS base
+FROM node:26-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216 AS base
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 WORKDIR /app
 RUN corepack enable && chown node:node /app
