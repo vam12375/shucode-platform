@@ -220,10 +220,11 @@ func TestRecomposeAdmissionIsIdempotentAndPreservesPaidGeneration(t *testing.T) 
 func TestRecomposeRejectsInvalidSourceFramesAndUnsafeParameters(t *testing.T) {
 	requireFinishingComposition(t)
 	cases := map[string]func(*VideoCompositionEdit){
-		"wrong-fps":      func(e *VideoCompositionEdit) { e.FPS = 24 },
-		"duplicate":      func(e *VideoCompositionEdit) { e.Clips[1].SourceShotIndex = 0 },
-		"negative":       func(e *VideoCompositionEdit) { e.Clips[0].InFrame = -1 },
-		"source-overrun": func(e *VideoCompositionEdit) { e.Clips[0].OutFrame = 151 },
+		"wrong-fps": func(e *VideoCompositionEdit) { e.FPS = 24 },
+		"duplicate": func(e *VideoCompositionEdit) { e.Clips[1].SourceShotIndex = 0 },
+		"negative":  func(e *VideoCompositionEdit) { e.Clips[0].InFrame = -1 },
+		// 151 刻度仅比 5 秒源片多 1/30 秒，仍在既有 0.1 秒容差内；154 才真正越界。
+		"source-overrun": func(e *VideoCompositionEdit) { e.Clips[0].OutFrame = 154 },
 		"empty-range":    func(e *VideoCompositionEdit) { e.Clips[0].InFrame = 150 },
 		"invalid-speed":  func(e *VideoCompositionEdit) { e.Clips[0].Speed = 1.1 },
 		"too-short":      func(e *VideoCompositionEdit) { e.Clips = e.Clips[:1]; e.Clips[0].OutFrame = 60 },
@@ -244,6 +245,34 @@ func TestRecomposeRejectsInvalidSourceFramesAndUnsafeParameters(t *testing.T) {
 			actual := current(t, f, p)
 			if actual.Version != p.Version || actual.Composition != nil || actual.ChargedMicro != p.ChargedMicro || f.submits.Load() != 0 {
 				t.Fatal("failed validation changed persisted project")
+			}
+		})
+	}
+}
+
+func TestRecomposeAcceptsSourceTailWithinTimeTolerance(t *testing.T) {
+	requireFinishingComposition(t)
+	for _, tc := range []struct {
+		name     string
+		outFrame int
+	}{
+		{"within-tolerance", 151},
+		{"at-tolerance", 153},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, p, edit := editableProjectFixture(t)
+			edit.Clips[0].OutFrame = tc.outFrame
+			next, err := f.s.Recompose(context.Background(), f.team, f.user, p.ID, p.Version, uuid.NewString(), edit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// 兼容刻度不是源编码帧数；合法尾差按原区间受理，不能静默裁回 150。
+			stored := current(t, f, p)
+			if next.Status != "composing" || stored.Version != p.Version+1 || stored.Composition == nil || !reflect.DeepEqual(stored.Composition.Edit, edit) {
+				t.Fatalf("accepted edit was not preserved: %+v", stored.Composition)
+			}
+			if stored.ChargedMicro != p.ChargedMicro || stored.QuoteMicro != p.QuoteMicro || !reflect.DeepEqual(stored.Shots, p.Shots) || f.submits.Load() != 0 {
+				t.Fatal("tail tolerance changed paid generation or charges")
 			}
 		})
 	}
