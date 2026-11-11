@@ -402,7 +402,8 @@ func TestLegacyRecipesSerializeWithoutTimingFields(t *testing.T) {
 			}
 		}
 	}
-	if legacy != len(templates)-14 {
-		t.Fatalf("expected %d legacy recipes, got %d", len(templates)-14, legacy)
+	// 品牌主视觉展开在 2.0.0 改为细分镜，带时间结构的配方由 14 个变为 15 个。
+	if legacy != len(templates)-15 {
+		t.Fatalf("expected %d legacy recipes, got %d", len(templates)-15, legacy)
 	}
 }
