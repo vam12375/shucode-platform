@@ -24,7 +24,9 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 			// 旧配方固定三拍；带标称秒数的 v2 配方是细分镜（约 15 镜，见 video_template_timing_test.go 的写作规则）。
 			timed := recipe.NominalSeconds != 0
 			legacyVersion := recipe.Version == "1.1.0" || len(recipe.SkillIDs) > 0 && recipe.Version == "1.0.0"
-			structureOK := !timed && legacyVersion && len(recipe.Beats) == 3 || timed && recipe.Version == "2.0.0" && len(recipe.Beats) >= 12 && len(recipe.Beats) <= 16
+			// 品牌 IP 小剧场在 2.1.0 重写了场景与镜头（见 brand_ip_scenes_test.go），其余细分镜配方（含 2.0.0 的品牌主视觉展开）仍是 2.0.0。
+			timedVersion := recipe.Version == "2.0.0" || recipe.ID == "brand-ip-mini-drama" && recipe.Version == "2.1.0"
+			structureOK := !timed && legacyVersion && len(recipe.Beats) == 3 || timed && timedVersion && len(recipe.Beats) >= 12 && len(recipe.Beats) <= 16
 			if seen[recipe.ID] || !structureOK || len(recipe.VerifiedModelIDs) != 0 {
 				t.Fatalf("identity or verification changed: id=%s version=%s beats=%d verified=%v duplicate=%v", recipe.ID, recipe.Version, len(recipe.Beats), recipe.VerifiedModelIDs, seen[recipe.ID])
 			}
