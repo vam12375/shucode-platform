@@ -26,7 +26,21 @@ func TestImageReviewAnalysisRouteFreezesSelectedRecipeAndSkills(t *testing.T) {
 		t.Fatal(err)
 	}
 	prefix := "/api/v1/media/projects/" + p.ID
-	selection := map[string]any{"templateId": "black-gold-reveal", "templateVersion": "1.0.0"}
+	// 配方正文每次改写都会升版：取目录里的现行版本，不写死。
+	definitions, err := media.VideoTemplateDefinitions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentVersion := ""
+	for _, definition := range definitions {
+		if definition.ID == "black-gold-reveal" {
+			currentVersion = definition.Version
+		}
+	}
+	if currentVersion == "" {
+		t.Fatal("fixture recipe is missing from the catalog")
+	}
+	selection := map[string]any{"templateId": "black-gold-reveal", "templateVersion": currentVersion}
 	body := map[string]any{"version": p.Version, "analysis": media.Analysis{Kind: "planning", TaskID: "same-task", InputID: "planning-input", WorkspacePath: "/fixture"}, "templateSelection": selection, "creativeDirection": "突出窗边雨景，节奏放慢"}
 	bad := sourceRequest(f, token, "POST", prefix+"/analysis", map[string]any{"version": p.Version, "analysis": body["analysis"], "templateSelection": map[string]any{"templateId": "black-gold-reveal"}})
 	if bad.Code == 200 {

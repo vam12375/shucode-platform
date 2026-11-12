@@ -53,6 +53,22 @@ func templateReviewFixture(t *testing.T) (*fixture, *Project, TemplateReviewInpu
 	return f, project, TemplateReviewInput{TemplateID: template.ID, TemplateVersion: template.Version, ProjectTeamID: f.team, ProjectID: project.ID, Score: 90, Approved: true, Note: "人工fixture仅证明审核约束，不证明成片质量"}
 }
 
+// currentTemplateVersion 返回目录里该配方的现行版本：配方正文每次改写都会升版，夹具不写死版本号。
+func currentTemplateVersion(t *testing.T, id string) string {
+	t.Helper()
+	templates, err := VideoTemplateDefinitions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, template := range templates {
+		if template.ID == id {
+			return template.Version
+		}
+	}
+	t.Fatalf("recipe %s is missing from the catalog", id)
+	return ""
+}
+
 func TestTemplateReviewDerivesModelFromCompletedEvidenceAndCanRevoke(t *testing.T) {
 	f, p, input := templateReviewFixture(t)
 	ctx := context.Background()

@@ -35,7 +35,7 @@ func imageTemplateFixture(t *testing.T) (*fixture, *Project, Analysis, *Template
 		t.Fatal(err)
 	}
 	a.Kind, a.InputID = "planning", "planning-input"
-	return f, p, a, &TemplateSelection{TemplateID: "black-gold-reveal", TemplateVersion: "1.0.0"}
+	return f, p, a, &TemplateSelection{TemplateID: "black-gold-reveal", TemplateVersion: currentTemplateVersion(t, "black-gold-reveal")}
 }
 
 func TestImageTemplateSelectionFreezesOnceAndAutomaticallyQueues(t *testing.T) {
@@ -146,7 +146,8 @@ func TestImageTemplateSelectionCannotChangeAfterBindingOrClaimVerification(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	other := &TemplateSelection{TemplateID: "single-proof", TemplateVersion: "1.0.0"}
+	// 取另一个配方的现行版本：被拒绝的原因必须是“同一输入不能改选配方”，而不是版本号不存在。
+	other := &TemplateSelection{TemplateID: "single-proof", TemplateVersion: currentTemplateVersion(t, "single-proof")}
 	if _, err = f.s.Bind(ctx, f.team, p.ID, p.Version, a, other); err == nil {
 		t.Fatal("same input changed its selected recipe")
 	}

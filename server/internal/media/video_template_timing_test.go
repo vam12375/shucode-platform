@@ -294,8 +294,9 @@ func TestTimedRecipesAuthoringRules(t *testing.T) {
 			}
 		})
 	}
-	if timed < 13 {
-		t.Fatalf("timed recipes disappeared: %d", timed)
+	// 目录里的配方已全部带时间结构；出现没有标称秒数的配方说明有条目退回了三拍写法。
+	if timed != len(templates) {
+		t.Fatalf("%d of %d recipes are timed", timed, len(templates))
 	}
 }
 
@@ -383,27 +384,26 @@ func TestValidTemplateTimingRejectsInconsistentRecipes(t *testing.T) {
 	}
 }
 
-// 旧配方不能因新增字段改变序列化结果，否则快照 digest 与既有审核证据会整体失效。
+// 三拍旧配方不能因新增字段改变序列化结果，否则已冻结制作单里的快照 digest 与既有审核证据会整体失效。
+// 目录已全部改为细分镜，三拍正文只存在于历史快照里，所以用冻结的历史夹具验证 omitempty 仍然成立。
 func TestLegacyRecipesSerializeWithoutTimingFields(t *testing.T) {
-	templates, err := VideoTemplateDefinitions()
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacy := 0
-	for _, recipe := range templates {
-		if recipe.NominalSeconds != 0 {
-			continue
+	for _, path := range []string{"testdata/brand-kv-unfold-v1.json", "testdata/brand-kv-unfold-v1.1.0.json"} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
 		}
-		legacy++
-		raw, _ := json.Marshal(recipe)
+		var recipe VideoTemplate
+		if err = json.Unmarshal(raw, &recipe); err != nil {
+			t.Fatal(path, err)
+		}
+		if recipe.NominalSeconds != 0 || recipe.Style != nil || len(recipe.Beats) != 3 || !validTemplateTiming(recipe) {
+			t.Fatalf("%s is not a three-beat legacy recipe", path)
+		}
+		out, _ := json.Marshal(recipe)
 		for _, key := range []string{`"nominalSeconds"`, `"style"`, `"seconds"`, `"tier"`, `"act"`, `"group"`, `"sound"`} {
-			if strings.Contains(string(raw), key) {
-				t.Fatalf("%s serializes new field %s", recipe.ID, key)
+			if strings.Contains(string(out), key) {
+				t.Fatalf("%s serializes new field %s", path, key)
 			}
 		}
-	}
-	// 品牌主视觉展开在 2.0.0 改为细分镜，带时间结构的配方由 14 个变为 15 个。
-	if legacy != len(templates)-15 {
-		t.Fatalf("expected %d legacy recipes, got %d", len(templates)-15, legacy)
 	}
 }

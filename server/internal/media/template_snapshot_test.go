@@ -65,7 +65,7 @@ func updateProductionSkill(t *testing.T, f *fixture, change func(*templatelibrar
 func TestProductionSkillSnapshotIsolationAndReplay(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
-	b := Brief{Mode: "auto", ResearchPolicy: "disabled", Product: "fixture", AssetIDs: []string{"a"}, Platforms: []string{}, ReferenceURLs: []string{}, VideoModel: "v", Resolution: "720p", AspectRatio: "16:9", Duration: 15, MaxCreditsMicro: 10_000_000, ReviewPlan: true, TemplateID: "black-gold-reveal", TemplateVersion: "1.0.0"}
+	b := Brief{Mode: "auto", ResearchPolicy: "disabled", Product: "fixture", AssetIDs: []string{"a"}, Platforms: []string{}, ReferenceURLs: []string{}, VideoModel: "v", Resolution: "720p", AspectRatio: "16:9", Duration: 15, MaxCreditsMicro: 10_000_000, ReviewPlan: true, TemplateID: "black-gold-reveal", TemplateVersion: currentTemplateVersion(t, "black-gold-reveal")}
 	p, err := f.s.Create(ctx, f.team, f.user, "", uuid.NewString(), b)
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +129,7 @@ func TestTemplateReviewCannotSurviveSkillContentChange(t *testing.T) {
 	f, p, input := templateReviewFixture(t)
 	ctx := context.Background()
 	b := p.Brief
-	b.TemplateID, b.TemplateVersion = "black-gold-reveal", "1.0.0"
+	b.TemplateID, b.TemplateVersion = "black-gold-reveal", currentTemplateVersion(t, "black-gold-reveal")
 	snapshot, err := f.s.freezeTemplate(ctx, b, p.Models)
 	if err != nil {
 		t.Fatal(err)
