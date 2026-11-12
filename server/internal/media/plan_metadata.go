@@ -33,7 +33,7 @@ func normalizeAutoPlanMetadata(b Brief, p Plan, snapshot *TemplateSnapshot) Plan
 	}
 	observations, seen := []AssetObservation{}, map[string]bool{}
 	for _, item := range r.AssetObservations {
-		if len(observations) < 20 && slices.Contains(videoProductAssetIDs(b), item.AssetID) && !seen[item.AssetID] && boundedNonempty(item.Description, 1000) {
+		if len(observations) < MaxBriefImages && slices.Contains(videoProductAssetIDs(b), item.AssetID) && !seen[item.AssetID] && boundedNonempty(item.Description, 1000) {
 			observations = append(observations, item)
 			seen[item.AssetID] = true
 		}

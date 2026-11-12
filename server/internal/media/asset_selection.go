@@ -40,8 +40,8 @@ func matchProductAssets(product string, assets []Asset) []string {
 		}
 		return strings.Compare(a.ID, b.ID)
 	})
-	ids := make([]string, 0, min(20, len(matches)))
-	for _, asset := range matches[:min(20, len(matches))] {
+	ids := make([]string, 0, min(autoMatchedBriefImages, len(matches)))
+	for _, asset := range matches[:min(autoMatchedBriefImages, len(matches))] {
 		ids = append(ids, asset.ID)
 	}
 	return ids

@@ -113,6 +113,36 @@ func planGenerationDurations(total int, model Model, minimumSegments ...int) []i
 	return nil
 }
 
+// 制作单可冻结的图片数量上限；通过 overview.capabilities.maxBriefImages 声明给客户端。
+// 旧流程的自动匹配仍最多 20 张，不随该上限扩大。
+const (
+	MaxBriefImages         = 30
+	autoMatchedBriefImages = 20
+)
+
+// briefImageCapacity 与客户端 shared/videoImageCapacity 同构：单段容量取目录能力，
+// 最多段数让生成余量不超过一个最短段，避免为塞入图片付费生成远超成片的秒数。
+func briefImageCapacity(b Brief, m Model) (maxImages int, ok bool) {
+	options := []int{}
+	for _, d := range m.AllowedDurations() {
+		if d >= 2 && d <= 30 {
+			options = append(options, d)
+		}
+	}
+	if len(options) == 0 || b.Duration < 1 || b.Duration > MaxBriefSeconds {
+		return 0, false
+	}
+	shortest := slices.Min(options)
+	b.ImageAnalysisFirst = true
+	perSegment := imageReferenceLimit(b, m)
+	durationSegments := len(planGenerationDurations(b.Duration, m))
+	if perSegment < 1 || durationSegments == 0 {
+		return 0, false
+	}
+	maxSegments := min(30, max(durationSegments, (b.Duration+shortest-1)/shortest))
+	return min(MaxBriefImages, perSegment*maxSegments), true
+}
+
 func imageReferenceLimit(b Brief, m Model) int {
 	if b.ReferenceMode != "multimodal" {
 		return 1

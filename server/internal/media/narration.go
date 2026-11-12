@@ -181,6 +181,8 @@ func (s *Service) FinishingCapabilities(ctx context.Context) map[string]any {
 	capabilities["stagedTemplateSelection"] = available
 	capabilities["stagedCreativeDirection"] = available
 	capabilities["planningResults"] = true
+	// 客户端只有看到该声明才会提交超过 20 张图片的制作单。
+	capabilities["maxBriefImages"] = MaxBriefImages
 	capabilities["cinematicComposition"], capabilities["subtitleStyle"] = available, available
 	branded := BrandCompositionAvailable()
 	capabilities["brandComposition"], capabilities["editableComposition"], capabilities["compositionQuality"] = branded, branded, branded

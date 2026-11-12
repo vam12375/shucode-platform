@@ -126,7 +126,7 @@ func validateStoryPlan(b Brief, p Plan) error {
 	}
 	st := p.Story
 	if st != nil {
-		if !storyText(st.Goal, 1000, true) || !storyText(st.Progression, 2000, true) || !storyText(st.Ending, 1000, true) || len(st.AssetRoles) > 20 || st.Gaps == nil || len(st.Gaps) > 5 {
+		if !storyText(st.Goal, 1000, true) || !storyText(st.Progression, 2000, true) || !storyText(st.Ending, 1000, true) || len(st.AssetRoles) > MaxBriefImages || st.Gaps == nil || len(st.Gaps) > 5 {
 			return storyError()
 		}
 		for _, role := range st.AssetRoles {
@@ -154,7 +154,7 @@ func validateStoryPlan(b Brief, p Plan) error {
 	frames := 0
 	for _, shot := range p.Shots {
 		c := shot.Creative
-		if c == nil || !slices.Contains([]string{"asset", "extended", "generated"}, c.Source) || c.AssetIDs == nil || len(c.AssetIDs) > 20 || !storyText(c.Retain, 1000, false) || !storyText(c.Expand, 1000, false) || !storyText(c.Beat, 500, true) || !storyText(c.Connection, 500, true) || c.InFrame < 0 || c.OutFrame > shot.Duration*30 || c.OutFrame-c.InFrame < 15 {
+		if c == nil || !slices.Contains([]string{"asset", "extended", "generated"}, c.Source) || c.AssetIDs == nil || len(c.AssetIDs) > MaxBriefImages || !storyText(c.Retain, 1000, false) || !storyText(c.Expand, 1000, false) || !storyText(c.Beat, 500, true) || !storyText(c.Connection, 500, true) || c.InFrame < 0 || c.OutFrame > shot.Duration*30 || c.OutFrame-c.InFrame < 15 {
 			return storyError()
 		}
 		if c.Source == "generated" {

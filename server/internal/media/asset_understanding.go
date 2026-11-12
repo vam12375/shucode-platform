@@ -50,7 +50,7 @@ func validateAssetUnderstanding(b Brief) error {
 			return fmt.Errorf("video_understanding_invalid_output")
 		}
 	}
-	if len(o.Assets) != len(b.AssetIDs) || len(o.Assets) < 1 || len(o.Assets) > 20 {
+	if len(o.Assets) != len(b.AssetIDs) || len(o.Assets) < 1 || len(o.Assets) > MaxBriefImages {
 		return fmt.Errorf("video_understanding_assets_invalid")
 	}
 	seen := map[string]bool{}

@@ -190,7 +190,7 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	if err := validateBriefReferenceMode(b); err != nil {
 		return err
 	}
-	if strings.TrimSpace(b.Product) == "" || utf8.RuneCountInString(b.Product) > 200 || utf8.RuneCountInString(b.SellingPoints) > 4000 || (!replica && len(videoProductAssetIDs(b)) == 0) || len(b.AssetIDs) > 20 || len(b.ReferenceURLs) > 10 || b.MaxCreditsMicro < 0 || (!replica && b.Duration < MinAutoBriefSeconds) || b.Duration < 1 || b.Duration > MaxBriefSeconds || utf8.RuneCountInString(b.ReplacementInstructions) > 4000 {
+	if strings.TrimSpace(b.Product) == "" || utf8.RuneCountInString(b.Product) > 200 || utf8.RuneCountInString(b.SellingPoints) > 4000 || (!replica && len(videoProductAssetIDs(b)) == 0) || len(b.AssetIDs) > MaxBriefImages || len(b.ReferenceURLs) > 10 || b.MaxCreditsMicro < 0 || (!replica && b.Duration < MinAutoBriefSeconds) || b.Duration < 1 || b.Duration > MaxBriefSeconds || utf8.RuneCountInString(b.ReplacementInstructions) > 4000 {
 		return ErrInvalid
 	}
 	if replica {
@@ -287,6 +287,13 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	// 整段策略允许离散档位以无台词余量裁出精确成片；旧制作单仍要求生成秒数精确可组合。
 	if !replica && ((b.GenerationPolicy == "whole-first" && len(planGenerationDurations(b.Duration, m)) == 0) || (b.GenerationPolicy != "whole-first" && !possible[b.Duration])) {
 		return fmt.Errorf("duration_not_supported")
+	}
+	// 新建图片优先制作单时按模型容量准入；原先只在规划阶段才发现图片放不下，用户已等待识图。
+	// 已冻结制作单的规划与重试不经过此处，沿用逐段图片校验。
+	if !replica && b.ImageAnalysisFirst {
+		if limit, ok := briefImageCapacity(b, m); !ok || len(b.AssetIDs) > limit {
+			return fmt.Errorf("video_generation_image_capacity_exceeded")
+		}
 	}
 	if b.ImageModel != "" {
 		image, imageErr := FindModel(models, b.ImageModel, "image")
