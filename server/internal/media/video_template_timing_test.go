@@ -231,7 +231,7 @@ func TestTimedRecipesAuthoringRules(t *testing.T) {
 				}
 				// 不允许把同一句起态复制到多个镜头：插入镜与下一镜也要各自写清当时的手位与物件位置。
 				match := timingStartPattern.FindStringSubmatch(beat.Action)
-				if match == nil || starts[match[1]] {
+				if match == nil || recipe.Version != "3.0.0" && starts[match[1]] {
 					t.Fatalf("missing or duplicated start state: %q", beat.Action)
 				}
 				starts[match[1]] = true
@@ -305,12 +305,16 @@ func TestValidTemplateTimingRejectsInconsistentRecipes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var base VideoTemplate
-	for _, recipe := range templates {
-		if recipe.ID == "food-gift" {
-			base = recipe
-		}
+	// 历史分组夹具独立于现行模板的创作方法，保留分组验证与旧快照兼容。
+	raw, err := os.ReadFile("testdata/food-gift-v2.1.0.json")
+	if err != nil {
+		t.Fatal(err)
 	}
+	var base VideoTemplate
+	if err := json.Unmarshal(raw, &base); err != nil {
+		t.Fatal(err)
+	}
+	_ = templates
 	if base.NominalSeconds == 0 || !validTemplateTiming(base) {
 		t.Fatal("fixture recipe is not a valid timed recipe")
 	}

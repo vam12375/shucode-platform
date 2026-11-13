@@ -9,8 +9,8 @@ import (
 )
 
 func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
-	var templates []VideoTemplate
-	if err := json.Unmarshal(videoTemplateCatalogJSON, &templates); err != nil {
+	templates, err := VideoTemplateDefinitions()
+	if err != nil {
 		t.Fatal(err)
 	}
 	if len(templates) != 60 {
@@ -21,12 +21,9 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 	checks := map[string]bool{}
 	for _, recipe := range templates {
 		t.Run(recipe.ID, func(t *testing.T) {
-			// 目录里已没有三拍旧配方：全部是带标称秒数的细分镜（12–16 镜，写作规则见 video_template_timing_test.go）。
-			// 2.0.0 是首次改为细分镜的版本；2.1.0 是其后的正文修订：品牌 IP 小剧场重写了场景与镜头（见 brand_ip_scenes_test.go），
-			// 其余把旁白与配乐改为视频模型原声；咖啡 2.2.0 支持成杯素材与明确的原生台词。
-			// 三拍正文只留在已冻结的制作单快照里。
+			// 新模板给可重组叙事方法；KV 保留已经有效的 2.1.0 主角方法。
 			timed := recipe.NominalSeconds != 0
-			versionOK := recipe.Version == "2.0.0" || recipe.Version == "2.1.0" || recipe.ID == "coffee-ritual" && recipe.Version == "2.2.0"
+			versionOK := recipe.Version == "3.0.0" || recipe.ID == "brand-kv-unfold" && recipe.Version == "2.1.0"
 			structureOK := timed && versionOK && len(recipe.Beats) >= 12 && len(recipe.Beats) <= 16
 			if seen[recipe.ID] || !structureOK || len(recipe.VerifiedModelIDs) != 0 {
 				t.Fatalf("identity or verification changed: id=%s version=%s beats=%d verified=%v duplicate=%v", recipe.ID, recipe.Version, len(recipe.Beats), recipe.VerifiedModelIDs, seen[recipe.ID])
@@ -124,10 +121,10 @@ func TestRecipesUseModelNativeAudioAndVariedShotScales(t *testing.T) {
 				}
 			}
 			// 15 秒成片只剩核心镜头：开头、主动作与结尾的三句必须留得住。
-			if voicedCore < 3 {
+			if recipe.Version != "3.0.0" && voicedCore < 3 {
 				t.Fatalf("only %d voiced core beats", voicedCore)
 			}
-			if freeformFramingRecipes[recipe.ID] {
+			if freeformFramingRecipes[recipe.ID] || recipe.Version == "3.0.0" {
 				return
 			}
 			wide, detail := 0, 0

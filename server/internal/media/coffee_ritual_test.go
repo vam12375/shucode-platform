@@ -1,6 +1,8 @@
 package media
 
 import (
+	"encoding/json"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -10,13 +12,14 @@ import (
 // 旧配方只支持冲煮证据，成杯素材被改编成静物；台词又只写意图，短片最后只剩底噪。
 // 核心镜必须同时承载动作、素材与可朗读的原生台词，且压缩不能挤掉说话和片尾停留的时间。
 func TestCoffeeRitualKeepsActionAndAudibleStoryAtEveryDuration(t *testing.T) {
-	definitions, err := VideoTemplateDefinitions()
+	// 精确秒数和旧三句台词留在历史快照，现行模板允许按新故事重新编排。
+	raw, err := os.ReadFile("testdata/coffee-ritual-v2.2.0.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	recipe, err := findVideoTemplate(definitions, "coffee-ritual", "2.2.0")
-	if err != nil {
-		t.Fatal("coffee rewrite must have a distinct version", err)
+	var recipe VideoTemplate
+	if err := json.Unmarshal(raw, &recipe); err != nil {
+		t.Fatal(err)
 	}
 	if len(recipe.VerifiedModelIDs) != 0 || recipe.MinAssets != 1 {
 		t.Fatal("finished-cup recipe must accept one asset without claiming production verification")

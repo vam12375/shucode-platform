@@ -19,7 +19,7 @@ func brandIPSceneRecipe(t *testing.T) VideoTemplate {
 	if err != nil {
 		t.Fatal(err)
 	}
-	recipe, err := findVideoTemplate(definitions, "brand-ip-mini-drama", "2.1.0")
+	recipe, err := findVideoTemplate(definitions, "brand-ip-mini-drama", "3.0.0")
 	if err != nil {
 		t.Fatal("scene rewrite must have a distinct version", err)
 	}
@@ -29,7 +29,14 @@ func brandIPSceneRecipe(t *testing.T) VideoTemplate {
 // 2.0.0 的成片只有一个摄影棚、一个机位，观看时场景单薄。2.1.0 把场景与镜头写进配方，
 // 并让台词只落在三个核心镜头：这些约束必须在任何压缩时长下都保得住，所以锁在核心镜头上。
 func TestBrandIPSceneRecipeKeepsScenesAndDialogueInCoreBeats(t *testing.T) {
-	recipe := brandIPSceneRecipe(t)
+	raw, err := os.ReadFile("testdata/brand-ip-mini-drama-v2.1.0.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recipe VideoTemplate
+	if err := json.Unmarshal(raw, &recipe); err != nil {
+		t.Fatal(err)
+	}
 	if len(recipe.Beats) != 12 || len(recipe.VerifiedModelIDs) != 0 || recipe.DurationRange != (TemplateDurationRange{Min: 15, Max: 30}) {
 		t.Fatal("rewrite changed the beat count, duration range or claimed production verification")
 	}
@@ -69,7 +76,7 @@ func TestBrandIPSceneRecipeKeepsScenesAndDialogueInCoreBeats(t *testing.T) {
 		}
 	}
 	// 配方正文要把场景、道具、景别节奏与禁文字一并传给规划器，缺一就会退回单一场景。
-	raw, _ := json.Marshal(recipe)
+	raw, _ = json.Marshal(recipe)
 	for _, requirement := range []string{"至多三个场景", "无文字的道具", "同一件道具", "相邻两镜", "不超过4秒", "合计不超过3句", "1到1.5秒", "不出现可读文字"} {
 		if !strings.Contains(string(raw), requirement) {
 			t.Errorf("missing scene or shot requirement: %s", requirement)

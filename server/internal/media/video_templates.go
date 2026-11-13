@@ -3,7 +3,6 @@ package media
 import (
 	"context"
 	"crypto/sha256"
-	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -12,9 +11,6 @@ import (
 	"time"
 	"unicode/utf8"
 )
-
-//go:embed video_template_catalog.json
-var videoTemplateCatalogJSON []byte
 
 const TemplateReviewsKey = "media.video-template-reviews"
 
@@ -106,8 +102,8 @@ type TemplateReview struct {
 }
 
 func VideoTemplateDefinitions() ([]VideoTemplate, error) {
-	out := []VideoTemplate{}
-	if err := json.Unmarshal(videoTemplateCatalogJSON, &out); err != nil {
+	out, err := loadVideoTemplateCatalog(videoTemplateFiles)
+	if err != nil {
 		return nil, fmt.Errorf("video_templates_unavailable")
 	}
 	seen := map[string]bool{}
