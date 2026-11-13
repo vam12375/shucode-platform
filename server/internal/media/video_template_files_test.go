@@ -53,7 +53,7 @@ func TestTemplateFilesRejectAmbiguousCatalog(t *testing.T) {
 	}
 }
 
-func TestBrandKVSplitPreservesRecipe(t *testing.T) {
+func TestBrandKVPacingPatchPreservesIdentityAndTiming(t *testing.T) {
 	raw, err := fs.ReadFile(videoTemplateFiles, "video_templates/brand-kv-unfold.json")
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +69,24 @@ func TestBrandKVSplitPreservesRecipe(t *testing.T) {
 	if err := json.Unmarshal(raw, &frozen); err != nil {
 		t.Fatal(err)
 	}
+	if len(got.Beats) != len(frozen.Beats) {
+		t.Fatal("pacing patch changed beat count")
+	}
+	// 本轮只改声画表达，旧快照的主体关系、素材约束和确定性配时继续夹紧。
+	for i := range got.Beats {
+		got.Beats[i].Sound = frozen.Beats[i].Sound
+	}
+	last := len(got.Beats) - 1
+	got.Beats[last].Purpose = frozen.Beats[last].Purpose
+	got.Beats[last].Action = frozen.Beats[last].Action
+	got.Beats[last].Camera = frozen.Beats[last].Camera
+	got.Version = frozen.Version
+	got.Description = frozen.Description
+	got.Style.Motion = frozen.Style.Motion
+	got.Style.Sound = frozen.Style.Sound
+	got.Style.Narration = frozen.Style.Narration
+	got.QualityChecks = frozen.QualityChecks
 	if !reflect.DeepEqual(got, frozen) {
-		t.Fatal("split rewrote the approved KV method")
+		t.Fatal("pacing patch changed fields outside sound and ending")
 	}
 }

@@ -19,8 +19,8 @@ func brandNarrativeRecipe(t *testing.T) VideoTemplate {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 2.1.0 只把旁白与配乐改为视频模型原声，镜头、秒数与技能同 2.0.0。
-	recipe, err := findVideoTemplate(definitions, "brand-kv-unfold", "2.1.0")
+	// 2.1.1 保留主角与配时方法，修正静帧尾段并按素材匹配原声。
+	recipe, err := findVideoTemplate(definitions, "brand-kv-unfold", "2.1.1")
 	if err != nil {
 		t.Fatal("hero-led rewrite must have a distinct version", err)
 	}
@@ -95,8 +95,8 @@ func TestBrandKVNarrativeFreezesNewVersionAndReplaysOldSnapshot(t *testing.T) {
 		}
 		project = p
 	}
-	// 三个历史版本都已有冻结的制作单：继续或重放必须保留当时的正文，而不是用当前目录重建。
-	for _, fixture := range []struct{ path, version string }{{"testdata/brand-kv-unfold-v1.json", "1.0.0"}, {"testdata/brand-kv-unfold-v1.1.0.json", "1.1.0"}, {"testdata/brand-kv-unfold-v2.0.0.json", "2.0.0"}} {
+	// 历史版本都已有冻结的制作单：继续或重放必须保留当时的正文，而不是用当前目录重建。
+	for _, fixture := range []struct{ path, version string }{{"testdata/brand-kv-unfold-v1.json", "1.0.0"}, {"testdata/brand-kv-unfold-v1.1.0.json", "1.1.0"}, {"testdata/brand-kv-unfold-v2.0.0.json", "2.0.0"}, {"testdata/brand-kv-unfold-v2.1.0.json", "2.1.0"}} {
 		raw, err := os.ReadFile(fixture.path)
 		if err != nil {
 			t.Fatal(err)

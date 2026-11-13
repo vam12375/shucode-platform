@@ -17,7 +17,7 @@ func TestCreativeRecipesHaveDistinctStoriesAndFlexibleStaging(t *testing.T) {
 			continue
 		}
 		t.Run(recipe.ID, func(t *testing.T) {
-			if recipe.Version != "3.0.0" || !strings.Contains(recipe.Description.ZH, "叙事方法") || !strings.Contains(recipe.Description.ZH, "可重组") {
+			if recipe.Version != "3.0.1" || !strings.Contains(recipe.Description.ZH, "叙事方法") || !strings.Contains(recipe.Description.ZH, "可重组") {
 				t.Fatal("recipe still acts as a fixed shooting script")
 			}
 			if methods[recipe.Description.ZH] {
@@ -53,7 +53,7 @@ func TestCreativeDomainBoundaries(t *testing.T) {
 		"sharing-table-sequence":  {"份量", "递接"},
 	} {
 		t.Run(id, func(t *testing.T) {
-			recipe, err := findVideoTemplate(definitions, id, "3.0.0")
+			recipe, err := findVideoTemplate(definitions, id, "3.0.1")
 			if err != nil {
 				t.Fatal(err)
 			}

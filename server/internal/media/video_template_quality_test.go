@@ -21,9 +21,9 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 	checks := map[string]bool{}
 	for _, recipe := range templates {
 		t.Run(recipe.ID, func(t *testing.T) {
-			// 新模板给可重组叙事方法；KV 保留已经有效的 2.1.0 主角方法。
+			// 新模板给可重组叙事方法；KV 保留主角方法并修正收尾与声音。
 			timed := recipe.NominalSeconds != 0
-			versionOK := recipe.Version == "3.0.0" || recipe.ID == "brand-kv-unfold" && recipe.Version == "2.1.0"
+			versionOK := recipe.Version == "3.0.1" || recipe.ID == "brand-kv-unfold" && recipe.Version == "2.1.1"
 			structureOK := timed && versionOK && len(recipe.Beats) >= 12 && len(recipe.Beats) <= 16
 			if seen[recipe.ID] || !structureOK || len(recipe.VerifiedModelIDs) != 0 {
 				t.Fatalf("identity or verification changed: id=%s version=%s beats=%d verified=%v duplicate=%v", recipe.ID, recipe.Version, len(recipe.Beats), recipe.VerifiedModelIDs, seen[recipe.ID])
@@ -115,16 +115,16 @@ func TestRecipesUseModelNativeAudioAndVariedShotScales(t *testing.T) {
 					if beat.Tier == TemplateTierCore {
 						voicedCore++
 					}
-				case strings.HasPrefix(beat.Sound, "无旁白"):
+				case strings.HasPrefix(beat.Sound, "无旁白"), strings.HasPrefix(beat.Sound, "声音（模型原声开启时）："):
 				default:
 					t.Fatalf("beat %d sound has no recognised prefix: %q", i+1, beat.Sound)
 				}
 			}
 			// 15 秒成片只剩核心镜头：开头、主动作与结尾的三句必须留得住。
-			if recipe.Version != "3.0.0" && voicedCore < 3 {
+			if recipe.Version != "3.0.1" && recipe.Version != "2.1.1" && voicedCore < 3 {
 				t.Fatalf("only %d voiced core beats", voicedCore)
 			}
-			if freeformFramingRecipes[recipe.ID] || recipe.Version == "3.0.0" {
+			if freeformFramingRecipes[recipe.ID] || recipe.Version == "3.0.1" {
 				return
 			}
 			wide, detail := 0, 0

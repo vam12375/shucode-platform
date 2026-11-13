@@ -19,7 +19,7 @@ func brandIPSceneRecipe(t *testing.T) VideoTemplate {
 	if err != nil {
 		t.Fatal(err)
 	}
-	recipe, err := findVideoTemplate(definitions, "brand-ip-mini-drama", "3.0.0")
+	recipe, err := findVideoTemplate(definitions, "brand-ip-mini-drama", "3.0.1")
 	if err != nil {
 		t.Fatal("scene rewrite must have a distinct version", err)
 	}

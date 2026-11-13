@@ -220,7 +220,7 @@ func TestTimedRecipesAuthoringRules(t *testing.T) {
 					core += beat.Seconds
 					coreBeats++
 				}
-				if strings.HasPrefix(beat.Sound, "无旁白") {
+				if strings.HasPrefix(beat.Sound, "无旁白") || strings.HasPrefix(beat.Sound, "声音（模型原声开启时）：") {
 					silent++
 				}
 				if len(acts) == 0 || acts[len(acts)-1] != beat.Act {
@@ -231,7 +231,7 @@ func TestTimedRecipesAuthoringRules(t *testing.T) {
 				}
 				// 不允许把同一句起态复制到多个镜头：插入镜与下一镜也要各自写清当时的手位与物件位置。
 				match := timingStartPattern.FindStringSubmatch(beat.Action)
-				if match == nil || recipe.Version != "3.0.0" && starts[match[1]] {
+				if match == nil || recipe.Version != "3.0.1" && starts[match[1]] {
 					t.Fatalf("missing or duplicated start state: %q", beat.Action)
 				}
 				starts[match[1]] = true
