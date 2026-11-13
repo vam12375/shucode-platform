@@ -1,0 +1,19 @@
+{
+  "assetIds": ["hero", "helper", "logo"],
+  "assets": [
+    {"assetId":"hero","role":"character","subjectGroup":"hero","description":"主角造型身份"},
+    {"assetId":"helper","role":"character","subjectGroup":"helper","description":"配角造型身份"},
+    {"assetId":"logo","role":"logo","subjectGroup":"","description":"准确标识，仅片尾使用"}
+  ],
+  "story": {
+    "goal":"主角得到帮助",
+    "progression":"遇到困难，配角帮助，完成目标",
+    "ending":"两位角色完成目标，Logo准确落版",
+    "assetRoles":[
+      {"assetId":"hero","role":"character","facts":"主角造型","retain":"身份锚点","allow":"新的姿势和剧情场景"},
+      {"assetId":"helper","role":"character","facts":"配角造型","retain":"身份锚点","allow":"与主角互动"},
+      {"assetId":"logo","role":"logo","facts":"准确标识图形","retain":"准确图形","allow":"仅片尾出现"}
+    ],
+    "gaps":[]
+  }
+}

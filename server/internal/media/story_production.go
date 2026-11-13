@@ -130,7 +130,7 @@ func validateStoryPlan(b Brief, p Plan) error {
 			return storyError()
 		}
 		for _, role := range st.AssetRoles {
-			if !slices.Contains([]string{"product", "scene", "style", "unused"}, role.Role) || !storyText(role.Facts, 1000, true) || !storyText(role.Retain, 1000, false) || !storyText(role.Allow, 1000, false) {
+			if !slices.Contains([]string{"product", "character", "scene", "style", "logo", "unused"}, role.Role) || !storyText(role.Facts, 1000, true) || !storyText(role.Retain, 1000, false) || !storyText(role.Allow, 1000, false) {
 				return storyError()
 			}
 		}

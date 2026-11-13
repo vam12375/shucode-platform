@@ -205,7 +205,7 @@ func videoProductAssetIDs(b Brief) []string {
 		if b.AssetUnderstanding != nil {
 			usable := false
 			for _, asset := range b.AssetUnderstanding.Assets {
-				if asset.AssetID == id && asset.Role != "logo" && asset.Role != "unused" {
+				if asset.AssetID == id && asset.Role != "unused" {
 					usable = true
 				}
 			}

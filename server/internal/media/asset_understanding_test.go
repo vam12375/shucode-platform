@@ -106,8 +106,12 @@ func TestImageDrivenBriefValidation(t *testing.T) {
 
 func TestImageDrivenRolesDoNotInflateTemplateEvidence(t *testing.T) {
 	b := Brief{Mode: "auto", GenerationPolicy: "whole-first", VideoModel: "v", TemplateID: "t", TemplateVersion: "1", AspectRatio: "9:16", Duration: 30, AssetIDs: []string{"a", "scene", "logo", "unused"}, AssetUnderstanding: &AssetUnderstanding{Assets: []ObservedAsset{{AssetID: "a", Role: "product"}, {AssetID: "scene", Role: "scene"}, {AssetID: "logo", Role: "logo"}, {AssetID: "unused", Role: "unused"}}}}
+	if got := videoProductAssetIDs(b); len(got) != 3 || got[0] != "a" || got[1] != "scene" || got[2] != "logo" {
+		t.Fatalf("unbound logo did not remain available as a video reference: %v", got)
+	}
+	b.Finishing = &FinishingOptions{Brand: testVideoBrand("logo")}
 	if got := videoProductAssetIDs(b); len(got) != 2 || got[0] != "a" || got[1] != "scene" {
-		t.Fatalf("unused assets leaked: %v", got)
+		t.Fatalf("post-only logo entered video generation: %v", got)
 	}
 	template := VideoTemplate{ID: "t", Version: "1", MinAssets: 2, AspectRatios: []string{"9:16"}, DurationRange: TemplateDurationRange{Min: 10, Max: 60}, VerifiedModelIDs: []string{"v"}}
 	if _, err := validateTemplateSelection(b, []VideoTemplate{template}); err == nil {

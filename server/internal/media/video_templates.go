@@ -264,7 +264,12 @@ func validateTemplateSelection(b Brief, templates []VideoTemplate) (VideoTemplat
 	if b.AssetUnderstanding != nil {
 		assetCount = 0
 		for _, asset := range b.AssetUnderstanding.Assets {
-			if asset.Role == "product" {
+			// 片尾绑定优先于识图角色；不参与生成的图片不能补足模板主体数，与客户端一致。
+			if b.Finishing != nil && b.Finishing.Brand != nil && asset.AssetID == b.Finishing.Brand.LogoAssetID {
+				continue
+			}
+			// 品牌/IP 可用角色造型图锁身份；Logo 和场景图不能补足商品证据。
+			if asset.Role == "product" || (t.Family == "brand" && asset.Role == "character") {
 				assetCount++
 			}
 		}

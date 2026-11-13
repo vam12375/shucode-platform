@@ -24,6 +24,10 @@ func validateSelectedImageUsage(b Brief, p Plan) error {
 		}
 	}
 	for _, id := range b.AssetIDs {
+		// 原因：只有显式绑定片尾层的图片由合成使用；role=logo 本身不能代替实际输入。
+		if b.Finishing != nil && b.Finishing.Brand != nil && id == b.Finishing.Brand.LogoAssetID {
+			continue
+		}
 		if !used[id] {
 			return fmt.Errorf("video_story_selected_asset_missing")
 		}

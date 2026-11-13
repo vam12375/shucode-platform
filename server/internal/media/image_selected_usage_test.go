@@ -46,6 +46,31 @@ func TestImageFirstSelectedImagesRequireActualUsage(t *testing.T) {
 	}
 }
 
+func TestImageFirstPostOnlyLogoCoverageAndCapacity(t *testing.T) {
+	b, plan, models := imageSelectedPlanFixture(2, []int{15})
+	b.ReferenceMode = "frames"
+	plan.Shots[0].AssetID = b.AssetIDs[0]
+	plan.Shots[0].Creative.AssetIDs = b.AssetIDs[:1]
+	plan.Story.AssetRoles[1].Role = "logo"
+	if err := validateSelectedImageUsage(b, plan); err == nil {
+		t.Fatal("advisory logo role bypassed actual usage")
+	}
+	if got := planImageGenerationDurations(b, models[0]); !reflect.DeepEqual(got, []int{8, 7}) {
+		t.Fatal("unbound logo lost input capacity", got)
+	}
+	b.Finishing.Brand = testVideoBrand(b.AssetIDs[1])
+	if _, _, err := BuildShots(b, plan, models); err != nil {
+		t.Fatal("post-only logo blocked the generated subject", err)
+	}
+	if got := planImageGenerationDurations(b, models[0]); !reflect.DeepEqual(got, []int{15}) {
+		t.Fatal("post-only logo added a paid generation segment", got)
+	}
+	b.Finishing.Brand.LogoAssetID = "foreign"
+	if err := validateSelectedImageUsage(b, plan); err == nil {
+		t.Fatal("unrelated logo binding bypassed selected image coverage")
+	}
+}
+
 func TestImageFirstAllocationUsesActualReferenceCapacity(t *testing.T) {
 	b, plan, models := imageSelectedPlanFixture(10, []int{8, 7})
 	if got := planImageGenerationDurations(b, models[0]); !reflect.DeepEqual(got, []int{8, 7}) {

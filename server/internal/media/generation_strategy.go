@@ -161,7 +161,18 @@ func planImageGenerationDurations(b Brief, m Model) []int {
 	if limit < 1 {
 		return nil
 	}
-	return planGenerationDurations(b.Duration, m, max(1, (len(b.AssetIDs)+limit-1)/limit))
+	// 原因：已绑定片尾的 Logo 不进入供应商输入，也不应产生额外付费生成段。
+	logo := ""
+	if b.Finishing != nil && b.Finishing.Brand != nil {
+		logo = b.Finishing.Brand.LogoAssetID
+	}
+	assets := 0
+	for _, id := range b.AssetIDs {
+		if id != logo {
+			assets++
+		}
+	}
+	return planGenerationDurations(b.Duration, m, max(1, (assets+limit-1)/limit))
 }
 
 func validateGenerationPlan(b Brief, p Plan, m Model) error {

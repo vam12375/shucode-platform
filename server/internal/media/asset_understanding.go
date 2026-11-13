@@ -55,22 +55,30 @@ func validateAssetUnderstanding(b Brief) error {
 	}
 	seen := map[string]bool{}
 	groups := map[string]bool{}
+	characters := 0
 	for _, asset := range o.Assets {
 		if seen[asset.AssetID] || !slices.Contains(b.AssetIDs, asset.AssetID) || !boundedNonempty(asset.AssetID, 200) {
 			return fmt.Errorf("video_understanding_assets_invalid")
 		}
 		seen[asset.AssetID] = true
-		if !slices.Contains([]string{"product", "scene", "style", "logo", "unused"}, asset.Role) || !boundedNonempty(asset.Description, 1000) || utf8.RuneCountInString(asset.SubjectGroup) > 100 {
+		if !slices.Contains([]string{"product", "character", "scene", "style", "logo", "unused"}, asset.Role) || !boundedNonempty(asset.Description, 1000) || utf8.RuneCountInString(asset.SubjectGroup) > 100 {
 			return fmt.Errorf("video_understanding_invalid_output")
 		}
 		if asset.Role == "product" {
 			groups[strings.TrimSpace(asset.SubjectGroup)] = true
 		}
+		// 角色图锁定各自身份，不应因有多个剧情角色被当作商品歧义拦截。
+		if asset.Role == "character" {
+			characters++
+			if strings.TrimSpace(asset.SubjectGroup) == "" {
+				return fmt.Errorf("video_understanding_subject_ambiguous")
+			}
+		}
 	}
-	if len(groups) == 0 {
+	if len(groups) == 0 && characters == 0 {
 		return fmt.Errorf("video_understanding_subject_required")
 	}
-	if len(groups) != 1 || groups[""] || strings.TrimSpace(o.Ambiguity) != "" {
+	if len(groups) > 1 || groups[""] || strings.TrimSpace(o.Ambiguity) != "" {
 		return fmt.Errorf("video_understanding_subject_ambiguous")
 	}
 	return nil
