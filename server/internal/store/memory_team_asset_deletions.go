@@ -207,6 +207,8 @@ func (s *memoryStore) ReviewTeamAssetDeletion(ctx context.Context, teamID, actor
 		delete(s.teamAssets[teamID], r.AssetID)
 		delete(s.teamAssetBlobIDs[teamID], asset.BlobID)
 		s.teamAssetUsedBytes[teamID] -= asset.Size
+		s.teamAssetRevisions[teamID]++
+		delete(s.teamAssetTags, teamID+":"+asset.ID)
 	}
 	r.Status = status
 	r.ReviewedByID = actorID

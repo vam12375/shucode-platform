@@ -102,7 +102,7 @@ func (s *PostgresStore) commitTeamAsset(ctx context.Context, teamID string, reco
 	if err != nil {
 		return TeamAssetRecord{}, false, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE teams SET team_asset_used_bytes=$2 WHERE id=$1::uuid`, teamID, used+record.Size); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE teams SET team_asset_used_bytes=$2, team_asset_revision=team_asset_revision+1 WHERE id=$1::uuid`, teamID, used+record.Size); err != nil {
 		return TeamAssetRecord{}, false, err
 	}
 	if err := tx.Commit(ctx); err != nil {

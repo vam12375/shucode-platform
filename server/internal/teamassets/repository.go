@@ -25,7 +25,7 @@ func fromStoreRecord(record store.TeamAssetRecord) Record {
 	return Record{
 		Asset: Asset{
 			ID: record.ID, Name: record.Name, Kind: record.Kind, Mime: record.Mime, Size: record.Size,
-			CreatedAt: record.CreatedAt, UploadedBy: Uploader{ID: record.UploadedByID, Name: record.UploadedByName},
+			CreatedAt: record.CreatedAt, UploadedBy: Uploader{ID: record.UploadedByID, Name: record.UploadedByName}, ContentHash: record.SHA256,
 		},
 		SHA256: record.SHA256, BlobID: record.BlobID,
 	}
@@ -49,6 +49,8 @@ func mapStoreError(err error) error {
 		return ErrForbidden
 	case errors.Is(err, store.ErrInvalidInput):
 		return ErrInvalid
+	case errors.Is(err, store.ErrTeamAssetSnapshotChanged):
+		return ErrSnapshotChanged
 	default:
 		return err
 	}

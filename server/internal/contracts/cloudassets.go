@@ -15,13 +15,20 @@ type CloudAssetUploader struct {
 }
 
 type CloudAsset struct {
-	ID         string             `json:"id"`
-	Name       string             `json:"name"`
-	Kind       string             `json:"kind"`
-	Mime       string             `json:"mime"`
-	Size       int64              `json:"size"`
-	CreatedAt  time.Time          `json:"createdAt"`
-	UploadedBy CloudAssetUploader `json:"uploadedBy"`
+	ID          string             `json:"id"`
+	Name        string             `json:"name"`
+	Kind        string             `json:"kind"`
+	Mime        string             `json:"mime"`
+	Size        int64              `json:"size"`
+	CreatedAt   time.Time          `json:"createdAt"`
+	UploadedBy  CloudAssetUploader `json:"uploadedBy"`
+	ContentHash string             `json:"contentHash,omitempty"`
+}
+
+type ManagedCloudAsset struct {
+	CloudAsset
+	Tags     []string `json:"tags"`
+	Favorite bool     `json:"favorite"`
 }
 
 type CloudAssetStorage struct {
@@ -64,4 +71,37 @@ type CloudAssetDeletionOverview struct {
 	Requests     []CloudAssetDeletionRequest `json:"requests"`
 	PendingCount int64                       `json:"pendingCount"`
 	NextCursor   *string                     `json:"nextCursor"`
+}
+
+type CloudAssetKindFacet struct {
+	Kind  string `json:"kind"`
+	Count int64  `json:"count"`
+	Bytes int64  `json:"bytes"`
+}
+type CloudAssetUploaderFacet struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Count int64  `json:"count"`
+}
+type CloudAssetFacets struct {
+	Total              int64                     `json:"total"`
+	Kinds              []CloudAssetKindFacet     `json:"kinds"`
+	Uploaders          []CloudAssetUploaderFacet `json:"uploaders"`
+	Tags               []string                  `json:"tags"`
+	TagsTruncated      bool                      `json:"tagsTruncated"`
+	UploadersTruncated bool                      `json:"uploadersTruncated"`
+}
+type CloudAssetCapabilities struct {
+	Management  bool `json:"management"`
+	Thumbnail   bool `json:"thumbnail"`
+	ContentHash bool `json:"contentHash"`
+}
+type ManagedCloudAssetPage struct {
+	Team         CloudAssetTeam         `json:"team"`
+	Assets       []ManagedCloudAsset    `json:"assets"`
+	NextCursor   *string                `json:"nextCursor"`
+	Revision     string                 `json:"revision"`
+	NotModified  bool                   `json:"notModified"`
+	Facets       CloudAssetFacets       `json:"facets"`
+	Capabilities CloudAssetCapabilities `json:"capabilities"`
 }

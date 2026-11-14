@@ -89,7 +89,7 @@ func assetKind(mime, name string) string {
 	}
 }
 
-func (s Service) Upload(ctx context.Context, team, userID, userName, id, name string, reader io.Reader) (Asset, error) {
+func (s Service) Upload(ctx context.Context, team, userID, userName, id, name string, reader io.Reader, expectedHash ...string) (Asset, error) {
 	if !validSegment(team) || userID == "" || !validID(id) || !validName(name) || reader == nil {
 		return Asset{}, ErrInvalid
 	}
@@ -111,6 +111,14 @@ func (s Service) Upload(ctx context.Context, team, userID, userName, id, name st
 			return Asset{}, ErrSizeLimit
 		}
 		return Asset{}, err
+	}
+	digestHex := hex.EncodeToString(digest.Sum(nil))
+	if len(expectedHash) > 0 && expectedHash[0] != "" && expectedHash[0] != digestHex {
+		// 平台提交前验证实际字节；源文件在上传期间变化不能留下已受理的混合内容。
+		if err := os.Remove(s.Blobs.Path(team, blobID)); err != nil {
+			return Asset{}, err
+		}
+		return Asset{}, ErrContentHash
 	}
 	record := Record{Asset: Asset{
 		ID: id, Name: name, Kind: assetKind(mime, name), Mime: mime, Size: size,

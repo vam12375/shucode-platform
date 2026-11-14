@@ -5631,5 +5631,95 @@
       },
       "ok": false
     }
+  ],
+  "managedCloudAssetPages": [
+    {
+      "team": {
+        "id": "team-fixture",
+        "name": "契约团队",
+        "storage": {
+          "usedBytes": 104857600,
+          "limitBytes": 5368709120
+        }
+      },
+      "assets": [
+        {
+          "id": "650f904c-7862-43f2-8e96-2a47b7c131e2",
+          "name": "分析📊.md",
+          "kind": "document",
+          "mime": "text/plain; charset=utf-8",
+          "size": 104857600,
+          "createdAt": "2026-10-21T00:00:00Z",
+          "uploadedBy": {
+            "id": "user-fixture",
+            "name": "成员"
+          },
+          "contentHash": "abababababababababababababababababababababababababababababababab",
+          "tags": [
+            "素材",
+            "🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬"
+          ],
+          "favorite": true
+        }
+      ],
+      "nextCursor": "opaque-cursor",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:7",
+      "notModified": false,
+      "capabilities": {
+        "management": true,
+        "thumbnail": true,
+        "contentHash": true
+      },
+      "facets": {
+        "total": 101,
+        "kinds": [
+          {
+            "kind": "image",
+            "count": 101,
+            "bytes": 505
+          }
+        ],
+        "uploaders": [
+          {
+            "id": "user-fixture",
+            "name": "成员",
+            "count": 101
+          }
+        ],
+        "tags": [
+          "素材",
+          "🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬🎬"
+        ],
+        "tagsTruncated": false,
+        "uploadersTruncated": false
+      }
+    },
+    {
+      "team": {
+        "id": "team-fixture",
+        "name": "契约团队",
+        "storage": {
+          "usedBytes": 104857600,
+          "limitBytes": 5368709120
+        }
+      },
+      "assets": [],
+      "nextCursor": null,
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:7",
+      "notModified": true,
+      "capabilities": {
+        "management": true,
+        "thumbnail": true,
+        "contentHash": true
+      },
+      "facets": {
+        "total": 0,
+        "kinds": [],
+        "uploaders": [],
+        "tags": [],
+        "tagsTruncated": false,
+        "uploadersTruncated": false
+      }
+    }
   ]
 }

@@ -73,6 +73,7 @@ func (s *memoryStore) commitTeamAsset(ctx context.Context, teamID string, record
 	}
 	blobIDs[record.BlobID] = record.ID
 	s.teamAssetUsedBytes[teamID] = used + record.Size
+	s.teamAssetRevisions[teamID]++
 	return record, true, nil
 }
 

@@ -14,6 +14,7 @@ const (
 )
 
 var (
+	ErrContentHash  = errors.New("team_asset_content_hash_mismatch")
 	ErrInvalid      = errors.New("team_asset_invalid_input")
 	ErrSizeLimit    = errors.New("team_asset_size_limit")
 	ErrStorageLimit = errors.New("team_asset_storage_limit")

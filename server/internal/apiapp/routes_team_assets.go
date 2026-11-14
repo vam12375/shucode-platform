@@ -6,6 +6,7 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"regexp"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -51,10 +52,15 @@ func registerTeamAssetRoutes(router *gin.Engine, deps *Deps) {
 		return auth, membership, true
 	}
 	registerTeamAssetDeletionRoutes(assets, deps, service, resolveActor)
+	registerTeamAssetManagementRoutes(assets, deps, service, resolveActor)
 
 	assets.GET("", func(c *gin.Context) {
-		_, membership, ok := resolveActor(c)
+		auth, membership, ok := resolveActor(c)
 		if !ok {
+			return
+		}
+		if c.Query("v") == "2" {
+			serveManagedTeamAssets(c, deps, service, auth, membership)
 			return
 		}
 		page, err := service.List(c.Request.Context(), membership.Team.ID, c.Query("cursor"))
@@ -90,9 +96,17 @@ func registerTeamAssetRoutes(router *gin.Engine, deps *Deps) {
 			defer c.Request.MultipartForm.RemoveAll()
 		}
 		form := c.Request.MultipartForm
-		if form == nil || len(form.Value) != 1 || len(form.Value["id"]) != 1 || len(form.File) != 1 || len(form.File["file"]) != 1 {
+		if form == nil || len(form.Value) < 1 || len(form.Value) > 2 || (len(form.Value) == 2 && len(form.Value["contentHash"]) != 1) || len(form.Value["id"]) != 1 || len(form.File) != 1 || len(form.File["file"]) != 1 {
 			c.JSON(http.StatusBadRequest, fail(http.StatusBadRequest, "team_asset_invalid"))
 			return
+		}
+		expectedHash := ""
+		if values, ok := form.Value["contentHash"]; ok {
+			if len(values) != 1 || !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(values[0]) {
+				c.JSON(400, fail(400, "team_asset_invalid"))
+				return
+			}
+			expectedHash = values[0]
 		}
 		id := form.Value["id"][0]
 		parsedID, parseErr := uuid.Parse(id)
@@ -106,7 +120,7 @@ func registerTeamAssetRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
-		asset, uploadErr := service.Upload(c.Request.Context(), membership.Team.ID, auth.User.ID, auth.User.DisplayName, id, header.Filename, file)
+		asset, uploadErr := service.Upload(c.Request.Context(), membership.Team.ID, auth.User.ID, auth.User.DisplayName, id, header.Filename, file, expectedHash)
 		closeErr := file.Close()
 		if uploadErr != nil {
 			teamAssetRouteError(c, deps, uploadErr)
@@ -163,6 +177,12 @@ func registerTeamAssetRoutes(router *gin.Engine, deps *Deps) {
 
 func teamAssetRouteError(c *gin.Context, deps *Deps, err error) {
 	switch {
+	case errors.Is(err, teamassets.ErrContentHash):
+		c.JSON(422, fail(422, "team_asset_content_hash_mismatch"))
+	case errors.Is(err, teamassets.ErrThumbnailUnsupported):
+		c.JSON(415, fail(415, "team_asset_thumbnail_unsupported"))
+	case errors.Is(err, teamassets.ErrSnapshotChanged):
+		c.JSON(409, fail(409, "team_asset_snapshot_changed"))
 	case errors.Is(err, teamassets.ErrInvalid):
 		c.JSON(http.StatusBadRequest, fail(http.StatusBadRequest, "team_asset_invalid"))
 	case errors.Is(err, teamassets.ErrSizeLimit):

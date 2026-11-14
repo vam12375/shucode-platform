@@ -48,6 +48,9 @@ type PlatformStore interface {
 	CommitTeamAssetForActiveMember(ctx context.Context, teamID string, record TeamAssetRecord, limitBytes int64) (saved TeamAssetRecord, created bool, err error)
 	IsTeamAssetDeleted(ctx context.Context, teamID, id string) (bool, error)
 	GetTeamAsset(ctx context.Context, teamID, id string) (*TeamAssetRecord, error)
+	QueryTeamAssets(ctx context.Context, teamID, actorID string, query TeamAssetQuery) (TeamAssetQueryPage, error)
+	SetTeamAssetFavorite(ctx context.Context, teamID, actorID, assetID string, favorite bool) error
+	SetTeamAssetTags(ctx context.Context, teamID, actorID, assetID string, tags []string) error
 	// ListTeamAssetPage returns created_at/id DESC and total usage from one snapshot.
 	ListTeamAssetPage(ctx context.Context, teamID string, beforeCreatedAt *time.Time, beforeID string, limit int) (TeamAssetPage, error)
 	RequestTeamAssetDeletion(ctx context.Context, teamID, actorID, assetID, requestID string, at time.Time) (TeamAssetDeletionRecord, error)

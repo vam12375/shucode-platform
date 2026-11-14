@@ -242,7 +242,7 @@ func (s *PostgresStore) ReviewTeamAssetDeletion(ctx context.Context, teamID, act
 		if tag.RowsAffected() != 1 {
 			return TeamAssetDeletionRecord{}, ErrTeamAssetConflict
 		}
-		tag, err = tx.Exec(ctx, `UPDATE teams SET team_asset_used_bytes=team_asset_used_bytes-$2 WHERE id=$1::uuid AND team_asset_used_bytes >= $2`, teamID, r.Size)
+		tag, err = tx.Exec(ctx, `UPDATE teams SET team_asset_used_bytes=team_asset_used_bytes-$2, team_asset_revision=team_asset_revision+1 WHERE id=$1::uuid AND team_asset_used_bytes >= $2`, teamID, r.Size)
 		if err != nil {
 			return TeamAssetDeletionRecord{}, err
 		}
