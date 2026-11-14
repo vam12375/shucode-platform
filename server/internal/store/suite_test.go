@@ -72,9 +72,11 @@ func runSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 		}
 		created.Preferences[2] = 'x'
 		read, err := s.GetAgentMediaPreferences(ctx, user.ID)
-		if err != nil || read == nil || string(read.Preferences) != `{"imageModelId":"sku-2k"}` {
+		if err != nil || read == nil {
 			t.Fatalf("returned preference bytes must be isolated: %+v %v", read, err)
 		}
+		// JSONB 会规范化空白；比较 JSON 值仍能发现副本被修改，不能把格式变化误判为别名泄漏。
+		assertJSONEq(t, json.RawMessage(read.Preferences), json.RawMessage(`{"imageModelId":"sku-2k"}`), "returned preference bytes must be isolated")
 		updated, err := s.SaveAgentMediaPreferences(ctx, user.ID, ptr(int64(1)), []byte(`{"imageResolution":"2K"}`), time.Now().UTC())
 		if err != nil || updated == nil || updated.Version != 2 {
 			t.Fatalf("versioned update: %+v %v", updated, err)
