@@ -5,6 +5,8 @@
 
 FROM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS base
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+# Node 的原生 fetch 默认不读取代理环境变量，Corepack 下载需显式启用。
+ENV NODE_USE_ENV_PROXY=1
 WORKDIR /app
 RUN corepack enable && chown node:node /app
 USER node
@@ -14,12 +16,7 @@ COPY --chown=node:node packages/contracts/package.json packages/contracts/packag
 RUN pnpm install --frozen-lockfile
 
 # 单独构建控制台，产物（apps/console/dist）并入 api 镜像。
-# 版本信息由 CI 传入；本地构建未传时控制台回退到生效的 Release revision。
 FROM base AS console-build
-ARG APP_VERSION=""
-ARG APP_SUBJECT=""
-ENV VITE_APP_VERSION=$APP_VERSION
-ENV VITE_APP_SUBJECT=$APP_SUBJECT
 COPY --chown=node:node . .
 RUN pnpm --filter @shucode-platform/console build
 
