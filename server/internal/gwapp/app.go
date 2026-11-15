@@ -623,7 +623,7 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	// ---- 解析上游目标：渠道池按 priority/weight 产出候选；无路由时兼容回退 ----
 	targets, routeErr := resolveTargets(ctx, deps, model, spec)
 	if routeErr != nil {
-		spec.errorResponse(c, routeErr.Status, routeErr.Type, routeErr.Message)
+		spec.errorResponse(c, routeErr.Status, routeErr.Type, publicProviderFailure)
 		return
 	}
 
@@ -976,11 +976,9 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 	}
 
 	var (
-		lastStatus      = 502
-		lastErrorType   = "upstream_unavailable"
-		lastMessage     = "上游供应商暂时不可用，请稍后重试"
-		lastBody        []byte
-		lastContentType = "application/json"
+		lastStatus    = 502
+		lastErrorType = "upstream_unavailable"
+		lastMessage   = "上游供应商暂时不可用，请稍后重试"
 	)
 
 	for attempt := int64(0); attempt < maxAttempts; attempt++ {
@@ -1055,7 +1053,6 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			reportFailure(target.ProviderID, errorType)
 			lastStatus, lastErrorType = 502, errorType
 			lastMessage = "上游供应商暂时不可用，请稍后重试"
-			lastBody = nil
 			if headerTimedOut.Load() {
 				lastStatus, lastMessage = 504, "上游响应超时，请稍后重试"
 			}
@@ -1069,7 +1066,7 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			headerTimer.Stop()
-			text, _ := io.ReadAll(io.LimitReader(resp.Body, maxUpstreamErrorBytes))
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxUpstreamErrorBytes))
 			resp.Body.Close()
 			cancelUpstream()
 			if errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
@@ -1079,8 +1076,7 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 				respondLifetimeTimeout()
 				return
 			}
-			// 上游/中间代理可能在错误正文回显密钥；返回普通调用者前先脱敏。
-			text = redactSecret(text, target.APIKey)
+			// 错误正文不可信，不能透传供应商身份、地址、诊断或凭据。
 			errorType := "upstream_" + strconv.Itoa(resp.StatusCode)
 			deps.Logger.Warn("上游返回错误", "requestId", requestID, "attempt", attempt+1,
 				"providerId", target.ProviderID, "status", resp.StatusCode)
@@ -1088,24 +1084,15 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			if resp.StatusCode >= 500 || resp.StatusCode == 401 || resp.StatusCode == 403 {
 				reportFailure(target.ProviderID, errorType)
 			}
-			contentType := resp.Header.Get("content-type")
-			if contentType == "" {
-				contentType = "application/json"
-			}
 			lastStatus, lastErrorType = resp.StatusCode, errorType
-			lastBody, lastContentType = text, contentType
-			lastMessage = "upstream error"
+			lastMessage = publicProviderFailure
 			if retryableUpstreamStatus(resp.StatusCode) && attempt+1 < maxAttempts {
 				recordAttempt(target, attempt, attemptStarted, &resp.StatusCode, errorType, providerRequestIDFrom(resp), false)
 				continue
 			}
 			recordAttempt(target, attempt, attemptStarted, &resp.StatusCode, errorType, providerRequestIDFrom(resp), true)
 			failWithUsage(target, store.UsageStatusError, errorType)
-			if len(text) == 0 {
-				spec.errorResponse(c, resp.StatusCode, "api_error", "upstream error")
-				return
-			}
-			c.Data(resp.StatusCode, contentType, text)
+			spec.errorResponse(c, resp.StatusCode, "api_error", publicProviderFailure)
 			return
 		}
 
@@ -1162,7 +1149,7 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 						finishBackgroundGeneration(ctx, deps, *job, redactSecret(text, target.APIKey), responseStatus, resp.Header.Get("content-type"))
 					}
 				}
-				c.Data(200, "application/json", text)
+				c.Data(200, "application/json", publicProviderPayload(text, false))
 				return
 			}
 
@@ -1177,7 +1164,7 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 			if contentType == "" {
 				contentType = "application/json"
 			}
-			c.Data(200, contentType, text)
+			c.Data(200, contentType, publicProviderPayload(text, false))
 			return
 		}
 
@@ -1277,6 +1264,7 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 		c.Writer.WriteHeader(200)
 		c.Writer.Flush()
 
+		filter := &providerEventFilter{}
 		buf := make([]byte, 32*1024)
 		for {
 			n, readErr := resp.Body.Read(buf)
@@ -1300,7 +1288,15 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 					}
 				}
 				persistObservedBackgroundUsage()
-				if _, writeErr := c.Writer.Write(buf[:n]); writeErr != nil {
+				visible, filterErr := filter.push(buf[:n])
+				if filterErr != nil {
+					idleTimer.Stop()
+					cancelUpstream()
+					resp.Body.Close()
+					finalize(store.UsageStatusError)
+					return
+				}
+				if _, writeErr := c.Writer.Write(visible); writeErr != nil {
 					// 客户端断开同步终止上游并按已观察用量结算，不能估算未知尾部。
 					resp.Body.Close()
 					if errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
@@ -1348,10 +1344,6 @@ func handleProtocolRequest(c *gin.Context, deps Deps, spec protocolSpec) {
 
 	// 所有候选都失败（通常不会走到这里，循环末次已提前返回）。
 	failWithUsage(lastTarget, store.UsageStatusError, lastErrorType)
-	if len(lastBody) > 0 {
-		c.Data(lastStatus, lastContentType, lastBody)
-		return
-	}
 	spec.errorResponse(c, lastStatus, "api_error", lastMessage)
 }
 

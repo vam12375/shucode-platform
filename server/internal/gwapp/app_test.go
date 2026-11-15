@@ -471,12 +471,12 @@ func TestUpstreamErrorRedactsAPIKey(t *testing.T) {
 		t.Fatalf("上游错误状态: %d", rec.Code)
 	}
 	if strings.Contains(rec.Body.String(), "upstream-key") ||
-		!strings.Contains(rec.Body.String(), "[redacted]") {
+		!strings.Contains(rec.Body.String(), publicProviderFailure) {
 		t.Fatalf("错误正文必须脱敏密钥: %s", rec.Body.String())
 	}
 }
 
-func TestUpstreamErrorPassthroughAndRelease(t *testing.T) {
+func TestUpstreamErrorProjectionAndRelease(t *testing.T) {
 	f := newGatewayFixture(t, nil)
 	f.setHandler(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "application/json")
@@ -484,8 +484,8 @@ func TestUpstreamErrorPassthroughAndRelease(t *testing.T) {
 		_, _ = w.Write([]byte(`{"error":"boom"}`))
 	})
 	rec := f.do("POST", "/v1/messages", f.token, `{"model":"claude-sonnet-4-5"}`)
-	if rec.Code != 500 || !strings.Contains(rec.Body.String(), "boom") {
-		t.Fatalf("上游错误应原样透传: %d %s", rec.Code, rec.Body.String())
+	if rec.Code != 500 || strings.Contains(rec.Body.String(), "boom") || !strings.Contains(rec.Body.String(), publicProviderFailure) {
+		t.Fatalf("上游错误应保留状态并隐藏正文: %d %s", rec.Code, rec.Body.String())
 	}
 	records := f.usageRecords()
 	if len(records) != 1 || records[0].Status != store.UsageStatusError || records[0].ErrorType != "upstream_500" {

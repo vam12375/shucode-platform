@@ -412,7 +412,7 @@ func handleBackgroundResponseProxy(c *gin.Context, deps Deps, method string, can
 		if contentType == "" {
 			contentType = "application/json"
 		}
-		c.Data(job.FinalStatus, contentType, job.FinalResponse)
+		c.Data(job.FinalStatus, contentType, publicProviderPayload(job.FinalResponse, false))
 		return
 	}
 	baseURL, apiKey, err := backgroundProvider(c.Request.Context(), deps, *job)
@@ -480,5 +480,9 @@ func handleBackgroundResponseProxy(c *gin.Context, deps Deps, method string, can
 		c.JSON(200, gin.H{"id": job.ResponseID, "object": "response", "deleted": true})
 		return
 	}
-	c.Data(resp.StatusCode, contentType, redactSecret(body, apiKey))
+	if resp.StatusCode >= 400 {
+		openAIError(c, resp.StatusCode, "api_error", publicProviderFailure)
+		return
+	}
+	c.Data(resp.StatusCode, contentType, publicProviderPayload(redactSecret(body, apiKey), false))
 }
