@@ -145,6 +145,12 @@ func mediaIdentity(c *gin.Context, deps *Deps) (*AuthenticatedDevice, *store.Tea
 	if personal {
 		m.Team.Name = "个人余额"
 	}
+	aliases, err := ensureMediaAliases(c.Request.Context(), deps.Store, nil)
+	if err != nil {
+		internalError(c, deps, err)
+		return nil, nil, false
+	}
+	c.Set(mediaAliasesContextKey, aliases)
 	return a, m, true
 }
 
@@ -166,7 +172,7 @@ func mediaError(c *gin.Context, deps *Deps, e error) {
 		return
 	}
 	deps.Logger.Warn("媒体操作失败", "error", e)
-	c.JSON(422, fail(422, e.Error()))
+	c.JSON(422, fail(422, publicMediaErrorCode(e.Error())))
 }
 func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 	if deps.Media == nil {
@@ -293,7 +299,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			}
 			templates[i].VerifiedModelIDs = visible
 		}
-		c.JSON(200, okData(gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": quota - used, "reservedMicro": int64(0), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "videoTemplates": templates, "assets": assets, "mediaLibrary": library, "projects": projects, "generations": generations, "compositionAvailable": media.CompositionAvailable(), "referencePricing": pricing, "capabilities": s.FinishingCapabilities(ctx), "mediaOrigin": s.Blobs.Origin}))
+		publicMediaData(c, deps, gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": quota - used, "reservedMicro": int64(0), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "videoTemplates": templates, "assets": assets, "mediaLibrary": library, "projects": projects, "generations": generations, "compositionAvailable": media.CompositionAvailable(), "referencePricing": pricing, "capabilities": s.FinishingCapabilities(ctx), "mediaOrigin": s.Blobs.Origin})
 	})
 	router.POST("/api/v1/media/assets", func(c *gin.Context) {
 		a, m, ok := mediaIdentity(c, deps)
@@ -319,7 +325,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			mediaError(c, deps, e)
 			return
 		}
-		c.JSON(200, okData(asset))
+		publicMediaData(c, deps, asset)
 	})
 	router.POST("/api/v1/media/projects", func(c *gin.Context) {
 		a, m, ok := mediaIdentity(c, deps)
@@ -342,7 +348,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			mediaError(c, deps, e)
 			return
 		}
-		c.JSON(200, okData(s.ProjectView(c.Request.Context(), p)))
+		publicMediaData(c, deps, s.ProjectView(c.Request.Context(), p))
 	})
 	router.GET("/api/v1/media/projects/:id", func(c *gin.Context) {
 		_, m, ok := mediaIdentity(c, deps)
@@ -358,7 +364,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			c.Status(404)
 			return
 		}
-		c.JSON(200, okData(s.ProjectView(c.Request.Context(), p)))
+		publicMediaData(c, deps, s.ProjectView(c.Request.Context(), p))
 	})
 	router.POST("/api/v1/media/projects/:id/:action", func(c *gin.Context) {
 		auth, m, ok := mediaIdentity(c, deps)
@@ -375,7 +381,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 				mediaError(c, deps, e)
 				return
 			}
-			c.JSON(200, okData(s.ProjectView(c.Request.Context(), p)))
+			publicMediaData(c, deps, s.ProjectView(c.Request.Context(), p))
 			return
 		}
 		var body struct {
@@ -449,7 +455,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			mediaError(c, deps, e)
 			return
 		}
-		c.JSON(200, okData(s.ProjectView(c.Request.Context(), p)))
+		publicMediaData(c, deps, s.ProjectView(c.Request.Context(), p))
 	})
 	router.GET("/console/api/media/models", func(c *gin.Context) {
 		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
@@ -553,7 +559,7 @@ func mediaBody(c *gin.Context, out any) bool {
 		c.JSON(400, fail(400, "视频参数不合法"))
 		return false
 	}
-	return true
+	return resolveMediaBodyAliases(c, out)
 }
 
 func publicMediaModels(models []media.Model) []gin.H {

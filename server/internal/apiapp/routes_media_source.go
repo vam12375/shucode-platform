@@ -27,7 +27,7 @@ func registerMediaSourceRoutes(router *gin.Engine, deps *Deps) {
 			mediaError(c, deps, err)
 			return
 		}
-		c.JSON(200, okData(p.View()))
+		publicMediaData(c, deps, p.View())
 	})
 	router.GET("/api/v1/media/analysis-models", func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")

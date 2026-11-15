@@ -23,6 +23,6 @@ func registerCanvasGenerationRoutes(router *gin.Engine, deps *Deps) {
 			mediaError(c, deps, e)
 			return
 		}
-		c.JSON(200, okData(p.View()))
+		publicMediaData(c, deps, p.View())
 	})
 }

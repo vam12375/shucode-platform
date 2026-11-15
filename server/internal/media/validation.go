@@ -47,7 +47,7 @@ func ValidateModels(models []Model) error {
 		unit := m.EffectiveBillingUnit()
 		ark25 := m.Adapter == "ark" && seedance25Model(m.UpstreamModel)
 		priceMissing := m.PriceMicro <= 0 && !(m.Kind == "video" && unit == BillingUnitToken && m.TokenPriceMicroPerMillion > 0)
-		if strings.TrimSpace(m.ID) == "" || m.Name == "" || seen[m.ID] || m.ProviderID == "" || m.UpstreamModel == "" || (m.Adapter != "ark" && m.Adapter != "toapis") || m.PriceVersion == "" || m.PriceMicro < 0 || priceMissing || m.PriceMicro > 100_000_000 || m.CostMicro < 0 || m.CostMicro > 100_000_000 {
+		if strings.TrimSpace(m.ID) == "" || strings.HasPrefix(m.ID, "mm_") || m.Name == "" || seen[m.ID] || m.ProviderID == "" || m.UpstreamModel == "" || (m.Adapter != "ark" && m.Adapter != "toapis") || m.PriceVersion == "" || m.PriceMicro < 0 || priceMissing || m.PriceMicro > 100_000_000 || m.CostMicro < 0 || m.CostMicro > 100_000_000 {
 			return ErrInvalid
 		}
 		if m.Kind == "image" && unit != "image" || m.Kind == "video" && unit != BillingUnitSecond && unit != BillingUnitRequest && unit != BillingUnitToken {

@@ -26,26 +26,44 @@ func agentPreferencesRequest(f *apiFixture, token, method, etag, body string) *h
 }
 
 func TestAgentMediaPreferencesVersionedAccountAPI(t *testing.T) {
-	f, token, _ := newUserConfigPolicyFixture(t)
+	f, token, _ := setupAgentRouteFixture(t)
 	get := agentPreferencesRequest(f, token, http.MethodGet, "", "")
-	if get.Code != http.StatusOK || get.Header().Get("etag") != `"agent-media-0"` || !strings.Contains(get.Body.String(), `"preferences":{}`) {
+	if get.Code != http.StatusOK || !strings.HasPrefix(get.Header().Get("etag"), `"agent-media-public-0-`) || !strings.Contains(get.Body.String(), `"preferences":{}`) {
 		t.Fatalf("initial GET: %d %s etag=%q", get.Code, get.Body.String(), get.Header().Get("etag"))
 	}
 	unchangedReq := httptest.NewRequest(http.MethodGet, agentMediaPreferencesPath, nil)
 	unchangedReq.Header.Set("authorization", "Bearer "+token)
-	unchangedReq.Header.Set("if-none-match", `"agent-media-0"`)
+	unchangedReq.Header.Set("if-none-match", get.Header().Get("etag"))
 	unchanged := httptest.NewRecorder()
 	f.engine.ServeHTTP(unchanged, unchangedReq)
 	if unchanged.Code != http.StatusNotModified {
 		t.Fatalf("matching ETag should return 304: %d %s", unchanged.Code, unchanged.Body.String())
 	}
-	created := agentPreferencesRequest(f, token, http.MethodPut, `"agent-media-0"`, `{"preferences":{"imageModelId":"sku-2k","imageResolution":"2K","imageAspectRatio":"16:9"}}`)
-	if created.Code != http.StatusOK || created.Header().Get("etag") != `"agent-media-1"` {
+	created := agentPreferencesRequest(f, token, http.MethodPut, `"agent-media-0"`, `{"preferences":{"imageModelId":"agent-image","imageResolution":"2K","imageAspectRatio":"16:9"}}`)
+	if created.Code != http.StatusOK || !strings.HasPrefix(created.Header().Get("etag"), `"agent-media-public-1-`) {
 		t.Fatalf("conditional create: %d %s etag=%q", created.Code, created.Body.String(), created.Header().Get("etag"))
 	}
 	conflict := agentPreferencesRequest(f, token, http.MethodPut, `"agent-media-0"`, `{"preferences":{"imageModelId":"stale"}}`)
-	if conflict.Code != http.StatusConflict || !strings.Contains(conflict.Body.String(), `"imageModelId":"sku-2k"`) || conflict.Header().Get("etag") != `"agent-media-1"` {
+	if conflict.Code != http.StatusConflict || !strings.Contains(conflict.Body.String(), publicMediaAliasForTest(t, f, "agent-image")) || conflict.Header().Get("etag") != created.Header().Get("etag") {
 		t.Fatalf("stale write should return authoritative value: %d %s", conflict.Code, conflict.Body.String())
+	}
+	legacyRead := httptest.NewRequest(http.MethodGet, agentMediaPreferencesPath, nil)
+	legacyRead.Header.Set("authorization", "Bearer "+token)
+	legacyRead.Header.Set("if-none-match", `"agent-media-1"`)
+	legacy := httptest.NewRecorder()
+	f.engine.ServeHTTP(legacy, legacyRead)
+	if legacy.Code != 200 || strings.Contains(legacy.Body.String(), "agent-image") {
+		t.Fatal("legacy cache was not upgraded", legacy.Code)
+	}
+	alias := publicMediaAliasForTest(t, f, "agent-image")
+	roundTrip := agentPreferencesRequest(f, token, http.MethodPut, created.Header().Get("etag"), `{"preferences":{"imageModelId":"`+alias+`"}}`)
+	if roundTrip.Code != 200 || !strings.Contains(roundTrip.Body.String(), alias) {
+		t.Fatal("public preference did not round trip", roundTrip.Code, roundTrip.Body.String())
+	}
+	deviceForPrefs, _ := f.store.FindDeviceTokenByHash(context.Background(), crypto.HashToken(token))
+	persisted, _ := f.store.GetAgentMediaPreferences(context.Background(), deviceForPrefs.UserID)
+	if !strings.Contains(string(persisted.Preferences), "agent-image") || strings.Contains(string(persisted.Preferences), alias) {
+		t.Fatal("public preference overwrote canonical ID")
 	}
 	for _, invalid := range []string{
 		`{"preferences":{"prompt":"not allowed"}}`,
@@ -70,7 +88,7 @@ func TestAgentMediaPreferencesVersionedAccountAPI(t *testing.T) {
 	}
 	otherToken := createAgentRouteDevice(t, f, other.ID)
 	otherPrefs := agentPreferencesRequest(f, otherToken, http.MethodGet, "", "")
-	if otherPrefs.Code != http.StatusOK || strings.Contains(otherPrefs.Body.String(), "sku-2k") {
+	if otherPrefs.Code != http.StatusOK || strings.Contains(otherPrefs.Body.String(), "agent-image") {
 		t.Fatalf("preferences leaked across accounts: %d %s", otherPrefs.Code, otherPrefs.Body.String())
 	}
 }

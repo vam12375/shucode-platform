@@ -2,6 +2,8 @@ package apiapp
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -61,25 +63,7 @@ func registerAgentMediaPreferencesRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
-		if record == nil {
-			if c.GetHeader("if-none-match") == `"agent-media-0"` {
-				c.Header("etag", `"agent-media-0"`)
-				c.Status(http.StatusNotModified)
-				return
-			}
-			c.Header("cache-control", "private, no-cache")
-			c.Header("etag", `"agent-media-0"`)
-			c.JSON(http.StatusOK, okData(agentMediaPreferencesResponse{
-				Version: 0, UpdatedAt: "", Preferences: json.RawMessage(`{}`),
-			}))
-			return
-		}
-		if c.GetHeader("if-none-match") == agentMediaPreferencesETag(record.Version) {
-			c.Header("etag", agentMediaPreferencesETag(record.Version))
-			c.Status(http.StatusNotModified)
-			return
-		}
-		writeAgentMediaPreferences(c, record)
+		writeAgentMediaPreferences(c, deps, auth, record, http.StatusOK)
 	})
 
 	router.PUT(agentMediaPreferencesPath, func(c *gin.Context) {
@@ -98,6 +82,9 @@ func registerAgentMediaPreferencesRoutes(router *gin.Engine, deps *Deps) {
 		var trailing any
 		if err := decoder.Decode(&trailing); err != io.EOF {
 			c.JSON(http.StatusBadRequest, fail(http.StatusBadRequest, "请求体只能包含一个 JSON 对象"))
+			return
+		}
+		if !resolveMediaBodyAliases(c, &input) {
 			return
 		}
 		preferences, valid := validateAgentMediaPreferences(input.Preferences)
@@ -121,15 +108,14 @@ func registerAgentMediaPreferencesRoutes(router *gin.Engine, deps *Deps) {
 				c.JSON(http.StatusConflict, fail(http.StatusConflict, "偏好版本冲突，请重新读取"))
 				return
 			}
-			c.Header("etag", agentMediaPreferencesETag(current.Version))
-			c.JSON(http.StatusConflict, gin.H{"code": http.StatusConflict, "msg": "偏好版本冲突，请重新读取", "data": agentMediaPreferencesPayload(current)})
+			writeAgentMediaPreferences(c, deps, auth, current, http.StatusConflict)
 			return
 		}
 		if err != nil {
 			internalError(c, deps, err)
 			return
 		}
-		writeAgentMediaPreferences(c, record)
+		writeAgentMediaPreferences(c, deps, auth, record, http.StatusOK)
 		deps.ConfigEvents.Emit(events.DomainPreferences)
 	})
 }
@@ -144,11 +130,13 @@ func authenticateAgentMediaPreferences(c *gin.Context, deps *Deps) (*Authenticat
 		c.JSON(http.StatusUnauthorized, fail(http.StatusUnauthorized, "凭据无效或已吊销"))
 		return nil, false
 	}
+	aliases, err := ensureMediaAliases(c.Request.Context(), deps.Store, nil)
+	if err != nil {
+		internalError(c, deps, err)
+		return nil, false
+	}
+	c.Set(mediaAliasesContextKey, aliases)
 	return auth, true
-}
-
-func agentMediaPreferencesETag(version int64) string {
-	return `"agent-media-` + strconv.FormatInt(version, 10) + `"`
 }
 
 func parseAgentMediaIfMatch(value string) (*int64, bool) {
@@ -160,6 +148,16 @@ func parseAgentMediaIfMatch(value string) (*int64, bool) {
 		return nil, false
 	}
 	raw := strings.TrimSuffix(strings.TrimPrefix(value, `"agent-media-`), `"`)
+	if strings.HasPrefix(raw, "public-") {
+		parts := strings.Split(strings.TrimPrefix(raw, "public-"), "-")
+		if len(parts) != 2 || len(parts[1]) != 16 {
+			return nil, false
+		}
+		if _, err := hex.DecodeString(parts[1]); err != nil {
+			return nil, false
+		}
+		raw = parts[0]
+	}
 	version, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || version < 0 {
 		return nil, false
@@ -171,8 +169,82 @@ func agentMediaPreferencesPayload(record *store.AgentMediaPreferencesRecord) age
 	return agentMediaPreferencesResponse{Version: record.Version, UpdatedAt: record.UpdatedAt.UTC().Format(time.RFC3339Nano), Preferences: json.RawMessage(append([]byte(nil), record.Preferences...))}
 }
 
-func writeAgentMediaPreferences(c *gin.Context, record *store.AgentMediaPreferencesRecord) {
+// 偏好也是模型身份出口。只映射当前可用目录，过期/未授权的模型选择不回显；
+// 未提交草稿不因此创建无限量全局别名，且不修改持久化偏好或其版本。
+func writeAgentMediaPreferences(c *gin.Context, deps *Deps, auth *AuthenticatedDevice, record *store.AgentMediaPreferencesRecord, status int) {
+	payload := agentMediaPreferencesResponse{Preferences: json.RawMessage(`{}`)}
+	if record != nil {
+		payload = agentMediaPreferencesPayload(record)
+	}
+	var preferences map[string]string
+	if err := json.Unmarshal(payload.Preferences, &preferences); err != nil {
+		internalError(c, deps, err)
+		return
+	}
+	allowed := map[string]bool{}
+	account, err := store.ResolveBillingAccount(c.Request.Context(), deps.Store, auth.User.ID)
+	if err != nil {
+		internalError(c, deps, err)
+		return
+	}
+	if account != nil && account.Team.DisabledAt == nil && account.MemberDisabledAt == nil {
+		policy, err := deps.Store.GetTeamPolicy(c.Request.Context(), account.Team.ID)
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		models, err := deps.Media.Repo.Models(c.Request.Context())
+		if err != nil {
+			internalError(c, deps, err)
+			return
+		}
+		for _, model := range models {
+			if store.TeamModelAllowed(policy, model.ID) {
+				allowed[model.ID] = true
+			}
+		}
+	}
+	ids := []string{}
+	for id := range allowed {
+		ids = append(ids, id)
+	}
+	aliases, err := ensureMediaAliases(c.Request.Context(), deps.Store, ids)
+	if err != nil {
+		internalError(c, deps, err)
+		return
+	}
+	reverse := map[string]string{}
+	for id, alias := range aliases {
+		reverse[alias] = id
+	}
+	for _, key := range []string{"imageModelId", "videoModelId"} {
+		id, exists := preferences[key]
+		if !exists {
+			continue
+		}
+		if internal, exists := reverse[id]; exists {
+			id = internal
+		}
+		if allowed[id] {
+			preferences[key] = aliases[id]
+		} else {
+			delete(preferences, key)
+		}
+	}
+	payload.Preferences, _ = json.Marshal(preferences)
+	encoded, _ := json.Marshal(payload)
+	digest := sha256.Sum256(encoded)
+	// 旧 ETag 对应含内部 ID 的表示，不能用 304 让客户端继续沿用旧响应。
+	etag := `"agent-media-public-` + strconv.FormatInt(payload.Version, 10) + "-" + hex.EncodeToString(digest[:8]) + `"`
 	c.Header("cache-control", "private, no-cache")
-	c.Header("etag", agentMediaPreferencesETag(record.Version))
-	c.JSON(http.StatusOK, okData(agentMediaPreferencesPayload(record)))
+	c.Header("etag", etag)
+	if status == http.StatusOK && c.Request.Method == http.MethodGet && c.GetHeader("if-none-match") == etag {
+		c.Status(http.StatusNotModified)
+		return
+	}
+	if status == http.StatusConflict {
+		c.JSON(status, gin.H{"code": status, "msg": "偏好版本冲突，请重新读取", "data": payload})
+		return
+	}
+	c.JSON(status, okData(payload))
 }

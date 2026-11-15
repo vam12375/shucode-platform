@@ -67,7 +67,7 @@ func TestTemplateOverviewVerificationRespectsTeamModelWhitelist(t *testing.T) {
 	data := dataOf(t, response)
 	template := data["videoTemplates"].([]any)[0].(map[string]any)
 	verified := template["verifiedModelIds"].([]any)
-	if len(verified) != 1 || verified[0] != "allowed-video" {
+	if len(verified) != 1 || verified[0] != publicMediaAliasForTest(t, f, "allowed-video") {
 		t.Fatalf("verification leaked model permission scope: %+v", verified)
 	}
 }

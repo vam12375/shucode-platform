@@ -152,7 +152,7 @@ func TestMediaAuthUploadTeamIsolationAndAdminBoundary(t *testing.T) {
 		} `json:"data"`
 	}
 	json.Unmarshal(w.Body.Bytes(), &overview)
-	if w.Code != 200 || len(overview.Data.Models) != 1 || overview.Data.Models[0].ID != "v" {
+	if w.Code != 200 || len(overview.Data.Models) != 1 || overview.Data.Models[0].ID != publicMediaAliasForTest(t, f, "v") {
 		t.Fatal(w.Body.String())
 	}
 	if overview.Data.Models[0].VideoReference == nil || overview.Data.Models[0].VideoReference.CostMicro != 0 || strings.Contains(w.Body.String(), `"costMicro"`) {

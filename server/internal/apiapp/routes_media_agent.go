@@ -135,13 +135,13 @@ func registerAgentGenerationRoutes(router *gin.Engine, deps *Deps, basePath, ent
 		if name == "" {
 			name = model.Name
 		}
-		c.JSON(http.StatusOK, okData(gin.H{
+		publicMediaData(c, deps, gin.H{
 			"requestId": request.RequestID, "quoteMicro": quote, "confirmationToken": token,
 			"currency": "credit", "expiresAt": expiresAt.Format(time.RFC3339Nano),
 			"modelId": model.ID, "modelName": name, "kind": model.Kind,
 			"resolution": request.Resolution, "aspectRatio": request.AspectRatio,
 			"duration": request.Duration, "count": request.Count,
-		}))
+		})
 	})
 
 	router.POST(basePath, func(c *gin.Context) {
@@ -199,7 +199,7 @@ func registerAgentGenerationRoutes(router *gin.Engine, deps *Deps, basePath, ent
 			mediaError(c, deps, err)
 			return
 		}
-		c.JSON(http.StatusOK, okData(agentGenerationProjection(c.Request.Context(), deps.Media, *project, request.RequestID)))
+		publicMediaData(c, deps, agentGenerationProjection(c.Request.Context(), deps.Media, *project, request.RequestID))
 	})
 
 	router.GET(basePath+"/:requestId", func(c *gin.Context) {
@@ -221,7 +221,7 @@ func registerAgentGenerationRoutes(router *gin.Engine, deps *Deps, basePath, ent
 			c.JSON(http.StatusNotFound, fail(http.StatusNotFound, "media_generation_not_found"))
 			return
 		}
-		c.JSON(http.StatusOK, okData(agentGenerationProjection(c.Request.Context(), deps.Media, *project, requestID)))
+		publicMediaData(c, deps, agentGenerationProjection(c.Request.Context(), deps.Media, *project, requestID))
 	})
 
 	router.POST(basePath+"/:requestId/cancel", func(c *gin.Context) {
@@ -243,7 +243,7 @@ func registerAgentGenerationRoutes(router *gin.Engine, deps *Deps, basePath, ent
 			c.JSON(http.StatusNotFound, fail(http.StatusNotFound, "media_generation_not_found"))
 			return
 		}
-		c.JSON(http.StatusOK, okData(agentGenerationProjection(c.Request.Context(), deps.Media, *project, requestID)))
+		publicMediaData(c, deps, agentGenerationProjection(c.Request.Context(), deps.Media, *project, requestID))
 	})
 }
 
