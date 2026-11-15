@@ -85,8 +85,7 @@ func securityHeaders(deps *Deps) gin.HandlerFunc {
 		if hstsValue != "" {
 			c.Header("Strict-Transport-Security", hstsValue)
 		}
-		if strings.HasPrefix(c.Request.URL.Path, "/console/api/auth") ||
-			strings.HasPrefix(c.Request.URL.Path, "/console/api/setup") ||
+		if strings.HasPrefix(c.Request.URL.Path, "/console/api/") ||
 			strings.HasPrefix(c.Request.URL.Path, "/app/platform/") ||
 			strings.HasPrefix(c.Request.URL.Path, "/api/v1/platform/auth/") {
 			c.Header("Cache-Control", "no-store")

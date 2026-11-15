@@ -2,10 +2,6 @@ package apiapp
 
 import (
 	"net/http"
-	"os"
-	"path"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -13,24 +9,6 @@ import (
 )
 
 // app.ts 的镜像:路由装配 + 控制台静态托管 + 独立域名 CORS + 统一错误体。
-
-const staticMimeDefault = "application/octet-stream"
-
-// Vite 产物使用 `name-<hash>.ext`；只有带内容哈希的文件才能安全 immutable，
-// 否则 index.html 引用的固定文件名会被旧缓存长期钉死。
-var hashedStaticAsset = regexp.MustCompile(`-[0-9A-Za-z_-]{8,}\.[0-9A-Za-z]+$`)
-
-var staticMime = map[string]string{
-	".html":  "text/html; charset=utf-8",
-	".js":    "text/javascript; charset=utf-8",
-	".css":   "text/css; charset=utf-8",
-	".json":  "application/json; charset=utf-8",
-	".svg":   "image/svg+xml",
-	".png":   "image/png",
-	".ico":   "image/x-icon",
-	".woff2": "font/woff2",
-	".map":   "application/json; charset=utf-8",
-}
 
 func New(deps *Deps) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
@@ -65,11 +43,11 @@ func New(deps *Deps) *gin.Engine {
 
 	// 控制台静态托管(/console/*,必须绕过 /console/api/*)。
 	if deps.Env.ConsoleDistDir != "" {
-		router.Use(consoleStaticMiddleware(deps.Env.ConsoleDistDir))
+		router.Use(consoleStaticMiddleware(deps))
 	}
 
 	router.GET("/healthz", func(c *gin.Context) {
-		c.JSON(200, gin.H{"ok": true, "memoryDb": deps.Env.MemoryDB})
+		c.JSON(200, gin.H{"ok": true})
 	})
 
 	// 设备授权页的跳转脚本作为独立静态资源提供，页面本身不内联任何 JS，
@@ -126,98 +104,6 @@ func recoveryMiddleware(deps *Deps) gin.HandlerFunc {
 			}
 		}()
 		c.Next()
-	}
-}
-
-// consoleStaticMiddleware:GET/HEAD 的 /console/* 直接由静态文件响应;
-// 非静态资源路径回落 index.html(SPA fallback);`..` 一律 404。
-func consoleStaticMiddleware(distDir string) gin.HandlerFunc {
-	root, err := filepath.Abs(distDir)
-	if err != nil {
-		root = distDir
-	}
-	// index.html 在同一个镜像里不会变，启动时读一次即可。
-	// 旧实现每次 SPA 兜底都 os.ReadFile 一遍；容器是 read_only + overlayfs，
-	// 叠加并发请求后正是静态页出现秒级抖动的原因之一。
-	indexHTML, indexErr := os.ReadFile(filepath.Join(root, "index.html"))
-
-	serveIndex := func(c *gin.Context) bool {
-		if indexErr != nil {
-			c.Status(http.StatusNotFound)
-			c.Abort()
-			return false
-		}
-		// 控制台入口 HTML 不缓存：共享终端退出后不能从缓存里翻出上一会话页面。
-		c.Header("Cache-Control", "no-store")
-		c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)
-		c.Abort()
-		return true
-	}
-
-	return func(c *gin.Context) {
-		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
-			c.Next()
-			return
-		}
-		requestPath := c.Request.URL.Path
-		// 入口跳转由应用自己出，而不是交给 nginx 的 return：`return` 会短路
-		// proxy_pass，securityHeaders 中间件不会执行，3xx 响应会丢掉全部安全头
-		// （线上 / 与 /console 曾实测为 0 个安全头）。这里统一出口后，
-		// nginx 只负责它自己生成的响应（444/ACME/错误页），头由 snippet 补齐。
-		if requestPath == "/" {
-			c.Redirect(http.StatusFound, "/console/")
-			c.Abort()
-			return
-		}
-		if requestPath == "/console" {
-			c.Redirect(http.StatusFound, "/console/")
-			c.Abort()
-			return
-		}
-		if !strings.HasPrefix(requestPath, "/console/") || strings.HasPrefix(requestPath, "/console/api/") {
-			c.Next()
-			return
-		}
-		rawRelative := strings.TrimPrefix(requestPath, "/console/")
-		relative := strings.TrimLeft(path.Clean("/"+rawRelative), "/.")
-		if strings.Contains(rawRelative, "..") {
-			c.Status(http.StatusNotFound)
-			c.Abort()
-			return
-		}
-		candidate := filepath.Join(root, relative)
-		if relative == "" {
-			serveIndex(c)
-			return
-		}
-		// 用 ServeContent 流式输出，而不是 os.ReadFile 全量读进内存：
-		// 900KB 的 bundle × 并发请求会直接顶到容器 512MB 上限，且旧实现
-		// 拿不到 Range / If-Modified-Since，浏览器每次都要整包重下。
-		file, openErr := os.Open(candidate)
-		if openErr != nil {
-			serveIndex(c)
-			return
-		}
-		defer file.Close()
-		info, statErr := file.Stat()
-		if statErr != nil || info.IsDir() {
-			serveIndex(c)
-			return
-		}
-		contentType := staticMime[strings.ToLower(filepath.Ext(candidate))]
-		if contentType == "" {
-			contentType = staticMimeDefault
-		}
-		// 带内容哈希的构建产物可以永久缓存；固定文件名只做短缓存，
-		// 避免发版后浏览器继续使用旧 index.html 里的入口脚本。
-		cacheControl := "public, max-age=3600"
-		if hashedStaticAsset.MatchString(filepath.Base(candidate)) {
-			cacheControl = "public, max-age=31536000, immutable"
-		}
-		c.Header("Cache-Control", cacheControl)
-		c.Header("Content-Type", contentType)
-		http.ServeContent(c.Writer, c.Request, filepath.Base(candidate), info.ModTime(), file)
-		c.Abort()
 	}
 }
 

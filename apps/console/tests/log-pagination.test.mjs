@@ -32,7 +32,7 @@ function text(tree) {
 async function mount(kind, loader, metadataLoader, seriesLoader) {
   const slots = [], effects = [], calls = [], seriesCalls = [];
   let cursor = 0, dirty = false;
-  let auth = { teamId: "team-a", user: { id: "user", email: "fixture@example.test" }, isRoot: true, canManageTeam: true };
+  let auth = { teamId: "team-a", user: { id: "user", email: "fixture@example.test" }, canManagePlatform: true, canManageTeam: true };
   const memo = (fn, deps) => {
     const i = cursor++;
     if (!(i in slots) || deps.some((dep, j) => dep !== slots[i].deps[j])) slots[i] = { deps, value: fn() };
@@ -61,7 +61,7 @@ async function mount(kind, loader, metadataLoader, seriesLoader) {
       if (name === "../api.js") return { api: async (path) => {
         const query = new URL(path, "https://fixture.invalid");
         if (query.pathname === "/usage" || query.pathname === "/audit") {
-          calls.push({ path, params: query.searchParams, teamId: auth.teamId, isRoot: auth.isRoot });
+          calls.push({ path, params: query.searchParams, teamId: auth.teamId, canManagePlatform: auth.canManagePlatform });
           return loader ? loader(query.searchParams, { ...auth }) : response(kind, query.searchParams.get("cursor") ? "page-two" : "page-one", query.searchParams.has("cursor") ? null : "cursor-next");
         }
         if (metadataLoader && ["/teams", "/users", "/providers", "/models", "/devices"].includes(query.pathname)) return metadataLoader(query.pathname, { ...auth });
@@ -146,7 +146,7 @@ for (const kind of ["Usage", "Audit"]) {
       return response(kind, scope.teamId === "team-b" ? "new-scope" : "old-scope", "cursor-next");
     });
     ui.button("下一").props.onClick();
-    ui.setAuth({ teamId: "team-b", isRoot: false, canManageTeam: false });
+    ui.setAuth({ teamId: "team-b", canManagePlatform: false, canManageTeam: false });
     assert.deepEqual(ui.shown(), [], "previous scope is hidden before the new response");
     await ui.settle();
     resolveOld(response(kind, "late-private-scope", "wrong-cursor")); await ui.settle();
@@ -175,7 +175,7 @@ test("Usage: filters reset pagination and ignore an in-flight page from the old 
 
 
 test("Usage: pending scope changes hide old model and account options without clearing a valid selected model", async () => {
-  for (const patch of [{ teamId: "team-b" }, { isRoot: false, canManageTeam: true }]) {
+  for (const patch of [{ teamId: "team-b" }, { canManagePlatform: false, canManageTeam: true }]) {
     let pending = false, resolveUsage;
     const metadata = [];
     const metadataResult = (path, label) => {
@@ -200,7 +200,7 @@ test("Usage: pending scope changes hide old model and account options without cl
     assert.deepEqual(Array.from(userSelect().props.options, (option) => option.value), [""], "old account metadata is not shown while the new scope loads");
     assert.equal(nodes(ui.render(), (node) => node.type === "Notice" && node.props.k === "旧范围团队").length, 0);
     assert.equal(modelSelect().props.value, "stable-public", "the selected model remains stable while its fresh options load");
-    resolveUsage({ ...response("Usage", "new-row"), ...(patch.isRoot === false ? { modelOptions: [{ modelId: "stable-public", displayName: "新范围模型", enabled: true }] } : {}) });
+    resolveUsage({ ...response("Usage", "new-row"), ...(patch.canManagePlatform === false ? { modelOptions: [{ modelId: "stable-public", displayName: "新范围模型", enabled: true }] } : {}) });
     for (const { path, resolve } of metadata) resolve(metadataResult(path, "新范围"));
     await ui.settle();
     assert.equal(modelSelect().props.value, "stable-public");

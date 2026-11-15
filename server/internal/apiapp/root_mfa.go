@@ -396,7 +396,7 @@ func registerRootMFARoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		writeAudit(ctx, deps, user, "security.mfa.enabled", "user", user.ID, map[string]any{"recoveryCodeCount": len(codes)})
-		notifySecurityEvent(deps, "security.mfa.enabled", "超级管理员已启用双重验证 user="+user.ID)
+		notifySecurityEvent(deps, "security.mfa.enabled", "系统管理员已启用双重验证 user="+user.ID)
 		c.JSON(200, okData(gin.H{"recoveryCodes": codes}))
 	})
 	for _, action := range []string{"disable", "recovery-codes"} {
@@ -460,10 +460,10 @@ func registerRootMFARoutes(router *gin.Engine, deps *Deps) {
 			}
 			writeAudit(ctx, deps, user, auditAction, "user", user.ID, map[string]any{"recoveryCodeCount": len(codes)})
 			if action == "disable" {
-				notifySecurityEvent(deps, "security.mfa.disabled", "超级管理员已关闭双重验证 user="+user.ID)
+				notifySecurityEvent(deps, "security.mfa.disabled", "系统管理员已关闭双重验证 user="+user.ID)
 				c.JSON(200, okData(gin.H{"enabled": false}))
 			} else {
-				notifySecurityEvent(deps, "security.mfa.recovery_rotated", "超级管理员已重新生成恢复码 user="+user.ID)
+				notifySecurityEvent(deps, "security.mfa.recovery_rotated", "系统管理员已重新生成恢复码 user="+user.ID)
 				c.JSON(200, okData(gin.H{"recoveryCodes": codes}))
 			}
 		})
@@ -488,7 +488,7 @@ func allowRootMFAPlatformPasswordLogin(ctx context.Context, deps *Deps, c *gin.C
 				origin = strings.TrimRight(deps.Env.PublicAPIOrigin, "/")
 			}
 			target := origin + "/console/#/login"
-			body := `<p class="brand">Mendao</p><h1>需要绑定双重验证</h1><p>超级管理员必须先登录控制台绑定身份验证器，再返回本页面继续设备授权。</p><p><a href="` + escapeHTML(target) + `" target="_blank" rel="noopener">打开控制台</a></p>`
+			body := `<p class="brand">Mendao</p><h1>需要绑定双重验证</h1><p>系统管理员必须先登录控制台绑定身份验证器，再返回本页面继续设备授权。</p><p><a href="` + escapeHTML(target) + `" target="_blank" rel="noopener">打开控制台</a></p>`
 			c.Data(403, "text/html; charset=utf-8", []byte(htmlLayout("需要绑定双重验证 - Mendao", body, "")))
 			return false
 		}

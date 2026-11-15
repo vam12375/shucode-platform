@@ -42,7 +42,7 @@ async function mount({ root = true, catalog = packages, revision = "r1" } = {}) 
         useCallback(fn, deps) { const index = cursor++; if (!(index in slots) || !same(slots[index].deps, deps)) slots[index] = { deps, fn }; return slots[index].fn; },
         useEffect(effect, deps) { const index = cursor++; if (!(index in slots) || !same(slots[index].deps, deps)) { slots[index] = { deps }; scheduled.push(() => { slots[index].cleanup = effect(); }); } },
       };
-      if (name === "../auth.js") return { useAuth: () => ({ isRoot: root }) };
+      if (name === "../auth.js") return { useAuth: () => ({ canManagePlatform: root }) };
       if (name === "../api.js") return { api: async (path, init = {}) => { calls.push({ path, init }); if (init.method) return mutation(path, init); return { revision: currentRevision, packages: current }; } };
       if (name === "../components/Feedback.js") return { toastOk() {} };
       if (name === "../components/Icon.js") return { Glyph: () => null, PageTitle: (props) => props.children };
@@ -65,7 +65,7 @@ function button(tree, label) { return nodes(tree, "button").find((item) => text(
 test("non-root cannot read or render the root-only package catalog", async () => {
   const ui = await mount({ root: false });
   assert.equal(ui.calls.length, 0);
-  assert.match(text(ui.render()), /仅限 root/);
+  assert.match(text(ui.render()), /仅限 系统管理员/);
 });
 
 test("root reads five draft packages and shows draft client preview without publishing", async () => {

@@ -88,7 +88,7 @@ test("legacy model requests and media fees have distinct missing-value semantics
 });
 
 const usageSource = await readFile(new URL("../src/pages/Usage.tsx", import.meta.url), "utf8");
-async function mountUsage(records, isRoot = true, usageOptions = {}, providerOptions = []) {
+async function mountUsage(records, canManagePlatform = true, usageOptions = {}, providerOptions = []) {
   const slots = [];
   const effects = [];
   const calls = [];
@@ -127,7 +127,7 @@ async function mountUsage(records, isRoot = true, usageOptions = {}, providerOpt
         throw new Error(`Unexpected API ${path}`);
       },
     },
-    "../auth.js": { useAuth: () => ({ isRoot, canManageTeam: isRoot, user: { id: "user" } }) },
+    "../auth.js": { useAuth: () => ({ canManagePlatform, canManageTeam: canManagePlatform, user: { id: "user" } }) },
     "../usage-costs.js": costs,
     "../usage-reasoning.js": reasoning,
     "../components/UsageModel.js": { UsageModel },

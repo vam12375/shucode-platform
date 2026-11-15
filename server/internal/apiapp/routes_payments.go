@@ -34,6 +34,14 @@ func paymentOrderPublic(order *store.PaymentOrderRecord) gin.H {
 		"paidAt": order.PaidAt, "closedAt": order.ClosedAt}
 }
 
+func paymentOrderForConsole(c *gin.Context, order *store.PaymentOrderRecord) gin.H {
+	row := paymentOrderPublic(order)
+	if row != nil {
+		row["userId"] = consoleAccountID(c, order.UserID)
+	}
+	return row
+}
+
 func paymentNotifyPayload(values url.Values) []byte {
 	// 只保存足以对账的支付宝元数据，永不把签名、买家账号或原始凭据写入账本。
 	allowed := []string{"out_trade_no", "trade_no", "app_id", "seller_id", "total_amount", "trade_status", "gmt_payment", "notify_time"}
@@ -64,7 +72,7 @@ func paymentClientForOrder(ctx context.Context, deps *Deps, order *store.Payment
 
 func writePaymentCheckout(c *gin.Context, deps *Deps, order *store.PaymentOrderRecord, mobile bool) {
 	if order.Status != store.PaymentPending {
-		c.JSON(200, okData(gin.H{"order": paymentOrderPublic(order), "payUrl": ""}))
+		c.JSON(200, okData(gin.H{"order": paymentOrderForConsole(c, order), "payUrl": ""}))
 		return
 	}
 	client, err := paymentClientForOrder(c.Request.Context(), deps, order)
@@ -77,7 +85,7 @@ func writePaymentCheckout(c *gin.Context, deps *Deps, order *store.PaymentOrderR
 		c.JSON(409, fail(409, "订单已过期，请重新创建充值订单"))
 		return
 	}
-	c.JSON(200, okData(gin.H{"order": paymentOrderPublic(order), "payUrl": payURL}))
+	c.JSON(200, okData(gin.H{"order": paymentOrderForConsole(c, order), "payUrl": payURL}))
 }
 
 func createPaymentReference(userID, requestID string) string {
@@ -242,7 +250,7 @@ func registerPaymentRoutes(router *gin.Engine, deps *Deps) {
 			}
 		}
 		if testPayment && actor.Role != store.RoleRoot {
-			c.JSON(403, fail(403, "0.01 元测试支付仅限 root"))
+			c.JSON(403, fail(403, "无权使用测试支付"))
 			return
 		}
 		if testPayment && amountFen != 1 {
@@ -369,7 +377,7 @@ func registerPaymentReadRoutes(router *gin.Engine, deps *Deps) {
 		}
 		rows := make([]gin.H, 0, len(page))
 		for i := range page {
-			rows = append(rows, paymentOrderPublic(&page[i]))
+			rows = append(rows, paymentOrderForConsole(c, &page[i]))
 		}
 		var nextCursor *string
 		if hasMore && len(page) > 0 {
@@ -384,7 +392,7 @@ func registerPaymentReadRoutes(router *gin.Engine, deps *Deps) {
 		if !ok {
 			return
 		}
-		c.JSON(200, okData(gin.H{"order": paymentOrderPublic(order)}))
+		c.JSON(200, okData(gin.H{"order": paymentOrderForConsole(c, order)}))
 	})
 	router.POST("/console/api/payments/orders/:outTradeNo/reconcile", func(c *gin.Context) {
 		order, ok := paymentVisibleOrder(c, deps)
@@ -396,7 +404,7 @@ func registerPaymentReadRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(502, fail(502, "支付宝核对未完成，请稍后重试"))
 			return
 		}
-		c.JSON(200, okData(gin.H{"order": paymentOrderPublic(saved)}))
+		c.JSON(200, okData(gin.H{"order": paymentOrderForConsole(c, saved)}))
 	})
 }
 

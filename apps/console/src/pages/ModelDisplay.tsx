@@ -19,7 +19,7 @@ interface DisplayEntry {
 const kindLabel: Record<DisplayKind, string> = { text: "文字", image: "图片", video: "视频" };
 
 export function ModelDisplayPage() {
-  const { isRoot } = useAuth();
+  const { canManagePlatform } = useAuth();
   const [entries, setEntries] = useState<DisplayEntry[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -46,11 +46,11 @@ export function ModelDisplayPage() {
   }, []);
 
   useEffect(() => {
-    if (isRoot) void load();
-  }, [isRoot, load]);
+    if (canManagePlatform) void load();
+  }, [canManagePlatform, load]);
 
   const save = async (entry: DisplayEntry): Promise<void> => {
-    if (!isRoot || actionPending.current || loading || conflict) return;
+    if (!canManagePlatform || actionPending.current || loading || conflict) return;
     const displayName = (drafts[entry.id] ?? entry.displayName).trim();
     if (!displayName || [...displayName].length > 120) {
       setError("显示名称需为 1–120 个字符。");
@@ -92,7 +92,7 @@ export function ModelDisplayPage() {
     }
   };
 
-  if (!isRoot) return <Notice tone="stop" k="无权访问">模型显示设置仅限 root 管理员。</Notice>;
+  if (!canManagePlatform) return <Notice tone="stop" k="无权访问">模型显示设置仅限 系统管理员。</Notice>;
 
   return (
     <div>

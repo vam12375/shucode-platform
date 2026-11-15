@@ -760,7 +760,7 @@ func TestRootSetup(t *testing.T) {
 	f := newAPIEmptyFixture(t)
 
 	status := dataOf(t, f.do("GET", "/console/api/setup/status", "", ""))
-	if status["rootInitialized"] != false {
+	if status["available"] != true {
 		t.Fatalf("空库不应已初始化: %v", status)
 	}
 	// 弱口令拒绝。
@@ -774,7 +774,7 @@ func TestRootSetup(t *testing.T) {
 		t.Fatalf("初始化 root: %d %s", rec.Code, rec.Body.String())
 	}
 	user := dataOf(t, rec)["user"].(map[string]any)
-	if user["role"] != "root" {
+	if user["role"] != "admin" || user["platformAccess"] != true {
 		t.Fatalf("初始化账号应为 root: %v", user)
 	}
 	cookie := sessionCookie(rec)
@@ -783,12 +783,11 @@ func TestRootSetup(t *testing.T) {
 	}
 	// root 只能创建一次。
 	if rec := f.do("POST", "/console/api/setup/root", "",
-		`{"email":"root2@mendao.chat","displayName":"Root2","password":"root-password-456"}`); rec.Code != 409 {
+		`{"email":"root2@mendao.chat","displayName":"Root2","password":"root-password-456"}`); rec.Code != 404 {
 		t.Fatalf("二次初始化应 409: %d %s", rec.Code, rec.Body.String())
 	}
-	status = dataOf(t, f.do("GET", "/console/api/setup/status", "", ""))
-	if status["rootInitialized"] != true {
-		t.Fatalf("初始化后状态应为 true: %v", status)
+	if rec := f.do("GET", "/console/api/setup/status", "", ""); rec.Code != 404 {
+		t.Fatalf("初始化后不再公开状态: %d", rec.Code)
 	}
 	// 初始化口令可正常登录控制台。
 	login := f.do("POST", "/console/api/auth/login", "",
@@ -797,7 +796,7 @@ func TestRootSetup(t *testing.T) {
 		t.Fatalf("root 登录: %d %s", login.Code, login.Body.String())
 	}
 	users := dataOf(t, f.do("GET", "/console/api/users", cookie, ""))["users"].([]any)
-	if len(users) != 1 || users[0].(map[string]any)["role"] != "root" {
+	if len(users) != 1 || users[0].(map[string]any)["platformAccess"] != true {
 		t.Fatalf("root 清单不符: %v", users)
 	}
 }

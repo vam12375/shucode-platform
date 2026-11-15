@@ -8,7 +8,7 @@ export interface AuthState {
   teamId: string;
   team: ConsoleTeam | undefined;
   membership: Membership | undefined;
-  isRoot: boolean;
+  canManagePlatform: boolean;
   canManageTeam: boolean;
   selectTeam: (id: string) => void;
   refreshSession: () => Promise<void>;

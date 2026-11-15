@@ -40,19 +40,25 @@ type userTeamBrief struct {
 }
 
 type userPublic struct {
-	ID          string         `json:"id"`
-	Email       string         `json:"email"`
-	DisplayName string         `json:"displayName"`
-	Role        string         `json:"role"`
-	DisabledAt  *string        `json:"disabledAt"`
-	CreatedAt   string         `json:"createdAt"`
-	Team        *userTeamBrief `json:"team,omitempty"`
+	ID             string         `json:"id"`
+	Email          string         `json:"email"`
+	DisplayName    string         `json:"displayName"`
+	Role           string         `json:"role"`
+	PlatformAccess bool           `json:"platformAccess,omitempty"`
+	DisabledAt     *string        `json:"disabledAt"`
+	CreatedAt      string         `json:"createdAt"`
+	Team           *userTeamBrief `json:"team,omitempty"`
 }
 
 func toPublicUser(user *store.UserRecord) userPublic {
+	role := string(user.Role)
+	// 内部系统身份不作为公开角色枚举；控制台按显式能力显示管理功能。
+	if user.Role == store.RoleRoot {
+		role = string(store.RoleAdmin)
+	}
 	return userPublic{
 		ID: user.ID, Email: user.Email, DisplayName: user.DisplayName,
-		Role: string(user.Role), DisabledAt: isoStringPtr(user.DisabledAt),
+		Role: role, PlatformAccess: user.Role == store.RoleRoot, DisabledAt: isoStringPtr(user.DisabledAt),
 		CreatedAt: isoString(user.CreatedAt),
 	}
 }

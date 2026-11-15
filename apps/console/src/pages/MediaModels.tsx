@@ -1250,7 +1250,7 @@ function familyChange(
 }
 
 export function MediaModelsPage() {
-  const { isRoot } = useAuth();
+  const { canManagePlatform } = useAuth();
   const [drafts, setDrafts] = useState<MediaModelDraft[]>([]);
   const [providers, setProviders] = useState<ProviderOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2036,8 +2036,8 @@ export function MediaModelsPage() {
     },
   ];
   const presetsDisabled = loading || busy || providers.length === 0;
-  const sections = MEDIA_SECTIONS.filter((item) => item.id !== "templates" || isRoot);
-  const activeSection = section === "templates" && !isRoot ? "models" : section;
+  const sections = MEDIA_SECTIONS.filter((item) => item.id !== "templates" || canManagePlatform);
+  const activeSection = section === "templates" && !canManagePlatform ? "models" : section;
 
   return (
     <div>
@@ -2400,7 +2400,7 @@ export function MediaModelsPage() {
       >
         <MediaReconciliation onPendingCount={setPendingReconcile} />
       </div>
-      {isRoot ? <div id="media-panel-templates" role="tabpanel" aria-labelledby="media-tab-templates" hidden={activeSection !== "templates"}>
+      {canManagePlatform ? <div id="media-panel-templates" role="tabpanel" aria-labelledby="media-tab-templates" hidden={activeSection !== "templates"}>
         {activeSection === "templates" ? <MediaTemplateReviews /> : null}
       </div> : null}
     </div>

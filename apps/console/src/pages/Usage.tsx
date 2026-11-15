@@ -255,7 +255,7 @@ function DetailRow({ k, children }: { k: string; children: ReactNode }) {
 }
 
 export function UsagePage() {
-  const { isRoot, canManageTeam, user, teamId } = useAuth();
+  const { canManagePlatform, canManageTeam, user, teamId } = useAuth();
   const [teamRows, setTeams] = useState<TeamOption[]>([]);
   const [emailRows, setUserEmails] = useState<Map<string, string>>(new Map());
   const [from, setFrom] = useState("");
@@ -293,7 +293,7 @@ export function UsagePage() {
   const chartRange = useMemo(() => resolveUsageChartRange(chartSelection.preset, chartSelection.from, chartSelection.to),
     [chartSelection.preset, chartSelection.from, chartSelection.to, seriesReloadKey]);
   const chartGranularity = chartRange.granularity;
-  const identityScope = JSON.stringify([teamId, user.id, isRoot, canManageTeam]);
+  const identityScope = JSON.stringify([teamId, user.id, canManagePlatform, canManageTeam]);
   const chartScope = JSON.stringify([identityScope, chartRange.queryFrom, chartRange.queryTo, chartGranularity]);
   const currentMetadata = metadataScope === identityScope;
   const teams = currentMetadata ? teamRows : [];
@@ -304,7 +304,7 @@ export function UsagePage() {
   const days = seriesScope === chartScope ? dayRows : [];
 
   // 游标只属于创建它的筛选和身份范围，切换团队/权限时不得复用或展示上一范围的记录。
-  const pageScope = JSON.stringify([teamId, user.id, isRoot, canManageTeam, from, to,
+  const pageScope = JSON.stringify([teamId, user.id, canManagePlatform, canManageTeam, from, to,
     filterUserId, filterModel, filterProviderId, filterStatus, filterRequestId, pageSize]);
   const currentPage = responseScope === pageScope;
   const aggregates = currentPage ? aggregateRows : [];
@@ -329,13 +329,13 @@ export function UsagePage() {
         const [teamData, userData, providerData, modelData, deviceData] =
           await Promise.all([
             api<{ teams: TeamOption[] }>("/teams"),
-            isRoot || canManageTeam
+            canManagePlatform || canManageTeam
               ? api<{ users: UserOption[] }>("/users")
               : Promise.resolve({ users: [user] }),
-            isRoot
+            canManagePlatform
               ? api<{ providers: ProviderOption[] }>("/providers")
               : Promise.resolve({ providers: [] }),
-            isRoot
+            canManagePlatform
               ? api<{ models: ModelOption[] }>(
                   "/models?includeDisabled=1",
                 )
@@ -356,7 +356,7 @@ export function UsagePage() {
       }
     })();
     return () => { current = false; };
-  }, [isRoot, canManageTeam, user, teamId, identityScope]);
+  }, [canManagePlatform, canManageTeam, user, teamId, identityScope]);
 
   // 趋势图为平台口径，与页内筛选无关；一次 series 请求按上海墙钟分桶，
   // 前端补零对齐时间轴（积分图与缓存率图共用这份数据）。
@@ -420,9 +420,9 @@ export function UsagePage() {
       // 服务端把无时区时间按 UTC 解析；这里把上海自然日边界换算成 UTC。
       if (from) params.set("from", shanghaiDayStartUtc(from));
       if (to) params.set("to", shanghaiDayEndUtc(to));
-      if ((isRoot || canManageTeam) && filterUserId) params.set("userId", filterUserId);
+      if ((canManagePlatform || canManageTeam) && filterUserId) params.set("userId", filterUserId);
       if (filterModel) params.set("model", filterModel);
-      if (isRoot && filterProviderId) params.set("providerId", filterProviderId);
+      if (canManagePlatform && filterProviderId) params.set("providerId", filterProviderId);
       if (filterStatus) params.set("status", filterStatus);
       if (filterRequestId.trim())
         params.set("requestId", filterRequestId.trim());
@@ -437,7 +437,7 @@ export function UsagePage() {
       filterProviderId,
       filterStatus,
       filterRequestId,
-      isRoot,
+      canManagePlatform,
       canManageTeam,
     ],
   );
@@ -725,7 +725,7 @@ export function UsagePage() {
         <div>
           <p className="eyebrow">计量 / 流水</p>
           <PageTitle icon={ChartColumn}>
-            {isRoot ? "用量" : canManageTeam ? "用量与消费" : "我的用量"}
+            {canManagePlatform ? "用量" : canManageTeam ? "用量与消费" : "我的用量"}
           </PageTitle>
         </div>
         <p className="readout m0">
@@ -766,7 +766,7 @@ export function UsagePage() {
         <Notice
           k={nearQuotaTeam.team.name}
           action={
-            isRoot
+            canManagePlatform
               ? {
                   href: `#/teams/${nearQuotaTeam.team.id}`,
                   label: "调整额度",
@@ -822,7 +822,7 @@ export function UsagePage() {
             {dataUnavailable ? "加载失败，请重试" : "网关计量 · 团队账单口径"}
           </p>
         </div>
-        {isRoot ? (
+        {canManagePlatform ? (
           <div className="stat-card">
             <p className="stat-label">区间总成本</p>
             <p className="stat-value">
@@ -880,7 +880,7 @@ export function UsagePage() {
       <section className="pane">
         <div className="pane-b">
           <div className="form-row">
-            {isRoot || canManageTeam ? (
+            {canManagePlatform || canManageTeam ? (
               <Select
                 ariaLabel="按用户筛选"
                 style={{ width: 180 }}
@@ -902,7 +902,7 @@ export function UsagePage() {
               onChange={setFilterModel}
               options={[
                 { value: "", label: "全部模型" },
-                ...(currentPage ? (usageModelOptions.length ? usageModelOptions : isRoot ? modelOptions : []) : []).map((model) => ({
+                ...(currentPage ? (usageModelOptions.length ? usageModelOptions : canManagePlatform ? modelOptions : []) : []).map((model) => ({
                   value: model.modelId,
                   label: model.enabled
                     ? model.displayName
@@ -910,7 +910,7 @@ export function UsagePage() {
                 })),
               ]}
             />
-            {isRoot ? (
+            {canManagePlatform ? (
               <Select
                 ariaLabel="按供应商筛选"
                 style={{ width: 170 }}
@@ -1217,7 +1217,7 @@ export function UsagePage() {
         </div>
       </section>
 
-      {isRoot ? (
+      {canManagePlatform ? (
         <section className="pane d1">
           <div className="pane-h">
             <h2>区间历史成本估算</h2>
@@ -1359,16 +1359,16 @@ export function UsagePage() {
         <div className="pane-b">
           <p className="readout m0">
             原片分析期间，模型请求的用户实扣为 0；成功后另有一笔固定分析费，已包含本次分析的模型调用。
-            {isRoot ? "供应商成本按请求时的采购价快照估算，与用户实扣分别展示，不代表供应商最终账单。" : null}
+            {canManagePlatform ? "供应商成本按请求时的采购价快照估算，与用户实扣分别展示，不代表供应商最终账单。" : null}
           </p>
         </div>
         <div className="pane-b flush table-scroll vscroll">
-          <table className="table" style={{ whiteSpace: "nowrap", minWidth: isRoot ? 1140 : 900 }}>
+          <table className="table" style={{ whiteSpace: "nowrap", minWidth: canManagePlatform ? 1140 : 900 }}>
             <thead>
               <tr>
                 <th scope="col">时间</th>
                 <th scope="col">账号</th>
-                {isRoot ? <th scope="col">真实IP</th> : null}
+                {canManagePlatform ? <th scope="col">真实IP</th> : null}
                 <th scope="col">模型</th>
                 <th scope="col">状态</th>
                 <th scope="col" className="num">
@@ -1377,14 +1377,14 @@ export function UsagePage() {
                 <th scope="col" className="num">
                   用户实扣（credit）
                 </th>
-                {isRoot ? <th scope="col" className="num">供应商成本（估算）</th> : null}
+                {canManagePlatform ? <th scope="col" className="num">供应商成本（估算）</th> : null}
                 <th scope="col" aria-label="操作" />
               </tr>
             </thead>
             <tbody>
               {records.map((record) => {
                 const status = statusChip(record.status);
-                const cost = isRoot ? historicalCostDisplay(record.priceSnapshot) : null;
+                const cost = canManagePlatform ? historicalCostDisplay(record.priceSnapshot) : null;
                 return (
                   <tr key={record.id}>
                     <td className="num">
@@ -1394,12 +1394,12 @@ export function UsagePage() {
                       {userEmails.get(record.userId) ??
                         record.userId.slice(0, 8)}
                     </td>
-                    {isRoot ? <td>{record.clientIp ?? "—"}</td> : null}
+                    {canManagePlatform ? <td>{record.clientIp ?? "—"}</td> : null}
                     <td>
                       {record.model === "media:reference-analysis" ? (
                         <span>{usageModelName(record.model, record.modelDisplayName)}</span>
                       ) : <UsageModel record={record} />}
-                      {isRoot && record.model !== "media:reference-analysis" ? (
+                      {canManagePlatform && record.model !== "media:reference-analysis" ? (
                         <div className="readout" title={`平台模型：${record.model}`}>
                           {providerLabel(record.providerId, record.model)} · {record.upstreamModel || record.model}
                         </div>
@@ -1433,7 +1433,7 @@ export function UsagePage() {
               })}
               {records.length === 0 ? (
                 <tr>
-                  <td colSpan={isRoot ? 9 : 7} className="readout">
+                  <td colSpan={canManagePlatform ? 9 : 7} className="readout">
                     {loading ? "加载中…" : "暂无请求记录。"}
                   </td>
                 </tr>
@@ -1479,7 +1479,7 @@ export function UsagePage() {
             <h3 className="dialog-title">{usageModelName(detail.model, detail.modelDisplayName)}</h3>
             {(() => {
               const status = statusChip(detail.status);
-              const cost = isRoot ? historicalCostDisplay(detail.priceSnapshot) : null;
+              const cost = canManagePlatform ? historicalCostDisplay(detail.priceSnapshot) : null;
               const provider = providerLabel(detail.providerId, detail.model);
               const requestPriced = detail.modelKind === "tool" || detail.priceSnapshot?.sale.unit === "request";
               const mediaUnit = detail.priceSnapshot?.sale.unit;
@@ -1516,7 +1516,7 @@ export function UsagePage() {
                   <DetailRow k="思考预算">
                     {reasoningBudgetText(detail)}
                   </DetailRow>
-                  {isRoot ? (
+                  {canManagePlatform ? (
                     <>
                       <DetailRow k="模型映射">
                         {detail.model} → {detail.upstreamModel || "—"}
@@ -1610,7 +1610,7 @@ export function UsagePage() {
                   <DetailRow k="延迟">
                     {detail.latencyMs === null ? "—" : `${detail.latencyMs} ms`}
                   </DetailRow>
-                  {isRoot ? (
+                  {canManagePlatform ? (
                     <DetailRow k="客户端 IP">
                       {detail.clientIp ?? "—"}
                     </DetailRow>

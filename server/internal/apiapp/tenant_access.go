@@ -27,6 +27,9 @@ func requireConsoleUser(ctx context.Context, deps *Deps, c *gin.Context) (*store
 		return nil, false
 	}
 	c.Set(consoleUserKey, user)
+	if user.Role != store.RoleRoot && !prepareAccountPrivacy(c, deps) {
+		return nil, false
+	}
 	return user, true
 }
 
@@ -90,7 +93,7 @@ func consoleAccessGuard(deps *Deps) gin.HandlerFunc {
 					allowed := (c.Request.Method == "GET" && path == "/auth/me") ||
 						path == "/auth/logout" || strings.HasPrefix(path, "/security/mfa")
 					if !allowed {
-						c.AbortWithStatusJSON(403, fail(403, "请先完成超级管理员双重验证绑定"))
+						c.AbortWithStatusJSON(403, fail(403, "请先完成系统管理员双重验证绑定"))
 						return
 					}
 				}
@@ -105,7 +108,7 @@ func consoleAccessGuard(deps *Deps) gin.HandlerFunc {
 			path == "/models/:modelId/test" ||
 			path == "/devices/:id/revoke" || path == "/audit" || strings.HasPrefix(path, "/teams/:id")
 		if !allowed {
-			c.AbortWithStatusJSON(403, fail(403, "此功能仅限超级管理员"))
+			c.AbortWithStatusJSON(403, fail(403, "无权访问此功能"))
 			return
 		}
 		if strings.HasPrefix(path, "/teams/:id") {
@@ -178,7 +181,7 @@ func selectedTeam(c *gin.Context, deps *Deps, manage bool) (*store.TeamMembershi
 	membership, err := store.ResolveUserTeam(c.Request.Context(), deps.Store, user.ID)
 	if err != nil {
 		if errors.Is(err, store.ErrAmbiguousTeam) {
-			c.JSON(409, fail(409, "账号存在多个团队归属，请联系超级管理员处理"))
+			c.JSON(409, fail(409, "账号存在多个团队归属，请联系平台支持处理"))
 		} else {
 			internalError(c, deps, err)
 		}
@@ -244,6 +247,9 @@ func usageForConsole(c *gin.Context, record *store.UsageRecord) any {
 	user, _ := c.Get(consoleUserKey)
 	if user != nil && user.(*store.UserRecord).Role == store.RoleRoot {
 		return row
+	}
+	if visibleID := consoleAccountID(c, row.UserID); visibleID != row.UserID {
+		row.UserID, row.DeviceTokenID = visibleID, nil
 	}
 	return gin.H{
 		"id": row.ID, "requestId": row.RequestID, "userId": row.UserID, "teamId": row.TeamID,

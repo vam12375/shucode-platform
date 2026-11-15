@@ -108,7 +108,7 @@ export function MfaSettings() {
   return (
     <section className="pane">
       <div className="pane-h">
-        <h2>超级管理员双重验证</h2>
+        <h2>系统管理员双重验证</h2>
         {status ? (
           <Chip tone={status.enabled ? "ok" : "hot"}>
             {status.enabled ? "已启用" : "未启用"}

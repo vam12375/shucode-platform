@@ -12,7 +12,7 @@ const entries = [
   { id: "text:example", kind: "text", displayName: "门道对话", modelIds: ["private-text"], resolutions: [], expectedVersion: "text-v1" },
   { id: "media-group-example", kind: "image", displayName: "门道绘图", modelIds: ["private-1k", "private-2k", "private-4k"], resolutions: ["1K", "2K", "4K"], expectedVersion: "catalog-v1" },
 ];
-async function mount(isRoot = true, options = {}) {
+async function mount(canManagePlatform = true, options = {}) {
   const slots = [], effects = [], calls = [];
   let cursor = 0, currentEntries = entries;
   let mutation = async (_path, init) => {
@@ -31,7 +31,7 @@ async function mount(isRoot = true, options = {}) {
         useEffect(effect) { const i = cursor++; if (!(i in slots)) { slots[i] = true; effects.push(effect); } },
         useCallback: (fn) => fn,
       };
-      if (name === "../auth.js") return { useAuth: () => ({ isRoot }) };
+      if (name === "../auth.js") return { useAuth: () => ({ canManagePlatform }) };
       if (name === "../api.js") return { api: async (path, init) => {
         calls.push({ path, init });
         if (init) return mutation(path, init);
@@ -79,7 +79,7 @@ test("non-root mounting never requests management data", async () => {
   const ui = await mount(false);
   assert.equal(ui.calls.length, 0);
   assert.equal(nodes(ui.render(), "input").length, 0);
-  assert.match(text(ui.render()), /仅限 root/);
+  assert.match(text(ui.render()), /仅限 系统管理员/);
 });
 test("save trims a single name with its version and accepts only the authority response", async () => {
   const ui = await mount();

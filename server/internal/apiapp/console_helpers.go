@@ -84,7 +84,7 @@ func requireRoot(ctx context.Context, deps *Deps, c *gin.Context) (*store.UserRe
 		return nil, false
 	}
 	if user.Role != store.RoleRoot {
-		c.JSON(403, fail(403, "需要超级管理员权限"))
+		c.JSON(403, fail(403, "无权访问此功能"))
 		return nil, false
 	}
 	return user, true

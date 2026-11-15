@@ -895,7 +895,7 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 		}
 		writeAuthAudit(ctx, deps, user.ID, "auth.device.login", "success", ip, nil)
 		if user.Role == store.RoleRoot {
-			notifySecurityEvent(deps, "root.device_login", "超级管理员通过设备授权页登录 user="+user.ID+" ip="+ip)
+			notifySecurityEvent(deps, "root.device_login", "系统管理员通过设备授权页登录 user="+user.ID+" ip="+ip)
 		}
 		c.Redirect(303, "/app/platform/login?flow_id="+flowID)
 	})

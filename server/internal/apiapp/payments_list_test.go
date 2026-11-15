@@ -61,11 +61,14 @@ func TestPaymentAPIOrderListPaginationAndScope(t *testing.T) {
 		}
 		seen[id] = true
 		if row["userId"] == f.root.ID {
+			t.Fatal("system account identity leaked in team order")
+		}
+		if row["userId"] == "" {
 			rootOrders++
 		}
 	}
 	if rootOrders != 27 {
-		t.Fatal("team manager cannot see another operator's team orders")
+		t.Fatal("system orders must remain visible with concealed actor identity")
 	}
 	for _, item := range []struct {
 		path, cookie string

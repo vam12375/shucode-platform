@@ -50,8 +50,8 @@ const tierLabels: Record<string, string> = { core: "核心", support: "补充", 
 const beatMeta = (beat: VideoTemplate["beats"][number]) => beat.seconds ? `【${beat.act ?? ""} · ${beat.seconds}秒 · ${tierLabels[beat.tier ?? ""] ?? beat.tier ?? ""}】` : "";
 
 export function MediaTemplateReviews() {
-  const { isRoot, user } = useAuth();
-  return isRoot ? <TemplateReviewsContent key={user.id} /> : <Notice>仅超级管理员可审核模板。</Notice>;
+  const { canManagePlatform, user } = useAuth();
+  return canManagePlatform ? <TemplateReviewsContent key={user.id} /> : <Notice>仅系统管理员可审核模板。</Notice>;
 }
 
 function TemplateReviewsContent() {

@@ -1,26 +1,5 @@
-import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
-import {
-  Activity,
-  Boxes,
-  LayoutTemplate,
-  Building2,
-  ChartColumn,
-  Clapperboard,
-  HandCoins,
-  LayoutGrid,
-  LogOut,
-  PackageCheck,
-  Palette,
-  Plug,
-  ScrollText,
-  Settings2,
-  ShieldCheck,
-  SlidersHorizontal,
-  Smartphone,
-  Tags,
-  UserCog,
-  Users,
-} from "lucide-react";
+import { Fragment, useCallback, useEffect, useState, lazy, Suspense, type ReactNode } from "react";
+import { Boxes, Building2, ChartColumn, HandCoins, LogOut, ScrollText, Settings2, ShieldCheck, Smartphone, UserCog, Users } from "lucide-react";
 import { api, navigate, setApiTeamScope } from "./api.js";
 import { AuthProvider } from "./auth.js";
 import {
@@ -32,72 +11,25 @@ import {
   type Membership,
   type SessionData,
 } from "./permissions.js";
-import { CatalogPage, InvitePage, ProfilePage, TenantPage } from "./pages/Tenant.js";
+import { CatalogPage, ProfilePage, TenantPage } from "./pages/Tenant.js";
 import { Notice } from "./components/StatusChip.js";
 import { DialogHost, ToastHost } from "./components/Feedback.js";
 import { MfaSettings } from "./components/MfaSettings.js";
 import { Glyph } from "./components/Icon.js";
 import { ReadoutRail } from "./components/ReadoutRail.js";
 import { AuditPage } from "./pages/Audit.js";
-import { ConfigPage } from "./pages/ConfigPage.js";
 import { DevicesPage } from "./pages/Devices.js";
-import { LoginPage } from "./pages/Login.js";
-import { ModelsPage } from "./pages/Models.js";
-import { ModelDisplayPage } from "./pages/ModelDisplay.js";
-import { MediaModelsPage } from "./pages/MediaModels.js";
-import { OpsPage } from "./pages/Ops.js";
-import { OrgPage } from "./pages/Org.js";
+import { InvitePage } from "./pages/Invite.js";
+import type { NavGroup } from "./navigation.js";
+
 import { PaymentsPage } from "./pages/Payments.js";
-import { CreditPackagesPage } from "./pages/CreditPackages.js";
 import { QuotaRequestsPage } from "./pages/QuotaRequests.js";
-import { PricingPage } from "./pages/Pricing.js";
-import { ProvidersPage } from "./pages/Providers.js";
-import { ReleasesPage } from "./pages/Releases.js";
-import { RootSetupPage } from "./pages/RootSetup.js";
-import { TeamDetailPage } from "./pages/TeamDetail.js";
 import { UsagePage } from "./pages/Usage.js";
-import { TemplateLibraryPage } from "./pages/TemplateLibrary.js";
-import { UiLibraryPage } from "./pages/UiLibrary.js";
+
+// 页面隐藏无法阻止下载；独立模块由服务端按 root 会话授权交付。
+const RootConsole = lazy(() => import("./RootConsole.js"));
 
 export type AdminUser = ConsoleUser;
-
-const NAV_GROUPS = [
-  {
-    label: "组织",
-    items: [
-      { path: "/org", label: "团队与账号", icon: Users },
-      { path: "/audit", label: "审计日志", icon: ScrollText },
-      { path: "/quota-requests", label: "额度申请审批", icon: HandCoins },
-    ],
-  },
-  {
-    label: "计量",
-    items: [
-      { path: "/usage", label: "用量", icon: ChartColumn },
-      { path: "/payments", label: "充值与余额", icon: HandCoins },
-      { path: "/credit-packages", label: "充值套餐", icon: PackageCheck },
-      { path: "/ops", label: "运维大盘", icon: Activity },
-    ],
-  },
-  {
-    label: "下发",
-    items: [
-      { path: "/releases", label: "内置配置发布", icon: PackageCheck },
-      { path: "/models", label: "模型目录", icon: Boxes },
-      { path: "/pricing", label: "模型定价库", icon: Tags },
-      { path: "/config", label: "平台配置", icon: SlidersHorizontal },
-    ],
-  },
-  {
-    label: "接入",
-    items: [
-      { path: "/providers", label: "上游供应商", icon: Plug },
-      { path: "/media-models", label: "媒体模型", icon: Clapperboard },
-      { path: "/model-display", label: "模型展示", icon: LayoutGrid },
-      { path: "/devices", label: "设备凭据", icon: Smartphone },
-    ],
-  },
-] as const;
 
 function normalizeHash(hash: string): string {
   const raw = hash.replace(/^#/u, "");
@@ -133,13 +65,12 @@ function splitRoute(route: string): [string, string] {
   return [section.split("?")[0], param.split("?")[0]];
 }
 
-export function App() {
-  const [user, setUser] = useState<AdminUser | null | undefined>(undefined);
+export function App({ session, onSignedOut }: { session: SessionData; onSignedOut: () => void }) {
+  const [user, setUser] = useState<AdminUser>(session.user);
   const [memberships, setMemberships] = useState<Membership[]>([]);
-  const [rootTeams, setRootTeams] = useState<ConsoleTeam[]>([]);
+  const [platformTeams, setPlatformTeams] = useState<ConsoleTeam[]>([]);
   const [teamId, setTeamId] = useState("");
-  const [setupRequired, setSetupRequired] = useState(false);
-  const [mfaSetupRequired, setMfaSetupRequired] = useState(false);
+  const [mfaSetupRequired, setMfaSetupRequired] = useState(session.mfaSetupRequired === true);
   const [route, setRoute] = useState(() => normalizeHash(window.location.hash));
   const [ready, setReady] = useState(false);
   useAutoHideScrollbars();
@@ -150,7 +81,7 @@ export function App() {
     );
     const saved = localStorage.getItem(`console-team:${data.user.id}`) ?? "";
     const next =
-      data.user.role === "root"
+      data.user.platformAccess === true
         ? saved
         : active.some((item) => item.team.id === saved)
           ? saved
@@ -164,22 +95,15 @@ export function App() {
   const refreshSession = useCallback(async () => {
     const session = await api<SessionData>("/auth/me");
     receiveSession(session);
-    if (session.user.role === "root" && !session.mfaSetupRequired) {
+    if (session.user.platformAccess === true && !session.mfaSetupRequired) {
       const data = await api<{ teams: ConsoleTeam[] }>("/teams");
-      setRootTeams(data.teams);
+      setPlatformTeams(data.teams);
     }
   }, [receiveSession]);
   useEffect(() => {
-    refreshSession().catch(async () => {
-      setUser(null);
-      try {
-        const status = await api<{ rootInitialized: boolean }>("/setup/status");
-        setSetupRequired(!status.rootInitialized);
-      } catch {
-        /* 保留普通登录页，允许用户重试。 */
-      }
-    });
-  }, [refreshSession]);
+    receiveSession(session);
+    void refreshSession().catch(onSignedOut);
+  }, [refreshSession, receiveSession, session, onSignedOut]);
 
   useEffect(() => {
     const onHashChange = () => setRoute(normalizeHash(window.location.hash));
@@ -198,47 +122,9 @@ export function App() {
     setTeamId("");
     setMemberships([]);
     setMfaSetupRequired(false);
-    setUser(null);
+    onSignedOut();
     navigate("/usage");
-  }, []);
-
-  if (user === undefined) {
-    return <div className="center">加载中…</div>;
-  }
-  if (!user) {
-    if (setupRequired) {
-      return (
-        <RootSetupPage
-          onSetup={(next) => {
-            receiveSession(next);
-            void refreshSession();
-            setSetupRequired(false);
-          }}
-        />
-      );
-    }
-    if (route.startsWith("/invite"))
-      return (
-        <>
-          <ToastHost />
-          <DialogHost />
-          <InvitePage onAccepted={refreshSession} />
-        </>
-      );
-    return (
-      <LoginPage
-        onLogin={(next) => {
-          receiveSession(next);
-          void refreshSession();
-          const invitation = sessionStorage.getItem("console-invitation");
-          if (invitation) {
-            sessionStorage.removeItem("console-invitation");
-            navigate(`/invite?token=${encodeURIComponent(invitation)}`);
-          }
-        }}
-      />
-    );
-  }
+  }, [onSignedOut]);
 
   if (mfaSetupRequired) {
     return (
@@ -250,7 +136,7 @@ export function App() {
           teamId: "",
           team: undefined,
           membership: undefined,
-          isRoot: true,
+          canManagePlatform: true,
           canManageTeam: true,
           selectTeam: () => undefined,
           refreshSession,
@@ -261,7 +147,7 @@ export function App() {
         <div className="login-page">
           <div className="login-card mfa-gate-card">
             <h1 className="login-title">MENDAO</h1>
-            <p className="login-sub">超级管理员安全绑定 · MANDATORY MFA</p>
+            <p className="login-sub">系统管理员安全绑定 · MANDATORY MFA</p>
             <p className="readout">
               当前部署已启用强制双重验证：请先绑定身份验证器；完成绑定前，除安全设置外的控制台接口都会被拒绝。
             </p>
@@ -279,8 +165,8 @@ export function App() {
     );
   }
 
-  const isRoot = user.role === "root";
-  const teams = isRoot ? rootTeams : memberships.map((item) => item.team);
+  const canManagePlatform = user.platformAccess === true;
+  const teams = canManagePlatform ? platformTeams : memberships.map((item) => item.team);
   const membership = memberships.find((item) => item.team.id === teamId);
   const team = teams.find((item) => item.id === teamId);
   const canManageTeam = isTeamManager(user, membership);
@@ -290,11 +176,9 @@ export function App() {
     setTeamId(id);
   };
   const [requestedSection, param] = splitRoute(route);
-  const section = resolveConsoleSection(requestedSection, isRoot, canManageTeam);
-  const allowed = routeAllowed(section, isRoot, canManageTeam);
-  const navGroups = isRoot
-    ? [...NAV_GROUPS]
-    : [
+  const section = resolveConsoleSection(requestedSection, canManagePlatform, canManageTeam);
+  const allowed = routeAllowed(section, canManagePlatform, canManageTeam);
+  const navGroups: NavGroup[] = [
         {
           label: canManageTeam ? "团队工作台" : "我的空间",
           items: [
@@ -322,9 +206,6 @@ export function App() {
       ];
   let page: ReactNode;
   switch (section) {
-    case "credit-packages":
-      page = <CreditPackagesPage />;
-      break;
     case "payments":
       page = <PaymentsPage />;
       break;
@@ -346,59 +227,21 @@ export function App() {
     case "invite":
       page = <InvitePage onAccepted={refreshSession} user={user} />;
       break;
-    case "releases":
-      page = <ReleasesPage />;
-      break;
-    case "models":
-      page = <ModelsPage />;
-      break;
-    case "model-display":
-      page = <ModelDisplayPage />;
-      break;
-    case "media-models":
-      page = <MediaModelsPage />;
-      break;
-    case "pricing":
-      page = <PricingPage />;
-      break;
     case "devices":
       page = <DevicesPage />;
-      break;
-    case "providers":
-      page = <ProvidersPage />;
-      break;
-    case "config":
-      page = <ConfigPage />;
       break;
     case "usage":
       page = <UsagePage />;
       break;
-    case "ops":
-      page = <OpsPage />;
-      break;
-    case "template-library":
-      page = <TemplateLibraryPage />;
-      break;
-    case "ui":
-      page = <UiLibraryPage />;
-      break;
-    case "org":
-    case "users":
-      // 「用户」已并入「团队与账号」；旧书签 #/users 直接落到合并页。
-      page = <OrgPage currentUserId={user.id} />;
-      break;
     case "audit":
       page = <AuditPage />;
       break;
-    case "teams":
-      page = param ? <TeamDetailPage teamId={param} /> : <OrgPage currentUserId={user.id} />;
-      break;
     default:
-      page = isRoot ? <OrgPage currentUserId={user.id} /> : <UsagePage />;
+      page = canManagePlatform ? null : <UsagePage />;
   }
 
   if (
-    !isRoot &&
+    !canManagePlatform &&
     !teamId &&
     ["team", "usage", "members", "policy", "team-settings", "audit"].includes(section)
   )
@@ -413,7 +256,7 @@ export function App() {
         此页面需要相应管理权限。<a href="#/usage">返回我的用量</a>
       </Notice>
     );
-  return (
+  const renderShell = (groups: NavGroup[], content: ReactNode, referenceNav: ReactNode = null) => (
     <AuthProvider
       value={{
         user,
@@ -422,7 +265,7 @@ export function App() {
         teamId,
         team,
         membership,
-        isRoot,
+        canManagePlatform,
         canManageTeam,
         selectTeam,
         refreshSession,
@@ -438,7 +281,7 @@ export function App() {
             <div className="brand-sub">计量控制台 · METERING</div>
           </div>
           <nav aria-label="控制台导航">
-            {navGroups.map((group) => (
+            {groups.map((group) => (
               <Fragment key={group.label}>
                 <p className="nav-group">{group.label}</p>
                 {group.items.map((item) => (
@@ -454,21 +297,9 @@ export function App() {
               </Fragment>
             ))}
           </nav>
-          {isRoot ? (
-            <div className="side-ref">
-              <p className="nav-group">参考</p>
-              <a href="#/ui" className={section === "ui" ? "nav-item active" : "nav-item"}>
-                <Glyph icon={Palette} />
-                <span>UI 组件库</span>
-              </a>
-              <a href="#/template-library" className={section === "template-library" ? "nav-item active" : "nav-item"}>
-                <Glyph icon={LayoutTemplate} />
-                <span>模板库</span>
-              </a>
-            </div>
-          ) : null}
+          {referenceNav}
           <div className="side-foot">
-            {isRoot ? (
+            {canManagePlatform ? (
               <a href="#/profile" className="nav-item">
                 <Glyph icon={UserCog} />
                 <span>个人设置</span>
@@ -484,7 +315,7 @@ export function App() {
                     {user.displayName || user.email}
                   </span>
                   <span className="user-mail" title={user.email}>
-                    {isRoot ? "超级管理员 · " : canManageTeam ? "团队管理员 · " : "成员 · "}
+                    {canManagePlatform ? "系统管理员 · " : canManageTeam ? "团队管理员 · " : "成员 · "}
                     {user.email}
                   </span>
                 </div>
@@ -498,10 +329,19 @@ export function App() {
         </aside>
         <main className="main">
           <div className="wrap" key={`${user.id}:${teamId}:${section}`}>
-            {page}
+            {content}
           </div>
         </main>
       </div>
     </AuthProvider>
+  );
+  return (
+    <Suspense fallback={<div className="center">加载中…</div>}>
+      {canManagePlatform ? (
+        <RootConsole section={section} param={param} userId={user.id} page={page}>
+          {renderShell}
+        </RootConsole>
+      ) : renderShell(navGroups, page)}
+    </Suspense>
   );
 }

@@ -69,7 +69,7 @@ function mount({ root = true, handler, templates = [template], reviews = [] } = 
           }
         },
       };
-      if (name === "../auth.js") return { useAuth: () => ({ isRoot: rootValue, user: { id: "root-user" } }) };
+      if (name === "../auth.js") return { useAuth: () => ({ canManagePlatform: rootValue, user: { id: "root-user" } }) };
       if (name === "../api.js") return { api: async (path, options) => {
         calls.push({ path, options });
         if (handler) return handler(path, options);
@@ -143,7 +143,7 @@ function evidence(ui, score = "91") {
 
 test("non-root never mounts management requests or cached evidence", async () => {
   const ui = mount({ root: false });
-  assert.match(text(await ui.settle()), /仅超级管理员/);
+  assert.match(text(await ui.settle()), /仅系统管理员/);
   assert.equal(ui.calls.length, 0);
 });
 

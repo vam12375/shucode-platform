@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ExternalLink, HandCoins, RefreshCw, Settings2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
+import { ExternalLink, HandCoins, RefreshCw } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../auth.js";
 import { toastOk } from "../components/Feedback.js";
@@ -8,6 +8,8 @@ import { Select } from "../components/Select.js";
 import { Chip, Notice } from "../components/StatusChip.js";
 import { alipayURL, paymentAmount, rechargeTeams, restorePaymentAttempt, sameAttempt, type PaymentAttempt } from "../payments.js";
 import { formatShanghaiTime } from "../time.js";
+
+const PaymentConfigPanel = lazy(() => import("./PaymentConfig.js"));
 
 type AccountMode = "personal" | "team";
 type TargetType = AccountMode;
@@ -33,16 +35,6 @@ interface PaymentOrder {
   createdAt: string;
   expiresAt: string;
   paidAt: string | null;
-}
-interface ConfigData {
-  enabled: boolean;
-  appId: string;
-  sellerId: string;
-  gateway: "production" | "sandbox";
-  privateKeyConfigured: boolean;
-  publicKeyConfigured: boolean;
-  notifyUrl: string;
-  returnUrl: string;
 }
 
 const statusText: Record<PaymentStatus, { label: string; tone: "info" | "ok" | "mute" }> = {
@@ -72,65 +64,6 @@ function OrderRow({ order, onReconcile, disabled }: { order: PaymentOrder; onRec
   );
 }
 
-export function PaymentConfigPanel({ onSaved }: { onSaved?: () => void } = {}) {
-  const [config, setConfig] = useState<ConfigData | null>(null);
-  const [appId, setAppId] = useState("");
-  const [sellerId, setSellerId] = useState("");
-  const [gateway, setGateway] = useState<ConfigData["gateway"]>("production");
-  const [enabled, setEnabled] = useState(false);
-  const [privateKey, setPrivateKey] = useState("");
-  const [publicKey, setPublicKey] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const pending = useRef(false);
-  const active = useRef(true);
-  const load = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const next = await api<ConfigData>("/payments/config", { signal });
-      if (!active.current || signal?.aborted) return;
-      setConfig(next); setAppId(next.appId); setSellerId(next.sellerId); setGateway(next.gateway); setEnabled(next.enabled); setError("");
-    } catch (reason) { if (active.current && !signal?.aborted) setError(reason instanceof Error ? reason.message : "加载支付宝配置失败"); }
-  }, []);
-  useEffect(() => { active.current = true; const controller = new AbortController(); void load(controller.signal); return () => { active.current = false; controller.abort(); }; }, [load]);
-  const save = async (): Promise<void> => {
-    if (!config || pending.current) return;
-    pending.current = true; setBusy(true); setError("");
-    try {
-      const next = await api<ConfigData>("/payments/config", { method: "PUT", body: JSON.stringify({ enabled, appId: appId.trim(), sellerId: sellerId.trim(), gateway, ...(privateKey.trim() ? { privateKey: privateKey.trim() } : {}), ...(publicKey.trim() ? { publicKey: publicKey.trim() } : {}) }) });
-      if (!active.current) return;
-      setConfig(next); setAppId(next.appId); setSellerId(next.sellerId); setGateway(next.gateway); setEnabled(next.enabled);
-      setPrivateKey(""); setPublicKey(""); toastOk("支付宝配置已保存"); onSaved?.();
-    } catch (reason) { if (active.current) setError(reason instanceof Error ? reason.message : "保存支付宝配置失败"); }
-    finally { pending.current = false; if (active.current) setBusy(false); }
-  };
-  return (
-    <section className="pane d1">
-      <div className="pane-h"><h2><Glyph icon={Settings2} size={16} /> 支付宝接入</h2>{config ? <Chip tone={config.enabled ? "ok" : "mute"}>{config.enabled ? "已启用" : "已停用"}</Chip> : null}</div>
-      <div className="pane-b">
-        {error ? <Notice tone="stop" k="支付宝配置">{error}</Notice> : null}
-        {config ? <>
-          <div className="form-row">
-            <label className="field grow"><span className="field-label">App ID</span><input className="input" value={appId} onChange={(event) => setAppId(event.target.value)} disabled={busy} /></label>
-            <label className="field grow"><span className="field-label">商户号 Seller ID</span><input className="input" value={sellerId} onChange={(event) => setSellerId(event.target.value)} disabled={busy} /></label>
-            <label className="form-row"><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} disabled={busy} />允许新充值</label>
-          </div>
-          <div className="form-row">
-            <label className="field"><span className="field-label">网关环境</span><Select ariaLabel="支付宝网关环境" value={gateway} onChange={(value) => setGateway(value as ConfigData["gateway"])} options={[{ value: "production", label: "正式环境" }, { value: "sandbox", label: "沙箱环境" }]} disabled={busy} /></label>
-            <span className="readout">私钥：{config.privateKeyConfigured ? "已配置（不会回显）" : "未配置"}</span>
-            <span className="readout">支付宝公钥：{config.publicKeyConfigured ? "已配置（不会回显）" : "未配置"}</span>
-          </div>
-          <div className="form-row">
-            <label className="field grow"><span className="field-label">重新写入商户私钥（可留空保留）</span><textarea className="input" rows={3} value={privateKey} onChange={(event) => setPrivateKey(event.target.value)} disabled={busy} placeholder="留空表示保留已保存密钥" /></label>
-            <label className="field grow"><span className="field-label">重新写入支付宝公钥（可留空保留）</span><textarea className="input" rows={3} value={publicKey} onChange={(event) => setPublicKey(event.target.value)} disabled={busy} placeholder="留空表示保留已保存密钥" /></label>
-          </div>
-          <p className="readout">通知地址：{config.notifyUrl || "由服务端配置"}<br />返回地址：{config.returnUrl || "由服务端配置"}</p>
-          <div className="form-row"><button className="btn" type="button" disabled={busy} onClick={() => void save()}>{busy ? "保存中…" : "保存支付宝配置"}</button><button className="btn btn-ghost" type="button" disabled={busy} onClick={() => void load()}>重新读取配置</button></div>
-        </> : error ? <button className="btn btn-ghost" type="button" onClick={() => void load()}>重试读取支付配置</button> : <Notice k="支付宝配置">正在读取配置…</Notice>}
-      </div>
-    </section>
-  );
-}
-
 function sessionRead(key: string): string | null {
   try { return sessionStorage.getItem(key); } catch { return null; }
 }
@@ -139,8 +72,8 @@ function sessionWrite(key: string, value: string | null): void {
 }
 
 export function PaymentsPage() {
-  const { user, teams, team, memberships, isRoot, refreshSession } = useAuth();
-  const manageableTeams = useMemo(() => rechargeTeams(teams, memberships, isRoot), [isRoot, memberships, teams]);
+  const { user, teams, team, memberships, canManagePlatform, refreshSession } = useAuth();
+  const manageableTeams = useMemo(() => rechargeTeams(teams, memberships, canManagePlatform), [canManagePlatform, memberships, teams]);
   const attemptKey = "mendao:payments:v1:" + user.id + ":attempt";
   const orderKey = "mendao:payments:v1:" + user.id + ":order";
   const [restoredAttempt] = useState(() => restorePaymentAttempt(sessionRead(attemptKey)));
@@ -278,8 +211,8 @@ export function PaymentsPage() {
   };
   const createOrder = async (testPayment = false): Promise<void> => {
     if (pending.current || !account?.enabled) return;
-    const amount = testPayment && isRoot ? "0.01" : paymentAmount(amountYuan);
-    if (!amount || (testPayment && !isRoot)) { setDraftError("充值金额为 1–100000 元，最多两位小数"); return; }
+    const amount = testPayment && canManagePlatform ? "0.01" : paymentAmount(amountYuan);
+    if (!amount || (testPayment && !canManagePlatform)) { setDraftError("充值金额为 1–100000 元，最多两位小数"); return; }
     if (targetType === "team" && !manageableTeams.some((item) => item.id === targetTeamId)) { setDraftError("请选择你有管理权限的有效团队"); return; }
     pending.current = true; setBusy("order"); setDraftError("");
     try {
@@ -343,7 +276,7 @@ export function PaymentsPage() {
         <p className="readout">到账对象：{targetName}。普通充值金额 1–100000 元，最多两位小数。</p>
         <div className="form-row payments-actions"><label className="form-row"><input type="checkbox" checked={mobile} onChange={(event) => setMobile(event.target.checked)} disabled={locked} />使用手机收银台</label><button className="btn" type="submit" disabled={locked || !account?.enabled}><Glyph icon={ExternalLink} size={14} />{busy === "order" ? "创建订单中…" : "前往支付宝付款"}</button></div>
       </form>
-      {isRoot ? <div className="payments-test"><h3>root 小额实付测试</h3><p className="readout">向「{targetName}」实际支付 0.01 元，确认后增加 0.01 credit。使用当前配置的支付宝环境。</p><button className="btn btn-ghost" type="button" disabled={locked || !account?.enabled} onClick={() => void createOrder(true)}>0.01 元支付测试</button></div> : null}
+      {canManagePlatform ? <div className="payments-test"><h3>小额实付测试</h3><p className="readout">向「{targetName}」实际支付 0.01 元，确认后增加 0.01 credit。使用当前配置的支付宝环境。</p><button className="btn btn-ghost" type="button" disabled={locked || !account?.enabled} onClick={() => void createOrder(true)}>0.01 元支付测试</button></div> : null}
     </div></section>
 
     {orderError ? <Notice tone="stop" k="订单核对失败">{orderError}。状态尚未更新，请重试查询。</Notice> : null}
@@ -358,6 +291,6 @@ export function PaymentsPage() {
       <div className="table-scroll"><table className="table"><thead><tr><th>商户订单号</th><th>金额</th><th>到账</th><th>目标</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead><tbody>{orders.map((order) => <OrderRow key={order.id} order={order} disabled={locked} onReconcile={(next) => void reconcile(next)} />)}{orders.length === 0 ? <tr><td colSpan={7} className="readout">{orderLoading ? "正在读取充值记录…" : ordersError ? "充值记录暂不可用。" : "暂无充值记录。"}</td></tr> : null}</tbody></table></div>
       {nextCursor ? <div className="pane-b"><button className="btn btn-ghost" type="button" disabled={locked} onClick={() => void moreOrders()}>{busy === "more" ? "读取中…" : "更多订单"}</button></div> : null}
     </section>
-    {isRoot ? <PaymentConfigPanel onSaved={() => void loadAccount()} /> : null}
+    {canManagePlatform ? <Suspense fallback={null}><PaymentConfigPanel onSaved={() => void loadAccount()} /></Suspense> : null}
   </div>;
 }

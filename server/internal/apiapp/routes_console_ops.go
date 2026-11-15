@@ -227,7 +227,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 		_, hasBaseURL := body["baseUrl"]
 		_, hasAPIKey := body["apiKey"]
 		if (hasBaseURL || hasAPIKey) && admin.Role != store.RoleRoot {
-			c.JSON(403, fail(403, "需要超级管理员权限"))
+			c.JSON(403, fail(403, "无权访问此功能"))
 			return
 		}
 		var patch store.UpdateUpstreamProviderPatch
@@ -1092,7 +1092,11 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 			if record.ReasoningBudgetTokens != nil {
 				budget = strconv.FormatInt(*record.ReasoningBudgetTokens, 10)
 			}
-			row := []string{isoString(record.CreatedAt), record.RequestID, record.UserID, record.TeamID, record.DeviceTokenID, exportUsageModel(c, record.Model), record.ReasoningEffort, budget,
+			visibleUser, visibleDevice := consoleAccountID(c, record.UserID), record.DeviceTokenID
+			if visibleUser != record.UserID {
+				visibleDevice = ""
+			}
+			row := []string{isoString(record.CreatedAt), record.RequestID, visibleUser, record.TeamID, visibleDevice, exportUsageModel(c, record.Model), record.ReasoningEffort, budget,
 				strconv.FormatInt(record.InputTokens, 10), strconv.FormatInt(record.OutputTokens, 10), strconv.FormatInt(record.CacheReadTokens, 10), strconv.FormatInt(record.CacheCreationTokens, 10),
 				strconv.FormatInt(record.CreditsMicro, 10), string(record.Status), record.ErrorType, latency}
 			if user.Role == store.RoleRoot {
@@ -1242,7 +1246,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 			}
 			filter.TeamID = membership.Team.ID
 		}
-		if actor := c.Query("actorUserId"); actor != "" {
+		if actor := c.Query("actorUserId"); actor != "" && user.Role == store.RoleRoot {
 			filter.ActorUserID = actor
 		}
 		if cursorOK {
@@ -1271,7 +1275,7 @@ func registerConsoleOpsRoutes(router *gin.Engine, deps *Deps) {
 			nextCursor = &cursor
 		}
 		rows := make([]auditPublic, 0, len(page))
-		if user.Role != store.RoleRoot && !prepareModelDisplay(c, deps) {
+		if user.Role != store.RoleRoot && (!prepareModelDisplay(c, deps) || !prepareAccountPrivacy(c, deps)) {
 			return
 		}
 		for _, row := range page {

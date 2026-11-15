@@ -27,6 +27,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     msg?: string;
   } | null;
   if (!response.ok || (body?.code !== undefined && body.code !== 0)) {
+    if (response.status === 401 && path !== "/auth/login") {
+      window.dispatchEvent(new Event("console-session-expired"));
+    }
     const error = new Error(
       body?.msg ?? `请求失败 (${response.status})`,
     ) as ApiError;

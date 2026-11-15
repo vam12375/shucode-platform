@@ -37,7 +37,7 @@ function isConflict(reason: unknown): boolean {
 }
 
 export function CreditPackagesPage() {
-  const { isRoot } = useAuth();
+  const { canManagePlatform } = useAuth();
   const [packages, setPackages] = useState<CreditPackage[]>([]);
   const [serverPackages, setServerPackages] = useState<CreditPackage[]>([]);
   const [revision, setRevision] = useState<string | null>(null);
@@ -84,7 +84,7 @@ export function CreditPackagesPage() {
 
   useEffect(() => {
     mounted.current = true;
-    if (!isRoot) {
+    if (!canManagePlatform) {
       setLoading(false);
       return () => { mounted.current = false; };
     }
@@ -94,7 +94,7 @@ export function CreditPackagesPage() {
       mounted.current = false;
       controller.abort();
     };
-  }, [isRoot, load]);
+  }, [canManagePlatform, load]);
 
   const updatePackage = (sku: string, patch: Partial<CreditPackage>): void => {
     setPackages((current) => {
@@ -136,7 +136,7 @@ export function CreditPackagesPage() {
   };
 
   const save = async (): Promise<void> => {
-    if (!isRoot || pending.current || loading || needsRefresh || conflicts.length || revision === null) return;
+    if (!canManagePlatform || pending.current || loading || needsRefresh || conflicts.length || revision === null) return;
     const validationError = validatePackages(packages);
     if (validationError) {
       setError(validationError);
@@ -179,7 +179,7 @@ export function CreditPackagesPage() {
   );
   const publishable = useMemo(() => publishedPackages(packages), [packages]);
 
-  if (!isRoot) return <Notice tone="stop" k="无权访问">充值套餐目录仅限 root 管理员。</Notice>;
+  if (!canManagePlatform) return <Notice tone="stop" k="无权访问">充值套餐目录仅限 系统管理员。</Notice>;
 
   return (
     <div className="credit-packages-page">
@@ -208,7 +208,7 @@ export function CreditPackagesPage() {
         <section className="pane credit-packages-conflicts" aria-label="并发修改冲突">
           <div className="pane-h"><h2>需要确认的并发修改</h2><Chip tone="hot">{conflicts.length} 项</Chip></div>
           <div className="pane-b">
-            <p className="readout">同一字段被其他 root 管理员同时修改。逐项选择保留本地草稿或采用当前服务器值，完成后才能保存。</p>
+            <p className="readout">同一字段被其他 系统管理员同时修改。逐项选择保留本地草稿或采用当前服务器值，完成后才能保存。</p>
             {conflicts.map((conflict) => {
               const local = packages.find((item) => item.sku === conflict.sku);
               const remote = serverPackages.find((item) => item.sku === conflict.sku);

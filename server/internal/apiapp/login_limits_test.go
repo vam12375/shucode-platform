@@ -114,7 +114,7 @@ func TestLoginSessionTTLByRole(t *testing.T) {
 }
 
 func TestSetupHostGuard(t *testing.T) {
-	f := newAPIFixture(t)
+	f := newAPIEmptyFixture(t)
 	f.deps.Env.SetupAllowedHosts = []string{"setup.example.test"}
 	f.engine = New(f.deps)
 

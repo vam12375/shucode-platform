@@ -35,7 +35,7 @@ test("team management follows active membership rather than global admin", () =>
     }),
     false,
   );
-  assert.equal(isTeamManager({ ...user, role: "root" }), true);
+  assert.equal(isTeamManager({ ...user, platformAccess: true }), true);
 });
 
 test("direct navigation cannot expose platform management to team admins", () => {

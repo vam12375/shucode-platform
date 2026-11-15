@@ -7,6 +7,8 @@ import * as helpers from "../src/payments.ts";
 
 const source = await readFile(new URL("../src/pages/Payments.tsx", import.meta.url), "utf8");
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
+const configSource = await readFile(new URL("../src/pages/PaymentConfig.tsx", import.meta.url), "utf8");
+const configCompiled = ts.transpileModule(configSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
 const team = { id: "team-a", name: "共享团队", quotaCredits: "12.000000", usedCredits: "2.000000" };
 const account = { mode: "team", enabled: true, personal: { id: "user-a", name: "本人余额", quotaCredits: "3.000000", usedCredits: "1.000000", balanceCredits: "2.000000" }, team: { ...team, balanceCredits: "10.000000" } };
 const order = { id: "order-a", outTradeNo: "md_fixture_a", targetType: "personal", targetId: "user-a", teamId: "personal-ledger", userId: "user-a", amountYuan: "10.00", creditAmount: "10.00", status: "pending", testPayment: false, createdAt: "2026-11-02T00:00:00Z", expiresAt: "2026-11-02T00:30:00Z", paidAt: null };
@@ -18,12 +20,12 @@ async function mount({ root = false, manager = false, storage = new Map(), panel
   let ordersResponse = { orders: [], nextCursor: null };
   let mutation = async (path) => path === "/payments/config" ? currentConfig : path === "/payments/account" ? { mode: "personal" } : path.endsWith("/reconcile") ? { order: currentOrder } : { order: currentOrder, payUrl: "https://openapi.alipay.com/gateway.do?fixture=1" };
   let query = null, failure = loadFailure;
-  const auth = { user: { id: "user-a", email: "member@example.test", displayName: "本人" }, teams: [team], team, isRoot: root, memberships: [{ team, role: manager ? "admin" : "member", memberDisabledAt: null }], refreshSession: async () => {} };
+  const auth = { user: { id: "user-a", email: "member@example.test", displayName: "本人" }, teams: [team], team, canManagePlatform: root, memberships: [{ team, role: manager ? "admin" : "member", memberDisabledAt: null }], refreshSession: async () => {} };
   const document = { visibilityState: "visible", addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: (name, fn) => { if (listeners.get(name) === fn) listeners.delete(name); } };
   const jsx = (type, props) => ({ type, props });
   const same = (a, b) => a?.length === b?.length && a.every((v, i) => Object.is(v, b[i]));
   const output = {};
-  runInNewContext(compiled, {
+  runInNewContext(panel ? configCompiled : compiled, {
     exports: output, Error, URL, URLSearchParams, AbortController, document,
     crypto: { randomUUID: () => "11111111-1111-4111-8111-" + String(++uuid).padStart(12, "0") },
     sessionStorage: { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: (key) => storage.delete(key) },
@@ -31,6 +33,7 @@ async function mount({ root = false, manager = false, storage = new Map(), panel
     require(name) {
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
       if (name === "react") return {
+        lazy: () => "PaymentConfigPanel", Suspense: "Suspense",
         useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = typeof initial === "function" ? initial() : initial; return [slots[i], (v) => { slots[i] = typeof v === "function" ? v(slots[i]) : v; }]; },
         useRef(initial) { const i = cursor++; if (!(i in slots)) slots[i] = { current: initial }; return slots[i]; },
         useCallback(fn, deps) { const i = cursor++; if (!(i in slots) || !same(slots[i].deps, deps)) slots[i] = { deps, fn }; return slots[i].fn; },
@@ -58,7 +61,7 @@ async function mount({ root = false, manager = false, storage = new Map(), panel
       throw new Error("Unexpected import " + name);
     },
   });
-  const render = () => { cursor = 0; const tree = panel ? output.PaymentConfigPanel() : output.PaymentsPage(); scheduled.splice(0).forEach((fn) => fn()); return tree; };
+  const render = () => { cursor = 0; const tree = panel ? output.default() : output.PaymentsPage(); scheduled.splice(0).forEach((fn) => fn()); return tree; };
   const settle = async () => { await new Promise(setImmediate); return render(); };
   render(); await settle();
   return { render, settle, calls, navigations, toasts, storage, timers, listeners,

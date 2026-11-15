@@ -11,7 +11,6 @@ import {
 import { useCountUp } from "./Gauge.js";
 import { Glyph } from "./Icon.js";
 import { Select } from "./Select.js";
-import { appVersion, versionText } from "../version.js";
 
 interface UsageAggregate {
   requests: number;
@@ -61,7 +60,7 @@ function sumAggregates(rows: UsageAggregate[]): {
   );
 }
 
-async function loadRail(isRoot: boolean, teamId: string): Promise<RailData> {
+async function loadRail(canManagePlatform: boolean, teamId: string): Promise<RailData> {
   const scope = teamId ? `&teamId=${encodeURIComponent(teamId)}` : "";
   const now = new Date();
   // 展示按上海日期取今日；服务端按 UTC 解析 from/to，必须换算上海日界。
@@ -77,7 +76,7 @@ async function loadRail(isRoot: boolean, teamId: string): Promise<RailData> {
     api<{ devices: DeviceRow[] }>(
       `/devices${teamId ? `?teamId=${encodeURIComponent(teamId)}` : ""}`,
     ),
-    isRoot
+    canManagePlatform
       ? api<{ releases: ReleaseRow[] }>("/releases")
       : Promise.resolve({ releases: [] }),
   ]);
@@ -102,13 +101,13 @@ async function loadRail(isRoot: boolean, teamId: string): Promise<RailData> {
 
 /** 顶部读数条（签名元素）：今日请求 / 今日积分 / 活跃设备 / 生效版本，数值带进位动效。 */
 export function ReadoutRail() {
-  const { isRoot, canManageTeam, teamId, team, teams, selectTeam, user, refreshSession } =
+  const { canManagePlatform, canManageTeam, teamId, team, teams, selectTeam, user, refreshSession } =
     useAuth();
   const [data, setData] = useState<RailData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
-    loadRail(isRoot, teamId)
+    loadRail(canManagePlatform, teamId)
       .then((next) => {
         setData(next);
         setLoadError(null);
@@ -118,7 +117,7 @@ export function ReadoutRail() {
         setData(null);
         setLoadError(error instanceof Error ? error.message : "读数加载失败");
       });
-  }, [isRoot, teamId]);
+  }, [canManagePlatform, teamId]);
 
   useEffect(() => {
     refresh();
@@ -154,16 +153,16 @@ export function ReadoutRail() {
         : 0;
   const balanceWidth = `${remainingPercent.toFixed(1)}%`;
   const balanceLow = Boolean(
-    !isRoot && team && !team.unlimited && remainingPercent <= 10,
+    !canManagePlatform && team && !team.unlimited && remainingPercent <= 10,
   );
   // 只有 root 或多团队用户需要切换;单团队展示静态团队名,避免无意义的单选项下拉。
-  const showScopeSelect = isRoot || teams.length > 1;
+  const showScopeSelect = canManagePlatform || teams.length > 1;
 
   return (
     <header
       className="rail"
       aria-label={
-        isRoot
+        canManagePlatform
           ? "平台实时读数"
           : canManageTeam
             ? "团队实时读数"
@@ -173,16 +172,16 @@ export function ReadoutRail() {
       <div className="read scope">
         <div className="label">
           <Glyph icon={Building2} size={12} strokeWidth={2} />
-          {isRoot ? "查看范围" : "当前团队"}
+          {canManagePlatform ? "查看范围" : "当前团队"}
         </div>
         {showScopeSelect ? (
           <Select
-            ariaLabel={isRoot ? "切换查看范围" : "切换当前团队"}
+            ariaLabel={canManagePlatform ? "切换查看范围" : "切换当前团队"}
             style={{ width: "100%" }}
             value={teamId}
             onChange={selectTeam}
             options={[
-              ...(isRoot ? [{ value: "", label: "全平台" }] : []),
+              ...(canManagePlatform ? [{ value: "", label: "全平台" }] : []),
               ...teams.map((item) => ({ value: item.id, label: item.name })),
             ]}
           />
@@ -252,7 +251,7 @@ export function ReadoutRail() {
       <div className="read" title="近 24 小时有调用且未吊销的设备数">
         <div className="label">
           <Glyph icon={MonitorSmartphone} size={12} strokeWidth={2} />
-          {isRoot ? "活跃设备" : "本人活跃设备"}
+          {canManagePlatform ? "活跃设备" : "本人活跃设备"}
         </div>
         <div className="value">
           {data ? (
@@ -275,8 +274,8 @@ export function ReadoutRail() {
       <div
         className="read"
         title={
-          isRoot
-            ? versionText(appVersion) || undefined
+          canManagePlatform
+            ? undefined
             : team
               ? team.unlimited
                 ? "团队额度不限"
@@ -286,15 +285,15 @@ export function ReadoutRail() {
       >
         <div className="label">
           <Glyph
-            icon={isRoot ? Rocket : team ? Wallet : UserRound}
+            icon={canManagePlatform ? Rocket : team ? Wallet : UserRound}
             size={12}
             strokeWidth={2}
           />
-          {isRoot ? "生效版本" : team ? "团队余额" : "当前账户"}
+          {canManagePlatform ? "生效版本" : team ? "团队余额" : "当前账户"}
         </div>
         <div className="value">
-          {isRoot
-            ? appVersion.tag || (data?.revision == null ? "—" : `R${data.revision}`)
+          {canManagePlatform
+            ? (data?.revision == null ? "—" : `R${data.revision}`)
             : team
               ? team.unlimited
                 ? "不限"
@@ -311,8 +310,8 @@ export function ReadoutRail() {
           aria-hidden="true"
           style={
             {
-              "--w": isRoot
-                ? appVersion.tag || data?.revision != null
+              "--w": canManagePlatform
+                ? data?.revision != null
                   ? "100%"
                   : "0%"
                 : team
@@ -323,11 +322,7 @@ export function ReadoutRail() {
         >
           <i className={balanceLow ? "hot" : undefined} />
         </div>
-        {isRoot && appVersion.tag && appVersion.subject ? (
-          <div className="note" title={versionText(appVersion)}>
-            {appVersion.subject}
-          </div>
-        ) : null}
+
       </div>
     </header>
   );

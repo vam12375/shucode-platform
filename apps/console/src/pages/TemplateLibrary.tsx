@@ -43,11 +43,11 @@ const errorMessage = (error: unknown) =>
 const types = Object.entries(kindLabels) as [TemplateKind, string][];
 
 export function TemplateLibraryPage() {
-  const { isRoot, user } = useAuth();
-  return isRoot ? (
+  const { canManagePlatform, user } = useAuth();
+  return canManagePlatform ? (
     <LibraryContent key={user.id} />
   ) : (
-    <Notice tone="stop">仅超级管理员可管理模板库。</Notice>
+    <Notice tone="stop">仅系统管理员可管理模板库。</Notice>
   );
 }
 function LibraryContent() {

@@ -57,7 +57,16 @@ func registerQuotaRequestRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
-		c.JSON(200, okData(gin.H{"requests": records}))
+		// 审核人是内部系统账号，团队只需要审批结果，不需要其账号标识。
+		visible := make([]store.QuotaRequestRecord, 0, len(records))
+		for _, record := range records {
+			if actor.Role != store.RoleRoot {
+				record.ReviewedBy = ""
+				record.RequestedBy = consoleAccountID(c, record.RequestedBy)
+			}
+			visible = append(visible, record)
+		}
+		c.JSON(200, okData(gin.H{"requests": visible}))
 	})
 	group.POST("/teams/:id/quota-requests", func(c *gin.Context) {
 		ctx := c.Request.Context()

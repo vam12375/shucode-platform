@@ -21,7 +21,7 @@ interface QuotaRequest {
   reviewedAt?: string;
 }
 export function QuotaRequestsPage() {
-  const { isRoot, teamId, teams, refreshSession } = useAuth();
+  const { canManagePlatform, teamId, teams, refreshSession } = useAuth();
   const [requests, setRequests] = useState<QuotaRequest[]>([]);
   const [amountCredits, setAmountCredits] = useState("");
   const [reason, setReason] = useState("");
@@ -81,7 +81,7 @@ export function QuotaRequestsPage() {
       <header className="page-head">
         <div>
           <p className="eyebrow">额度 / 人工审批</p>
-          <PageTitle icon={HandCoins}>{isRoot ? "额度申请审批" : "额度申请"}</PageTitle>
+          <PageTitle icon={HandCoins}>{canManagePlatform ? "额度申请审批" : "额度申请"}</PageTitle>
         </div>
         <span className="readout">
           {requests.filter((item) => item.status === "pending").length} 项待处理
@@ -95,7 +95,7 @@ export function QuotaRequestsPage() {
       <Notice k="人工额度申请">
         提交申请供平台管理员审核。申请记录不代表付款或充值凭证；批准后才会增加团队可用总额度。
       </Notice>
-      {!isRoot && teamId ? (
+      {!canManagePlatform && teamId ? (
         <section className="pane">
           <div className="pane-h">
             <h2>申请增加团队额度</h2>
@@ -153,7 +153,7 @@ export function QuotaRequestsPage() {
       ) : null}
       <section className="pane">
         <div className="pane-h">
-          <h2>{isRoot ? "申请记录" : "团队申请历史"}</h2>
+          <h2>{canManagePlatform ? "申请记录" : "团队申请历史"}</h2>
           <button
             className="btn btn-ghost btn-sm"
             disabled={busy}
@@ -173,7 +173,7 @@ export function QuotaRequestsPage() {
                 <th>申请时间</th>
                 <th>状态</th>
                 <th>处理说明</th>
-                {isRoot ? <th>审批</th> : null}
+                {canManagePlatform ? <th>审批</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -224,7 +224,7 @@ export function QuotaRequestsPage() {
                       </div>
                     ) : null}
                   </td>
-                  {isRoot ? (
+                  {canManagePlatform ? (
                     <td>
                       {request.status === "pending" ? (
                         <div className="form-row">
@@ -252,7 +252,7 @@ export function QuotaRequestsPage() {
               ))}
               {requests.length === 0 ? (
                 <tr>
-                  <td colSpan={isRoot ? 7 : 6} className="readout">
+                  <td colSpan={canManagePlatform ? 7 : 6} className="readout">
                     暂无额度申请。
                   </td>
                 </tr>

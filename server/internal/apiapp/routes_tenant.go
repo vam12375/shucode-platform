@@ -302,7 +302,7 @@ func registerTenantRoutes(router *gin.Engine, deps *Deps) {
 			switch key {
 			case "role":
 				if actor.Role != store.RoleRoot {
-					c.JSON(403, fail(403, "只有超级管理员可以任免团队管理员"))
+					c.JSON(403, fail(403, "没有修改团队管理权限的权限"))
 					return
 				}
 				value, _ := raw.(string)

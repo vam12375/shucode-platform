@@ -21,7 +21,7 @@ runInNewContext(compiled, {
     if (name === "react") return { useCallback() {}, useEffect() {}, useState() {} };
     if (name === "react/jsx-runtime") return { jsx() {}, jsxs() {} };
     if (name === "../api.js") return { api() {} };
-    if (name === "../auth.js") return { useAuth: () => ({ isRoot: true }) };
+    if (name === "../auth.js") return { useAuth: () => ({ canManagePlatform: true }) };
     if (name === "./MediaTemplateReviews.js") return { MediaTemplateReviews: "MediaTemplateReviews" };
     if (name === "../components/Feedback.js") return { toastErr() {}, toastOk() {} };
     if (name === "../components/Select.js") return { Select: "Select" };
@@ -319,7 +319,7 @@ async function mountModels(models, providers = [provider], root = true) {
         return models;
       } };
       if (name === "../components/Feedback.js") return { toastErr() {}, toastOk() {} };
-      if (name === "../auth.js") return { useAuth: () => ({ isRoot: rootValue }) };
+      if (name === "../auth.js") return { useAuth: () => ({ canManagePlatform: rootValue }) };
       if (name === "./MediaTemplateReviews.js") return { MediaTemplateReviews: "MediaTemplateReviews" };
       if (name === "../components/Select.js") return { Select: "Select" };
       if (name === "../components/StatusChip.js") return { Chip: "Chip", Notice: "Notice" };

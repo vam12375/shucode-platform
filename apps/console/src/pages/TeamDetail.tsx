@@ -73,7 +73,7 @@ function statusChip(status: string): { tone?: ChipTone; label: string } {
 }
 
 export function TeamDetailPage({ teamId }: { teamId: string }) {
-  const { selectTeam, isRoot } = useAuth();
+  const { selectTeam, canManagePlatform } = useAuth();
   const [detail, setDetail] = useState<TeamDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [quota, setQuota] = useState("");
@@ -274,7 +274,7 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
             >
               保存
             </button>
-            {isRoot ? (
+            {canManagePlatform ? (
               <button
                 className="btn btn-ghost"
                 type="button"
@@ -286,7 +286,7 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
               </button>
             ) : null}
           </div>
-          {addingCredit && isRoot ? (
+          {addingCredit && canManagePlatform ? (
             <form
               onSubmit={(event) => {
                 event.preventDefault();

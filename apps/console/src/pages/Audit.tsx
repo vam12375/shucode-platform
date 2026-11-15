@@ -58,7 +58,7 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 export function AuditPage() {
-  const { teamId, user, isRoot, canManageTeam } = useAuth();
+  const { teamId, user, canManagePlatform, canManageTeam } = useAuth();
   const [rows, setLogs] = useState<AuditLogRow[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [pageSize, setPageSize] = useState(50);
@@ -68,7 +68,7 @@ export function AuditPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const requestVersion = useRef(0);
-  const pageScope = JSON.stringify([teamId, user.id, isRoot, canManageTeam, pageSize]);
+  const pageScope = JSON.stringify([teamId, user.id, canManagePlatform, canManageTeam, pageSize]);
   const currentPage = responseScope === pageScope;
   const logs = currentPage ? rows : [];
 

@@ -29,12 +29,15 @@ func TestHealthzAndStaticHosting(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dist, "assets", "app-abcdef12.js"), []byte("console.log(1)"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dist, "asset-access.json"), []byte(`{"version":1,"files":{"assets/app-abcdef12.js":"public"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	f.deps.Env.ConsoleDistDir = dist
 	engine := New(f.deps)
 
 	health := httptest.NewRecorder()
 	engine.ServeHTTP(health, httptest.NewRequest("GET", "/healthz", nil))
-	if health.Code != 200 || !strings.Contains(health.Body.String(), `"memoryDb":true`) {
+	if health.Code != 200 || health.Body.String() != `{"ok":true}` {
 		t.Fatalf("healthz 不符: %d %s", health.Code, health.Body.String())
 	}
 
@@ -349,13 +352,13 @@ func TestRootSetupRequiresBootstrapSecret(t *testing.T) {
 	f.deps.Env.MemoryDB = false
 	f.deps.Env.BootstrapSecret = ""
 	body := `{"email":"root@mendao.chat","displayName":"Root","password":"root-password-123"}`
-	if rec := f.do("POST", "/console/api/setup/root", "", body); rec.Code != 503 {
+	if rec := f.do("POST", "/console/api/setup/root", "", body); rec.Code != 404 {
 		t.Fatalf("未配置 bootstrap secret 应拒绝初始化: %d %s", rec.Code, rec.Body.String())
 	}
 
 	f.deps.Env.BootstrapSecret = "bootstrap-test-secret"
-	if rec := f.do("POST", "/console/api/setup/root", "", body); rec.Code != 403 {
-		t.Fatalf("缺失/错误 bootstrap secret 应 403: %d %s", rec.Code, rec.Body.String())
+	if rec := f.do("POST", "/console/api/setup/root", "", body); rec.Code != 404 {
+		t.Fatalf("缺失/错误 bootstrap secret 应 404: %d %s", rec.Code, rec.Body.String())
 	}
 	req := httptest.NewRequest("POST", "/console/api/setup/root", strings.NewReader(body))
 	req.Header.Set("content-type", "application/json")

@@ -18,8 +18,8 @@ export function alipayURL(value: string): string {
   return url.href;
 }
 
-export function rechargeTeams(teams: ConsoleTeam[], memberships: Membership[], isRoot: boolean): ConsoleTeam[] {
-  return teams.filter((team) => !team.disabledAt && (isRoot || memberships.some((item) => item.team.id === team.id && !item.memberDisabledAt && !item.team.disabledAt && ["owner", "admin"].includes(item.role))));
+export function rechargeTeams(teams: ConsoleTeam[], memberships: Membership[], canManagePlatform: boolean): ConsoleTeam[] {
+  return teams.filter((team) => !team.disabledAt && (canManagePlatform || memberships.some((item) => item.team.id === team.id && !item.memberDisabledAt && !item.team.disabledAt && ["owner", "admin"].includes(item.role))));
 }
 
 export function sameAttempt(a: PaymentAttempt, b: Omit<PaymentAttempt, "requestId">): boolean {

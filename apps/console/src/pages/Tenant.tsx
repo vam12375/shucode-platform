@@ -1,7 +1,7 @@
 import { formatCreditsDisplay } from "@shucode-platform/contracts/credits";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Boxes, Building2, MailPlus, Settings2, ShieldCheck, UserCog, Users } from "lucide-react";
-import { api, navigate } from "../api.js";
+import { Boxes, Building2, Settings2, ShieldCheck, UserCog, Users } from "lucide-react";
+import { api } from "../api.js";
 import { useAuth } from "../auth.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { MfaSettings } from "../components/MfaSettings.js";
@@ -88,7 +88,7 @@ function money(value?: string): string {
 }
 
 export function TenantPage({ section }: { section: string }) {
-  const { teamId, isRoot, refreshSession } = useAuth();
+  const { teamId, canManagePlatform, refreshSession } = useAuth();
   const [team, setTeam] = useState<ConsoleTeam | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -365,7 +365,7 @@ export function TenantPage({ section }: { section: string }) {
                           <button
                             className="btn btn-ghost btn-sm"
                             disabled={
-                              busy || (!isRoot && member.role !== "member")
+                              busy || (!canManagePlatform && member.role !== "member")
                             }
                             onClick={() =>
                               void run(
@@ -388,7 +388,7 @@ export function TenantPage({ section }: { section: string }) {
                           <button
                             className="btn btn-danger btn-sm"
                             disabled={
-                              busy || (!isRoot && member.role !== "member")
+                              busy || (!canManagePlatform && member.role !== "member")
                             }
                             onClick={async () => {
                               const result = await confirmDialog({
@@ -962,13 +962,13 @@ function availabilityOf(entries: ProbeEntry[]): number | null {
 }
 
 export function CatalogPage() {
-  const { user, teamId, isRoot } = useAuth();
+  const { user, teamId, canManagePlatform } = useAuth();
   const [models, setModels] = useState<Model[]>([]);
   const [history, setHistory] = useState<Record<string, ProbeEntry[]>>({});
   const [testing, setTesting] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState("");
   // 测试记录跟账号/团队绑定，避免切换身份后看到别人的探测历史。
-  const storageKey = `shucode.catalog.probes.v1:${user.id}:${teamId || "root"}`;
+  const storageKey = `shucode.catalog.probes.v1:${user.id}:${teamId || "platform"}`;
   useEffect(() => {
     api<{ models: Model[] }>("/models")
       .then((data) => {
@@ -1038,7 +1038,7 @@ export function CatalogPage() {
       </header>
       {error ? <Notice tone="stop">{error}</Notice> : null}
       <Notice k="测试说明">
-        {isRoot
+        {canManagePlatform
           ? "「测试」会发送最小推理请求，属于平台管理员诊断，不扣减团队额度。测试记录保存在本机浏览器。"
           : "模型诊断由平台管理员执行。请在客户端发起模型请求，实际用量计入团队共享额度。"}
       </Notice>
@@ -1131,7 +1131,7 @@ export function CatalogPage() {
                         : "—"}
                     </td>
                     <td className="probe-action">
-                      {isRoot ? (
+                      {canManagePlatform ? (
                         <button
                           className="btn btn-ghost btn-sm"
                           disabled={busy}
@@ -1160,7 +1160,7 @@ export function CatalogPage() {
 }
 
 export function ProfilePage() {
-  const { user, isRoot, refreshSession } = useAuth();
+  const { user, canManagePlatform, refreshSession } = useAuth();
   const [displayName, setDisplayName] = useState(user.displayName);
   const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
@@ -1232,7 +1232,7 @@ export function ProfilePage() {
             <input
               className="input"
               type="password"
-              minLength={isRoot ? 12 : 10}
+              minLength={canManagePlatform ? 12 : 10}
               autoComplete="new-password"
               placeholder="留空则不修改密码"
               value={password}
@@ -1247,114 +1247,7 @@ export function ProfilePage() {
           </button>
         </form>
       </section>
-      {isRoot ? <MfaSettings /> : null}
-    </div>
-  );
-}
-
-export function InvitePage({
-  onAccepted,
-  user,
-}: {
-  onAccepted: () => Promise<void>;
-  user?: ConsoleUser;
-}) {
-  const token =
-    new URLSearchParams(window.location.hash.split("?")[1] ?? "").get(
-      "token",
-    ) ?? "";
-  const [email, setEmail] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const accept = async (event: FormEvent) => {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      await api("/invitations/accept", {
-        method: "POST",
-        body: JSON.stringify({
-          token,
-          ...(!user ? { email, displayName, password } : {}),
-        }),
-      });
-      sessionStorage.removeItem("console-invitation");
-      await onAccepted();
-      navigate("/usage");
-      toastOk("已加入团队");
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <div className={user ? "" : "login-page"}>
-      <form
-        className={user ? "pane pane-b tenant-form" : "login-card"}
-        onSubmit={(e) => void accept(e)}
-      >
-        <p className="eyebrow">MENDAO / 团队邀请</p>
-        <PageTitle icon={MailPlus}>接受团队邀请</PageTitle>
-        {error ? <Notice tone="stop">{error}</Notice> : null}
-        {!token ? (
-          <Notice tone="stop">
-            邀请链接缺少凭据，请向管理员索取完整链接。
-          </Notice>
-        ) : user ? (
-          <p>以 {user.email} 加入受邀团队。</p>
-        ) : (
-          <>
-            <p className="readout">使用受邀邮箱创建账号。已有账号请先登录。</p>
-            <label>
-              受邀邮箱
-              <input
-                className="input"
-                type="email"
-                required
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </label>
-            <label>
-              显示名称
-              <input
-                className="input"
-                required
-                autoComplete="name"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-              />
-            </label>
-            <label>
-              设置密码
-              <input
-                className="input"
-                type="password"
-                minLength={10}
-                required
-                autoComplete="new-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </label>
-            <a
-              href="#/login"
-              onClick={() =>
-                sessionStorage.setItem("console-invitation", token)
-              }
-            >
-              已有账号，先登录
-            </a>
-          </>
-        )}
-        <button className="btn" disabled={busy || !token}>
-          {busy ? "接受中…" : "接受邀请"}
-        </button>
-      </form>
+      {canManagePlatform ? <MfaSettings /> : null}
     </div>
   );
 }

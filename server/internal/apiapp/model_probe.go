@@ -20,7 +20,7 @@ import (
 	"github.com/vam12375/shucode-platform/server/internal/upstreamurl"
 )
 
-// 平台超级管理员的运维诊断：走真实渠道池，不经过团队计费链路。
+// 平台系统管理员的运维诊断：走真实渠道池，不经过团队计费链路。
 // 探测请求只要求最小输出，结果仅用于展示连通性与首包耗时，不写用量、不扣额度。
 const (
 	modelProbeDefaultTimeoutMs int64 = 20_000
@@ -48,7 +48,7 @@ func registerModelProbeRoute(group *gin.RouterGroup, deps *Deps) {
 		}
 		// 最小探测同样有供应商成本；普通用户反复调用免费入口会绕过团队余额和预算。
 		if user.Role != store.RoleRoot {
-			c.JSON(403, fail(403, "免费模型诊断仅限平台超级管理员，请通过客户端发起计费请求"))
+			c.JSON(403, fail(403, "无权使用管理诊断，请通过客户端发起请求"))
 			return
 		}
 

@@ -17,7 +17,7 @@ import { Select } from "../components/Select.js";
 import { Chip, Notice, type ChipTone } from "../components/StatusChip.js";
 import { formatShanghaiDate, formatShanghaiTime } from "../time.js";
 
-type UserRole = "root" | "admin" | "user";
+type UserRole = "admin" | "user";
 
 interface TeamBrief {
   teamId: string;
@@ -33,6 +33,7 @@ interface AccountRow {
   email: string;
   displayName: string;
   role: UserRole;
+  platformAccess?: boolean;
   disabledAt: string | null;
   createdAt: string;
   team?: TeamBrief | null;
@@ -67,7 +68,6 @@ interface DeviceRow {
 }
 
 const ROLE_LABEL: Record<UserRole, string> = {
-  root: "超级管理员",
   admin: "管理员",
   user: "用户",
 };
@@ -270,7 +270,7 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
     account: AccountRow,
     isSelf: boolean,
   ): Promise<void> => {
-    const minLength = account.role === "root" ? 12 : 8;
+    const minLength = account.platformAccess === true ? 12 : 8;
     const answer = await confirmDialog({
       k: isSelf ? "修改密码" : "重置密码",
       title: `为 ${account.email} 设置新密码`,
@@ -304,7 +304,7 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
       k: promoting ? "设为管理员" : "降为普通用户",
       title: `将 ${account.email} ${promoting ? "设为管理员" : "降为普通用户"}？`,
       message: promoting
-        ? "该账号将获得控制台管理权限，但创建/升降管理员仍仅限超级管理员。"
+        ? "该账号将获得控制台管理权限，但创建/升降管理员仍仅限系统管理员。"
         : "降级后该账号全部后台会话与设备凭据立即吊销，且不能再登录控制台管理页。",
       confirmText: promoting ? "设为管理员" : "降级",
       danger: !promoting,
@@ -489,7 +489,7 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
             </form>
             <p className="readout" style={{ margin: 0, marginTop: 10 }}>
               选择团队后创建即加入（成员角色默认「成员」）；未入团队的账号无法调用网关。
-              超级管理员账号只能首次初始化创建。
+              系统管理员账号只能首次初始化创建。
             </p>
           </div>
         </section>
@@ -650,7 +650,7 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
             <tbody>
               {filtered.map((account) => {
                 const isSelf = account.id === currentUserId;
-                const protectedRoot = account.role === "root";
+                const protectedRoot = account.platformAccess === true;
                 const brief = account.team ?? null;
                 return (
                   <tr
@@ -669,7 +669,7 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
                   >
                     <td>{account.email}</td>
                     <td>{account.displayName}</td>
-                    <td>{ROLE_LABEL[account.role]}</td>
+                    <td>{(account.platformAccess ? "系统管理员" : ROLE_LABEL[account.role])}</td>
                     <td>
                       {protectedRoot ? (
                         <span className="readout">—</span>
@@ -1032,7 +1032,7 @@ function UserDrawer({
           <section className="drawer-sec">
             <h4 className="drawer-sec-title">账号与安全</h4>
             <p className="readout drawer-note">
-              平台角色：{ROLE_LABEL[account.role]} · 创建于{" "}
+              平台角色：{(account.platformAccess ? "系统管理员" : ROLE_LABEL[account.role])} · 创建于{" "}
               {formatShanghaiDate(account.createdAt)}
             </p>
             <div className="form-row">
@@ -1044,8 +1044,8 @@ function UserDrawer({
                 >
                   修改密码
                 </button>
-              ) : account.role === "root" ? (
-                <span className="readout">超级管理员账号受保护，不可禁用或降级。</span>
+              ) : account.platformAccess === true ? (
+                <span className="readout">系统管理员账号受保护，不可禁用或降级。</span>
               ) : (
                 <>
                   <button
@@ -1084,7 +1084,7 @@ function UserDrawer({
             </div>
           </section>
 
-          {account.role !== "root" ? (
+          {account.platformAccess !== true ? (
             <section className="drawer-sec">
               <h4 className="drawer-sec-title">团队与预算</h4>
               {account.team ? (
