@@ -3,7 +3,7 @@
 #   tools：migrate / seed 一次性任务
 # console 仍由 Node 构建(前端仓库未变),后端构建与运行均为 Go。
 
-FROM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS base
+FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS base
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 # Node 的原生 fetch 默认不读取代理环境变量，Corepack 下载需显式启用。
 ENV NODE_USE_ENV_PROXY=1
