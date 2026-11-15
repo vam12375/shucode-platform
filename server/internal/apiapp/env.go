@@ -20,6 +20,8 @@ type Env struct {
 	DatabaseURL     string
 	MemoryDB        bool
 	PublicAPIOrigin string
+	AppVersion      string
+	AppSubject      string
 	// PublicMediaCDNOrigin:签名媒体的对外 origin；空值回退 PublicAPIOrigin，兼容已有部署。
 	PublicMediaCDNOrigin string
 	PublicAppOrigin      string
@@ -203,6 +205,8 @@ func LoadPlatformEnv() (*Env, error) {
 		DatabaseURL:          databaseURL,
 		MemoryDB:             memoryDB,
 		PublicAPIOrigin:      publicAPIOrigin,
+		AppVersion:           strings.TrimSpace(os.Getenv("APP_VERSION")),
+		AppSubject:           strings.TrimSpace(os.Getenv("APP_SUBJECT")),
 		PublicMediaCDNOrigin: publicMediaCDNOrigin,
 		PublicAppOrigin:      publicAppOrigin,
 		PlatformSecretKey:    strings.TrimSpace(os.Getenv("PLATFORM_SECRET_KEY")),

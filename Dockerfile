@@ -45,6 +45,9 @@ WORKDIR /app
 USER app
 
 FROM runtime AS api
+ARG APP_VERSION
+ARG APP_SUBJECT
+ENV APP_VERSION=${APP_VERSION} APP_SUBJECT=${APP_SUBJECT}
 COPY --from=go-builder /out/api /app/api
 COPY --from=console-build /app/apps/console/dist /app/apps/console/dist
 COPY server/migrations /app/migrations

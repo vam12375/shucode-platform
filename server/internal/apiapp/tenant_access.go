@@ -104,7 +104,7 @@ func consoleAccessGuard(deps *Deps) gin.HandlerFunc {
 		read := c.Request.Method == "GET"
 		allowed := path == "/auth/me" || path == "/profile" || path == "/payments/account" ||
 			path == "/payments/orders" || path == "/payments/orders/:outTradeNo" || path == "/payments/orders/:outTradeNo/reconcile" ||
-			(read && (path == "/teams" || path == "/users" || path == "/models" || path == "/devices" || path == "/quota-requests" || strings.HasPrefix(path, "/usage"))) ||
+			(read && (path == "/version" || path == "/teams" || path == "/users" || path == "/models" || path == "/devices" || path == "/quota-requests" || strings.HasPrefix(path, "/usage"))) ||
 			path == "/models/:modelId/test" ||
 			path == "/devices/:id/revoke" || path == "/audit" || strings.HasPrefix(path, "/teams/:id")
 		if !allowed {

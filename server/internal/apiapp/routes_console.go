@@ -25,6 +25,19 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 	group := router.Group("/console/api")
 	registerSetupAccess(group, deps)
 
+	group.GET("/version", func(c *gin.Context) {
+		user, ok := requireConsoleUser(c.Request.Context(), deps, c)
+		if !ok {
+			return
+		}
+		// 构建标题不能编入共享前端资源；由服务端按当前会话权限投影，版本号也不再回退为配置发布序号。
+		version := gin.H{"tag": deps.Env.AppVersion}
+		if user.Role == store.RoleRoot {
+			version["subject"] = deps.Env.AppSubject
+		}
+		c.JSON(200, okData(version))
+	})
+
 	// ---- setup ----
 	// root 只能创建一次且凭据只以 scrypt 哈希入库；初始化完成后两个接口都不再允许写入。
 

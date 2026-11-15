@@ -22,9 +22,9 @@ interface DeviceRow {
   revokedAt: string | null;
 }
 
-interface ReleaseRow {
-  revision: number;
-  isActive: boolean;
+interface AppVersion {
+  tag: string;
+  subject?: string;
 }
 
 interface RailData {
@@ -34,7 +34,6 @@ interface RailData {
   avgCredits: number;
   activeDevices: number;
   totalDevices: number;
-  revision: number | null;
 }
 
 const EMPTY: RailData = {
@@ -44,7 +43,6 @@ const EMPTY: RailData = {
   avgCredits: 0,
   activeDevices: 0,
   totalDevices: 0,
-  revision: null,
 };
 
 function sumAggregates(rows: UsageAggregate[]): {
@@ -60,13 +58,13 @@ function sumAggregates(rows: UsageAggregate[]): {
   );
 }
 
-async function loadRail(canManagePlatform: boolean, teamId: string): Promise<RailData> {
+async function loadRail(teamId: string): Promise<RailData> {
   const scope = teamId ? `&teamId=${encodeURIComponent(teamId)}` : "";
   const now = new Date();
   // 展示按上海日期取今日；服务端按 UTC 解析 from/to，必须换算上海日界。
   const today = shanghaiDateOf(now);
   const start = shanghaiDateOf(new Date(now.getTime() - 13 * 86_400_000));
-  const [todayUsage, windowUsage, devicesRes, releasesRes] = await Promise.all([
+  const [todayUsage, windowUsage, devicesRes] = await Promise.all([
     api<{ aggregates: UsageAggregate[] }>(
       `/usage?from=${shanghaiDayStartUtc(today)}&to=${shanghaiDayEndUtc(today)}${scope}`,
     ),
@@ -76,9 +74,6 @@ async function loadRail(canManagePlatform: boolean, teamId: string): Promise<Rai
     api<{ devices: DeviceRow[] }>(
       `/devices${teamId ? `?teamId=${encodeURIComponent(teamId)}` : ""}`,
     ),
-    canManagePlatform
-      ? api<{ releases: ReleaseRow[] }>("/releases")
-      : Promise.resolve({ releases: [] }),
   ]);
   const todaySum = sumAggregates(todayUsage.aggregates);
   const windowSum = sumAggregates(windowUsage.aggregates);
@@ -95,7 +90,6 @@ async function loadRail(canManagePlatform: boolean, teamId: string): Promise<Rai
     avgCredits: windowSum.creditsMicro / 14,
     activeDevices,
     totalDevices: devicesRes.devices.length,
-    revision: releasesRes.releases.find((r) => r.isActive)?.revision ?? null,
   };
 }
 
@@ -104,10 +98,13 @@ export function ReadoutRail() {
   const { canManagePlatform, canManageTeam, teamId, team, teams, selectTeam, user, refreshSession } =
     useAuth();
   const [data, setData] = useState<RailData | null>(null);
+  const [version, setVersion] = useState<AppVersion | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
-    loadRail(canManagePlatform, teamId)
+    // 软件版本独立加载，避免用量接口失败时把版本误显示为配置发布序号。
+    void api<AppVersion>("/version").then(setVersion).catch(() => setVersion(null));
+    loadRail(teamId)
       .then((next) => {
         setData(next);
         setLoadError(null);
@@ -160,7 +157,7 @@ export function ReadoutRail() {
 
   return (
     <header
-      className="rail"
+      className={canManagePlatform ? "rail" : "rail rail-with-balance"}
       aria-label={
         canManagePlatform
           ? "平台实时读数"
@@ -271,58 +268,43 @@ export function ReadoutRail() {
           <i />
         </div>
       </div>
-      <div
-        className="read"
-        title={
-          canManagePlatform
-            ? undefined
-            : team
-              ? team.unlimited
-                ? "团队额度不限"
-                : `剩余 ${formatCreditsDisplay(remainingCredits)} / ${formatCreditsDisplay(quotaCredits)} credit`
-              : undefined
-        }
-      >
-        <div className="label">
-          <Glyph
-            icon={canManagePlatform ? Rocket : team ? Wallet : UserRound}
-            size={12}
-            strokeWidth={2}
-          />
-          {canManagePlatform ? "生效版本" : team ? "团队余额" : "当前账户"}
-        </div>
-        <div className="value">
-          {canManagePlatform
-            ? (data?.revision == null ? "—" : `R${data.revision}`)
-            : team
+      {!canManagePlatform ? (
+        <div
+          className="read"
+          title={team
+            ? team.unlimited
+              ? "团队额度不限"
+              : `剩余 ${formatCreditsDisplay(remainingCredits)} / ${formatCreditsDisplay(quotaCredits)} credit`
+            : undefined}
+        >
+          <div className="label">
+            <Glyph icon={team ? Wallet : UserRound} size={12} strokeWidth={2} />
+            {team ? "团队余额" : "当前账户"}
+          </div>
+          <div className="value">
+            {team
               ? team.unlimited
                 ? "不限"
-                : (
-                    <>
-                      {formatCreditsDisplay(remainingCredits)}
-                      <span className="unit">credit</span>
-                    </>
-                  )
+                : <>{formatCreditsDisplay(remainingCredits)}<span className="unit">credit</span></>
               : user.email.split("@")[0]}
+          </div>
+          <div className="mini" aria-hidden="true" style={{ "--w": team ? balanceWidth : "0%" } as CSSProperties}>
+            <i className={balanceLow ? "hot" : undefined} />
+          </div>
         </div>
-        <div
-          className="mini"
-          aria-hidden="true"
-          style={
-            {
-              "--w": canManagePlatform
-                ? data?.revision != null
-                  ? "100%"
-                  : "0%"
-                : team
-                  ? balanceWidth
-                  : "0%",
-            } as CSSProperties
-          }
-        >
-          <i className={balanceLow ? "hot" : undefined} />
+      ) : null}
+      <div className="read version" title={canManagePlatform ? version?.subject : undefined}>
+        <div className="label">
+          <Glyph icon={Rocket} size={12} strokeWidth={2} />
+          生效版本
         </div>
-
+        <div className="value">{version?.tag || "—"}</div>
+        <div className="mini" aria-hidden="true" style={{ "--w": version?.tag ? "100%" : "0%" } as CSSProperties}>
+          <i />
+        </div>
+        {canManagePlatform && version?.subject ? (
+          <div className="note" title={version.subject}>{version.subject}</div>
+        ) : null}
       </div>
     </header>
   );

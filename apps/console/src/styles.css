@@ -138,6 +138,10 @@ a:hover {
   border-bottom: 1px solid var(--line);
 }
 
+.rail-with-balance {
+  grid-template-columns: minmax(170px, 0.75fr) repeat(5, minmax(0, 1fr));
+}
+
 /* 查看范围段：范围与其影响的读数同屏，数值口径一眼可辨。 */
 .read.scope {
   display: flex;
@@ -2617,6 +2621,11 @@ textarea {
 
   .rail {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rail-with-balance .read.version {
+    grid-column: 1 / -1;
+    border-right: 0;
   }
 
   /* 范围段占满首行，其下四格读数按 2×2 排布。 */
