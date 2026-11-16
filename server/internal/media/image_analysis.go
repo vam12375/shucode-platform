@@ -11,6 +11,10 @@ func validImageAnalysisBinding(p *Project, a Analysis) bool {
 	if p.Analysis != nil && (a.TaskID != p.Analysis.TaskID || a.WorkspacePath != p.Analysis.WorkspacePath || a.WorkspaceIdentity != p.Analysis.WorkspaceIdentity || a.InputID == p.Analysis.InputID) {
 		return false
 	}
+	if directPromptBrief(p.Brief) {
+		// 直出没有识图审阅：首次与重试都只绑定 direct，不能借 images/planning 绕回两段式。
+		return a.Kind == "direct" && p.ImageAnalysis == nil
+	}
 	if p.ImageAnalysis == nil {
 		return a.Kind == "images"
 	}

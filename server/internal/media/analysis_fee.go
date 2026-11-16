@@ -141,7 +141,7 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 		return nil, ErrInvalid
 	}
 	plan = normalizeAutoPlanMetadata(current.Brief, plan, current.TemplateSnapshot)
-	if current.Brief.ImageAnalysisFirst && (current.ImageAnalysis == nil || current.Analysis == nil || current.Analysis.Kind != "planning") {
+	if !imageFirstPlanningBound(current) {
 		return nil, ErrConflict
 	}
 	if plan.Story != nil {

@@ -201,6 +201,7 @@ type Asset struct {
 type Brief struct {
 	AssetUnderstanding       *AssetUnderstanding `json:"assetUnderstanding,omitempty"`
 	ImageAnalysisFirst       bool                `json:"imageAnalysisFirst,omitempty"`
+	PromptPolicy             string              `json:"promptPolicy,omitempty"` // 缺省两段式；direct 规则见 direct_prompt.go
 	GenerationPolicy         string              `json:"generationPolicy,omitempty"`
 	CreativeExpansion        string              `json:"creativeExpansion,omitempty"`
 	ResearchPolicy           string              `json:"researchPolicy,omitempty"`

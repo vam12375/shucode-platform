@@ -166,6 +166,9 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	if b.ImageAnalysisFirst && (b.Mode != "auto" || b.GenerationPolicy != "whole-first" || b.ReviewPlan || b.AssetUnderstanding != nil) {
 		return fmt.Errorf("video_understanding_flow_invalid")
 	}
+	if err := validateDirectPromptBrief(b); err != nil {
+		return err
+	}
 	if err := validateAssetUnderstanding(b); err != nil {
 		return err
 	}
@@ -293,6 +296,9 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	if !replica && b.ImageAnalysisFirst {
 		if limit, ok := briefImageCapacity(b, m); !ok || len(b.AssetIDs) > limit {
 			return fmt.Errorf("video_generation_image_capacity_exceeded")
+		}
+		if err := validateDirectPromptCapacity(b, m); err != nil {
+			return err
 		}
 	}
 	if b.ImageModel != "" {

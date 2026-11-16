@@ -7,6 +7,7 @@ import (
 
 // 只公开平台定义的业务码；错误中的文件路径、上游地址和工具诊断不属于用户协议。
 // 新业务码必须显式加入，不能把任意看似 snake_case 的供应商文本直接放行。
+// 直出准入码也须显式声明，避免降为通用失败后丢失客户端的可修改拒绝语义。
 var publicMediaErrorCodes = func() map[string]bool {
 	codes := map[string]bool{}
 	for _, code := range strings.Fields(`
@@ -38,6 +39,7 @@ source_parser_invalid_response source_parser_rate_limited source_parser_unavaila
 source_redirect_forbidden source_stream_duration_mismatch source_stream_merge_failed source_video_limits_exceeded
 source_video_probe_failed source_video_too_large source_video_unavailable team_inactive template_review_limit
 trailing_json unsupported_composition_aspect_ratio video_analysis_scope_invalid video_analysis_scope_unavailable
+video_direct_prompt_ineligible
 video_generation_beats_invalid video_generation_capability_missing video_generation_cuts_invalid
 video_generation_cuts_required video_generation_delivery_mismatch video_generation_duration_unsupported
 video_generation_image_capacity_exceeded video_generation_policy_invalid video_generation_reference_images_exceeded
