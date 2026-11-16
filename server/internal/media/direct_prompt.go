@@ -19,7 +19,7 @@ func validateDirectPromptBrief(b Brief) error {
 	default:
 		return ErrInvalid
 	}
-	if b.Mode != "auto" || !b.ImageAnalysisFirst || b.GenerationPolicy != "whole-first" || b.ReviewPlan || b.ReferenceMode != "multimodal" || b.Finishing == nil || b.Finishing.Voiceover || b.Finishing.Subtitles != "none" || b.TemplateID != "" || b.TemplateVersion != "" || b.ImageModel != "" || b.ReferenceAssetID != "" || len(b.ReferenceURLs) != 0 || b.SourceOnly || b.VariantCount > 1 {
+	if b.Mode != "auto" || !b.ImageAnalysisFirst || b.GenerationPolicy != "whole-first" || b.ReviewPlan || b.ReferenceMode != "multimodal" || b.Finishing == nil || b.Finishing.Subtitles != "none" || b.TemplateID != "" || b.TemplateVersion != "" || b.ImageModel != "" || b.ReferenceAssetID != "" || len(b.ReferenceURLs) != 0 || b.SourceOnly || b.VariantCount > 1 {
 		return fmt.Errorf("video_direct_prompt_ineligible")
 	}
 	return nil

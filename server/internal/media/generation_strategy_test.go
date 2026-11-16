@@ -111,7 +111,7 @@ func TestWholeDurationGenerationSoundGuard(t *testing.T) {
 				t.Fatalf("native full duration request changed: %v", body)
 			}
 			got, err := finishingGenerationPlan(&Project{Brief: b}, p.Shots[0])
-			if err != nil || !strings.Contains(got.Prompt, "人声、对白、音乐、环境声和音效") {
+			if err != nil || !strings.Contains(got.Prompt, "声音由视频模型原生生成") {
 				t.Fatalf("native audio lost: %s %v", got.Prompt, err)
 			}
 			for _, forbidden := range []string{"不要解说", "不另配音乐", "不重复生成旁白", "仅保留需要的环境声"} {

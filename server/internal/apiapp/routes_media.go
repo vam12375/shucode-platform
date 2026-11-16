@@ -65,16 +65,7 @@ func NewMediaService(deps *Deps) *media.Service {
 		mediaOrigin = deps.Env.PublicAPIOrigin
 	}
 	s := &media.Service{Repo: media.Repository{Store: deps.Store}, Blobs: media.Blobs{Root: root, Origin: strings.TrimRight(mediaOrigin, "/"), SigningKey: key, Client: client}, WorkerID: uuid.NewString()}
-	// 配音使用独立管理员配置，不能误把视频供应商密钥当成 speech 授权。
-	ttsClient := &http.Client{Transport: netguard.NewTransport(deps.Env.AllowPrivateUpstreamNetworks), Timeout: 2 * time.Minute, CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("redirect_forbidden") }}
-	if deps.HTTPClient != nil {
-		copyClient := *deps.HTTPClient
-		copyClient.CheckRedirect = ttsClient.CheckRedirect
-		copyClient.Timeout = 2 * time.Minute
-		ttsClient = &copyClient
-	}
-	s.Narration = &media.NarrationConfig{BaseURL: strings.TrimSpace(os.Getenv("MEDIA_TTS_BASE_URL")), Model: strings.TrimSpace(os.Getenv("MEDIA_TTS_MODEL")), Voice: strings.TrimSpace(os.Getenv("MEDIA_TTS_VOICE")), APIKey: strings.TrimSpace(os.Getenv("MEDIA_TTS_API_KEY")), Client: ttsClient, AllowInsecure: deps.Env.AllowInsecureUpstreamURLs}
-	s.BackgroundMusicPath = strings.TrimSpace(os.Getenv("MEDIA_BGM_PATH"))
+
 	s.ArchiveCanvasOutput = newCanvasArchivePublisher(deps, s.Blobs)
 	parserClient := media.NewReferenceHTTPClient(90 * time.Second)
 	s.SourceParser = &media.SourceParser{Client: parserClient, ResolveKey: func(ctx context.Context) (string, error) {

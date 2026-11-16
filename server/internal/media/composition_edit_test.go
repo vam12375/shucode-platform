@@ -278,18 +278,27 @@ func TestRecomposeAcceptsSourceTailWithinTimeTolerance(t *testing.T) {
 	}
 }
 
-func TestRecomposeNarrationRequiresOriginalTimelineAndExistingReadyAudio(t *testing.T) {
+func TestRecomposeLegacyNarrationDoesNotBlockNativeAudioEdits(t *testing.T) {
 	requireFinishingComposition(t)
 	f, p, e := editableProjectFixture(t)
-	e.Voiceover = true
+	e.Voiceover, e.Music = true, true
+	volume := .5
+	e.MusicVolume = &volume
 	e.Clips[0], e.Clips[1] = e.Clips[1], e.Clips[0]
-	if _, err := f.s.Recompose(context.Background(), f.team, f.user, p.ID, p.Version, uuid.NewString(), e); err == nil || err.Error() != "composition_voiceover_timeline_changed" {
-		t.Fatalf("reordered narration accepted: %v", err)
+	next, err := f.s.Recompose(context.Background(), f.team, f.user, p.ID, p.Version, uuid.NewString(), e)
+	if err != nil {
+		t.Fatal(err)
 	}
-	e.Clips[0], e.Clips[1] = e.Clips[1], e.Clips[0]
-	if _, err := f.s.Recompose(context.Background(), f.team, f.user, p.ID, p.Version, uuid.NewString(), e); err == nil || err.Error() != "composition_narration_unavailable" {
-		t.Fatalf("missing narration accepted: %v", err)
+	if next.Composition.Edit.Voiceover || next.Composition.Edit.Music || next.Composition.Edit.MusicVolume != nil {
+		t.Fatal("legacy independent audio activated")
 	}
+	if f.submits.Load() != 0 {
+		t.Fatal("recompose submitted paid media")
+	}
+}
+func TestRecomposeStillProtectsUnknownHistoricalNarration(t *testing.T) {
+	requireFinishingComposition(t)
+	f, p, e := editableProjectFixture(t)
 	p, err := f.s.Mutate(context.Background(), f.team, p.ID, p.Version, func(v *Project) error {
 		v.Narration = &NarrationState{Status: "unknown", Text: "unchanged"}
 		return nil
@@ -297,12 +306,8 @@ func TestRecomposeNarrationRequiresOriginalTimelineAndExistingReadyAudio(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.Voiceover = false
 	if _, err = f.s.Recompose(context.Background(), f.team, f.user, p.ID, p.Version, uuid.NewString(), e); err == nil {
-		t.Fatal("unknown narration submission was edited")
-	}
-	if f.submits.Load() != 0 {
-		t.Fatal("recompose submitted paid media")
+		t.Fatal("unknown accepted request was bypassed")
 	}
 }
 

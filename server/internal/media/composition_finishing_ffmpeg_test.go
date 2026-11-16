@@ -53,7 +53,7 @@ func finishingAmplitude(samples []float64, frequency float64) float64 {
 	return 2 * math.Hypot(real, imaginary) / float64(len(samples))
 }
 
-func TestFinishingRealFFmpegPreservesFramesReplacesAudioAndOmitsCaptions(t *testing.T) {
+func TestFinishingRealFFmpegPreservesFramesAndAudioAndOmitsCaptions(t *testing.T) {
 	if !FinishingCompositionAvailable() {
 		t.Skip("finishing ffmpeg unavailable")
 	}
@@ -65,7 +65,7 @@ func TestFinishingRealFFmpegPreservesFramesReplacesAudioAndOmitsCaptions(t *test
 			p := &Project{TeamID: f.team, Brief: Brief{Mode: "auto", Duration: 4, Finishing: &FinishingOptions{Subtitles: "none"}}}
 			for i, color := range []string{"red", "blue"} {
 				input := filepath.Join(dir, fmt.Sprintf("input%d.mp4", i))
-				// 竖向源素材交付横向满幅，原音特意加入可辨频率以检查彻底替换。
+				// 竖向源素材交付横向满幅，原音加入可辨频率以检查保留。
 				finishingFFmpegFixture(t, "-f", "lavfi", "-i", "color=c="+color+":s=90x160:r=30", "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000", "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", input)
 				raw, err := os.ReadFile(input)
 				if err != nil {
@@ -104,10 +104,8 @@ func TestFinishingRealFFmpegPreservesFramesReplacesAudioAndOmitsCaptions(t *test
 			if _, err = os.Stat(filepath.Join(dir, "captions.ass")); !os.IsNotExist(err) {
 				t.Fatalf("disabled captions were generated: %v", err)
 			}
-			for _, value := range finishingSamples(t, output, 0, 4) {
-				if math.Abs(value) > .0001 {
-					t.Fatalf("source model audio leaked: %v", value)
-				}
+			if amplitude := finishingAmplitude(finishingSamples(t, output, .2, 1), 880); amplitude < .05 {
+				t.Fatalf("source model audio dropped: %v", amplitude)
 			}
 		})
 	}
@@ -160,48 +158,27 @@ func TestFinishingRealFFmpegKeepsNativeAudioWhenRequested(t *testing.T) {
 	}
 }
 
-func TestFinishingRealFFmpegMusicLoopsContinuouslyAndDucksUnderNarration(t *testing.T) {
+func TestFinishingRealFFmpegLegacyAudioFlagsDoNotCreateTracks(t *testing.T) {
 	if !FinishingCompositionAvailable() {
 		t.Skip("finishing ffmpeg unavailable")
 	}
-	f := setup(t)
-	dir := t.TempDir()
-	music, narration := filepath.Join(dir, "licensed-music.wav"), filepath.Join(dir, "narration.wav")
-	finishingFFmpegFixture(t, "-f", "lavfi", "-i", "sine=frequency=220:sample_rate=48000", "-t", "1.23", "-c:a", "pcm_s16le", music)
-	finishingFFmpegFixture(t, "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000", "-af", "atrim=duration=1,apad", "-t", "4", "-c:a", "pcm_s16le", narration)
-	f.s.BackgroundMusicPath = music
 	p := &Project{Brief: Brief{Mode: "auto", Finishing: &FinishingOptions{Voiceover: true, Music: true, Subtitles: "none"}}}
-	master, err := f.s.finishingMasterAudio(context.Background(), p, dir, 4, narration, nil)
+	master, err := (&Service{}).finishingMasterAudio(context.Background(), p, t.TempDir(), 4, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	length, err := probeFinishingAudio(context.Background(), master)
 	if err != nil || math.Abs(length-4) > .001 {
-		bedLength, bedErr := probeFinishingAudio(context.Background(), filepath.Join(dir, "music.wav"))
-		t.Logf("music bed length=%v err=%v", bedLength, bedErr)
-		t.Fatalf("master duration=%v err=%v", length, err)
+		t.Fatalf("duration=%v err=%v", length, err)
 	}
-	spoken := finishingSamples(t, master, .55, .2)
-	quiet := finishingSamples(t, master, 1.8, .2)
-	if finishingAmplitude(spoken, 880) < .03 || finishingAmplitude(quiet, 880) > .001 {
-		t.Fatalf("narration missing or failed to end: spoken=%v quiet=%v", finishingAmplitude(spoken, 880), finishingAmplitude(quiet, 880))
-	}
-	spokenMusic, quietMusic := finishingAmplitude(spoken, 220), finishingAmplitude(quiet, 220)
-	if quietMusic < .005 || spokenMusic >= quietMusic*.85 {
-		t.Fatalf("music did not duck under speech: spoken=%v quiet=%v", spokenMusic, quietMusic)
-	}
-	for _, at := range []float64{1.25, 1.95, 2.05, 2.7} {
-		if amplitude := finishingAmplitude(finishingSamples(t, master, at, .1), 220); amplitude < .003 {
-			t.Fatalf("single music track dropped at %v: amplitude=%v", at, amplitude)
+	for _, value := range finishingSamples(t, master, 0, 4) {
+		if math.Abs(value) > .0001 {
+			t.Fatalf("synthesized sound without source: %v", value)
 		}
-	}
-	// 整片淡出只发生在末尾，循环点不重新执行片头或片尾淡化。
-	if end := finishingAmplitude(finishingSamples(t, master, 3.9, .08), 220); end >= quietMusic*.25 {
-		t.Fatalf("music ending did not fade: %v vs %v", end, quietMusic)
 	}
 }
 
-func TestFinishingWorkerExplicitlyDisablesNativeAudio(t *testing.T) {
+func TestFinishingWorkerKeepsNativeAudioDespiteLegacyFlags(t *testing.T) {
 	if !FinishingCompositionAvailable() {
 		t.Skip("finishing ffmpeg unavailable")
 	}
@@ -224,8 +201,8 @@ func TestFinishingWorkerExplicitlyDisablesNativeAudio(t *testing.T) {
 	f.requestMu.Lock()
 	defer f.requestMu.Unlock()
 	body := f.requestBodies[0]
-	if body["generate_audio"] != false {
-		t.Fatalf("native audio not explicitly disabled: %#v", body)
+	if body["generate_audio"] != true {
+		t.Fatalf("native audio was disabled: %#v", body)
 	}
 	content := body["content"].([]any)
 	if !strings.Contains(content[0].(map[string]any)["text"].(string), "不要字幕") || p.Shots[0].Plan.Prompt != "product" {

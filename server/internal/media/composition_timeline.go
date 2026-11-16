@@ -64,5 +64,7 @@ func effectiveFinishingOptions(p *Project) FinishingOptions {
 		edit := p.Composition.Edit
 		options.Voiceover, options.Music, options.Subtitles, options.Brand = edit.Voiceover, edit.Music, edit.Subtitles, edit.Brand
 	}
+	// 历史独立音轨选项不再执行；原声由视频片段本身提供。
+	options.Voiceover, options.Music, options.NativeAudio = false, false, true
 	return options
 }

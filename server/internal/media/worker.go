@@ -2,7 +2,6 @@ package media
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/vam12375/shucode-platform/server/internal/store"
@@ -56,30 +55,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 				return s.failVideoReference(ctx, p, index, shot, err.Error())
 			}
 		}
-		if hasCinematicFinishing(p) && p.Brief.Finishing.Voiceover {
-			// 整篇旁白先定真实长度，避免付完视频费用后才发现文案无法自然读完。
-			path, err := s.prepareNarration(ctx, p, "")
-			if err != nil {
-				if errors.Is(err, ErrConflict) {
-					return err
-				}
-				return s.failVideoReference(ctx, p, index, shot, err.Error())
-			}
-			seconds, err := probeFinishingAudio(ctx, path)
-			if err != nil {
-				return s.failVideoReference(ctx, p, index, shot, "narration_audio_invalid")
-			}
-			if _, err = finishingNarrationRate(seconds, float64(p.Brief.Duration)); err != nil {
-				return s.failVideoReference(ctx, p, index, shot, err.Error())
-			}
-			latest, err := s.Repo.Get(ctx, p.TeamID, p.ID)
-			if err != nil {
-				return err
-			}
-			if latest == nil || latest.CancelRequested || latest.LeaseOwner != s.WorkerID || !latest.LeaseUntil.After(time.Now()) {
-				return ErrConflict
-			}
-		}
+
 	}
 	update := func(fn func(*Shot)) *Project {
 		next, e := s.workerUpdate(ctx, p, func(v *Project) {
@@ -592,7 +568,7 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 	} else if p.Brief.ImageAnalysisFirst && shot.Plan.Creative != nil && shot.Plan.Creative.Source == "generated" {
 		request := CanvasRequest{Kind: "video", Prompt: submissionPlan.Prompt, Resolution: p.Brief.Resolution, AspectRatio: p.Brief.AspectRatio, Duration: submissionPlan.Duration}
 		if m.GenerateAudio {
-			nativeAudio := finishingWantsNativeAudio(p.Brief)
+			nativeAudio := true
 			request.GenerateAudio = &nativeAudio
 		}
 		id, e = provider.CanvasVideo(ctx, m, request, nil)

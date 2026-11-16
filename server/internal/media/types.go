@@ -240,11 +240,11 @@ type Brief struct {
 	Finishing         *FinishingOptions `json:"finishing,omitempty"`
 }
 
-// FinishingOptions 只用于新自动制作；缺省保留历史片段原音与字幕语义。
+// FinishingOptions 控制字幕与品牌；声音字段仅为历史wire兼容。
 type FinishingOptions struct {
 	Voiceover bool `json:"voiceover"`
 	Music     bool `json:"music"`
-	// NativeAudio 保留视频模型原声作为底轨；缺省 false 维持「逐镜原音全部排除」。
+	// NativeAudio 为历史兼容值；模型能力决定请求，合成始终保留可用原声。
 	NativeAudio bool        `json:"nativeAudio,omitempty"`
 	Subtitles   string      `json:"subtitles"`
 	Brand       *VideoBrand `json:"brand,omitempty"`
@@ -405,7 +405,7 @@ type ShotPlan struct {
 	ImagePrompt           string `json:"imagePrompt,omitempty"`
 	AssetID               string `json:"assetId"`
 	Subtitle              string `json:"subtitle"`
-	// 口播文本与屏幕字幕分离；voiceover 未启用时忽略。
+	// 历史独立配音文案兼容字段；新台词在 Prompt/Sound 中由视频模型生成。
 	Narration             string `json:"narration,omitempty"`
 	Transition            string `json:"transition,omitempty"`
 	TransitionDescription string `json:"transitionDescription,omitempty"`

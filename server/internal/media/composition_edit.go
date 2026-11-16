@@ -309,19 +309,6 @@ func (s *Service) validateCompositionMedia(ctx context.Context, p *Project, e Vi
 			return fmt.Errorf("composition_source_unavailable")
 		}
 	}
-	if e.Voiceover {
-		if !originalCompositionTimeline(p, e) {
-			return fmt.Errorf("composition_voiceover_timeline_changed")
-		}
-		if !s.narrationAvailable(ctx, p) {
-			return fmt.Errorf("composition_narration_unavailable")
-		}
-	}
-	if e.Music {
-		if err := s.validateFinishing(ctx, Brief{Mode: "auto", Finishing: &FinishingOptions{Music: true, Subtitles: "none"}}); err != nil {
-			return err
-		}
-	}
 	return s.validateBrandAsset(ctx, p, e.Brand)
 }
 
@@ -419,6 +406,8 @@ func (s *Service) Recompose(ctx context.Context, team, user, id string, version 
 	if err = s.validateRecompose(ctx, p, frozen); err != nil {
 		return nil, err
 	}
+	// 收据仍比较原请求签名；新接受的编辑不再复用独立旁白或配乐。
+	frozen.Voiceover, frozen.Music, frozen.MusicVolume = false, false, nil
 	next, err := s.Mutate(ctx, team, id, version, func(v *Project) error {
 		if v.CancelRequested || v.UserID != user || v.LeaseOwner != "" && v.LeaseUntil.After(time.Now()) {
 			return ErrConflict

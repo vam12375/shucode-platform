@@ -129,8 +129,8 @@ func videoSubmitBodyWithImages(m Model, b Brief, s ShotPlan, images []string, re
 	applyArkSeedance25TaskOptions(body, m, images, referenceVideo != "" || len(referenceAudio) > 0 && referenceAudio[0] != "")
 	// 只在模型显式开启时下发；Seedance 1.0 等不支持该参数的模型保持原请求不变。
 	if m.GenerateAudio {
-		// 新后期拥有唯一声音主轨；除非用户保留原声，支持原生音频的模型必须显式关掉，省略会沿用上游默认。
-		body["generate_audio"] = finishingWantsNativeAudio(b)
+		// 声音随视频模型生成；旧独立后期和nativeAudio=false不能再关闭供应商原声。
+		body["generate_audio"] = true
 	}
 	return body
 }
@@ -146,11 +146,6 @@ func applyArkSeedance25TaskOptions(body map[string]any, m Model, images []string
 		// 2.5 首尾帧任务只接受 adaptive，输出比例由首帧确定，不能沿用 2.0 的固定 ratio。
 		body["ratio"] = "adaptive"
 	}
-}
-
-// finishingWantsNativeAudio：旧制作单沿用模型默认原声；新后期只有用户显式保留时才请求原声。
-func finishingWantsNativeAudio(b Brief) bool {
-	return b.Finishing == nil || b.Finishing.NativeAudio
 }
 
 func (p Provider) Submit(ctx context.Context, m Model, b Brief, s ShotPlan, image string) (string, error) {
@@ -187,18 +182,10 @@ func (p Provider) SubmitWithReferenceImages(ctx context.Context, m Model, b Brie
 		if len(referenceAudio) > 0 && referenceAudio[0] != "" {
 			audios = append(audios, referenceAudio[0])
 		}
-		// 本身未启用原生声音的型号无需请求级覆盖；false指针仍会被能力校验视为音频开关请求。
-		if !finishingWantsNativeAudio(b) && m.GenerateAudio {
-			disabled := false
-			r.GenerateAudio = &disabled
-		}
 		return p.CanvasMultimodalVideo(ctx, m, r, images, videos, audios)
 	}
 	if p.Adapter == "toapis" {
 		// ToAPIs 的多模态协议没有参考音频槽位，目录校验已拒绝该能力声明。
-		if !finishingWantsNativeAudio(b) {
-			m.GenerateAudio = false
-		}
 		return p.submitToAPIs(ctx, m, CanvasRequest{Prompt: s.Prompt, Resolution: b.Resolution, AspectRatio: b.AspectRatio, Duration: s.Duration}, images, referenceVideo)
 	}
 	if p.Adapter != "" && p.Adapter != "ark" {

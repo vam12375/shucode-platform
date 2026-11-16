@@ -54,7 +54,6 @@ func TestDirectPromptBriefAdmission(t *testing.T) {
 	}
 	for name, mutate := range map[string]func(*Brief){
 		"frames":          func(b *Brief) { b.ReferenceMode = "frames" },
-		"voiceover":       func(b *Brief) { b.Finishing.Voiceover = true },
 		"subtitles":       func(b *Brief) { b.Finishing.Subtitles = "short" },
 		"template":        func(b *Brief) { b.TemplateID, b.TemplateVersion = "t", "1" },
 		"variants":        func(b *Brief) { b.VariantCount = 2 },

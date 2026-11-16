@@ -255,10 +255,7 @@ func ValidateBrief(b Brief, models []Model, assets []Asset) error {
 	if m.Adapter == "toapis" && validateToAPIsModel(m) != nil {
 		return ErrInvalid
 	}
-	// 原声只能来自声明了 generateAudio 的模型；客户端禁用开关，平台仍拒绝越权请求。
-	if b.Finishing != nil && b.Finishing.NativeAudio && !m.GenerateAudio {
-		return ErrInvalid
-	}
+	// 旧nativeAudio字段是兼容提示；实际参数仅由模型GenerateAudio能力决定。
 	// 多镜头合成必须有固定画幅；auto 仅允许画布直接输出，不得落入默认竖屏分支。
 	if b.AspectRatio == "auto" || !slices.Contains(ModelAspectRatios(m), b.AspectRatio) {
 		return ErrInvalid

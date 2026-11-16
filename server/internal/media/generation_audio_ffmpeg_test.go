@@ -30,7 +30,7 @@ func TestWholeDurationNativeAudioDeclickKeepsSampleClock(t *testing.T) {
 				native = append(native, name)
 				p.Shots = append(p.Shots, Shot{Plan: ShotPlan{Duration: 1}})
 			}
-			master, err := f.s.finishingMasterAudio(context.Background(), p, dir, float64(count), "", native)
+			master, err := f.s.finishingMasterAudio(context.Background(), p, dir, float64(count), native)
 			if err != nil {
 				t.Fatal(err)
 			}

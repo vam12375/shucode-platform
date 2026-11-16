@@ -22,8 +22,6 @@ type Service struct {
 	ReferenceProbe      func(context.Context, string) (ReferenceMetadata, error)
 	ArchiveCanvasOutput func(context.Context, CanvasArchiveInput) CanvasTeamAssetArchive
 	RouteScheduler      *routepool.Scheduler
-	Narration           *NarrationConfig
-	BackgroundMusicPath string
 }
 
 func (s *Service) Create(ctx context.Context, team, user, device, id string, b Brief) (*Project, error) {

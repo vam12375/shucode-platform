@@ -187,16 +187,16 @@ func TestValidateBriefDurationBounds(t *testing.T) {
 	}
 }
 
-func TestValidateBriefNativeAudioRequiresModelCapability(t *testing.T) {
+func TestValidateBriefLegacyNativeAudioDoesNotRequireModelCapability(t *testing.T) {
 	m := fixtureVideoModel()
 	assets := []Asset{{ID: "asset-a", Kind: "image"}}
 	base := Brief{Mode: "auto", ReferenceMode: "multimodal", Product: "产品", AssetIDs: []string{"asset-a"}, Platforms: []string{"douyin"}, VideoModel: m.ID, Resolution: "720p", AspectRatio: "16:9", Duration: 15, MaxCreditsMicro: 10_000_000, Finishing: &FinishingOptions{Subtitles: "none", NativeAudio: true}}
 	baseline := base
 	baseline.Finishing = &FinishingOptions{Subtitles: "none"}
 	want := ValidateBrief(baseline, []Model{m}, assets)
-	// 模型未声明原声时拒绝保留原声；声明后结论与不保留原声一致。
-	if got := ValidateBrief(base, []Model{m}, assets); got != ErrInvalid {
-		t.Fatalf("ValidateBrief(nativeAudio without capability) = %v, want ErrInvalid", got)
+	// 旧草稿的原声字段不再构成准入门禁，供应商参数由模型能力单独决定。
+	if got := ValidateBrief(base, []Model{m}, assets); got != want {
+		t.Fatalf("ValidateBrief(legacy nativeAudio without capability) = %v, want %v", got, want)
 	}
 	m.GenerateAudio = true
 	if got := ValidateBrief(base, []Model{m}, assets); got != want {

@@ -1,7 +1,6 @@
 package media
 
 import (
-	"math"
 	"strings"
 	"testing"
 )
@@ -28,18 +27,6 @@ func TestFinishingTransitionsPreserveDeliveryClock(t *testing.T) {
 	filter := finishingPictureFilter(p, segments)
 	if !strings.Contains(filter, "xfade=transition=fade:duration=0.300000000:offset=2.000000000") || !strings.Contains(filter, "concat=n=2:v=1:a=0") || strings.Contains(filter, "fade=t=") {
 		t.Fatalf("unexpected picture filter: %s", filter)
-	}
-}
-
-func TestFinishingNarrationSpeedIsBoundedAndNeverTruncates(t *testing.T) {
-	for _, tc := range []struct {
-		duration, target, rate float64
-		valid                  bool
-	}{{5, 10, 1, true}, {10.5, 10, 10.5 / 9.85, true}, {11.5, 10, 0, false}, {math.NaN(), 10, 0, false}, {0, 10, 0, false}} {
-		rate, err := finishingNarrationRate(tc.duration, tc.target)
-		if (err == nil) != tc.valid || tc.valid && math.Abs(rate-tc.rate) > 0.000001 {
-			t.Errorf("rate(%v,%v)=%v/%v", tc.duration, tc.target, rate, err)
-		}
 	}
 }
 

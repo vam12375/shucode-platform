@@ -81,11 +81,7 @@ func (s *Service) inspectCompositionQuality(ctx context.Context, p *Project, pat
 	} else {
 		report.Checks = append(report.Checks, VideoQualityCheck{Code: "black_frames", Status: "passed"})
 	}
-	options := effectiveFinishingOptions(p)
-	expectSound := options.Voiceover || options.Music
-	if p.Composition != nil && p.Composition.Edit.MusicVolume != nil && *p.Composition.Edit.MusicVolume == 0 && !options.Voiceover {
-		expectSound = false
-	}
+	// 模型可能按用户要求静音；不再依据已移除的独立音轨判断静音为失败。
 	longSilence := false
 	for _, match := range qualitySilenceDuration.FindAllStringSubmatch(string(analysis), -1) {
 		seconds, _ := strconv.ParseFloat(match[1], 64)
@@ -93,9 +89,8 @@ func (s *Service) inspectCompositionQuality(ctx context.Context, p *Project, pat
 			longSilence = true
 		}
 	}
-	if expectSound && longSilence {
-		report.Status = "warning"
-		report.Checks = append(report.Checks, VideoQualityCheck{Code: "silent_audio", Status: "warning"})
+	if longSilence {
+		report.Checks = append(report.Checks, VideoQualityCheck{Code: "silent_audio", Status: "unverified"})
 	} else {
 		report.Checks = append(report.Checks, VideoQualityCheck{Code: "silent_audio", Status: "passed"})
 	}
