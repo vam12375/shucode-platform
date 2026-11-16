@@ -130,6 +130,25 @@ func TestMediaAuthUploadTeamIsolationAndAdminBoundary(t *testing.T) {
 		t.Fatalf("admit usage for overview: result=%s error=%v", result, err)
 	}
 	w = request("GET", "/api/v1/media/overview", bytes.NewBuffer(nil), true, "")
+	var catalogs struct {
+		Data struct {
+			Production []media.VideoTemplate `json:"videoTemplates"`
+			Tests      []media.VideoTemplate `json:"videoTestTemplates"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &catalogs); err != nil || len(catalogs.Data.Production) != 60 || len(catalogs.Data.Tests) != 32 {
+		t.Fatal("separate template catalogs", err)
+	}
+	for _, item := range catalogs.Data.Production {
+		if item.Experiment != nil {
+			t.Fatal("test leaked into production")
+		}
+	}
+	for _, item := range catalogs.Data.Tests {
+		if item.Experiment == nil || item.Experiment.Instructions != "" {
+			t.Fatal("test metadata projection invalid")
+		}
+	}
 	for _, secretField := range []string{"costMicro", "priceVersion"} {
 		if strings.Contains(w.Body.String(), secretField) {
 			t.Fatalf("客户端媒体概览不得包含价格字段 %q: %s", secretField, w.Body.String())

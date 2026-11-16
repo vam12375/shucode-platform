@@ -59,6 +59,7 @@ type TemplatePreview struct {
 	VideoURL string `json:"videoUrl,omitempty"`
 }
 type VideoTemplate struct {
+	Experiment        *TemplateExperiment   `json:"experiment,omitempty"`
 	Preview           *TemplatePreview      `json:"preview,omitempty"`
 	SkillIDs          []string              `json:"skillIds,omitempty"`
 	Provenance        *TemplateProvenance   `json:"provenance,omitempty"`
@@ -81,6 +82,11 @@ type VideoTemplate struct {
 	Beats             []TemplateBeat        `json:"beats"`
 	QualityChecks     []string              `json:"qualityChecks"`
 	VerifiedModelIDs  []string              `json:"verifiedModelIds"`
+}
+type TemplateExperiment struct {
+	SuiteID      string `json:"suiteId"`
+	FormulaID    string `json:"formulaId"`
+	Instructions string `json:"instructions,omitempty"`
 }
 type TemplateReviewInput struct {
 	TemplateID      string `json:"templateId"`
@@ -202,7 +208,38 @@ func (s *Service) VideoTemplates(ctx context.Context) ([]VideoTemplate, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.videoTemplatesForModels(ctx, models)
+	all, err := s.videoTemplatesForModels(ctx, models)
+	if err != nil {
+		return nil, err
+	}
+	out := []VideoTemplate{}
+	for _, t := range all {
+		if t.Experiment == nil {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
+func (s *Service) VideoFormulaTestTemplates(ctx context.Context) ([]VideoTemplate, error) {
+	models, err := s.Repo.Models(ctx)
+	if err != nil {
+		return nil, err
+	}
+	all, err := s.videoTemplatesForModels(ctx, models)
+	if err != nil {
+		return nil, err
+	}
+	out := []VideoTemplate{}
+	for _, t := range all {
+		if t.Experiment != nil {
+			meta := *t.Experiment
+			meta.Instructions = ""
+			t.Experiment = &meta
+			out = append(out, t)
+		}
+	}
+	return out, nil
 }
 
 func (s *Service) videoTemplatesForModels(ctx context.Context, models []Model) ([]VideoTemplate, error) {
@@ -247,8 +284,11 @@ func (s *Service) validateTemplateBrief(ctx context.Context, b Brief, models []M
 	if err != nil {
 		return err
 	}
-	_, err = validateTemplateSelection(b, templates)
-	return err
+	t, err := validateTemplateSelection(b, templates)
+	if err != nil {
+		return err
+	}
+	return validateFormulaTestModel(b, t, models)
 }
 
 func validateTemplateSelection(b Brief, templates []VideoTemplate) (VideoTemplate, error) {
@@ -273,6 +313,9 @@ func validateTemplateSelection(b Brief, templates []VideoTemplate) (VideoTemplat
 	if assetCount < t.MinAssets || !slices.Contains(t.AspectRatios, b.AspectRatio) || b.Duration < t.DurationRange.Min || b.Duration > t.DurationRange.Max {
 		return VideoTemplate{}, adaptiveResearchError()
 	}
+	if t.Experiment != nil && (b.Duration != 30 || len(b.AssetIDs) < 1 || len(b.AssetIDs) > 3 || b.ReferenceMode != "multimodal" || b.ImageModel != "" || b.GenerationPolicy != "" || b.ImageAnalysisFirst || b.PromptPolicy == "direct" || b.Mode != "auto" || b.SourceOnly || b.ReferenceAssetID != "" || b.ResearchPolicy != "disabled" || len(b.ReferenceURLs) != 0 || b.CreativeExpansion == "") {
+		return VideoTemplate{}, adaptiveResearchError()
+	}
 	// 图片优先流程已明确点击直接成片；未验证配方只作原创结构，不增加人工审阅门槛。
 	imageFirstRecipe := b.Mode == "auto" && b.ImageAnalysisFirst && b.GenerationPolicy == "whole-first"
 	if !slices.Contains(t.VerifiedModelIDs, b.VideoModel) && !b.ReviewPlan && !imageFirstRecipe {
@@ -280,8 +323,54 @@ func validateTemplateSelection(b Brief, templates []VideoTemplate) (VideoTemplat
 	}
 	return t, nil
 }
-func (s *Service) validateAdaptivePlan(_ context.Context, b Brief, p Plan, _ []Model, _ ...*TemplateSnapshot) error {
+
+func validateFormulaTestPlan(b Brief, p Plan, t *TemplateSnapshot) error {
+	if t == nil || t.Template.Experiment == nil {
+		return nil
+	}
+	if len(p.Shots) < 5 || len(p.Shots) > 7 {
+		return fmt.Errorf("video_formula_test_plan_invalid")
+	}
+	// 只检查归属会漏掉未使用的输入图；同时记录实际引用以落实完整素材约束。
+	used := map[string]bool{}
+	for i, shot := range p.Shots {
+		if shot.Duration < 4 || shot.Duration > 6 || shot.AssetID != "" || shot.ImagePrompt != "" || shot.Creative == nil || shot.Creative.Source != "asset" || len(shot.Creative.AssetIDs) == 0 {
+			return fmt.Errorf("video_formula_test_plan_invalid")
+		}
+		delivery := shot.Creative.OutFrame - shot.Creative.InFrame
+		min, max := 4, 6
+		if i == 0 {
+			max = 5
+		}
+		if i == len(p.Shots)-1 {
+			min, max = 3, 4
+		}
+		if delivery < min*30 || delivery > max*30 || delivery > shot.Duration*30 {
+			return fmt.Errorf("video_formula_test_plan_invalid")
+		}
+		for _, id := range shot.Creative.AssetIDs {
+			if !slices.Contains(b.AssetIDs, id) {
+				return fmt.Errorf("video_formula_test_plan_invalid")
+			}
+			used[id] = true
+		}
+	}
+	for _, id := range b.AssetIDs {
+		if !used[id] {
+			return fmt.Errorf("video_formula_test_plan_invalid")
+		}
+	}
+	return nil
+}
+func (s *Service) validateAdaptivePlan(_ context.Context, b Brief, p Plan, _ []Model, snapshots ...*TemplateSnapshot) error {
 	if err := validateStoryPlan(b, p); err != nil {
+		return err
+	}
+	var snapshot *TemplateSnapshot
+	if len(snapshots) > 0 {
+		snapshot = snapshots[0]
+	}
+	if err := validateFormulaTestPlan(b, p, snapshot); err != nil {
 		return err
 	}
 	if err := validateSelectedImageUsage(b, p); err != nil {
@@ -294,7 +383,7 @@ func (s *Service) ReviewVideoTemplate(ctx context.Context, reviewer string, inpu
 	if reviewer == "" || input.Score < 1 || input.Score > 100 || input.Approved && input.Score < 85 || !boundedNonempty(input.Note, 2000) {
 		return TemplateReview{}, ErrInvalid
 	}
-	templates, err := VideoTemplateDefinitions()
+	templates, err := allVideoTemplateDefinitions()
 	if err != nil {
 		return TemplateReview{}, err
 	}
@@ -342,4 +431,24 @@ func (s *Service) ReviewVideoTemplate(ctx context.Context, reviewer string, inpu
 		return nil
 	})
 	return review, err
+}
+
+// 测试固定短段与全能参考；在冻结前拒绝不兼容型号，避免创建后才发现不能执行。
+func validateFormulaTestModel(b Brief, t VideoTemplate, models []Model) error {
+	if t.Experiment == nil {
+		return nil
+	}
+	m, err := FindModel(models, b.VideoModel, "video")
+	if err != nil {
+		return err
+	}
+	if err = validateBriefReferenceImages(b, m); err != nil {
+		return err
+	}
+	for _, seconds := range m.AllowedDurations() {
+		if seconds == 5 || seconds == 6 {
+			return nil
+		}
+	}
+	return adaptiveResearchError()
 }

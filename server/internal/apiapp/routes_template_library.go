@@ -13,7 +13,7 @@ import (
 )
 
 func libraryVideoSeeds() ([]templatelibrary.Entry, error) {
-	definitions, err := media.VideoTemplateDefinitions()
+	definitions, err := media.AllVideoTemplateDefinitions()
 	if err != nil {
 		return nil, err
 	}

@@ -49,7 +49,7 @@ type resolvedTemplate struct {
 
 // 模板开关和技能正文来自同一次目录读取，防止创建时混用两次读取的审核与内容。
 func (s *Service) resolveTemplateCatalog(ctx context.Context, models []Model) ([]resolvedTemplate, error) {
-	definitions, err := VideoTemplateDefinitions()
+	definitions, err := allVideoTemplateDefinitions()
 	if err != nil {
 		return nil, err
 	}
@@ -129,6 +129,9 @@ func (s *Service) freezeTemplate(ctx context.Context, b Brief, models []Model) (
 			continue
 		}
 		if _, err = validateTemplateSelection(b, []VideoTemplate{entry.snapshot.Template}); err != nil {
+			return nil, err
+		}
+		if err = validateFormulaTestModel(b, entry.snapshot.Template, models); err != nil {
 			return nil, err
 		}
 		return cloneTemplateSnapshot(&entry.snapshot), nil
