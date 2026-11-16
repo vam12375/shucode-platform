@@ -99,7 +99,9 @@ export function filterTemplates(
   const search = query.trim().toLocaleLowerCase();
   return entries.filter(
     (entry) =>
-      (kind === "all" || entry.kind === kind) &&
+      (kind === "video-test"
+        ? isVideoFormulaTest(entry)
+        : !isVideoFormulaTest(entry) && (kind === "all" || entry.kind === kind)) &&
       (status === "all" || entry.enabled === (status === "enabled")) &&
       (!search ||
         [
@@ -113,5 +115,13 @@ export function filterTemplates(
           .join(" ")
           .toLocaleLowerCase()
           .includes(search)),
+  );
+}
+
+export function isVideoFormulaTest(entry: LibraryEntry | undefined): boolean {
+  return (
+    entry?.kind === "video" &&
+    entry.source === "builtin-video" &&
+    entry.id.startsWith("video:formula-test-")
   );
 }

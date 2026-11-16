@@ -32,3 +32,13 @@ test("旧视频提示词归入视频筛选并保留文本编辑语义", () => {
   assert.equal(library.isVideoRecipe(video), false);
   assert.equal(library.isVideoRecipe({ ...video, source: "builtin-video" }), true);
 });
+
+test("测试视频单独筛选和计数，正式与全部列表不混入32个测试配方", () => {
+  const production = { ...entry, id: "video:production", kind: "video", source: "builtin-video" };
+  const tests = Array.from({ length: 32 }, (_, i) => ({ ...production, id: `video:formula-test-${i}`, name: `F${i}` }));
+  const entries = [production, ...tests];
+  assert.equal(library.filterTemplates(entries, "all", "all", "").length, 1);
+  assert.equal(library.filterTemplates(entries, "video", "all", "").length, 1);
+  assert.equal(library.filterTemplates(entries, "video-test", "all", "").length, 32);
+  assert.equal(library.filterTemplates(entries, "video-test", "all", "F31")[0].id, "video:formula-test-31");
+});

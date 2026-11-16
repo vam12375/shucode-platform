@@ -40,7 +40,10 @@ import "./template-library.css";
 const PAGE_SIZE = 12;
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "操作失败，请重试";
-const types = Object.entries(kindLabels) as [TemplateKind, string][];
+const types = [
+  ...(Object.entries(kindLabels) as [TemplateKind, string][]),
+  ["video-test", "测试模板"],
+] as const;
 
 export function TemplateLibraryPage() {
   const { canManagePlatform, user } = useAuth();
@@ -412,9 +415,7 @@ function LibraryContent() {
               >
                 {label}
                 <span>
-                  {value === "all"
-                    ? entries.length
-                    : entries.filter((entry) => entry.kind === value).length}
+                  {filterTemplates(entries, value!, "all", "").length}
                 </span>
               </button>
             ))}
@@ -584,7 +585,7 @@ function LibraryContent() {
                       value={createKind}
                       disabled={busy}
                       options={types
-                        .filter(([value]) => value !== "video")
+                        .filter(([value]) => value !== "video" && value !== "video-test")
                         .map(([value, label]) => ({ value, label }))}
                       onChange={(value) => {
                         const next = value as TemplateKind;
