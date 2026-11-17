@@ -313,7 +313,8 @@ func validateTemplateSelection(b Brief, templates []VideoTemplate) (VideoTemplat
 	if assetCount < t.MinAssets || !slices.Contains(t.AspectRatios, b.AspectRatio) || b.Duration < t.DurationRange.Min || b.Duration > t.DurationRange.Max {
 		return VideoTemplate{}, adaptiveResearchError()
 	}
-	if t.Experiment != nil && (b.Duration != 30 || len(b.AssetIDs) < 1 || len(b.AssetIDs) > 3 || b.ReferenceMode != "multimodal" || b.ImageModel != "" || b.GenerationPolicy != "" || b.ImageAnalysisFirst || b.PromptPolicy == "direct" || b.Mode != "auto" || b.SourceOnly || b.ReferenceAssetID != "" || b.ResearchPolicy != "disabled" || len(b.ReferenceURLs) != 0 || b.CreativeExpansion == "") {
+	// 原因：旧套件的三张约定被当成模型容量；图片上限交给制作单及真实模型能力校验。
+	if t.Experiment != nil && (b.Duration != 30 || len(b.AssetIDs) < 1 || b.ReferenceMode != "multimodal" || b.ImageModel != "" || (b.GenerationPolicy != "" && b.GenerationPolicy != "whole-first") || (b.ImageAnalysisFirst && b.GenerationPolicy != "whole-first") || b.PromptPolicy == "direct" || b.Mode != "auto" || b.SourceOnly || b.ReferenceAssetID != "" || b.ResearchPolicy != "disabled" || len(b.ReferenceURLs) != 0 || b.CreativeExpansion == "") {
 		return VideoTemplate{}, adaptiveResearchError()
 	}
 	// 图片优先流程已明确点击直接成片；未验证配方只作原创结构，不增加人工审阅门槛。
@@ -324,17 +325,25 @@ func validateTemplateSelection(b Brief, templates []VideoTemplate) (VideoTemplat
 	return t, nil
 }
 
-func validateFormulaTestPlan(b Brief, p Plan, t *TemplateSnapshot) error {
+func validateFormulaTestPlan(b Brief, p Plan, t *TemplateSnapshot, models ...Model) error {
 	if t == nil || t.Template.Experiment == nil {
 		return nil
 	}
-	if len(p.Shots) < 5 || len(p.Shots) > 7 {
+	// 原因：创作短镜头曾被误映射成付费请求；新单按模型能力执行，旧快照短段规则保持。
+	whole := b.GenerationPolicy == "whole-first"
+	if !whole && (len(p.Shots) < 5 || len(p.Shots) > 7) || whole && len(p.Shots) == 0 {
 		return fmt.Errorf("video_formula_test_plan_invalid")
+	}
+	if whole && len(models) > 0 {
+		model, err := FindModel(models, b.VideoModel, "video")
+		if err != nil || len(p.Shots) != len(planImageGenerationDurations(b, model)) {
+			return fmt.Errorf("video_formula_test_plan_invalid")
+		}
 	}
 	// 只检查归属会漏掉未使用的输入图；同时记录实际引用以落实完整素材约束。
 	used := map[string]bool{}
 	for i, shot := range p.Shots {
-		if shot.Duration < 4 || shot.Duration > 6 || shot.AssetID != "" || shot.ImagePrompt != "" || shot.Creative == nil || shot.Creative.Source != "asset" || len(shot.Creative.AssetIDs) == 0 {
+		if (!whole && (shot.Duration < 4 || shot.Duration > 6)) || shot.AssetID != "" || shot.ImagePrompt != "" || shot.Creative == nil || shot.Creative.Source != "asset" || len(shot.Creative.AssetIDs) == 0 {
 			return fmt.Errorf("video_formula_test_plan_invalid")
 		}
 		delivery := shot.Creative.OutFrame - shot.Creative.InFrame
@@ -345,7 +354,7 @@ func validateFormulaTestPlan(b Brief, p Plan, t *TemplateSnapshot) error {
 		if i == len(p.Shots)-1 {
 			min, max = 3, 4
 		}
-		if delivery < min*30 || delivery > max*30 || delivery > shot.Duration*30 {
+		if (!whole && (delivery < min*30 || delivery > max*30)) || delivery > shot.Duration*30 {
 			return fmt.Errorf("video_formula_test_plan_invalid")
 		}
 		for _, id := range shot.Creative.AssetIDs {
@@ -362,7 +371,7 @@ func validateFormulaTestPlan(b Brief, p Plan, t *TemplateSnapshot) error {
 	}
 	return nil
 }
-func (s *Service) validateAdaptivePlan(_ context.Context, b Brief, p Plan, _ []Model, snapshots ...*TemplateSnapshot) error {
+func (s *Service) validateAdaptivePlan(_ context.Context, b Brief, p Plan, models []Model, snapshots ...*TemplateSnapshot) error {
 	if err := validateStoryPlan(b, p); err != nil {
 		return err
 	}
@@ -370,7 +379,7 @@ func (s *Service) validateAdaptivePlan(_ context.Context, b Brief, p Plan, _ []M
 	if len(snapshots) > 0 {
 		snapshot = snapshots[0]
 	}
-	if err := validateFormulaTestPlan(b, p, snapshot); err != nil {
+	if err := validateFormulaTestPlan(b, p, snapshot, models...); err != nil {
 		return err
 	}
 	if err := validateSelectedImageUsage(b, p); err != nil {
@@ -433,7 +442,7 @@ func (s *Service) ReviewVideoTemplate(ctx context.Context, reviewer string, inpu
 	return review, err
 }
 
-// 测试固定短段与全能参考；在冻结前拒绝不兼容型号，避免创建后才发现不能执行。
+// 测试使用全能参考；新整片制作按真实能力分段，旧单仍验证短段能力。
 func validateFormulaTestModel(b Brief, t VideoTemplate, models []Model) error {
 	if t.Experiment == nil {
 		return nil
@@ -444,6 +453,12 @@ func validateFormulaTestModel(b Brief, t VideoTemplate, models []Model) error {
 	}
 	if err = validateBriefReferenceImages(b, m); err != nil {
 		return err
+	}
+	if b.GenerationPolicy == "whole-first" {
+		if len(planImageGenerationDurations(b, m)) == 0 {
+			return adaptiveResearchError()
+		}
+		return nil
 	}
 	for _, seconds := range m.AllowedDurations() {
 		if seconds == 5 || seconds == 6 {

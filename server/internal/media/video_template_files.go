@@ -29,7 +29,7 @@ func VideoFormulaTestDefinitions() ([]VideoTemplate, error) {
 			id = fmt.Sprintf("formula-test-f%02d", i)
 		}
 		e := t.Experiment
-		if t.ID != id || t.Version != "3.0.0-test.1" || e == nil || e.SuiteID != "single-image-dual-anchor-v3" || e.FormulaID != formula || utf8.RuneCountInString(e.Instructions) > 20000 || !strings.Contains(e.Instructions, "## 八、封装主提示词") || !strings.Contains(e.Instructions, "## 十、反向检测") || t.DurationRange.Min != 30 || t.DurationRange.Max != 30 || t.MinAssets != 1 || len(t.Beats) == 0 {
+		if t.ID != id || t.Version != "3.0.0-test.2" || e == nil || e.SuiteID != "single-image-dual-anchor-v3" || e.FormulaID != formula || utf8.RuneCountInString(e.Instructions) > 20000 || !strings.Contains(e.Instructions, "## 八、封装主提示词") || !strings.Contains(e.Instructions, "## 十、反向检测") || t.DurationRange.Min != 30 || t.DurationRange.Max != 30 || t.MinAssets != 1 || len(t.Beats) == 0 {
 			return nil, fmt.Errorf("video_templates_unavailable")
 		}
 		out[i].VerifiedModelIDs = []string{}

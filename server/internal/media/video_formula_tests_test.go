@@ -84,7 +84,7 @@ func TestFormulaTestBriefAndPlanRejectFirstFrameGeneration(t *testing.T) {
 	if _, err = validateTemplateSelection(b, templates); err != nil {
 		t.Fatal(err)
 	}
-	for _, mutate := range []func(*Brief){func(b *Brief) { b.ReferenceMode = "frames" }, func(b *Brief) { b.ImageModel = "image" }, func(b *Brief) { b.Duration = 15 }, func(b *Brief) { b.GenerationPolicy = "whole-first" }, func(b *Brief) { b.AssetIDs = []string{"a", "b", "c", "d"} }} {
+	for _, mutate := range []func(*Brief){func(b *Brief) { b.ReferenceMode = "frames" }, func(b *Brief) { b.ImageModel = "image" }, func(b *Brief) { b.Duration = 15 }, func(b *Brief) { b.AssetIDs = nil }} {
 		invalid := b
 		mutate(&invalid)
 		if _, err = validateTemplateSelection(invalid, templates); err == nil {
@@ -143,5 +143,96 @@ func TestFormulaTestModelRequiresShortMultimodalGeneration(t *testing.T) {
 	m.UpstreamModel = "unknown-model"
 	if err := validateFormulaTestModel(b, templates[0], []Model{m}); err == nil {
 		t.Fatal("model without multimodal capability accepted")
+	}
+}
+
+func TestFormulaImagesFollowModelCapacityInsteadOfThreeImageLimit(t *testing.T) {
+	templates, err := VideoFormulaTestDefinitions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := seedance25CapacityModel()
+	b := Brief{Mode: "auto", Duration: 30, AspectRatio: "9:16", ReferenceMode: "multimodal", CreativeExpansion: "related", ResearchPolicy: "disabled", ReviewPlan: true, VideoModel: m.ID, GenerationPolicy: "whole-first", ImageAnalysisFirst: true}
+	for _, count := range []int{4, 9, 30} {
+		b.AssetIDs, _ = capacityAssets(count)
+		for _, recipe := range templates {
+			b.TemplateID, b.TemplateVersion = recipe.ID, recipe.Version
+			if _, err := validateTemplateSelection(b, templates); err != nil {
+				t.Fatalf("%s rejected %d images within model capacity: %v", recipe.ID, count, err)
+			}
+			if err := validateFormulaTestModel(b, recipe, []Model{m}); err != nil {
+				t.Fatalf("%s model admission rejected %d images: %v", recipe.ID, count, err)
+			}
+		}
+	}
+	// 去掉套件三张限制不代表绕过真实容量；非分段参考仍不能超过本型号的单次上限。
+	b.ImageAnalysisFirst = false
+	b.AssetIDs, _ = capacityAssets(31)
+	if err := validateFormulaTestModel(b, templates[len(templates)-1], []Model{m}); err == nil {
+		t.Fatal("actual model image limit was bypassed")
+	}
+}
+
+func TestFormulaQuickUsesWholeModelDurationAndSameStagedTask(t *testing.T) {
+	templates, err := VideoFormulaTestDefinitions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, limit := range []int{15, 30} {
+		t.Run(fmt.Sprint(limit), func(t *testing.T) {
+			f, p, observation := stagedImageFixture(t)
+			ctx := context.Background()
+			durations := []int{15, 15}
+			if limit == 30 {
+				durations = []int{30}
+			}
+			b, plan, models := wholeDurationFixture(durations, limit)
+			b.ImageAnalysisFirst = true
+			b.ResearchPolicy = "disabled"
+			b.ReferenceURLs = []string{}
+			for i := range plan.Shots {
+				plan.Shots[i].Creative.Source = "asset"
+				plan.Shots[i].AssetID = ""
+				plan.Shots[i].ImagePrompt = ""
+			}
+			b.ReferenceMode = "multimodal"
+			b.ReviewPlan = false
+			b.TemplateID, b.TemplateVersion = templates[31].ID, templates[31].Version
+			models[0].Adapter = "ark"
+			models[0].UpstreamModel = "doubao-seedance-2-5-260628"
+			if _, err = validateTemplateSelection(b, templates); err != nil {
+				t.Fatal("quick brief", err)
+			}
+			snapshot, err := f.s.freezeTemplate(ctx, b, models)
+			if err != nil {
+				t.Fatal("quick freeze", err)
+			}
+			if err = validateFormulaTestPlan(b, plan, snapshot, models...); err != nil {
+				t.Fatal("whole plan", err)
+			}
+			p, err = f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error { v.Brief, v.Models, v.TemplateSnapshot = b, models, snapshot; return nil })
+			if err != nil {
+				t.Fatal(err)
+			}
+			a := Analysis{Kind: "images", TaskID: "same-task", InputID: "images-input", WorkspacePath: "/fixture"}
+			p, err = f.s.Bind(ctx, f.team, p.ID, p.Version, a)
+			if err != nil {
+				t.Fatal("images", err)
+			}
+			p, err = f.s.SetImageAnalysis(ctx, f.team, p.ID, p.Version, a.InputID, observation)
+			if err != nil || p.Status != "image_review" {
+				t.Fatal("image review", err)
+			}
+			a.Kind, a.InputID = "planning", "planning-input"
+			p, err = f.s.Bind(ctx, f.team, p.ID, p.Version, a, &TemplateSelection{TemplateID: b.TemplateID, TemplateVersion: b.TemplateVersion})
+			if err != nil || p.Analysis.TaskID != "same-task" || p.TemplateSnapshot.Digest != snapshot.Digest {
+				t.Fatal("planning lost snapshot", err)
+			}
+			// 此用例验证原计划owner的准入和排队；SetPlan的ffmpeg环境探测由既有后期套件覆盖。
+			p, err = f.s.acceptAnalysisPlan(ctx, f.team, p.ID, p.Version, a.InputID, plan)
+			if err != nil || p.Status != "queued" || len(p.Shots) != len(durations) {
+				t.Fatal("auto queue", err)
+			}
+		})
 	}
 }
