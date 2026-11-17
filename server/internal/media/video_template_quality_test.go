@@ -11,11 +11,11 @@ import (
 func expectedRecipeVersion(id string) string {
 	switch id {
 	case "brand-kv-unfold":
-		return "2.1.2"
+		return "2.1.3"
 	case "floating-exploded-showcase":
-		return "3.0.3"
+		return "3.0.4"
 	default:
-		return "3.0.2"
+		return "3.0.3"
 	}
 }
 
@@ -126,7 +126,7 @@ func TestRecipesUseModelNativeAudioAndVariedShotScales(t *testing.T) {
 					if beat.Tier == TemplateTierCore {
 						voicedCore++
 					}
-				case strings.HasPrefix(beat.Sound, "无旁白"), strings.HasPrefix(beat.Sound, "声音（模型原声开启时）："):
+				case strings.HasPrefix(beat.Sound, "无旁白"), strings.HasPrefix(beat.Sound, "声音（模型原声）："):
 				default:
 					t.Fatalf("beat %d sound has no recognised prefix: %q", i+1, beat.Sound)
 				}
@@ -213,5 +213,31 @@ func TestRewrittenTemplateDoesNotInheritPreviousVersionReview(t *testing.T) {
 	}
 	if previousBrief.TemplateVersion != "1.0.0" {
 		t.Fatal("validation mutated the frozen version")
+	}
+}
+
+// 已删除的后期声音开关不能让模板把模型原声写成条件功能，也不能让中间生成段提前终止音乐。
+func TestRegularTemplatesUseNativeAudioHandoffWithoutRemovedSwitches(t *testing.T) {
+	templates, err := VideoTemplateDefinitions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, recipe := range templates {
+		t.Run(recipe.ID, func(t *testing.T) {
+			raw, _ := json.Marshal(recipe)
+			for _, removed := range []string{"原声开启", "原声关闭", "后期独白", "native audio enabled"} {
+				if strings.Contains(string(raw), removed) {
+					t.Errorf("removed sound switch remains: %s", removed)
+				}
+			}
+			if recipe.Style == nil {
+				t.Fatal("missing native audio style")
+			}
+			for _, required := range []string{"中间生成段", "全片最终段", "完整台词在自然句末交接", "接点前后各0.1秒是观察窗", "不是静音或裁切区", "跨独立段不承诺同一音乐轨"} {
+				if !strings.Contains(recipe.Style.Sound, required) {
+					t.Errorf("missing segment handoff requirement %q", required)
+				}
+			}
+		})
 	}
 }

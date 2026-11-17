@@ -220,7 +220,7 @@ func TestTimedRecipesAuthoringRules(t *testing.T) {
 					core += beat.Seconds
 					coreBeats++
 				}
-				if strings.HasPrefix(beat.Sound, "无旁白") || strings.HasPrefix(beat.Sound, "声音（模型原声开启时）：") {
+				if strings.HasPrefix(beat.Sound, "无旁白") || strings.HasPrefix(beat.Sound, "声音（模型原声）：") {
 					silent++
 				}
 				if len(acts) == 0 || acts[len(acts)-1] != beat.Act {
@@ -260,8 +260,9 @@ func TestTimedRecipesAuthoringRules(t *testing.T) {
 				t.Fatalf("only %d of %d beats leave room for ambient sound", silent, len(beats))
 			}
 			compact, _ := json.Marshal(recipe)
-			if size := utf8.RuneCount(compact); size > 8000 {
-				t.Fatalf("recipe is %d characters, planner prompt would bloat", size)
+			// 用户确认效果优先：模板写作资料允许2万字，不能为旧8千字门禁删掉必要声画衔接；供应商prompt仍单独限制4000字。
+			if size := utf8.RuneCount(compact); size > 20000 {
+				t.Fatalf("recipe authoring material is %d characters, exceeds the 20000 character limit", size)
 			}
 			timing := timingBeats(beats)
 			for _, target := range []int{15, 17, 20, 24, 30, 36, 45, 60} {

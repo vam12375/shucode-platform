@@ -1,6 +1,6 @@
 {
   "id": "craft-detail-brand",
-  "version": "3.0.2",
+  "version": "3.0.3",
   "family": "brand",
   "name": {
     "zh": "工艺细节品牌片",
@@ -8,7 +8,7 @@
   },
   "description": {
     "zh": "叙事方法：从细节为何存在到成品如何被使用，建立品牌的具体记忆。风格基调：近距离工艺触感与成品气质呼应，实际结构始终清楚。以下拍点是可重组的叙事示例，可更换场地、道具、人物关系、景别与运镜，不按标称秒数机械照拍；一次生成请求可包含多个画面镜头。事实边界：工艺名称、手工比例、产地和资历有据才表达，不编造匠人故事。 全时段要求：每秒都有可见的动作进展、反应或信息揭示，末拍继续兑现；默认最终完全静止收束最多0.5秒，不提前完成后等待，不以微抖或无信息慢推填时长。用户明确静帧要求及既有后期尾卡窗口除外。 单图创作：一张清楚主体图即可，允许按同款逻辑补全未见视角、表面纹理和创意场景，跨镜保持一致；不因缺可选图片阻断。",
-    "en": "Craft detail brand film: a connected visual story with a motivated opening, meaningful change and a resolved ending. The beat sequence is an adaptable example, not a fixed set, camera script or shot quota. Preserve subject identity and verified claims; ordinary fictional people, settings and conflicts may be created. One generation request may contain multiple visual shots. Follow the category-specific factual boundaries in the recipe. Use every second for visible progress, reaction or revelation through the ending; default fully static settling is at most 0.5 seconds. With native audio enabled, match music, action sounds, ambience and any speech to the supplied material and story; honor explicit user sound restrictions. Single-image creation: one clear subject image suffices. Infer consistent views and textures; preserve known features and facts. Honor strict/exact requests."
+    "en": "Craft detail brand film: a connected visual story with a motivated opening, meaningful change and a resolved ending. The beat sequence is an adaptable example, not a fixed set, camera script or shot quota. Preserve subject identity and verified claims; ordinary fictional people, settings and conflicts may be created. One generation request may contain multiple visual shots. Follow the category-specific factual boundaries in the recipe. Use every second for visible progress, reaction or revelation through the ending; default fully static settling is at most 0.5 seconds. Use video-model native audio to match music, action sounds, ambience and any speech to the supplied material and story; honor explicit user sound restrictions. Single-image creation: one clear subject image suffices. Infer consistent views and textures; preserve known features and facts. Honor strict/exact requests."
   },
   "industries": [
     "家居",
@@ -66,8 +66,8 @@
     "look": "近距离工艺触感与成品气质呼应，实际结构始终清楚；背景、时间与配角按本故事生成，创作场景不冒称实拍。 单图可补全未见角度和表面纹理，跨镜复用同一设定，保留已知特征。",
     "lens": "用全景交代关系、中近景看行动、特写看反馈；按信息选择尺度与焦点，保留关键结构，不强制固定焦段、景别轮换次数或场景数量。",
     "motion": "运镜随新信息选择跟随、推近、侧移、环绕、拉开或固定观察，动作完成或信息转折时剪切；快慢对比有动机，不重复慢推。 每秒都有可见的动作进展、反应或信息揭示，末拍继续兑现；默认最终完全静止收束最多0.5秒，不提前完成后等待，不以微抖或无信息慢推填时长。用户明确静帧要求及既有后期尾卡窗口除外。",
-    "sound": "根据素材可见事件、人物关系、故事信息和用户要求匹配声音，不预设人声有无。模型原声开启时配乐建议：木质打击与原声弦乐，沉稳推进。动作音效建议：真实工具摩擦、笔尖、纸张、轻敲与物件归位，只跟随实际画面。需要说明信息时写准确旁白，角色交流时写自然对白，氛围段用配乐与现场音；不强制每拍讲话。声音清晰可听，主题从开场发展到收尾，环境声交代空间。混音人声居前、音效可辨、配乐适当退让，避免削波和全程极轻底噪。用户明确声音限制优先；原声关闭时服从本单配置，不自动开启后期付费服务。",
-    "narration": "根据素材能支持的信息、角色关系及本片叙事匹配旁白或对白，需要时写自然准确短句，不预设人声有无、不强制三句口号。真实功能与承诺有据才说，尊重用户明确声音限制；已开启后期独白时避免重复。"
+    "sound": "按本单要求使用视频模型原声：根据素材可见事件、人物关系、故事信息和用户要求匹配声音，不预设人声有无。模型原声配乐建议：木质打击与原声弦乐，沉稳推进。动作音效建议：真实工具摩擦、笔尖、纸张、轻敲与物件归位，只跟随实际画面。需要说明信息时写准确旁白，角色交流时写自然对白，氛围段用配乐与现场音；不强制每拍讲话。声音清晰可听，主题从开场发展到收尾，环境声交代空间。混音人声居前、音效可辨、配乐适当退让，避免削波和全程极轻底噪。用户明确声音限制优先；不自动开启独立后期付费声音服务。 分段声音交接：中间生成段保持音乐母题与空间声进行态，完整台词在自然句末交接，不重复引子、强制停声或提前终止；仅全片最终段解决主题。接点前后各0.1秒是观察窗，不是静音或裁切区；跨独立段不承诺同一音乐轨或后期跨轨J/L cut。",
+    "narration": "根据素材能支持的信息、角色关系及本片叙事匹配旁白或对白，需要时写自然准确短句，不预设人声有无、不强制三句口号。真实功能与承诺有据才说，尊重用户明确声音限制；对白与旁白避免重复表达。"
   },
   "beats": [
     {
@@ -79,7 +79,7 @@
       "seconds": 3,
       "tier": "core",
       "act": "建立期待",
-      "sound": "声音（模型原声开启时）：匹配素材与本拍事件；建立可听的配乐主题与真实空间声，按开场目标决定是否用一句引入。"
+      "sound": "声音（模型原声）：匹配素材与本拍事件；建立可听的配乐主题与真实空间声，按开场目标决定是否用一句引入。"
     },
     {
       "purpose": "建立期待：看清与当前目标有关的一处身份细节（可重组示例）。",
@@ -90,7 +90,7 @@
       "seconds": 3,
       "tier": "support",
       "act": "建立期待",
-      "sound": "声音（模型原声开启时）：匹配素材与本拍事件；延续主题，细节特写用真实接触声或前一动作尾音，不为静物编造声源。"
+      "sound": "声音（模型原声）：匹配素材与本拍事件；延续主题，细节特写用真实接触声或前一动作尾音，不为静物编造声源。"
     },
     {
       "purpose": "建立期待：定位结构与整体关系（可重组示例）。",
@@ -101,7 +101,7 @@
       "seconds": 3,
       "tier": "core",
       "act": "建立期待",
-      "sound": "声音（模型原声开启时）：匹配素材与本拍事件；环境声随空间关系变化，主体入画的真实声响可辨，音乐保持连贯。"
+      "sound": "声音（模型原声）：匹配素材与本拍事件；环境声随空间关系变化，主体入画的真实声响可辨，音乐保持连贯。"
     },
     {
       "purpose": "建立期待：交代行动需要的空间或接触关系（可重组示例）。",
@@ -112,7 +112,7 @@
       "seconds": 3,
       "tier": "support",
       "act": "建立期待",
-      "sound": "声音（模型原声开启时）：匹配素材与本拍事件；突出本拍实际接触点的声音，已有现场声连接动作前后。"
+      "sound": "声音（模型原声）：匹配素材与本拍事件；突出本拍实际接触点的声音，已有现场声连接动作前后。"
     },
     {
       "purpose": "行动与变化：有依据时看制作过程否则看真实接合（可重组示例）。",
@@ -123,7 +123,7 @@
       "seconds": 3,
       "tier": "core",
       "act": "行动与变化",
-      "sound": "声音（模型原声开启时）：匹配素材与本拍事件；主要操作声居前，配乐节奏跟随动作；需要解释时匹配准确短句。"
+      "sound": "声音（模型原声）：匹配素材与本拍事件；主要操作声居前，配乐节奏跟随动作；需要解释时匹配准确短句。"
     },
     {
       "purpose": "行动与变化：从另一尺度看清操作的可见反馈（可重组示例）。",
@@ -134,7 +134,7 @@
       "seconds": 3,
       "tier": "support",
       "act": "行动与变化",
-      "sound": "声音（模型原声开启时）：匹配素材与本拍事件；让可见反馈的声音与接触同步，配乐适当退让，未发生的动作不配音效。"
+      "sound": "声音（模型原声）：匹配素材与本拍事件；让可见反馈的声音与接触同步，配乐适当退让，未发生的动作不配音效。"
     },
     {
       "purpose": "行动与变化：通过触摸或使用显露细节作用（可重组示例）。",
@@ -145,7 +145,7 @@
       "seconds": 3,
       "tier": "core",
       "act": "行动与变化",
-      "sound": "声音（模型原声开启时）：匹配素材与本拍事件；用音色或节奏变化回应剧情变化，角色有交流关系时安排自然对白。"
+      "sound": "声音（模型原声）：匹配素材与本拍事件；用音色或节奏变化回应剧情变化，角色有交流关系时安排自然对白。"
     },
     {
       "purpose": "行动与变化：让反应或细节呼应正在发生的变化（可重组示例）。",
@@ -156,7 +156,7 @@
       "seconds": 3,
       "tier": "support",
       "act": "行动与变化",
-      "sound": "声音（模型原声开启时）：匹配素材与本拍事件；延续真实动作尾音与现场声，反应有信息时可用准确短句表达。"
+      "sound": "声音（模型原声）：匹配素材与本拍事件；延续真实动作尾音与现场声，反应有信息时可用准确短句表达。"
     },
     {
       "purpose": "行动与变化：用另一张图回应相同工艺母题（可重组示例）。",
@@ -167,7 +167,7 @@
       "seconds": 3,
       "tier": "core",
       "act": "行动与变化",
-      "sound": "声音（模型原声开启时）：匹配素材与本拍事件；主体递接、归位或移动的实际声响清楚，音乐主题继续推进。"
+      "sound": "声音（模型原声）：匹配素材与本拍事件；主体递接、归位或移动的实际声响清楚，音乐主题继续推进。"
     },
     {
       "purpose": "结果与回扣：把一个相关素材母题接回当前结果（可重组示例）。",
@@ -178,7 +178,7 @@
       "seconds": 3,
       "tier": "support",
       "act": "结果与回扣",
-      "sound": "声音（模型原声开启时）：匹配素材与本拍事件；用前段已有声音母题连接结果，新的声源必须有可见依据。"
+      "sound": "声音（模型原声）：匹配素材与本拍事件；用前段已有声音母题连接结果，新的声源必须有可见依据。"
     },
     {
       "purpose": "结果与回扣：给出呼应开头的完成态细节（可重组示例）。",
@@ -189,7 +189,7 @@
       "seconds": 3,
       "tier": "support",
       "act": "结果与回扣",
-      "sound": "声音（模型原声开启时）：匹配素材与本拍事件；最后细节的真实声音与画面同步，人声有必要时给清楚收句。"
+      "sound": "声音（模型原声）：匹配素材与本拍事件；最后细节的真实声音与画面同步，人声有必要时给清楚收句。"
     },
     {
       "purpose": "结果与回扣：回到成品和具体认识（可重组示例）。",
@@ -200,7 +200,7 @@
       "seconds": 3,
       "tier": "core",
       "act": "结果与回扣",
-      "sound": "声音（模型原声开启时）：匹配素材与本拍事件；配乐随最后动作或反应完成解决，保留真实环境，不提前淡成静音。"
+      "sound": "声音（模型原声）：匹配素材与本拍事件；配乐随最后动作或反应完成解决，保留真实环境，不提前淡成静音。"
     }
   ],
   "qualityChecks": [
