@@ -16,10 +16,7 @@ func TestEveryTemplateUsesTheWholeTimeline(t *testing.T) {
 	}
 	for _, recipe := range recipes {
 		t.Run(recipe.ID, func(t *testing.T) {
-			version := "3.0.1"
-			if recipe.ID == "brand-kv-unfold" {
-				version = "2.1.1"
-			}
+			version := expectedRecipeVersion(recipe.ID)
 			if recipe.Version != version || len(recipe.VerifiedModelIDs) != 0 {
 				t.Fatal("changed recipe reused an old version or verification")
 			}
