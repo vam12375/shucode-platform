@@ -47,6 +47,10 @@ func seedance20Model(upstream string) bool {
 	return datedModelFamily(upstream, []string{"doubao-seedance-2-0-mini-", "doubao-seedance-2-0-fast-", "doubao-seedance-2-0-"})
 }
 
+func seedance25FlashModel(upstream string) bool {
+	return datedModelFamily(strings.TrimSpace(upstream), []string{"doubao-seedance-2-5-flash-"})
+}
+
 // seedance25Model 识别 Ark 的 Seedance 2.5 家族（基础版及 pro/lite 等带日期的变体）。
 // 上游模型名以六位日期结尾；ToAPIs 的 seedance-2-5 不带 doubao 前缀，不会被误判。
 func seedance25Model(upstream string) bool {
@@ -110,6 +114,8 @@ func nearestFixedVideoRatio(width, height int) string {
 // 图片能力在平台归一化，公开目录、准入与 adapter 共用，避免客户端选择上游拒绝的档位。
 func imageTiers(m Model) []string {
 	switch {
+	case seedream55Model(m):
+		return []string{"1K", "1.5K", "2K"}
 	case m.Adapter == "toapis" && toapisImageModelSupported(m.UpstreamModel):
 		return []string{"1K", "2K", "4K"}
 	case strings.Contains(m.UpstreamModel, "seedream-5-0-pro"):
@@ -128,6 +134,9 @@ func imageTiers(m Model) []string {
 }
 
 func ImageResolutions(m Model) []string {
+	if seedream55Model(m) && len(m.Resolutions) == 0 {
+		return imageTiers(m)
+	}
 	if m.Adapter == "toapis" && validateToAPIsImageModel(m) != nil {
 		return []string{}
 	}
@@ -148,6 +157,9 @@ func ImageResolutions(m Model) []string {
 }
 
 func MaxReferenceImages(m Model) int {
+	if seedream55Model(m) {
+		return 10
+	}
 	if m.Kind == "video" {
 		return 2
 	}

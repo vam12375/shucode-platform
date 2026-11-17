@@ -40,6 +40,10 @@ function isArkSeedance25(upstreamModel: string): boolean {
   return /^doubao-seedance-2-5-(?:[a-z0-9]+-)*\d{6}$/.test(upstreamModel.trim());
 }
 
+function isArkSeedance25Flash(upstreamModel: string): boolean {
+  return /^doubao-seedance-2-5-flash-\d{6}$/.test(upstreamModel.trim());
+}
+
 function seedanceModelMaxDuration(upstreamModel: string): number {
   const upstream = upstreamModel.trim();
   return upstream === "seedance-2-5" || upstream === "seedance-2.5-ext" || isArkSeedance25(upstream)
@@ -99,6 +103,19 @@ const ARK_SEEDANCE_25_PRESETS = [
     ],
   },
 ] as const;
+
+const ARK_SEEDANCE_25_FLASH_PRESETS = [{
+  name: "Seedance 2.5 Flash",
+  upstreamModel: "doubao-seedance-2-5-flash-261115",
+  billingUnit: "token",
+  minDuration: 4,
+  maxDuration: SEEDANCE_25_MAX_DURATION,
+  tiers: ["480p", "720p"].map((resolution) => ({
+    id: `seedance-2.5-flash-${resolution}`, resolution,
+    tokenCostCredits: "46", tokenPriceCredits: "65.714286",
+    videoReferenceTokenCostCredits: "28", videoReferenceTokenPriceCredits: "40",
+  })),
+}] as const;
 
 const TOAPIS_SEEDANCE_PRESETS = SEEDANCE_PRESETS.map((preset) => ({
   ...preset,
@@ -247,6 +264,7 @@ export interface MediaRouteDraft {
 }
 
 interface MediaModel {
+	imagePricing?: ImagePricing;
   id: string;
   name: string;
   displayName?: string;
@@ -289,6 +307,7 @@ interface ProviderOption {
 }
 
 export interface MediaModelDraft {
+	imagePricing?: ImagePricingDraft;
   // 本地分组标识，只用于「一卡多档」的渲染，不下发 API。
   familyId: string;
   id: string;
@@ -349,6 +368,29 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "操作失败";
 }
 
+interface ImagePricing {
+  inputPriceMicro: number;
+  inputCostMicro: number;
+  outputTiers: { maxPixels: number; priceMicro: number; costMicro: number }[];
+}
+interface ImagePricingDraft {
+  inputPriceCredits: string;
+  inputCostCredits: string;
+  outputTiers: { maxPixels: number; priceCredits: string; costCredits: string }[];
+}
+function imagePricingDraft(pricing: ImagePricing): ImagePricingDraft {
+  if (!pricing || !Array.isArray(pricing.outputTiers)) throw new Error("图片像素计价必须包含输入价格和输出分档。");
+  const rates = [pricing.inputPriceMicro, pricing.inputCostMicro, ...pricing.outputTiers.flatMap((tier) => [tier.priceMicro, tier.costMicro])];
+  if (rates.some((rate) => !Number.isSafeInteger(rate) || rate < 0 || rate > 100_000_000)) throw new Error("图片像素计价包含非法价格。");
+  return { inputPriceCredits: priceInputValue(pricing.inputPriceMicro), inputCostCredits: priceInputValue(pricing.inputCostMicro), outputTiers: pricing.outputTiers.map((tier) => ({ maxPixels: tier.maxPixels, priceCredits: priceInputValue(tier.priceMicro), costCredits: priceInputValue(tier.costMicro) })) };
+}
+function imagePricingApi(pricing: ImagePricingDraft): ImagePricing {
+  return { inputPriceMicro:parseCreditsToMicro(pricing.inputPriceCredits), inputCostMicro:parseCreditsToMicro(pricing.inputCostCredits), outputTiers:pricing.outputTiers.map((tier) => ({ maxPixels:tier.maxPixels, priceMicro:parseCreditsToMicro(tier.priceCredits), costMicro:parseCreditsToMicro(tier.costCredits) })) };
+}
+function isSeedream55(draft: Pick<MediaModelDraft, "kind" | "upstreamModel" | "adapter">): boolean {
+  return draft.kind === "image" && (draft.adapter ?? "ark") === "ark" && /^doubao-seedream-5-5-\d{6}$/.test(draft.upstreamModel.trim());
+}
+
 /** micro-credit → 紧凑的 credit 输入值（最多 6 位小数，去掉尾零）。 */
 function priceInputValue(micro: number): string {
   return (micro / MICRO_CREDITS_PER_CREDIT)
@@ -392,7 +434,7 @@ function hasResolutionTiers(draft: MediaModelDraft): boolean {
 function modelResolutions(draft: MediaModelDraft): readonly string[] {
   if (isToapisGptImage(draft)) return TOAPIS_IMAGE_RESOLUTIONS;
   if ((draft.adapter ?? "ark") === "ark" && draft.kind === "video" && isArkSeedance25(draft.upstreamModel)) {
-    return ["480p", "720p", "1080p"];
+    return isArkSeedance25Flash(draft.upstreamModel) ? ["480p", "720p"] : ["480p", "720p", "1080p"];
   }
   if (draft.adapter === "toapis") {
     if (isWanModel(draft.upstreamModel)) return ["480p", "720p", "1080p"];
@@ -478,6 +520,7 @@ export function toDraft(model: MediaModel): MediaModelDraft {
   );
   return {
     familyId: "",
+    ...(model.imagePricing ? { imagePricing: imagePricingDraft(model.imagePricing) } : {}),
     id: model.id,
     name: model.name,
     // 对外名称由模型展示页管理；编辑价格必须原样保留，不能被本页字段白名单丢弃。
@@ -546,6 +589,7 @@ export function toApiModel(draft: MediaModelDraft): MediaModel {
   const isVideo = draft.kind === "video";
   const seedanceContinuous = isSeedanceVideoModel({ ...draft, upstreamModel });
   return {
+    ...(draft.imagePricing ? { imagePricing:imagePricingApi(draft.imagePricing) } : {}),
     // 平台模型 ID 默认等于上游模型；手动填写后才作为独立别名保存。
     id: draft.id.trim() || upstreamModel,
     name: draft.name.trim(),
@@ -790,13 +834,20 @@ function tierProblem(
   if (routeProblem) return `「${label}」${routeProblem}`;
   if (!upstreamModel) return `「${label}」缺少上游模型 ID。`;
   const adapter = draft.adapter ?? "ark";
+  if (isSeedream55(draft)) {
+    const pricing = draft.imagePricing;
+    if (!pricing || pricing.outputTiers.length !== 2 || pricing.outputTiers.some((tier, i) => tier.maxPixels !== [2_610_000, 4_630_000][i])) return `「${label}」需配置输入图片价格和两个输出像素分档。`;
+    for (const [price, cost] of [[pricing.inputPriceCredits, pricing.inputCostCredits], ...pricing.outputTiers.map((tier) => [tier.priceCredits, tier.costCredits])]) {
+      if (!/^\d+(\.\d{1,6})?$/.test(price) || !/^\d+(\.\d{1,6})?$/.test(cost) || parseCreditsToMicro(price) <= 0 || parseCreditsToMicro(price) > 100_000_000 || parseCreditsToMicro(cost) > 100_000_000) return `「${label}」输入和输出价格需为有效 credit（最多 6 位小数）。`;
+    }
+  } else if (draft.imagePricing) return `「${label}」当前模型不支持图片像素计费。`;
   if (adapter !== "ark" && adapter !== "toapis") return `「${label}」适配器不受支持。`;
   if (draft.billingUnit !== "second" && draft.billingUnit !== "request" && draft.billingUnit !== "token") {
     return `「${label}」计费单位不受支持。`;
   }
   if (adapter === "ark" && draft.kind === "video" && isArkSeedance25(upstreamModel) &&
     draft.resolutions.some((resolution) => !modelResolutions(draft).includes(resolution))) {
-    return `「${label}」火山 Seedance 2.5 仅支持 480p、720p、1080p。`;
+    return `「${label}」火山 Seedance 2.5${isArkSeedance25Flash(upstreamModel) ? " Flash 仅支持 480p、720p" : " 仅支持 480p、720p、1080p"}。`;
   }
   if (adapter === "toapis") {
     if (draft.kind === "image") {
@@ -1110,6 +1161,7 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
     }
     return {
       familyId: "",
+      ...(record.imagePricing !== undefined ? { imagePricing:imagePricingDraft(record.imagePricing as ImagePricing) } : {}),
       id: typeof record.id === "string" ? record.id : "",
       name: typeof record.name === "string" ? record.name : "",
       ...(typeof record.displayName === "string" ? { displayName: record.displayName } : {}),
@@ -1512,8 +1564,8 @@ export function MediaModelsPage() {
     return ark?.id ?? providers.find((provider) => provider.enabled)?.id ?? providers[0]?.id ?? "";
   };
 
-  const addVideoPresets = (adapter: "ark" | "toapis", family: "seedance" | "minimax" | "seedance25" | "seedance25ext" | "kling" | "wan" = "seedance"): void => {
-    const familyName = family === "wan" ? "Wan 3.0 / Prime" : family === "minimax" ? "MiniMax H3" : family === "seedance25" ? "Seedance 2.5" : family === "seedance25ext" ? "Seedance 2.5 Ext" : family === "kling" ? "Kling 4.0" : "Seedance 2.0";
+  const addVideoPresets = (adapter: "ark" | "toapis", family: "seedance" | "minimax" | "seedance25" | "seedance25flash" | "seedance25ext" | "kling" | "wan" = "seedance"): void => {
+    const familyName = family === "wan" ? "Wan 3.0 / Prime" : family === "minimax" ? "MiniMax H3" : family === "seedance25flash" ? "Seedance 2.5 Flash" : family === "seedance25" ? "Seedance 2.5" : family === "seedance25ext" ? "Seedance 2.5 Ext" : family === "kling" ? "Kling 4.0" : "Seedance 2.0";
     const toapisProvider = providers.find((provider) => {
       try {
         return provider.enabled && ["toapis.com", "toapis.cn", "api.toapis.com", "api.toapis.cn"].includes(new URL(provider.baseUrl).hostname);
@@ -1534,7 +1586,7 @@ export function MediaModelsPage() {
     const additions: MediaModelDraft[] = [];
     const upgrades = new Map<string, Partial<MediaModelDraft>>();
     const touched: string[] = [];
-    const presets = family === "wan" ? TOAPIS_WAN_PRESETS : family === "minimax"
+    const presets = family === "seedance25flash" ? ARK_SEEDANCE_25_FLASH_PRESETS : family === "wan" ? TOAPIS_WAN_PRESETS : family === "minimax"
       ? TOAPIS_MINIMAX_PRESETS
       : family === "seedance25"
         ? adapter === "ark" ? ARK_SEEDANCE_25_PRESETS : TOAPIS_SEEDANCE_25_PRESETS.filter((preset) => preset.upstreamModel === "seedance-2-5")
@@ -1643,7 +1695,7 @@ export function MediaModelsPage() {
           ...("videoReferenceTokenPriceCredits" in tierPricing ? {
             videoReference: {
               enabled: true,
-              maxDurationSeconds: "15",
+              maxDurationSeconds: family === "seedance25flash" ? "30" : "15",
               maxImages: "8",
               maxSegments: "1",
               tokenCostCredits: tierPricing.videoReferenceTokenCostCredits ?? "0",
@@ -1669,7 +1721,7 @@ export function MediaModelsPage() {
             videoReference: {
               ...(existingFamily.videoReference ?? {
                 enabled: true,
-                maxDurationSeconds: "15",
+                maxDurationSeconds: family === "seedance25flash" ? "30" : "15",
                 maxImages: "8",
                 maxSegments: "1",
               }),
@@ -1750,6 +1802,25 @@ export function MediaModelsPage() {
       `已加入 ${additions.length} 个图片模型，请填写成本和售价`,
       "已加入 Seedream",
     );
+  };
+
+  const addSeedream55Model = (): void => {
+    const providerId = preferredProvider();
+    if (!providerId) { toastErr("请先配置 Ark 上游供应商", "缺少供应商"); return; }
+    if (drafts.some(isSeedream55)) { toastErr("Seedream 5.5 已在目录中，请编辑现有条目", "无需重复添加"); return; }
+    const familyId = nextFamilyId();
+    setDrafts((previous) => [...previous, {
+      familyId, id:"seedream-5.5", name:"Seedream 5.5", kind:"image", adapter:"ark", providerId,
+      upstreamModel:"doubao-seedream-5-5-261028", resolutions:[], minDuration:"4", maxDuration:"15",
+      billingUnit:"second", tokenCostCredits:"0", tokenPriceCredits:"0", generateAudio:false,
+      costCredits:"0.23", priceCredits:"0.328572", priceVersion:"v1",
+      imagePricing:{ inputCostCredits:"0.05", inputPriceCredits:"0.071429", outputTiers:[
+        {maxPixels:2_610_000, costCredits:"0.13", priceCredits:"0.185715"},
+        {maxPixels:4_630_000, costCredits:"0.23", priceCredits:"0.328572"},
+      ]},
+    }]);
+    setDirty(true); setError(""); revealFamilies([familyId], true); setPresetsOpen(false);
+    toastOk("已加入图片模型与输入/像素分档价格，请确认供应商后保存", "已加入 Seedream 5.5");
   };
 
   const addGptImageModels = (): void => {
@@ -1995,6 +2066,11 @@ export function MediaModelsPage() {
       run: () => addVideoPresets("ark", "seedance25"),
     },
     {
+      label: "火山 Seedance 2.5 Flash",
+      title: "加入 Seedance 2.5 Flash 的 480p / 720p 档位（4–30 秒）",
+      run: () => addVideoPresets("ark", "seedance25flash"),
+    },
+    {
       label: "ToAPIs Seedance 2.0",
       title: "加入 ToAPIs 的 mini / fast / 标准版八档，请确认供应商并填写价格",
       run: () => addVideoPresets("toapis"),
@@ -2033,6 +2109,11 @@ export function MediaModelsPage() {
       label: "Seedream 图像",
       title: "加入 Seedream 5.0 Pro / Flash / Lite / 4.5 / 4.0 图片模型",
       run: addSeedreamModels,
+    },
+    {
+      label:"Seedream 5.5",
+      title:"加入支持透明图片、图层拆分和文字识别的 Seedream 5.5",
+      run:addSeedream55Model,
     },
   ];
   const presetsDisabled = loading || busy || providers.length === 0;
@@ -2464,6 +2545,7 @@ function MediaFamilyCard({
   const hasTiers = hasResolutionTiers(lead);
   const isToapis = lead.adapter === "toapis";
   const arkSeedance25 = !isToapis && isArkSeedance25(lead.upstreamModel);
+  const arkSeedance25Flash = arkSeedance25 && isArkSeedance25Flash(lead.upstreamModel);
   const seedance25 = arkSeedance25 ||
     (isToapis && (lead.upstreamModel.trim() === "seedance-2-5" || lead.upstreamModel.trim() === "seedance-2.5-ext"));
   const minimax = isToapis ? minimaxCapability(lead.upstreamModel.trim()) : undefined;
@@ -2745,7 +2827,7 @@ function MediaFamilyCard({
           <div className="field">
             <span className="field-label">参考素材上限</span>
             <span className="readout" aria-label={`模型 ${name} 参考素材上限`}>
-              30 图 / 10 视频 / 10 音频 · 合计 50
+              {arkSeedance25Flash ? "10 图 / 5 视频 / 5 音频 · 合计 20" : "30 图 / 10 视频 / 10 音频 · 合计 50"}
             </span>
           </div>
         ) : null}
@@ -2769,6 +2851,20 @@ function MediaFamilyCard({
           </button>
         </Notice>
       ) : null}
+
+      {isSeedream55(lead) && lead.imagePricing ? <div className="table-scroll">
+        <p className="readout">支持 1K / 1.5K / 2K、10 张参考图、透明 PNG、最多 100 张底图与图层及富文本 OCR。按实际输入图片和每张输出的像素分档计费。</p>
+        <table className="table">
+          <thead><tr><th>图片计价项</th><th className="num">成本 credit/张</th><th className="num">售价 credit/张</th></tr></thead>
+          <tbody>{[
+            {label:"输入图片", cost:lead.imagePricing.inputCostCredits, price:lead.imagePricing.inputPriceCredits},
+            ...lead.imagePricing.outputTiers.map((tier, i) => ({label:i === 0 ? "输出 ≤ 2.61M 像素" : "输出 2.61M–4.63M 像素", cost:tier.costCredits, price:tier.priceCredits})),
+          ].map((row, i) => <tr key={row.label}><td>{row.label}</td>{(["cost", "price"] as const).map((field) => <td className="num" key={field}><input className="media-price-input num" inputMode="decimal" disabled={busy} aria-label={`${name} ${row.label} ${field === "cost" ? "成本" : "售价"}`} value={row[field]} onChange={(event) => {
+            const pricing = lead.imagePricing!;
+            onUpdateFamily(indexes, {imagePricing:i === 0 ? {...pricing, [field === "cost" ? "inputCostCredits" : "inputPriceCredits"]:event.target.value} : {...pricing, outputTiers:pricing.outputTiers.map((tier, j) => j === i-1 ? {...tier, [field === "cost" ? "costCredits" : "priceCredits"]:event.target.value} : tier)}});
+          }} /></td>)}</tr>)}</tbody>
+        </table>
+      </div> : null}
 
       <div className="table-scroll">
         <table className="table media-tier-table">

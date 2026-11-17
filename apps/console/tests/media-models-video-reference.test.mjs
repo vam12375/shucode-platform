@@ -1272,3 +1272,32 @@ test("Wan 3.0 presets save both models with exact resolution prices and referenc
   assert.match(output.validateDrafts([{ ...draft, minDuration: "1" }], [toapisProvider]), /2–30/);
   assert.match(output.validateDrafts([{ ...draft, billingUnit: "token" }], [toapisProvider]), /按秒/);
 });
+
+test("Seedance Flash preset saves its token rates and distinct reference capacity", async () => {
+  const f=await mountModels([]);
+  let tree=clickPreset(f,"火山 Seedance 2.5 Flash");
+  assert.match(nodeText(tree),/10 图 \/ 5 视频 \/ 5 音频/);
+  nodes(tree,(node)=>node.type==="button"&&nodeText(node)==="保存配置")[0].props.onClick();
+  await f.settle();
+  const saved=JSON.parse(f.calls.find((call)=>call.options).options.body);
+  assert.deepEqual(saved.map((m)=>[m.upstreamModel,m.resolutions[0],m.minDuration,m.maxDuration]),[
+    ["doubao-seedance-2-5-flash-261115","480p",4,30], ["doubao-seedance-2-5-flash-261115","720p",4,30],
+  ]);
+  assert.ok(saved.every((m)=>m.tokenCostMicroPerMillion===46_000_000 && m.tokenPriceMicroPerMillion===65_714_286 && m.videoReference.tokenCostMicroPerMillion===28_000_000 && m.videoReference.tokenPriceMicroPerMillion===40_000_000 && m.videoReference.maxDurationSeconds===30));
+  const draft=output.toDraft(saved[0]);
+  assert.match(output.validateDrafts([{...draft,resolutions:["1080p"]}],[provider]),/Flash 仅支持 480p、720p/);
+});
+
+test("Seedream 5.5 saves and round trips input and pixel-tier prices", async()=>{
+  const f=await mountModels([]);
+  let tree=clickPreset(f,"Seedream 5.5");
+  nodes(tree,(node)=>node.type==="button"&&nodeText(node)==="保存配置")[0].props.onClick();
+  await f.settle();
+  const saved=JSON.parse(f.calls.find((call)=>call.options).options.body);
+  assert.equal(saved[0].upstreamModel,"doubao-seedream-5-5-261028");
+  assert.deepEqual(saved[0].imagePricing,{inputPriceMicro:71_429,inputCostMicro:50_000,outputTiers:[{maxPixels:2_610_000,priceMicro:185_715,costMicro:130_000},{maxPixels:4_630_000,priceMicro:328_572,costMicro:230_000}]});
+  const imported=output.draftsFromJson(JSON.stringify(saved));
+  assert.deepEqual(JSON.parse(JSON.stringify(output.toApiModel(imported[0]).imagePricing)),saved[0].imagePricing);
+  assert.equal(output.validateDrafts(imported,[provider]),null);
+  assert.throws(()=>output.draftsFromJson(JSON.stringify([{...saved[0],imagePricing:{}}])),/图片像素计价/);
+});

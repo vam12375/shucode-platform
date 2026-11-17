@@ -32,6 +32,7 @@ func CanvasCapabilitiesFor(m Model) *CanvasCapabilities {
 		adapter = "ark"
 	}
 	ark25 := adapter == "ark" && seedance25Model(m.UpstreamModel)
+	ark25Flash := ark25 && seedance25FlashModel(m.UpstreamModel)
 	toapis25 := adapter == "toapis" && (m.UpstreamModel == "seedance-2-5" || m.UpstreamModel == "seedance-2.5-ext")
 	if m.Kind != "video" || !(adapter == "ark" && (seedance20Model(m.UpstreamModel) || ark25) || adapter == "toapis" && (toapisSeedanceModel(m.UpstreamModel) || m.UpstreamModel == "kling-4.0")) {
 		return nil
@@ -41,6 +42,10 @@ func CanvasCapabilitiesFor(m Model) *CanvasCapabilities {
 	if ark25 || toapis25 {
 		// Seedance 2.5：单次最多 50 个参考素材（30 图 + 10 视频 + 10 音频）。
 		maxImages, maxAudios, maxTotalReferences = 30, 10, 50
+	}
+	if ark25Flash {
+		// Flash 的参考容量低于基础版，按具体型号限制，避免同家族判定放行上游超限请求。
+		maxImages, maxAudios, maxTotalReferences = 10, 5, 20
 	}
 	if ark25 {
 		// 原先共用 2.0 的 15 秒限制，导致合法的 2.5 视频与音频参考在准入时被拒绝。
@@ -57,6 +62,8 @@ func CanvasCapabilitiesFor(m Model) *CanvasCapabilities {
 	referencePriced := m.VideoReference != nil && (m.VideoReference.PriceMicro > 0 || m.VideoReference.TokenPriceMicroPerMillion > 0 || m.EffectiveBillingUnit() == BillingUnitRequest)
 	if referencePriced {
 		switch {
+		case ark25Flash:
+			c.MaxVideos = 5
 		case adapter == "toapis" && m.UpstreamModel == "kling-4.0":
 			if capability, ok := toapisModelCapabilities(m.UpstreamModel); ok {
 				c.MaxVideos = capability.maxVideos

@@ -531,6 +531,12 @@ func (s *Service) usage(p *Project, shot Shot, m Model) store.UsageRecord {
 		deviceID = p.BillingDeviceID
 	}
 	record := store.UsageRecord{ID: shot.ReservationID, RequestID: "media:" + shot.ReservationID, UserID: p.UserID, TeamID: p.TeamID, BillingBindingID: p.BillingBindingID, DeviceTokenID: deviceID, Model: "media:" + m.ID, UpstreamModel: m.UpstreamModel, ProviderID: m.ProviderID, CreditsMicro: shot.pendingCharge(), Status: store.UsageStatusOk, CreatedAt: time.Now().UTC()}
+	if seedream55Model(m) {
+		record.CreditsMicro = shot.ImageChargeMicro
+		cost := mediaUnitRates(BillingUnitRequest, 1, shot.ImageCostMicro)
+		record.PriceSnapshot = &store.UsagePricingSnapshot{SchemaVersion: 1, CapturedAt: mediaSnapshotTime(p, record.CreatedAt), Sale: mediaUnitRates(BillingUnitRequest, 1, shot.ImageChargeMicro), Cost: store.UsageCostSnapshot{Status: "estimated", PricingVersion: m.PriceVersion, ModelID: m.ID, Rates: &cost, EstimatedMicro: &shot.ImageCostMicro}}
+		return record
+	}
 	priceRate, costRate, tokenBilling := mediaVideoTokenRates(p, m)
 	if m.Kind != "video" || !tokenBilling || shot.ProviderUsageTokens <= 0 {
 		return mediaUnitUsage(record, p, shot, m)

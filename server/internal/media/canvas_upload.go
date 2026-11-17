@@ -21,10 +21,11 @@ func (s *Service) UploadCanvasMediaForUser(ctx context.Context, team, name, prod
 	buffered := bufio.NewReader(reader)
 	head, _ := buffered.Peek(512)
 	mime := http.DetectContentType(head)
+	mime = seedreamReferenceMime(head, mime)
 	kind := "image"
-	limit := int64(MaxUpload)
+	limit := int64(30 << 20)
 	switch {
-	case mime == "image/png" || mime == "image/jpeg" || mime == "image/webp":
+	case strings.HasPrefix(mime, "image/") && seedreamImageMime(mime):
 	case mime == "video/mp4" || isQuickTimeHeader(head):
 		if mime != "video/mp4" {
 			mime = "video/quicktime"

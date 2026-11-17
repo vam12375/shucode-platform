@@ -593,6 +593,16 @@ func publicMediaModels(models []media.Model) []gin.H {
 		if m.TokenPriceMicroPerMillion > 0 {
 			model["tokenPriceMicroPerMillion"] = m.TokenPriceMicroPerMillion
 		}
+		if capability := media.ImageCapabilitiesFor(m); capability != nil {
+			model["imageCapabilities"] = capability
+		}
+		if m.ImagePricing != nil {
+			tiers := make([]gin.H, 0, len(m.ImagePricing.OutputTiers))
+			for _, tier := range m.ImagePricing.OutputTiers {
+				tiers = append(tiers, gin.H{"maxPixels": tier.MaxPixels, "priceMicro": tier.PriceMicro})
+			}
+			model["imagePricing"] = gin.H{"inputPriceMicro": m.ImagePricing.InputPriceMicro, "outputTiers": tiers}
+		}
 		if len(m.RequestPriceTiers) > 0 {
 			// 只公开用户售价；分档成本留在 root 控制台与用量快照。
 			tiers := make([]gin.H, 0, len(m.RequestPriceTiers))

@@ -29,6 +29,9 @@ func generatedArchiveSources(p Project) []string {
 			}
 			// 仅 Canvas 可明确请求尾帧；Agent 与普通制作的内部帧不归档。
 			ids := []string{shot.OutputAssetID}
+			for _, output := range shot.ImageOutputs {
+				ids = append(ids, output.AssetID)
+			}
 			if p.Canvas != nil {
 				ids = append(ids, shot.LastFrameAssetID)
 			}

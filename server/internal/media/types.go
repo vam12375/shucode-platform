@@ -36,6 +36,7 @@ type Model struct {
 	RequestPriceTiers []RequestPriceTier        `json:"requestPriceTiers,omitempty"`
 	PriceVersion      string                    `json:"priceVersion"`
 	VideoReference    *VideoReferenceCapability `json:"videoReference,omitempty"`
+	ImagePricing      *ImagePricing             `json:"imagePricing,omitempty"`
 }
 
 // RequestPriceTier 是上游按时长分档的按次单价；成本只用于平台对账，不进入客户端目录。
@@ -428,6 +429,10 @@ type Analysis struct {
 	WorkspaceIdentity string `json:"workspaceIdentity,omitempty"`
 }
 type Shot struct {
+	ImageOutputs           []ImageOutput  `json:"imageOutputs,omitempty"`
+	ImageInputCount        *int           `json:"imageInputCount,omitempty"`
+	ImageChargeMicro       int64          `json:"imageChargeMicro,omitempty"`
+	ImageCostMicro         int64          `json:"imageCostMicro,omitempty"`
 	ReferenceScriptVersion int            `json:"referenceScriptVersion,omitempty"`
 	CanvasVideoAssetIDs    []string       `json:"canvasVideoAssetIds,omitempty"`
 	LastFrameAssetID       string         `json:"lastFrameAssetId,omitempty"`
@@ -553,6 +558,7 @@ type ProjectView struct {
 	CancelRequested      bool                     `json:"cancelRequested"`
 }
 type ShotView struct {
+	ImageOutputs     []ImageOutput  `json:"imageOutputs,omitempty"`
 	LastFrameAssetID string         `json:"lastFrameAssetId,omitempty"`
 	Plan             ShotPlan       `json:"plan"`
 	Status           string         `json:"status"`
@@ -569,11 +575,15 @@ type ShotView struct {
 func (p Project) View() ProjectView {
 	shots := make([]ShotView, 0, len(p.Shots))
 	for _, s := range p.Shots {
+		outputs := slices.Clone(s.ImageOutputs)
+		for i := range outputs {
+			outputs[i].ResultURL = ""
+		}
 		var diagnostic *ProviderError
 		if s.ProviderError != nil {
 			diagnostic = sanitizeProviderError(s.ProviderError.Code)
 		}
-		shots = append(shots, ShotView{Plan: s.Plan, Status: s.Status, Attempt: s.Attempt, VideoTaskID: publicVideoTaskID(s.VideoTaskID), ImageAssetID: s.ImageAssetID, OutputAssetID: s.OutputAssetID, LastFrameAssetID: s.LastFrameAssetID, Error: s.Error, ProviderError: diagnostic, ChargedMicro: s.ChargedMicro, QuoteMicro: s.QuoteMicro})
+		shots = append(shots, ShotView{ImageOutputs: outputs, Plan: s.Plan, Status: s.Status, Attempt: s.Attempt, VideoTaskID: publicVideoTaskID(s.VideoTaskID), ImageAssetID: s.ImageAssetID, OutputAssetID: s.OutputAssetID, LastFrameAssetID: s.LastFrameAssetID, Error: s.Error, ProviderError: diagnostic, ChargedMicro: s.ChargedMicro, QuoteMicro: s.QuoteMicro})
 	}
 	archives := currentGeneratedArchives(p)
 	return ProjectView{PlanningResult: clonePlanningResult(p.PlanningResult), ImageAnalysis: cloneImageAnalysis(p.ImageAnalysis), TemplateSnapshot: cloneTemplateSnapshot(p.TemplateSnapshot), MachineReview: p.MachineReview, PlanReview: p.PlanReview, Composition: p.Composition, QualityReport: p.QualityReport, SourceAnalysis: cloneSourceAnalysis(p.SourceAnalysis), AnalysisChargedMicro: p.AnalysisChargedMicro, Canvas: p.Canvas, TeamAssetArchives: archives, ReservedMicro: 0, ReleasedMicro: 0, ID: p.ID, Version: p.Version, Status: p.Status, Brief: p.Brief, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Analysis: p.Analysis, Plan: p.Plan, Shots: shots, QuoteMicro: p.QuoteMicro, ChargedMicro: p.ChargedMicro, OutputAssetID: p.OutputAssetID, Error: p.Error, CancelRequested: p.CancelRequested}

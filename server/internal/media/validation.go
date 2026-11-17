@@ -26,6 +26,9 @@ func ValidateModels(models []Model) error {
 	seen := map[string]bool{}
 	displayNames := map[string]string{}
 	for _, m := range models {
+		if validateImagePricing(m) != nil {
+			return ErrInvalid
+		}
 		if len(m.Routes) > 32 {
 			return ErrInvalid
 		}
@@ -144,6 +147,9 @@ func ValidateModels(models []Model) error {
 			}
 		}
 		for _, r := range m.Resolutions {
+			if ark25 && seedance25FlashModel(m.UpstreamModel) && r != "480p" && r != "720p" {
+				return ErrInvalid
+			}
 			if ark25 && r != "480p" && r != "720p" && r != "1080p" {
 				return ErrInvalid
 			}

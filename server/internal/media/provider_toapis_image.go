@@ -35,8 +35,10 @@ func validateToAPIsImageInput(m Model, r CanvasRequest, images int) error {
 
 // 图片可能同步返回 URL，也可能只确认异步任务；两种受理证据不能混入同一个字符串。
 type ProviderImageSubmission struct {
-	URL    string
-	TaskID string
+	URL         string
+	TaskID      string
+	Outputs     []ImageOutput
+	InputImages *int
 }
 
 type ProviderImageResult struct {
@@ -53,6 +55,17 @@ func firstFrameResolution(m Model) string {
 }
 
 func (p Provider) SubmitImage(ctx context.Context, m Model, prompt, image string, ratios ...string) (ProviderImageSubmission, error) {
+	if seedream55Model(m) {
+		ratio := "auto"
+		if len(ratios) > 0 {
+			ratio = ratios[0]
+		}
+		images := []string{}
+		if image != "" {
+			images = append(images, image)
+		}
+		return p.submitSeedream55(ctx, m, CanvasRequest{Prompt: prompt, Resolution: "2K", AspectRatio: ratio}, images)
+	}
 	if p.Adapter != "toapis" {
 		url, err := p.Image(ctx, m, prompt, image, ratios...)
 		return ProviderImageSubmission{URL: url}, err
@@ -69,6 +82,9 @@ func (p Provider) SubmitImage(ctx context.Context, m Model, prompt, image string
 }
 
 func (p Provider) SubmitCanvasImage(ctx context.Context, m Model, r CanvasRequest, images []string) (ProviderImageSubmission, error) {
+	if seedream55Model(m) {
+		return p.submitSeedream55(ctx, m, r, images)
+	}
 	if p.Adapter != "toapis" {
 		url, err := p.CanvasImage(ctx, m, r, images)
 		return ProviderImageSubmission{URL: url}, err

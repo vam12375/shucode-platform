@@ -101,6 +101,21 @@ func (b Blobs) Verify(team, id, expires, signature string) bool {
 	return e == nil && t >= time.Now().Unix() && t <= time.Now().Add(25*time.Hour).Unix() && hmac.Equal([]byte(signature), []byte(b.signature(team, id, expires)))
 }
 func (b Blobs) Download(ctx context.Context, team, rawURL, kind string) (Asset, error) {
+	return b.DownloadWithID(ctx, team, uuid.NewString(), rawURL, kind)
+}
+
+func (b Blobs) DownloadWithID(ctx context.Context, team, id, rawURL, kind string) (Asset, error) {
+	if file, err := os.Open(b.Path(team, id)); err == nil {
+		defer file.Close()
+		head := make([]byte, 512)
+		n, _ := file.Read(head)
+		mime := http.DetectContentType(head[:n])
+		info, err := file.Stat()
+		if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 {
+			return Asset{}, fmt.Errorf("invalid_image_result")
+		}
+		return Asset{ID: id, Kind: kind, Mime: mime, Name: "generated", Size: info.Size(), CreatedAt: time.Now().UTC()}, nil
+	}
 	if !ValidURL(rawURL) {
 		return Asset{}, ErrInvalid
 	}
@@ -136,7 +151,7 @@ func (b Blobs) Download(ctx context.Context, team, rawURL, kind string) (Asset, 
 	} else if mime != "video/mp4" {
 		return Asset{}, fmt.Errorf("invalid_video_result")
 	}
-	id, n, e := b.Put(team, reader, limit)
+	id, n, e := b.PutWithID(team, id, reader, limit)
 	if e != nil {
 		return Asset{}, e
 	}

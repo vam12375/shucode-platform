@@ -13,6 +13,7 @@ import (
 )
 
 type CanvasRequest struct {
+	ImageOptions       *ImageOptions          `json:"imageOptions,omitempty"`
 	ReferenceMode      string                 `json:"referenceMode,omitempty"`
 	AudioAssetIDs      []string               `json:"audioAssetIds,omitempty"`
 	GenerateAudio      *bool                  `json:"generateAudio,omitempty"`
@@ -71,10 +72,13 @@ func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id strin
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(r.Prompt) == "" || utf8.RuneCountInString(r.Prompt) > 4000 || r.Count < 1 || r.Count > 4 || r.BoardID == "" || len(r.BoardID) > 200 || r.NodeID == "" || len(r.NodeID) > 200 || r.WorkspacePath == "" || len(r.WorkspacePath) > 4096 || len(r.WorkspaceIdentity) > 4096 || len(r.RemoteSessionID) > 200 {
+	if strings.TrimSpace(r.Prompt) == "" && !(seedream55Model(m) && r.ImageOptions != nil && r.ImageOptions.LayerDecomposition) || utf8.RuneCountInString(r.Prompt) > 4000 || r.Count < 1 || r.Count > 4 || r.BoardID == "" || len(r.BoardID) > 200 || r.NodeID == "" || len(r.NodeID) > 200 || r.WorkspacePath == "" || len(r.WorkspacePath) > 4096 || len(r.WorkspaceIdentity) > 4096 || len(r.RemoteSessionID) > 200 {
 		return nil, ErrInvalid
 	}
 	if err := validateCanvasOptions(m, r); err != nil {
+		return nil, err
+	}
+	if err := validateSeedream55Input(m, r, len(r.AssetIDs)); err != nil {
 		return nil, err
 	}
 	if m.Adapter == "toapis" && r.ReferenceMode != "multimodal" {
@@ -144,6 +148,15 @@ func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id strin
 		if !slices.ContainsFunc(assets, func(a Asset) bool { return a.ID == id && a.Kind == "image" && !a.Internal }) {
 			return nil, ErrInvalid
 		}
+		if seedream55Model(m) {
+			for _, asset := range assets {
+				if asset.ID == id {
+					if err := s.validateSeedream55Asset(ctx, asset, team, r.ImageOptions != nil && r.ImageOptions.LayerDecomposition); err != nil {
+						return nil, err
+					}
+				}
+			}
+		}
 	}
 	var multimodalVideos []string
 	if r.ReferenceMode == "multimodal" {
@@ -153,6 +166,9 @@ func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id strin
 		}
 	}
 	unit := m.PriceMicro
+	if seedream55Model(m) {
+		unit = seedream55Quote(m, r, len(r.AssetIDs))
+	}
 	if r.Kind == "video" {
 		if videoReference != nil || r.ReferenceMode == "multimodal" && len(r.VideoReferences) > 0 {
 			unit = mediaVideoReferenceQuoteMicro(m, m.VideoReference, r.Resolution, r.AspectRatio, r.Duration)

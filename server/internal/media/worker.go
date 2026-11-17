@@ -312,6 +312,9 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		return e
 	}
 	if shot.Status == "image_generated" {
+		if seedream55Model(m) {
+			return s.saveSeedream55Outputs(ctx, p, index, shot)
+		}
 		// 生图返回 URL 已代表供应商完成；下载失败仅重试落盘，成功保存后再结算，不能重复生成。
 		a, err := s.storeOutput(ctx, p.TeamID, shot.ResultURL, "image")
 		if err != nil {
@@ -433,6 +436,18 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 		}
 	}
 	amount := m.PriceMicro
+	if seedream55Model(m) {
+		request := directRequest
+		inputs := len(request.AssetIDs)
+		if !isDirect {
+			request = CanvasRequest{Resolution: "2K", AspectRatio: p.Brief.AspectRatio}
+			inputs = 0
+			if shot.Plan.AssetID != "" {
+				inputs = 1
+			}
+		}
+		amount = seedream55Quote(m, request, inputs)
+	}
 	if kind == "video" {
 		resolution, aspectRatio := p.Brief.Resolution, p.Brief.AspectRatio
 		if isDirect {
@@ -539,6 +554,11 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 				v.ImageNextQueryAt = nextImageQueryAt(time.Now())
 			} else {
 				v.ResultURL, v.Status = submission.URL, "image_generated"
+			}
+			if len(submission.Outputs) > 0 {
+				v.ImageOutputs = submission.Outputs
+				v.ImageInputCount = submission.InputImages
+				v.ImageChargeMicro, v.ImageCostMicro = seedream55Charges(m, submission)
 			}
 		}) == nil {
 			return ErrConflict

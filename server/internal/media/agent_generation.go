@@ -87,6 +87,9 @@ func (s *Service) ValidateAgentGeneration(ctx context.Context, team string, requ
 		}
 	}
 	unit := model.PriceMicro
+	if seedream55Model(model) {
+		unit = seedream55Quote(model, CanvasRequest{Resolution: request.Resolution, AspectRatio: request.AspectRatio}, len(request.AssetIDs))
+	}
 	if request.Kind == "video" {
 		unit = mediaVideoQuoteMicro(model, request.Resolution, request.AspectRatio, request.Duration)
 	}
