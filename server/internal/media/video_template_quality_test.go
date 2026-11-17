@@ -13,8 +13,8 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(templates) != 60 {
-		t.Fatalf("expected sixty recipes, got %d", len(templates))
+	if len(templates) != 62 {
+		t.Fatalf("expected sixty-two recipes, got %d", len(templates))
 	}
 	seen := map[string]bool{}
 	actions := map[string]bool{}
