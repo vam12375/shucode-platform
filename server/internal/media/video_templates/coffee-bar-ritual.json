@@ -1,14 +1,14 @@
 {
   "id": "coffee-bar-ritual",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "family": "restaurant",
   "name": {
     "zh": "吧台咖啡小仪式",
     "en": "Coffee bar ritual"
   },
   "description": {
-    "zh": "叙事方法：以等待一杯到接过一杯的过程组织小仪式，有冲煮素材才细写工艺。风格基调：吧台动作节奏、杯面细节和递接眼神形成呼吸。以下拍点是可重组的叙事示例，可更换场地、道具、人物关系、景别与运镜，不按标称秒数机械照拍；一次生成请求可包含多个画面镜头。事实边界：不虚构咖啡豆产地、设备参数、拉花难度或真实服务速度；成杯也可直接进入递杯故事。 全时段要求：每秒都有可见的动作进展、反应或信息揭示，末拍继续兑现；默认最终完全静止收束最多0.5秒，不提前完成后等待，不以微抖或无信息慢推填时长。用户明确静帧要求及既有后期尾卡窗口除外。",
-    "en": "Coffee bar ritual: a connected visual story with a motivated opening, meaningful change and a resolved ending. The beat sequence is an adaptable example, not a fixed set, camera script or shot quota. Preserve subject identity and verified claims; ordinary fictional people, settings and conflicts may be created. One generation request may contain multiple visual shots. Follow the category-specific factual boundaries in the recipe. Use every second for visible progress, reaction or revelation through the ending; default fully static settling is at most 0.5 seconds. With native audio enabled, match music, action sounds, ambience and any speech to the supplied material and story; honor explicit user sound restrictions."
+    "zh": "叙事方法：以等待一杯到接过一杯的过程组织小仪式，有冲煮素材才细写工艺。风格基调：吧台动作节奏、杯面细节和递接眼神形成呼吸。以下拍点是可重组的叙事示例，可更换场地、道具、人物关系、景别与运镜，不按标称秒数机械照拍；一次生成请求可包含多个画面镜头。事实边界：不虚构咖啡豆产地、设备参数、拉花难度或真实服务速度；成杯也可直接进入递杯故事。 全时段要求：每秒都有可见的动作进展、反应或信息揭示，末拍继续兑现；默认最终完全静止收束最多0.5秒，不提前完成后等待，不以微抖或无信息慢推填时长。用户明确静帧要求及既有后期尾卡窗口除外。 单图创作：一张清楚主体图即可，允许按同款逻辑补全未见视角、表面纹理和创意场景，跨镜保持一致；不因缺可选图片阻断。",
+    "en": "Coffee bar ritual: a connected visual story with a motivated opening, meaningful change and a resolved ending. The beat sequence is an adaptable example, not a fixed set, camera script or shot quota. Preserve subject identity and verified claims; ordinary fictional people, settings and conflicts may be created. One generation request may contain multiple visual shots. Follow the category-specific factual boundaries in the recipe. Use every second for visible progress, reaction or revelation through the ending; default fully static settling is at most 0.5 seconds. With native audio enabled, match music, action sounds, ambience and any speech to the supplied material and story; honor explicit user sound restrictions. Single-image creation: one clear subject image suffices. Infer consistent views and textures; preserve known features and facts. Honor strict/exact requests."
   },
   "industries": [
     "餐饮",
@@ -30,16 +30,19 @@
   "requiredFacts": [
     "身份依据：保留图片可辨认的主体轮廓、比例、配色关系、部件、服装与标识；原图姿势和背景不是身份锁定。",
     "声明依据：名称、功能、价格、成分、规格和承诺仅在有真实资料且本片表达时使用；可选信息缺失不阻断纯视觉故事。",
-    "不虚构咖啡豆产地、设备参数、拉花难度或真实服务速度；成杯也可直接进入递杯故事"
+    "不虚构咖啡豆产地、设备参数、拉花难度或真实服务速度；成杯也可直接进入递杯故事",
+    "单图执行：锁定轮廓、比例、配色、已知部件、数量和标识；每段实际shots[].prompt重述身份锚点及同一补全设定。观察只记可见事实，推测写入创作。strict、精确复刻或只用已见内容的要求优先；补全不当作真实结构、记录或性能证据。",
+    "单图领域方法：可补全同一道出品的侧背面、表面纹理、热气、倾倒或取用过程及创意餐桌，按全貌→细节→动作→回扣推进；保留已见器皿、配料与份量，不新增售卖菜品，不从补全推断原料、口味、制作配方或真实门店动线。"
   ],
   "assetRequirements": [
-    "至少一张能辨认推广主体或明确视觉主题的图片；同一主体多视角合并为身份参考，不按图片张数分镜。",
+    "至少一张能辨认推广主体或明确视觉主题的图片；同一主体多视角合并为身份参考，不按图片张数分镜。 单图可用，缺少视角或近摄允许创意补全；多图仅提高准确度。",
     "全部选图按角色/商品身份、空间、风格、准确标识职责进入实际生成；Logo 可仅片尾出现，风格图不要求复刻构图。"
   ],
   "avoidWhen": [
     "用户已锁定与本方法不兼容的脚本、人物范围或视觉风格时，遵从用户要求或换模板。",
     "主体身份无法辨认时说明具体缺口；不要用虚构型号或人物冒充原主体。",
-    "用户要求事实性证明但缺少依据时缩小表达或说明缺口，不能以艺术画面冒充证据。"
+    "用户要求事实性证明但缺少依据时缩小表达或说明缺口，不能以艺术画面冒充证据。",
+    "普通创作不因缺角度、纹理或场景图而放弃；用户精确要求与事实证据缺口单独处理。"
   ],
   "minAssets": 1,
   "aspectRatios": [
@@ -55,7 +58,7 @@
   },
   "nominalSeconds": 36,
   "style": {
-    "look": "吧台动作节奏、杯面细节和递接眼神形成呼吸；背景、时间与配角按本故事生成，创作场景不冒称实拍。",
+    "look": "吧台动作节奏、杯面细节和递接眼神形成呼吸；背景、时间与配角按本故事生成，创作场景不冒称实拍。 单图可补全未见角度和表面纹理，跨镜复用同一设定，保留已知特征。",
     "lens": "用全景交代关系、中近景看行动、特写看反馈；按信息选择尺度与焦点，保留关键结构，不强制固定焦段、景别轮换次数或场景数量。",
     "motion": "运镜随新信息选择跟随、推近、侧移、环绕、拉开或固定观察，动作完成或信息转折时剪切；快慢对比有动机，不重复慢推。 每秒都有可见的动作进展、反应或信息揭示，末拍继续兑现；默认最终完全静止收束最多0.5秒，不提前完成后等待，不以微抖或无信息慢推填时长。用户明确静帧要求及既有后期尾卡窗口除外。",
     "sound": "根据素材可见事件、人物关系、故事信息和用户要求匹配声音，不预设人声有无。模型原声开启时配乐建议：温暖爵士钢琴、刷鼓与低音贝斯，中慢速且主题持续。动作音效建议：实际研磨、注水、萃取、杯碟接触；雨声仅在雨景出现时，只跟随实际画面。需要说明信息时写准确旁白，角色交流时写自然对白，氛围段用配乐与现场音；不强制每拍讲话。声音清晰可听，主题从开场发展到收尾，环境声交代空间。混音人声居前、音效可辨、配乐适当退让，避免削波和全程极轻底噪。用户明确声音限制优先；原声关闭时服从本单配置，不自动开启后期付费服务。",
@@ -205,7 +208,8 @@
     "拍点、机位与秒数按故事和模型能力安排，一次生成允许多镜头，不机械压缩标称分镜。",
     "准确文字不靠猜测重画，声音与字幕服从本单配置，不冒称真实成片已审核。",
     "逐秒检验：每秒都有可见的动作进展、反应或信息揭示，末拍继续兑现；默认最终完全静止收束最多0.5秒，不提前完成后等待，不以微抖或无信息慢推填时长。用户明确静帧要求及既有后期尾卡窗口除外。",
-    "声音检验：按素材与剧情匹配配乐、同步音效、环境层次及必要的人声，具体声源与作用清晰可听；配乐在人声出现时退让，不提前淡成静音，用户明确声音限制优先。"
+    "声音检验：按素材与剧情匹配配乐、同步音效、环境层次及必要的人声，具体声源与作用清晰可听；配乐在人声出现时退让，不提前淡成静音，用户明确声音限制优先。",
+    "单图检验：全貌、局部、换角与必要动作持续推进，不做图片轮播或重复慢推；最终shots[].prompt复述身份与补全设定，已知特征不改写，strict及用户精确要求优先。"
   ],
   "verifiedModelIds": [],
   "skillIds": [

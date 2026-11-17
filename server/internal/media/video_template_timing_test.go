@@ -231,7 +231,7 @@ func TestTimedRecipesAuthoringRules(t *testing.T) {
 				}
 				// 不允许把同一句起态复制到多个镜头：插入镜与下一镜也要各自写清当时的手位与物件位置。
 				match := timingStartPattern.FindStringSubmatch(beat.Action)
-				currentMethod := recipe.Version == "3.0.1" || recipe.ID == "floating-exploded-showcase" && recipe.Version == "3.0.2"
+				currentMethod := recipe.ID != "brand-kv-unfold" && recipe.Version == expectedRecipeVersion(recipe.ID)
 				if match == nil || !currentMethod && starts[match[1]] {
 					t.Fatalf("missing or duplicated start state: %q", beat.Action)
 				}

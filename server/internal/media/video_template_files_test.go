@@ -53,7 +53,7 @@ func TestTemplateFilesRejectAmbiguousCatalog(t *testing.T) {
 	}
 }
 
-func TestBrandKVPacingPatchPreservesIdentityAndTiming(t *testing.T) {
+func TestBrandKVCreativePatchesPreserveIdentityAndTiming(t *testing.T) {
 	raw, err := fs.ReadFile(videoTemplateFiles, "video_templates/brand-kv-unfold.json")
 	if err != nil {
 		t.Fatal(err)
@@ -72,21 +72,28 @@ func TestBrandKVPacingPatchPreservesIdentityAndTiming(t *testing.T) {
 	if len(got.Beats) != len(frozen.Beats) {
 		t.Fatal("pacing patch changed beat count")
 	}
-	// 本轮只改声画表达，旧快照的主体关系、素材约束和确定性配时继续夹紧。
+	// 单图策略和声画补丁可扩展素材表达；主体关系与确定性配时继续夹紧。
 	for i := range got.Beats {
 		got.Beats[i].Sound = frozen.Beats[i].Sound
 	}
 	last := len(got.Beats) - 1
+	// 场所与其余出品的核心职责保留，单图时允许回到同一主角。
+	got.Beats[2].Purpose = frozen.Beats[2].Purpose
+	got.Beats[7].Purpose = frozen.Beats[7].Purpose
 	got.Beats[last].Purpose = frozen.Beats[last].Purpose
 	got.Beats[last].Action = frozen.Beats[last].Action
 	got.Beats[last].Camera = frozen.Beats[last].Camera
 	got.Version = frozen.Version
 	got.Description = frozen.Description
+	got.RequiredFacts = frozen.RequiredFacts
+	got.AssetRequirements = frozen.AssetRequirements
+	got.AvoidWhen = frozen.AvoidWhen
+	got.Style.Look = frozen.Style.Look
 	got.Style.Motion = frozen.Style.Motion
 	got.Style.Sound = frozen.Style.Sound
 	got.Style.Narration = frozen.Style.Narration
 	got.QualityChecks = frozen.QualityChecks
 	if !reflect.DeepEqual(got, frozen) {
-		t.Fatal("pacing patch changed fields outside sound and ending")
+		t.Fatal("creative patches changed identity or beat timing")
 	}
 }

@@ -10,7 +10,7 @@ func TestFloatingExplodedShortCutsKeepSeparationAndReassembly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	recipe, err := findVideoTemplate(templates, "floating-exploded-showcase", "3.0.2")
+	recipe, err := findVideoTemplate(templates, "floating-exploded-showcase", expectedRecipeVersion("floating-exploded-showcase"))
 	if err != nil {
 		t.Fatal(err)
 	}

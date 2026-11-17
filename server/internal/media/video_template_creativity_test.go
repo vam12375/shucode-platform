@@ -53,7 +53,7 @@ func TestCreativeDomainBoundaries(t *testing.T) {
 		"sharing-table-sequence":  {"份量", "递接"},
 	} {
 		t.Run(id, func(t *testing.T) {
-			recipe, err := findVideoTemplate(definitions, id, "3.0.1")
+			recipe, err := findVideoTemplate(definitions, id, expectedRecipeVersion(id))
 			if err != nil {
 				t.Fatal(err)
 			}

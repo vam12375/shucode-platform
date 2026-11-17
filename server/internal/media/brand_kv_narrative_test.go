@@ -19,8 +19,8 @@ func brandNarrativeRecipe(t *testing.T) VideoTemplate {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 2.1.1 保留主角与配时方法，修正静帧尾段并按素材匹配原声。
-	recipe, err := findVideoTemplate(definitions, "brand-kv-unfold", "2.1.1")
+	// 单图补全补丁继续保留主角与配时方法，并按素材匹配原声。
+	recipe, err := findVideoTemplate(definitions, "brand-kv-unfold", expectedRecipeVersion("brand-kv-unfold"))
 	if err != nil {
 		t.Fatal("hero-led rewrite must have a distinct version", err)
 	}

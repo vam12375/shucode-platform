@@ -1,14 +1,14 @@
 {
   "id": "footwear-floating-showcase",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "family": "rhythm",
   "name": {
     "zh": "鞋履悬浮运镜",
     "en": "Floating footwear showcase"
   },
   "description": {
-    "zh": "叙事方法：用整鞋轮廓、鞋底局部、侧面轮廓、倾转角度、后跟结构与鞋面近掠组成由慢到快的商品认识过程。风格基调：悬浮鞋履、深色渐变背景、侧逆光与短促闪白拖影，完整轮廓和结构特写交替。建议15秒竖屏；标称30秒的拍点是可重组的扩展示例，短版优先保留六个核心信息，不机械照拍全部镜头；一次生成请求可包含多个画面镜头。主体随商品图替换，不继承参考片品牌、配色或专属结构；缺图允许按同款逻辑创意补全视角和结构，已知特征保持一致，推测不当作实物精确复刻。每秒都有可见的角度变化或信息揭示，末段加速贴近真实鞋面；默认最终完全静止收束最多0.5秒，用户明确静帧及已有后期尾卡窗口优先。",
-    "en": "Narrative method: alternate a complete floating shoe silhouette with sole, side-profile, tilted-view and heel details, then accelerate into an upper-surface flyby. A dark gradient, rim light and brief bright motion-blur transitions connect readable details. Recommended delivery is a 15-second vertical ad; the nominal 30-second beats are a regroupable extended example, with six core information stages retained in shorter cuts. One generation request may contain multiple visual shots. Replace the subject with the supplied shoe, preserving its identity rather than the reference brand or construction. Missing views and details may be creatively inferred from the established shoe design; preserve known features and do not present inferred details as an exact reproduction. Use every second for a visible angle change or information reveal. Default fully static settling is at most 0.5 seconds; explicit still-frame requests and existing finishing-card windows take precedence."
+    "zh": "叙事方法：用整鞋轮廓、鞋底局部、侧面轮廓、倾转角度、后跟结构与鞋面近掠组成由慢到快的商品认识过程。风格基调：悬浮鞋履、深色渐变背景、侧逆光与短促闪白拖影，完整轮廓和结构特写交替。建议15秒竖屏；标称30秒的拍点是可重组的扩展示例，短版优先保留六个核心信息，不机械照拍全部镜头；一次生成请求可包含多个画面镜头。主体随商品图替换，不继承参考片品牌、配色或专属结构；缺图允许按同款逻辑创意补全视角和结构，已知特征保持一致，推测不当作实物精确复刻。每秒都有可见的角度变化或信息揭示，末段加速贴近真实鞋面；默认最终完全静止收束最多0.5秒，用户明确静帧及已有后期尾卡窗口优先。 单图创作：一张清楚主体图即可，允许按同款逻辑补全未见视角、表面纹理和创意场景，跨镜保持一致；不因缺可选图片阻断。",
+    "en": "Alternate a floating shoe silhouette, sole or edge detail, side, tilt and heel; finish with an accelerating upper-surface flyby. Use a gradient, rim light and brief bright transitions. Adapt the reference to the supplied shoe. Advance every second; settle at most 0.5s. Single-image creation: one clear subject image suffices. Infer consistent views and textures; preserve known features and facts. Honor strict/exact requests."
   },
   "industries": [
     "鞋履",
@@ -35,16 +35,19 @@
   "requiredFacts": [
     "商品身份：鞋型、鞋头比例、左右脚特征、鞋面分层、鞋带、鞋底厚度、配色与标识以选图为准；切换机位不镜像偷换左右脚。",
     "创意补全：缺图时按已知鞋型、用途与设计语言生成合理的底纹、后跟、纹理和未见视角；已知部件与标识不改变，不新增与鞋型矛盾的功能部件，推测不当作型号的准确结构。",
-    "表达依据：名称、材质、功能与性能结论仅用真实资料；悬浮、倾转与闪白属于创意展示，不能证明缓震、防滑或轻量性能。"
+    "表达依据：名称、材质、功能与性能结论仅用真实资料；悬浮、倾转与闪白属于创意展示，不能证明缓震、防滑或轻量性能。",
+    "单图执行：锁定轮廓、比例、配色、已知部件、数量和标识；每段实际shots[].prompt重述身份锚点及同一补全设定。观察只记可见事实，推测写入创作。strict、精确复刻或只用已见内容的要求优先；补全不当作真实结构、记录或性能证据。",
+    "单图领域方法：可补全同款侧背面、鞋底或包袋外观、织纹与褶皱，按轮廓→局部→换角→使用关系推进；已知鞋型、衣型、开口与部件保持，不凭补全宣称材质成分、真实容量、防滑或耐用性能。"
   ],
   "assetRequirements": [
-    "至少一张鞋型清楚的商品图即可使用，缺少视角允许模型创意补全；鞋底、后跟和另一侧面图可提高准确度，多视角共同锁定同一只鞋。",
+    "至少一张鞋型清楚的商品图即可使用，缺少视角允许模型创意补全；鞋底、后跟和另一侧面图可提高准确度，多视角共同锁定同一只鞋。 单图可用，缺少视角或近摄允许创意补全；多图仅提高准确度。",
     "准确品牌标识如需出现须提供清晰素材；商品图负责身份，风格图负责光色，Logo可用于本单已安排的片尾，不复制参考片品牌与音乐。"
   ],
   "avoidWhen": [
     "本单要求真实上脚、跑跳或性能测试，且不接受悬浮创意展示时换用对应模板。",
     "商品轮廓无法辨认时先明确身份缺口，不用参考片的鞋型替代目标款。",
-    "本单要求精确复刻不可见底纹、隐藏部件或证明性能却无依据时，补充相应素材或调整表达；普通创意展示不因缺角度图而阻断。"
+    "本单要求精确复刻不可见底纹、隐藏部件或证明性能却无依据时，补充相应素材或调整表达；普通创意展示不因缺角度图而阻断。",
+    "普通创作不因缺角度、纹理或场景图而放弃；用户精确要求与事实证据缺口单独处理。"
   ],
   "minAssets": 1,
   "aspectRatios": [
@@ -60,7 +63,7 @@
   },
   "nominalSeconds": 30,
   "style": {
-    "look": "一只目标鞋悬浮于深灰或与商品配色协调的渐变空间，柔和侧光配窄轮廓光，让鞋面层次与鞋底边缘可读。背景与照明可按本单重组，已知的主体颜色、材质关系与部件保持一致，缺图角度按同款逻辑补全。悬浮是创意画面，不冒称实拍或性能证据。",
+    "look": "一只目标鞋悬浮于深灰或与商品配色协调的渐变空间，柔和侧光配窄轮廓光，让鞋面层次与鞋底边缘可读。背景与照明可按本单重组，已知的主体颜色、材质关系与部件保持一致，缺图角度按同款逻辑补全。悬浮是创意画面，不冒称实拍或性能证据。 单图可补全未见角度和表面纹理，跨镜复用同一设定，保留已知特征。",
     "lens": "完整鞋型用中近景保持鞋头与后跟都在画内；结构用特写或微距特写。以较弱透视保持鞋型，贴近时让纹理和拼接线依次进入焦点；不为凑景别加入无关人物或场地。",
     "motion": "完整鞋型阶段使用可读的小幅倾转或弧移，特写阶段用短距离贴边移动；每次路径都带来新结构信息。阶段之间可用0.1–0.2秒的短闪白、定向拖影或光带掠过，放在对应镜头内部，不另占一个长镜头。末段沿侧面与鞋面加速贴近；不全程匀速360度旋转，不用多次慢推填时长。每秒都有可见的角度变化或信息揭示，默认最终完全静止收束最多0.5秒，用户明确静帧及已有后期尾卡窗口优先。",
     "sound": "模型原声开启时，按本单和素材匹配配乐与音效：可用脉冲电子节奏承接快慢变化，闪白与加速近掠匹配短促设计音效；静态悬浮不编造脚步或碰撞。必要人声只说资料支持的信息，声音清晰可听，配乐在人声出现时退让。以下是模板声音建议，不声称已识别参考曲目或精确节拍；用户明确声音限制优先，原声关闭时服从本单配置，不自动开启后期服务。",
@@ -210,7 +213,8 @@
     "选图按身份、结构、风格与准确标识职责使用；多个视角合并锁定同款，不逐张图片轮播。",
     "短版优先保留六个核心信息，扩展拍点可重组，一次请求允许多镜头；最后扫掠不因删插入镜而失去起态。",
     "每秒都有角度变化或信息揭示，末段加速后仍保留身份锚点，默认最终完全静止收束最多0.5秒，已有后期尾卡窗口及用户明确静帧要求优先。",
-    "配乐和同步设计音效清晰可听，静态悬浮不虚构脚步，声音服从本单；未生成并审核前verifiedModelIds保持为空，不借参考片冒称模型验证通过。"
+    "配乐和同步设计音效清晰可听，静态悬浮不虚构脚步，声音服从本单；未生成并审核前verifiedModelIds保持为空，不借参考片冒称模型验证通过。",
+    "单图检验：全貌、局部、换角与必要动作持续推进，不做图片轮播或重复慢推；最终shots[].prompt复述身份与补全设定，已知特征不改写，strict及用户精确要求优先。"
   ],
   "verifiedModelIds": [],
   "provenance": {
