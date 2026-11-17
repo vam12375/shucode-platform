@@ -53,6 +53,10 @@ func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int
 		if !validImageAnalysisBinding(p, a) {
 			return nil, ErrConflict
 		}
+	} else if p.RetryContext != nil {
+		if a.Kind != "planning" || p.Analysis == nil || a.TaskID != p.Analysis.TaskID || a.InputID == p.Analysis.InputID || a.WorkspacePath != p.Analysis.WorkspacePath || a.WorkspaceIdentity != p.Analysis.WorkspaceIdentity {
+			return nil, ErrConflict
+		}
 	} else if (p.Brief.SourceOnly && a.Kind != "source") || (p.SourceAnalysis != nil && !p.Brief.SourceOnly && a.Kind != "adaptation") || (!p.Brief.SourceOnly && p.SourceAnalysis == nil && a.Kind != "") {
 		return nil, ErrInvalid
 	}
@@ -184,10 +188,7 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 		if err := validateSourceBoundaries(v, plan); err != nil {
 			return err
 		}
-		if err := s.validateAdaptivePlan(ctx, v.Brief, plan, v.Models, v.TemplateSnapshot); err != nil {
-			return err
-		}
-		shots, total, err := BuildShots(v.Brief, plan, v.Models)
+		shots, total, err := s.buildRetryPlan(ctx, v, plan)
 		if err != nil {
 			return err
 		}
@@ -199,7 +200,7 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 		v.QuoteMicro = total
 		v.Error = ""
 		v.Status = "review"
-		if !v.Brief.ReviewPlan && !storyNeedsReview(v.Brief, plan) {
+		if v.RetryContext == nil && !v.Brief.ReviewPlan && !storyNeedsReview(v.Brief, plan) {
 			v.Status = "queued"
 		}
 		if v.AnalysisFee != nil && v.Analysis.Kind != "adaptation" {
@@ -244,7 +245,7 @@ func (s *Service) finishAnalysisFee(ctx context.Context, p *Project) (*Project, 
 			v.Status = "review"
 			if v.Brief.SourceOnly && v.SourceAnalysis != nil {
 				v.Status = "source_ready"
-			} else if !v.Brief.ReviewPlan && v.Plan != nil && !storyNeedsReview(v.Brief, *v.Plan) {
+			} else if v.RetryContext == nil && !v.Brief.ReviewPlan && v.Plan != nil && !storyNeedsReview(v.Brief, *v.Plan) {
 				// 结算恢复仍服从用户冻结的审阅设置，不因模型补图建议暂停。
 				v.Status = "queued"
 			}

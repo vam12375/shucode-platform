@@ -23,6 +23,37 @@ func publicMediaAliasForTest(t *testing.T, f *apiFixture, id string) string {
 	return aliases[id]
 }
 
+func TestPublicMediaDiagnosticsPreserveKnownReasonsWithoutExposingUpstreamCodes(t *testing.T) {
+	for _, tc := range []struct {
+		code, public, category string
+	}{
+		{"ToAPIs.PrivateError", "media_unknown", ""},
+		{"Unknown.PrivacyInformation", "media_unknown", ""},
+		{"ModelNotOpen.Future", "media_unknown", ""},
+		{"ModelNotOpen", "media_model_not_open", "authentication"},
+		{"OutputVideoSensitiveContentDetected.PrivacyInformation", "media_privacy_information", "content_policy"},
+		{"InputImageSensitiveContentDetected.PolicyViolation", "media_policy_violation", "content_policy"},
+		{"InvalidParameter", "media_invalid_input", "invalid_input"},
+		{"ServiceUnavailable", "media_service_unavailable", "service_unavailable"},
+	} {
+		t.Run(tc.code, func(t *testing.T) {
+			value := map[string]any{"shots": []any{map[string]any{"providerError": map[string]any{"code": tc.code, "category": "service_unavailable", "message": "private response"}}}}
+			projectMediaDiagnostics(value)
+			projected := value["shots"].([]any)[0].(map[string]any)["providerError"].(map[string]any)
+			if projected["code"] != tc.public || projected["message"] != nil {
+				t.Fatalf("unsafe reason projection: %+v", projected)
+			}
+			if tc.category == "" {
+				if _, exists := projected["category"]; exists {
+					t.Fatalf("unknown reason fabricated a category: %+v", projected)
+				}
+			} else if projected["category"] != tc.category {
+				t.Fatalf("known reason lost: %+v", projected)
+			}
+		})
+	}
+}
+
 func TestMediaAliasesPersistAcrossConcurrentRegistration(t *testing.T) {
 	f := newAPIEmptyFixture(t)
 	ctx := context.Background()

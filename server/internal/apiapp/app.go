@@ -79,6 +79,7 @@ func New(deps *Deps) *gin.Engine {
 	registerConsoleOpsRoutes(router, deps)
 	registerDeepSeekWebToolsConfigRoutes(router, deps)
 	registerConsoleOpsExtRoutes(router, deps)
+	registerConsoleMediaFailureRoutes(router, deps)
 	registerTenantRoutes(router, deps)
 	registerQuotaRequestRoutes(router, deps)
 	registerRootMFARoutes(router, deps)

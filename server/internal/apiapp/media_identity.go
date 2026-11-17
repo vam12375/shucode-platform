@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/vam12375/shucode-platform/server/internal/media"
 	"github.com/vam12375/shucode-platform/server/internal/store"
 )
 
@@ -78,7 +80,7 @@ func mapMediaModelRefs(value any, parent string, mapID func(string) string) {
 	switch data := value.(type) {
 	case map[string]any:
 		for key, item := range data {
-			if key == "modelId" || key == "imageModelId" || key == "videoModelId" || key == "videoModel" || key == "imageModel" || (key == "id" && parent == "models") {
+			if key == "modelId" || key == "imageModelId" || key == "videoModelId" || key == "videoModel" || key == "imageModel" || key == "previousVideoModel" || (key == "id" && parent == "models") {
 				if id, ok := item.(string); ok && id != "" {
 					data[key] = mapID(id)
 				}
@@ -176,13 +178,30 @@ func projectMediaDiagnostics(value any) {
 				}
 			case "providerError":
 				if diagnostic, ok := item.(map[string]any); ok {
-					category, _ := diagnostic["category"].(string)
-					switch category {
-					case "content_policy", "invalid_input", "authentication", "quota", "rate_limit", "service_unavailable":
-					default:
-						category = "service_unavailable"
+					code, _ := diagnostic["code"].(string)
+					category := ""
+					if classified := media.PublicProviderError(code); classified != nil {
+						category = classified.Category
 					}
-					data[key] = map[string]any{"code": "media_" + category, "category": category}
+					// 原实现把未知原因归为服务不可用；这里只保留精确已知分类，避免给用户错误建议。
+					publicCode := "media_unknown"
+					switch {
+					case code == "ModelNotOpen":
+						publicCode, category = "media_model_not_open", "authentication"
+					case category == "content_policy" && strings.HasSuffix(code, ".PrivacyInformation"):
+						publicCode, category = "media_privacy_information", "content_policy"
+					case category == "content_policy" && strings.HasSuffix(code, ".PolicyViolation"):
+						publicCode, category = "media_policy_violation", "content_policy"
+					case slices.Contains([]string{"content_policy", "invalid_input", "authentication", "quota", "rate_limit", "service_unavailable"}, category):
+						publicCode = "media_" + category
+					default:
+						category = ""
+					}
+					projected := map[string]any{"code": publicCode}
+					if category != "" {
+						projected["category"] = category
+					}
+					data[key] = projected
 				}
 			case "error", "archiveError":
 				if message, ok := item.(string); ok {

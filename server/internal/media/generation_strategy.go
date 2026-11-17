@@ -186,6 +186,10 @@ func validateGenerationPlan(b Brief, p Plan, m Model) error {
 	if len(minimum) == 1 && len(p.Shots) != 1 {
 		return fmt.Errorf("video_generation_single_required")
 	}
+	return validateGenerationPlanDetails(b, p, m)
+}
+
+func validateGenerationPlanDetails(b Brief, p Plan, m Model, preserved ...map[int]Shot) error {
 	if len(p.Shots) > 1 {
 		if p.Segmentation == nil || len(p.Segmentation.Cuts) != len(p.Shots)-1 || !storyText(p.Segmentation.Reason, 1000, true) {
 			return fmt.Errorf("video_generation_cuts_required")
@@ -199,7 +203,13 @@ func validateGenerationPlan(b Brief, p Plan, m Model) error {
 		return fmt.Errorf("video_generation_cuts_invalid")
 	}
 	frames := 0
-	for _, shot := range p.Shots {
+	for index, shot := range p.Shots {
+		if len(preserved) > 0 {
+			if _, saved := preserved[0][index]; saved {
+				frames += shotDeliveryFrames(shot)
+				continue
+			}
+		}
 		if b.ImageAnalysisFirst && shot.Creative != nil && len(shot.Creative.AssetIDs) > imageReferenceLimit(b, m) {
 			return fmt.Errorf("video_generation_reference_images_exceeded")
 		}

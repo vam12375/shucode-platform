@@ -36,15 +36,19 @@ func (s *Service) pollImage(ctx context.Context, p *Project, index int, shot Sho
 			_, err = s.workerUpdate(ctx, p, func(v *Project) {
 				v.Status, v.Error = "reconciliation_required", "provider_query_requires_reconciliation"
 				v.Shots[index].Status, v.Shots[index].Error = "reconciliation_required", "provider_query_requires_reconciliation"
+				recordProviderDiagnostic(v, index, "image_query", providerDiagnosticFrom(err))
 			})
 			return err
 		}
-		return update(func(v *Shot) {
-			v.Error = "provider_query_retrying"
-			if upstream != nil && upstream.status == 429 && upstream.retryAfterAt.After(v.ImageNextQueryAt) {
-				v.ImageNextQueryAt = upstream.retryAfterAt
+		_, updateErr := s.workerUpdate(ctx, p, func(v *Project) {
+			shot := &v.Shots[index]
+			shot.Error = "provider_query_retrying"
+			if upstream != nil && upstream.status == 429 && upstream.retryAfterAt.After(shot.ImageNextQueryAt) {
+				shot.ImageNextQueryAt = upstream.retryAfterAt
 			}
+			recordProviderDiagnostic(v, index, "image_query", providerDiagnosticFrom(err))
 		})
+		return updateErr
 	}
 	switch result.Status {
 	case "queued", "running":
@@ -53,11 +57,14 @@ func (s *Service) pollImage(ctx context.Context, p *Project, index int, shot Sho
 		if err = s.Repo.Store.ReleaseReservationByID(ctx, shot.ReservationID, time.Now()); err != nil {
 			return err
 		}
-		return update(func(v *Shot) {
-			v.Status, v.Error = "failed", "provider_failed"
-			v.ProviderError = sanitizeProviderError(result.Error.Code)
-			v.clearPending()
+		_, updateErr := s.workerUpdate(ctx, p, func(v *Project) {
+			shot := &v.Shots[index]
+			shot.Status, shot.Error = "failed", "provider_failed"
+			shot.ProviderError = sanitizeProviderError(result.Error.Code)
+			recordProviderDiagnostic(v, index, "image_query", result.Error.Diagnostic)
+			shot.clearPending()
 		})
+		return updateErr
 	case "succeeded":
 		// URL 先落盘，下载失败只重试此结果；供应商 usage 与平台按张锁价结算无关。
 		return update(func(v *Shot) {

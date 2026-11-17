@@ -46,6 +46,9 @@ func imageFirstPlanningBound(p *Project) bool {
 	if p.Analysis == nil {
 		return false
 	}
+	if p.RetryContext != nil {
+		return p.Analysis.Kind == "planning"
+	}
 	if directPromptBrief(p.Brief) {
 		return p.Analysis.Kind == "direct" && p.ImageAnalysis == nil
 	}

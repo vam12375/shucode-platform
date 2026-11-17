@@ -331,6 +331,10 @@ func BuildShots(b Brief, plan Plan, models []Model) ([]Shot, int64, error) {
 }
 
 func buildShotsWithReferenceScript(b Brief, plan Plan, models []Model, scriptVersion int) ([]Shot, int64, error) {
+	return buildShotsPreservingSuccesses(b, plan, models, scriptVersion, nil)
+}
+
+func buildShotsPreservingSuccesses(b Brief, plan Plan, models []Model, scriptVersion int, preserved map[int]Shot) ([]Shot, int64, error) {
 	if scriptVersion != 0 && scriptVersion != 1 {
 		return nil, 0, ErrInvalid
 	}
@@ -389,7 +393,10 @@ func buildShotsWithReferenceScript(b Brief, plan Plan, models []Model, scriptVer
 		}
 	}
 	if storyPlanning(b) {
-		for _, shot := range plan.Shots {
+		for index, shot := range plan.Shots {
+			if _, saved := preserved[index]; saved {
+				continue
+			}
 			creative := shot.Creative
 			if creative == nil {
 				return nil, 0, storyError()
@@ -417,7 +424,15 @@ func buildShotsWithReferenceScript(b Brief, plan Plan, models []Model, scriptVer
 	duration := 0
 	deliveryFrames := 0
 	sourceEnd := float64(0)
-	for _, p := range plan.Shots {
+	for index, p := range plan.Shots {
+		if saved, ok := preserved[index]; ok {
+			// 已落盘并结算的旧段不再经过新供应商能力/价格准入，只按原事实组成同一交付。
+			out = append(out, saved)
+			total += saved.QuoteMicro
+			duration += p.Duration
+			deliveryFrames += storyDeliveryFrames(p)
+			continue
+		}
 		if (scriptVersion == 0 && p.Anchors != nil) || !validReferenceAnchors(p.Anchors, p.SourceStart, p.SourceEnd) || utf8.RuneCountInString(p.Prompt) > 4000 || utf8.RuneCountInString(p.ImagePrompt) > 4000 || utf8.RuneCountInString(p.Subtitle) > 300 || utf8.RuneCountInString(p.Narration) > 300 || utf8.RuneCountInString(p.Camera) > 500 || utf8.RuneCountInString(p.Framing) > 500 || utf8.RuneCountInString(p.Action) > 1000 || utf8.RuneCountInString(p.Purpose) > 500 {
 			return nil, 0, ErrInvalid
 		}

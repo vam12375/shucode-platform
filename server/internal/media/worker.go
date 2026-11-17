@@ -348,10 +348,14 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 					v.Error = "provider_query_requires_reconciliation"
 					v.Shots[index].Status = "reconciliation_required"
 					v.Shots[index].Error = "provider_query_requires_reconciliation"
+					recordProviderDiagnostic(v, index, "video_query", providerDiagnosticFrom(e))
 				})
 				return err
 			}
-			if update(func(v *Shot) { v.Error = "provider_query_retrying" }) == nil {
+			if _, err := s.workerUpdate(ctx, p, func(v *Project) {
+				v.Shots[index].Error = "provider_query_retrying"
+				recordProviderDiagnostic(v, index, "video_query", providerDiagnosticFrom(e))
+			}); err != nil {
 				return ErrConflict
 			}
 			return nil
@@ -363,12 +367,14 @@ func (s *Service) step(ctx context.Context, p *Project) error {
 			if e = s.Repo.Store.ReleaseReservationByID(ctx, shot.ReservationID, time.Now()); e != nil {
 				return e
 			}
-			if update(func(v *Shot) {
-				v.Status = "failed"
-				v.Error = "provider_" + result.Status
-				v.ProviderError = sanitizeProviderError(result.Error.Code)
-				v.clearPending()
-			}) == nil {
+			if _, err := s.workerUpdate(ctx, p, func(v *Project) {
+				shot := &v.Shots[index]
+				shot.Status = "failed"
+				shot.Error = "provider_" + result.Status
+				shot.ProviderError = sanitizeProviderError(result.Error.Code)
+				recordProviderDiagnostic(v, index, "video_query", result.Error.Diagnostic)
+				shot.clearPending()
+			}); err != nil {
 				return ErrConflict
 			}
 			return nil
@@ -704,11 +710,25 @@ func (s *Service) submissionFailure(ctx context.Context, p *Project, index int, 
 			ss.Status = "failed"
 			ss.Error = "provider_rejected"
 			ss.ProviderError = providerErrorFrom(cause)
+			stage := "video_submit"
+			if shot.Stage == "image" {
+				stage = "image_submit"
+			}
+			recordProviderDiagnostic(v, index, stage, providerDiagnosticFrom(cause))
 			ss.clearPending()
 		})
 		return e
 	}
-	return s.unknown(ctx, p, index)
+	_, err := s.workerUpdate(ctx, p, func(v *Project) {
+		v.Status, v.Error = "reconciliation_required", "provider_submission_unknown"
+		v.Shots[index].Status = "reconciliation_required"
+		stage := "video_submit"
+		if shot.Stage == "image" {
+			stage = "image_submit"
+		}
+		recordProviderDiagnostic(v, index, stage, providerDiagnosticFrom(cause))
+	})
+	return err
 }
 
 func isCanvasMultimodal(p *Project) bool {

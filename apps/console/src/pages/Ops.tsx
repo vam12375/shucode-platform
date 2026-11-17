@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Activity, RefreshCw } from "lucide-react";
 import { api } from "../api.js";
+import { MediaFailures } from "./MediaFailures.js";
 import {
   ChartFrame,
   ComposedTrendChart,
@@ -452,6 +453,8 @@ export function OpsPage() {
           <p className="stat-sub">待入库事件 · 进程本地持久化</p>
         </div>
       </section>
+
+      <MediaFailures key={hours} hours={hours} />
 
       <div className="chart-grid">
         <ChartFrame title="流量与错误" subtitle="灰色为请求数，红色为错误数，蓝线为 P95 延迟">

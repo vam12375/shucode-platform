@@ -482,6 +482,9 @@ type AgentGenerationRequest struct {
 }
 
 type Project struct {
+	RetryContext         *RetryContext                 `json:"retryContext,omitempty"`
+	RetryState           *retryState                   `json:"retryState,omitempty"`
+	ProviderDiagnostics  []ProviderDiagnostic          `json:"providerDiagnostics,omitempty"`
 	PlanningResult       *PlanningResult               `json:"planningResult,omitempty"`
 	ImageAnalysis        *ImageAnalysis                `json:"imageAnalysis,omitempty"`
 	TemplateSnapshot     *TemplateSnapshot             `json:"templateSnapshot,omitempty"`
@@ -528,6 +531,7 @@ type Project struct {
 
 // 用户投影不携带供应商路由、准入身份、锁定售价或 worker lease；opaque task ID 仅用于受理证据与排查。
 type ProjectView struct {
+	RetryContext         *RetryContext            `json:"retryContext,omitempty"`
 	PlanningResult       *PlanningResult          `json:"planningResult,omitempty"`
 	ImageAnalysis        *ImageAnalysis           `json:"imageAnalysis,omitempty"`
 	TemplateSnapshot     *TemplateSnapshot        `json:"templateSnapshot,omitempty"`
@@ -586,7 +590,7 @@ func (p Project) View() ProjectView {
 		shots = append(shots, ShotView{ImageOutputs: outputs, Plan: s.Plan, Status: s.Status, Attempt: s.Attempt, VideoTaskID: publicVideoTaskID(s.VideoTaskID), ImageAssetID: s.ImageAssetID, OutputAssetID: s.OutputAssetID, LastFrameAssetID: s.LastFrameAssetID, Error: s.Error, ProviderError: diagnostic, ChargedMicro: s.ChargedMicro, QuoteMicro: s.QuoteMicro})
 	}
 	archives := currentGeneratedArchives(p)
-	return ProjectView{PlanningResult: clonePlanningResult(p.PlanningResult), ImageAnalysis: cloneImageAnalysis(p.ImageAnalysis), TemplateSnapshot: cloneTemplateSnapshot(p.TemplateSnapshot), MachineReview: p.MachineReview, PlanReview: p.PlanReview, Composition: p.Composition, QualityReport: p.QualityReport, SourceAnalysis: cloneSourceAnalysis(p.SourceAnalysis), AnalysisChargedMicro: p.AnalysisChargedMicro, Canvas: p.Canvas, TeamAssetArchives: archives, ReservedMicro: 0, ReleasedMicro: 0, ID: p.ID, Version: p.Version, Status: p.Status, Brief: p.Brief, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Analysis: p.Analysis, Plan: p.Plan, Shots: shots, QuoteMicro: p.QuoteMicro, ChargedMicro: p.ChargedMicro, OutputAssetID: p.OutputAssetID, Error: p.Error, CancelRequested: p.CancelRequested}
+	return ProjectView{RetryContext: cloneRetryContext(p.RetryContext), PlanningResult: clonePlanningResult(p.PlanningResult), ImageAnalysis: cloneImageAnalysis(p.ImageAnalysis), TemplateSnapshot: cloneTemplateSnapshot(p.TemplateSnapshot), MachineReview: p.MachineReview, PlanReview: p.PlanReview, Composition: p.Composition, QualityReport: p.QualityReport, SourceAnalysis: cloneSourceAnalysis(p.SourceAnalysis), AnalysisChargedMicro: p.AnalysisChargedMicro, Canvas: p.Canvas, TeamAssetArchives: archives, ReservedMicro: 0, ReleasedMicro: 0, ID: p.ID, Version: p.Version, Status: p.Status, Brief: p.Brief, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Analysis: p.Analysis, Plan: p.Plan, Shots: shots, QuoteMicro: p.QuoteMicro, ChargedMicro: p.ChargedMicro, OutputAssetID: p.OutputAssetID, Error: p.Error, CancelRequested: p.CancelRequested}
 }
 
 func directGenerationRequest(p Project) (CanvasRequest, bool) {

@@ -138,7 +138,9 @@ func (p Provider) QueryImage(ctx context.Context, id string) (ProviderImageResul
 			} `json:"data"`
 		} `json:"result"`
 	}
-	if err := p.request(ctx, "GET", "/v1/images/generations/"+id, nil, &out); err != nil {
+	diagnostic, err := p.requestDiagnostic(ctx, "GET", "/v1/images/generations/"+id, nil, &out)
+	out.Error.Diagnostic = diagnostic
+	if err != nil {
 		return ProviderImageResult{}, err
 	}
 	if out.ID != id {

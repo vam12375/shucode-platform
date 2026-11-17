@@ -175,7 +175,12 @@ func (s *Service) Revise(ctx context.Context, team, id string, version int64, pl
 			return ErrConflict
 		}
 		plan = normalizeAutoPlanMetadata(p.Brief, plan, p.TemplateSnapshot)
-		if err := s.validateAdaptivePlan(ctx, p.Brief, plan, p.Models, p.TemplateSnapshot); err != nil {
+		if p.RetryContext != nil {
+			// 换模型后旧成功镜头可能超过新模型时长；按重规划上下文校验，保留成功段准入例外。
+			if _, _, err := s.buildRetryPlan(ctx, p, plan); err != nil {
+				return err
+			}
+		} else if err := s.validateAdaptivePlan(ctx, p.Brief, plan, p.Models, p.TemplateSnapshot); err != nil {
 			return err
 		}
 		if err := validateSourceBoundaries(p, plan); err != nil {
@@ -186,7 +191,13 @@ func (s *Service) Revise(ctx context.Context, team, id string, version int64, pl
 		if err != nil {
 			return err
 		}
-		shots, total, err := buildShotsWithReferenceScript(p.Brief, plan, p.Models, revisionReferenceScriptVersion(p, plan))
+		var shots []Shot
+		var total int64
+		if p.RetryContext != nil {
+			shots, total, err = s.buildRetryPlan(ctx, p, plan)
+		} else {
+			shots, total, err = buildShotsWithReferenceScript(p.Brief, plan, p.Models, revisionReferenceScriptVersion(p, plan))
+		}
 		if err != nil {
 			return err
 		}
@@ -268,7 +279,11 @@ func (s *Service) action(ctx context.Context, team, id string, version int64, ac
 			}
 			normalized := normalizeAutoPlanMetadata(p.Brief, *p.Plan, p.TemplateSnapshot)
 			p.Plan = &normalized
-			if err := s.validateAdaptivePlan(ctx, p.Brief, *p.Plan, p.Models, p.TemplateSnapshot); err != nil {
+			if p.RetryContext != nil {
+				if _, _, err := s.buildRetryPlan(ctx, p, *p.Plan); err != nil {
+					return err
+				}
+			} else if err := s.validateAdaptivePlan(ctx, p.Brief, *p.Plan, p.Models, p.TemplateSnapshot); err != nil {
 				return err
 			}
 			if e := s.validateFinishing(ctx, p.Brief); e != nil {
@@ -459,6 +474,14 @@ func (s *Service) Tick(ctx context.Context) {
 }
 
 func recordWorkerFailure(v *Project, cause error) {
+	index := -1
+	for i, shot := range v.Shots {
+		if shot.Status != "succeeded" {
+			index = i
+			break
+		}
+	}
+	recordProviderDiagnostic(v, index, "worker", providerDiagnosticFrom(cause))
 	v.Error = "media_worker_retrying"
 	allDone := true
 	for _, shot := range v.Shots {

@@ -131,6 +131,7 @@ func (s *Service) FinishingCapabilities(ctx context.Context) map[string]any {
 	capabilities["planningResults"] = true
 	// 直出复用图片优先入口与方案原文接收，只在两者都可用时声明。
 	capabilities["directPromptCreation"] = available
+	capabilities["retryModelSelection"] = available
 	// 客户端只有看到该声明才会提交超过 20 张图片的制作单。
 	capabilities["maxBriefImages"] = MaxBriefImages
 	capabilities["cinematicComposition"], capabilities["subtitleStyle"] = available, available

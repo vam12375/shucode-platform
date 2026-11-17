@@ -21,50 +21,68 @@ type Provider struct {
 }
 
 func (p Provider) request(ctx context.Context, method, path string, body any, out any) error {
+	_, err := p.requestDiagnostic(ctx, method, path, body, out)
+	return err
+}
+func (p Provider) requestDiagnostic(ctx context.Context, method, path string, body any, out any) (ProviderDiagnostic, error) {
+	var diagnostic ProviderDiagnostic
 	var data []byte
 	var err error
 	if body != nil {
 		data, err = json.Marshal(body)
 		if err != nil {
-			return err
+			return diagnostic, err
 		}
 	}
 	endpoint := strings.TrimRight(p.BaseURL, "/") + path
 	if p.Adapter == "toapis" {
-		// 控制台会规范化掉 /v1；复用上游 URL 拼接，兼容服务根与代理版本前缀。
+		// 控制台会规范化掉 /v1；复用上游URL拼接，兼容服务根与代理版本前缀。
 		endpoint = upstreamurl.Join(p.BaseURL, path)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(data))
 	if err != nil {
-		return err
+		return diagnostic, err
 	}
 	req.Header.Set("Authorization", "Bearer "+p.Key)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := p.Client.Do(req)
 	if err != nil {
-		return err
+		return diagnostic, err
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 	if err != nil {
-		return err
+		return diagnostic, err
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		var failure struct {
-			Error providerErrorResponse `json:"error"`
+	var failure struct {
+		Error providerErrorResponse `json:"error"`
+	}
+	_ = json.Unmarshal(raw, &failure)
+	diagnostic.HTTPStatus = resp.StatusCode
+	for _, header := range []string{"X-Request-ID", "X-Tt-Logid", "Request-ID"} {
+		if value := resp.Header.Get(header); value != "" {
+			diagnostic.RequestID = diagnosticText(value, p.Key)
+			break
 		}
-		_ = json.Unmarshal(raw, &failure)
-		failureResult := &providerHTTPError{status: resp.StatusCode, detail: sanitizeProviderError(failure.Error.Code)}
+	}
+	diagnostic.Code = diagnosticText(failure.Error.Code, p.Key)
+	diagnostic.Message = diagnosticText(failure.Error.Message, p.Key)
+	diagnostic.Response = diagnosticJSON([]byte(failure.Error.Response), p.Key)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// 旧实现丢弃message，root也无法排查；只保存脱敏错误响应，不保存请求或成功资产正文。
+		diagnostic.Response = diagnosticJSON(raw, p.Key)
+		failureResult := &providerHTTPError{status: resp.StatusCode, detail: sanitizeProviderError(failure.Error.Code), diagnostic: diagnostic}
 		if resp.StatusCode == http.StatusTooManyRequests {
 			failureResult.retryAfterAt = providerRetryAfter(resp.Header.Get("Retry-After"), time.Now())
 		}
-		return failureResult
+		return diagnostic, failureResult
 	}
 	if err = json.Unmarshal(raw, out); err != nil {
-		return fmt.Errorf("provider_invalid_response: %w", err)
+		return diagnostic, fmt.Errorf("provider_invalid_response: %w", err)
 	}
-	return nil
+	return diagnostic, nil
 }
+
 func (p Provider) Image(ctx context.Context, m Model, prompt, image string, aspectRatios ...string) (string, error) {
 	if p.Adapter != "" && p.Adapter != "ark" {
 		return "", ErrInvalid
@@ -228,7 +246,8 @@ func (p Provider) Query(ctx context.Context, id string) (ProviderResult, error) 
 	if strings.ContainsAny(id, "/?#") {
 		return out, ErrInvalid
 	}
-	e := p.request(ctx, "GET", "/contents/generations/tasks/"+id, nil, &out)
+	diagnostic, e := p.requestDiagnostic(ctx, "GET", "/contents/generations/tasks/"+id, nil, &out)
+	out.Error.Diagnostic = diagnostic
 	return out, e
 }
 

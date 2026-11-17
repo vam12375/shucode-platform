@@ -17,20 +17,35 @@ type ProviderError struct {
 }
 
 type providerErrorResponse struct {
-	Code string
+	Code       string
+	Message    string
+	Response   string
+	Diagnostic ProviderDiagnostic
 }
 
 func (e *providerErrorResponse) UnmarshalJSON(raw []byte) error {
-	// 错误对象缺失或畸形不应吞掉已确认的 failed 终态；只提取字符串 code，其余字段直接丢弃。
+	// 错误对象缺失或畸形不能吞掉 failed 终态；公开仅用code，脱敏原文另供root诊断。
 	e.Code = ""
+	e.Message = ""
+	e.Response = diagnosticJSON(raw)
+	var unstructured string
+	if json.Unmarshal(raw, &unstructured) == nil {
+		e.Message = diagnosticText(unstructured)
+	}
 	var response struct {
-		Code json.RawMessage `json:"code"`
+		Code    json.RawMessage `json:"code"`
+		Message json.RawMessage `json:"message"`
 	}
 	if json.Unmarshal(raw, &response) == nil {
 		_ = json.Unmarshal(response.Code, &e.Code)
+		_ = json.Unmarshal(response.Message, &e.Message)
+		e.Message = diagnosticText(e.Message)
 	}
 	return nil
 }
+
+// PublicProviderError 供管理列表复用公开错误码分类，避免维护第二套分类真相。
+func PublicProviderError(code string) *ProviderError { return sanitizeProviderError(code) }
 
 func sanitizeProviderError(code string) *ProviderError {
 	if len(code) == 0 || len(code) > 128 {
@@ -70,6 +85,7 @@ func sanitizeProviderError(code string) *ProviderError {
 
 type providerHTTPError struct {
 	status       int
+	diagnostic   ProviderDiagnostic
 	detail       *ProviderError
 	retryAfterAt time.Time
 }

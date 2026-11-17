@@ -147,7 +147,9 @@ func (p Provider) queryToAPIs(ctx context.Context, id string) (ProviderResult, e
 			TotalTokens      int64 `json:"total_tokens"`
 		} `json:"usage"`
 	}
-	if err := p.request(ctx, "GET", "/v1/videos/generations/"+id, nil, &out); err != nil {
+	diagnostic, err := p.requestDiagnostic(ctx, "GET", "/v1/videos/generations/"+id, nil, &out)
+	out.Error.Diagnostic = diagnostic
+	if err != nil {
 		return result, err
 	}
 	if out.ID != id {

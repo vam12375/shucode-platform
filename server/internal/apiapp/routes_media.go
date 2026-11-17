@@ -394,8 +394,13 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			PlanningResult    media.PlanningResult     `json:"planningResult"`
 			TemplateSelection *media.TemplateSelection `json:"templateSelection"`
 			CreativeDirection *string                  `json:"creativeDirection"`
+			RetrySettings     *media.RetrySettings     `json:"retrySettings"`
 		}
 		if !mediaBody(c, &body) {
+			return
+		}
+		if body.RetrySettings != nil && c.Param("action") != "retry" {
+			mediaError(c, deps, media.ErrInvalid)
 			return
 		}
 		if (body.TemplateSelection != nil || body.CreativeDirection != nil) && c.Param("action") != "analysis" {
@@ -422,6 +427,12 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		var p *media.Project
 		var e error
 		switch c.Param("action") {
+		case "retry":
+			if body.RetrySettings != nil {
+				p, e = s.RetryWithModel(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, *body.RetrySettings)
+			} else {
+				p, e = s.Action(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, "retry")
+			}
 		case "analysis":
 			p, e = s.BindWithDirection(c.Request.Context(), m.Team.ID, c.Param("id"), body.Version, body.Analysis, body.TemplateSelection, body.CreativeDirection)
 		case "plan":
