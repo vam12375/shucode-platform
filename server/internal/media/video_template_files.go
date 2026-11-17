@@ -17,19 +17,26 @@ var videoTemplateFiles embed.FS
 //go:embed video_formula_tests/*.json
 var videoFormulaTestFiles embed.FS
 
+const (
+	productAdDirectorSuite   = "product-ad-director-v2"
+	productAdDirectorVersion = "4.0.0-test.1"
+	productAdDirectorCount   = 31 // auto + F01–F30；F31 是公共执行保底，不是独立创意。
+	legacyFormulaSuite       = "single-image-dual-anchor-v3"
+	legacyFormulaVersion     = "3.0.0-test.2"
+)
+
 func VideoFormulaTestDefinitions() ([]VideoTemplate, error) {
 	out, err := loadVideoTemplateCatalogAt(videoFormulaTestFiles, "video_formula_tests")
-	if err != nil || len(out) != 32 {
+	if err != nil || len(out) != productAdDirectorCount {
 		return nil, fmt.Errorf("video_templates_unavailable")
 	}
 	for i, t := range out {
 		formula, id := "auto", "formula-test-auto"
 		if i > 0 {
-			formula = fmt.Sprintf("F%02d", i)
-			id = fmt.Sprintf("formula-test-f%02d", i)
+			formula, id = fmt.Sprintf("F%02d", i), fmt.Sprintf("formula-test-f%02d", i)
 		}
 		e := t.Experiment
-		if t.ID != id || t.Version != "3.0.0-test.2" || e == nil || e.SuiteID != "single-image-dual-anchor-v3" || e.FormulaID != formula || utf8.RuneCountInString(e.Instructions) > 20000 || !strings.Contains(e.Instructions, "## 八、封装主提示词") || !strings.Contains(e.Instructions, "## 十、反向检测") || t.DurationRange.Min != 30 || t.DurationRange.Max != 30 || t.MinAssets != 1 || len(t.Beats) == 0 {
+		if t.ID != id || t.Version != productAdDirectorVersion || e == nil || e.SuiteID != productAdDirectorSuite || e.FormulaID != formula || utf8.RuneCountInString(e.Instructions) > 40000 || !strings.Contains(e.Instructions, "## 每镜落实记录与验收") || !strings.Contains(e.Instructions, "## 公共执行保底 F31") || t.DurationRange.Min != 30 || t.DurationRange.Max != 30 || t.MinAssets != 1 || len(t.Beats) == 0 {
 			return nil, fmt.Errorf("video_templates_unavailable")
 		}
 		out[i].VerifiedModelIDs = []string{}

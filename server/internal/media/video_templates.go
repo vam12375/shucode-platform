@@ -317,6 +317,10 @@ func validateTemplateSelection(b Brief, templates []VideoTemplate) (VideoTemplat
 	if t.Experiment != nil && (b.Duration != 30 || len(b.AssetIDs) < 1 || b.ReferenceMode != "multimodal" || b.ImageModel != "" || (b.GenerationPolicy != "" && b.GenerationPolicy != "whole-first") || (b.ImageAnalysisFirst && b.GenerationPolicy != "whole-first") || b.PromptPolicy == "direct" || b.Mode != "auto" || b.SourceOnly || b.ReferenceAssetID != "" || b.ResearchPolicy != "disabled" || len(b.ReferenceURLs) != 0 || b.CreativeExpansion == "") {
 		return VideoTemplate{}, adaptiveResearchError()
 	}
+	// 新导演模板的六个编辑时段不是供应商请求；只走已有整片分段，旧快照仍保留原规则。
+	if t.Experiment != nil && t.Experiment.SuiteID == productAdDirectorSuite && b.GenerationPolicy != "whole-first" {
+		return VideoTemplate{}, adaptiveResearchError()
+	}
 	// 图片优先流程已明确点击直接成片；未验证配方只作原创结构，不增加人工审阅门槛。
 	imageFirstRecipe := b.Mode == "auto" && b.ImageAnalysisFirst && b.GenerationPolicy == "whole-first"
 	if !slices.Contains(t.VerifiedModelIDs, b.VideoModel) && !b.ReviewPlan && !imageFirstRecipe {
@@ -331,6 +335,9 @@ func validateFormulaTestPlan(b Brief, p Plan, t *TemplateSnapshot, models ...Mod
 	}
 	// 原因：创作短镜头曾被误映射成付费请求；新单按模型能力执行，旧快照短段规则保持。
 	whole := b.GenerationPolicy == "whole-first"
+	if t.Template.Experiment.SuiteID == productAdDirectorSuite && !whole {
+		return fmt.Errorf("video_formula_test_plan_invalid")
+	}
 	if !whole && (len(p.Shots) < 5 || len(p.Shots) > 7) || whole && len(p.Shots) == 0 {
 		return fmt.Errorf("video_formula_test_plan_invalid")
 	}
@@ -446,6 +453,9 @@ func (s *Service) ReviewVideoTemplate(ctx context.Context, reviewer string, inpu
 func validateFormulaTestModel(b Brief, t VideoTemplate, models []Model) error {
 	if t.Experiment == nil {
 		return nil
+	}
+	if t.Experiment.SuiteID == productAdDirectorSuite && b.GenerationPolicy != "whole-first" {
+		return adaptiveResearchError()
 	}
 	m, err := FindModel(models, b.VideoModel, "video")
 	if err != nil {
