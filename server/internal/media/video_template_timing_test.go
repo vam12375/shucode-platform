@@ -196,6 +196,40 @@ func TestTimingGroupsAreKeptOrDroppedTogether(t *testing.T) {
 	}
 }
 
+// 压短时也要从全貌进到微观，再经过聚合回到全貌，不能省去其中一个阶段。
+func TestProductDetailReassemblyRetainsFiveStages(t *testing.T) {
+	templates, err := VideoTemplateDefinitions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const id = "product-detail-reassembly"
+	recipe, err := findVideoTemplate(templates, id, expectedRecipeVersion(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"总览开场", "特写", "微距", "聚合", "全貌收束"}
+	for target := recipe.DurationRange.Min; target <= recipe.DurationRange.Max; target++ {
+		kept, seconds, ok := planTemplateTiming(timingBeats(recipe.Beats), recipe.DurationRange, target)
+		if !ok || target == 15 && len(kept) != len(want) {
+			t.Fatalf("%ds: unexpected cut %v", target, kept)
+		}
+		var stages []string
+		for i, index := range kept {
+			beat := recipe.Beats[index]
+			if seconds[i] < 2 {
+				t.Fatalf("%ds: beat %d has only %ds", target, index+1, seconds[i])
+			}
+			if beat.Tier == TemplateTierCore {
+				name, _, _ := strings.Cut(beat.Purpose, "｜")
+				stages = append(stages, name)
+			}
+		}
+		if !slices.Equal(stages, want) {
+			t.Fatalf("%ds: kept stages %v, want %v", target, stages, want)
+		}
+	}
+}
+
 var timingStartPattern = regexp.MustCompile(`(?s)起态：(.*?)动作：`)
 
 func TestTimedRecipesAuthoringRules(t *testing.T) {

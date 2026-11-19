@@ -10,6 +10,8 @@ import (
 
 func expectedRecipeVersion(id string) string {
 	switch id {
+	case "product-detail-reassembly", "material-assembly-timepiece":
+		return "3.0.0"
 	case "brand-kv-unfold":
 		return "2.1.6"
 	case "food-serving", "fresh-ingredient", "floating-exploded-showcase":
@@ -24,8 +26,8 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(templates) != 62 {
-		t.Fatalf("expected sixty-two recipes, got %d", len(templates))
+	if len(templates) != 64 {
+		t.Fatalf("expected 64 recipes, got %d", len(templates))
 	}
 	seen := map[string]bool{}
 	actions := map[string]bool{}
