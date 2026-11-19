@@ -76,6 +76,7 @@ func TestTemplateAudioRegressionsByCreativeGoal(t *testing.T) {
 		cues []string
 	}{
 		// 对应香水静物、橙子与饼干盒样片；品牌/氛围另补合成用例，不借样片冒称新版听审。
+		{"product-detail-reassembly", []string{"默认无人声", "shots[].narration 留空", "仅在用户明确要求讲解", "要念的锁定script"}},
 		{"product-texture", []string{"默认", "材质等级", "轮廓"}},
 		{"beauty-packaging", []string{"开启", "不猜材质"}},
 		{"beauty-texture", []string{"看得见的铺展", "不推断配方"}},

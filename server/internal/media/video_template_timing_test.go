@@ -227,6 +227,29 @@ func TestProductDetailReassemblyRetainsFiveStages(t *testing.T) {
 		if !slices.Equal(stages, want) {
 			t.Fatalf("%ds: kept stages %v, want %v", target, stages, want)
 		}
+		if target == recipe.DurationRange.Min {
+			// 普通规划只读核心拍的动作，最短版也会删去支持镜。两种入口都要能拍出微观变化和同部位归形。
+			if len(kept) != len(want) {
+				t.Fatalf("shortest cut unexpectedly depends on optional beats: %v", kept)
+			}
+			for _, stage := range []struct {
+				index int
+				cues  []string
+			}{
+				{2, []string{"同一个单元", "满幅纹场", "定向纹带", "画内的位置"}},
+				{3, []string{"纹带", "画内位置", "错层展开", "逐条排齐", "切回原部位的实边"}},
+				{4, []string{"实边", "商品中景", "剪止", "0.5秒"}},
+			} {
+				action := recipe.Beats[kept[stage.index]].Action
+				for _, cue := range stage.cues {
+					_, rest, found := strings.Cut(action, cue)
+					if !found {
+						t.Fatalf("shortest cut: %s lost ordered action %q", want[stage.index], cue)
+					}
+					action = rest
+				}
+			}
+		}
 	}
 }
 
