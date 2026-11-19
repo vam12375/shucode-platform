@@ -2,94 +2,105 @@ package media
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 	"unicode/utf8"
 )
 
-// 产品样片被规划为无人声与低音量持续音；目录不能再用“需要时”替代主动介绍和逐句同拍。
-func TestRegularTemplatesCarryProductSpeechThroughShortCuts(t *testing.T) {
+// 简介也会进入规划输入。只改 narration 会让分镜或双语简介继续提示模型逐镜念稿。
+func TestRegularTemplatesRemoveShotTourSpeechScaffold(t *testing.T) {
 	templates, err := VideoTemplateDefinitions()
 	if err != nil {
 		t.Fatal(err)
 	}
+	quota := regexp.MustCompile(`(?:每\s*\d+\s*秒[^。；”"]{0,24}(?:个|字|句)|每秒\s*\d+\s*(?:字|词)|\d+\s*秒默认.{0,12}(?:句|字))`)
 	for _, recipe := range templates {
 		t.Run(recipe.ID, func(t *testing.T) {
 			if recipe.Style == nil {
 				t.Fatal("missing audio style")
 			}
-			for _, phrase := range []string{"产品介绍", "同拍", "用户明确", "锁定", "shots[].prompt"} {
+			raw, err := json.Marshal(recipe)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, old := range []string{"先定一条口播线", "先看、再、翻过来、最后", "末句回到整体", "一句最多并列两个名词", "讲两三个有据特点", "covering a few grounded features", "每个介绍分句", "自主写准确分句", "说完再切换", "产品开场用一句"} {
+				if strings.Contains(string(raw), old) {
+					t.Errorf("obsolete speech direction: %s", old)
+				}
+			}
+			if quota.Match(raw) {
+				t.Error("speech quota remains in the catalog")
+			}
+			for _, phrase := range []string{"对谁说", "同拍", "同一生成段", "不逐镜", "留白", "用户明确", "锁定script", "shots[].prompt"} {
 				if !strings.Contains(recipe.Style.Narration, phrase) {
-					t.Errorf("narration missing %s", phrase)
+					t.Errorf("narration is missing %q", phrase)
 				}
 			}
-			if !strings.Contains(recipe.Style.Sound, "正常说话") || !strings.Contains(strings.Join(recipe.QualityChecks, "\n"), "同拍") {
-				t.Error("audibility or semantic synchronization missing")
-			}
-			for field, value := range map[string]string{"sound": recipe.Style.Sound, "narration": recipe.Style.Narration} {
-				if utf8.RuneCountInString(value) > 600 {
-					t.Errorf("%s exceeds client schema", field)
+			if recipe.Family == "brand" {
+				want := "不默认加旁白"
+				if recipe.ID == "brand-ip-mini-drama" || recipe.ID == "contrast-brand-mini-story" || recipe.ID == "clay-style-brand-world" {
+					want = "不加商品旁白"
+				}
+				if !strings.Contains(recipe.Style.Narration, want) {
+					t.Errorf("brand/character goal must avoid forced sales narration: missing %q", want)
 				}
 			}
-			for _, beat := range recipe.Beats {
-				if utf8.RuneCountInString(beat.Sound) > 400 || !strings.Contains(beat.Sound, "同拍") {
-					t.Error("beat lacks speech-to-visual anchor or exceeds client schema")
+			for _, phrase := range []string{"正常说话", "重音", "平板念稿"} {
+				if !strings.Contains(recipe.Style.Sound, phrase) {
+					t.Errorf("sound is missing %q", phrase)
 				}
 			}
-			for seconds := recipe.DurationRange.Min; seconds <= recipe.DurationRange.Max; seconds++ {
-				kept, _, ok := planTemplateTiming(timingBeats(recipe.Beats), recipe.DurationRange, seconds)
-				if !ok {
-					continue
+			if utf8.RuneCountInString(recipe.Style.Sound) > 600 || utf8.RuneCountInString(recipe.Style.Narration) > 600 {
+				t.Error("audio style exceeds client schema")
+			}
+			for i, beat := range recipe.Beats {
+				if !strings.HasPrefix(beat.Sound, "声音（模型原声）：匹配素材") || utf8.RuneCountInString(beat.Sound) > 400 || strings.Contains(beat.Sound, "口播线") || strings.Contains(beat.Sound, "产品用自然口语介绍") {
+					t.Errorf("beat %d lacks usable native sound or prescribes a spoken beat: %s", i+1, beat.Sound)
 				}
-				introduced := false
-				for _, index := range kept {
-					beat := recipe.Beats[index]
-					introduced = introduced || (beat.Tier == TemplateTierCore && strings.Contains(beat.Sound, "介绍"))
-				}
-				if !introduced {
-					t.Fatalf("%ds cut dropped all product introduction anchors", seconds)
-				}
+			}
+			if !strings.Contains(strings.Join(recipe.QualityChecks, "\n"), "朗读") {
+				t.Error("missing read-aloud naturalness check")
 			}
 		})
 	}
 }
 
-// 两份同版本样片的台词被模型几乎逐字照读，却是一拍一句的名词清单：narration 的“每个介绍分句绑定同拍”
-// “自然短句”与核心拍“自主写准确分句……说完再切换”共同鼓励逐拍点名。目录必须改为口播线取舍、
-// 完整口语句、关键词同拍（同段内一句可跨相邻拍）、表演对象与重音，并在质量检查中朗读自查。
-func TestRegularTemplatesDirectNaturalSpokenIntroduction(t *testing.T) {
+func TestTemplateAudioRegressionsByCreativeGoal(t *testing.T) {
 	templates, err := VideoTemplateDefinitions()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, recipe := range templates {
-		t.Run(recipe.ID, func(t *testing.T) {
-			if recipe.Style == nil {
-				t.Fatal("missing audio style")
+	for _, tc := range []struct {
+		id   string
+		cues []string
+	}{
+		// 对应香水静物、橙子与饼干盒样片；品牌/氛围另补合成用例，不借样片冒称新版听审。
+		{"product-texture", []string{"默认", "材质等级", "轮廓"}},
+		{"beauty-packaging", []string{"开启", "不猜材质"}},
+		{"beauty-texture", []string{"看得见的铺展", "不推断配方"}},
+		{"fresh-ingredient", []string{"甜度", "适配"}},
+		{"food-serving", []string{"桌边招呼", "接触声"}},
+		{"food-gift", []string{"格数", "不编"}},
+		{"brand-ip-mini-drama", []string{"角色对白", "不加商品旁白"}},
+		{"contrast-brand-mini-story", []string{"角色对白", "不加商品旁白"}},
+		{"brand-kv-unfold", []string{"音乐", "不默认加旁白"}},
+		{"scent-memory-film", []string{"不默认加旁白", "香调"}},
+		{"scent-atmosphere", []string{"不默认加旁白", "ASMR"}},
+		{"drink-pour", []string{"不默认加旁白", "液流"}},
+	} {
+		t.Run(tc.id, func(t *testing.T) {
+			recipe, err := findVideoTemplate(templates, tc.id, expectedRecipeVersion(tc.id))
+			if err != nil {
+				t.Fatal(err)
 			}
-			for _, phrase := range []string{"口播线", "完整口语句", "少讲一个特点", "一句最多并列两个名词", "关键词", "跨相邻拍", "末句"} {
+			for _, phrase := range tc.cues {
 				if !strings.Contains(recipe.Style.Narration, phrase) {
-					t.Errorf("narration missing %s", phrase)
+					t.Errorf("narration is missing the domain choice %q", phrase)
 				}
 			}
-			for _, phrase := range []string{"重音", "平板念稿"} {
-				if !strings.Contains(recipe.Style.Sound, phrase) {
-					t.Errorf("sound missing performance direction %s", phrase)
-				}
-			}
-			raw, _ := json.Marshal(recipe)
-			for _, removed := range []string{"每个介绍分句", "自然短句", "一句承担一个要点", "自主写准确分句", "说完再切换", "每个分句与对象同拍", "逐句与展示部位同拍", "逐句与可见对象同拍"} {
-				if strings.Contains(string(raw), removed) {
-					t.Errorf("per-beat clause scaffold remains: %s", removed)
-				}
-			}
-			for i, beat := range recipe.Beats {
-				if beat.Tier == TemplateTierCore && strings.Contains(beat.Sound, "介绍") && !strings.Contains(beat.Sound, "口播线") {
-					t.Errorf("core beat %d introduction is not tied to the spoken line", i+1)
-				}
-			}
-			if !strings.Contains(strings.Join(recipe.QualityChecks, "\n"), "朗读") {
-				t.Error("quality checks lack read-aloud naturalness check")
+			if !strings.Contains(recipe.Style.Narration, "默认根据素材写产品介绍") && strings.Contains(recipe.Style.Sound, "产品默认有清楚介绍") {
+				t.Error("mixing guidance overrides the template's choice of whether to speak")
 			}
 		})
 	}

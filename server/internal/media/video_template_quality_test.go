@@ -11,15 +11,11 @@ import (
 func expectedRecipeVersion(id string) string {
 	switch id {
 	case "brand-kv-unfold":
-		return "2.1.5"
-	case "food-serving":
-		return "3.0.6"
-	case "fresh-ingredient":
-		return "3.0.6"
-	case "floating-exploded-showcase":
-		return "3.0.6"
+		return "2.1.6"
+	case "food-serving", "fresh-ingredient", "floating-exploded-showcase":
+		return "3.0.7"
 	default:
-		return "3.0.5"
+		return "3.0.6"
 	}
 }
 

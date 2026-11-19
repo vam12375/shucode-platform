@@ -1,14 +1,14 @@
 {
   "id": "food-serving",
-  "version": "3.0.6",
+  "version": "3.0.7",
   "family": "scenario",
   "name": {
     "zh": "食品上桌",
     "en": "Food serving"
   },
   "description": {
-    "zh": "叙事方法：拍同一份食物从原处到面前、快要吃到第一口的过程。首秒先见可食主体，以一处有据的色泽或纹路抓住视线，同时让取用方向可读；随后跟着同一只手和同一份食物，看清取离、移动、落盘或上桌，再把这一份递到用餐者面前。重心是上桌，不演后厨，也不逐张复刻参考图。开盒仅在有依据、确有必要且能连续露出同一食物时使用；已有露出的食物可直接从开盒后开始。拍点可重组，不固定餐具、场地、人物或秒点；一次生成请求可包含多个画面镜头。每秒都有动作或新信息，末拍兑现递到面前，默认完全静止最多0.5秒；用户明确静帧与既有后期尾卡除外。单图创作：一张清楚主体图即可，按同一空间补足取用方向和视角，守住已见份量。声画创作：产品用一条简短口语介绍线，由可见的食物特点带到怎么上桌；主要接触声有独立窗口。用户声音意图与锁定脚本优先。",
-    "en": "Food serving: show the food in the first second, then follow one identifiable portion from its source to the place where it will be eaten. Show pickup, continuous transfer, supported contact and the invitation to take the first bite. Keep known quantities and both source and destination states consistent. Only open packaging when the contents can be revealed continuously and have a reference. Treat beats as adaptable, not as a shot quota; one generation may contain several shots. Use every second for visible action or new information; keep the final static hold to at most 0.5 seconds by default. Single-image creation: one clear subject image suffices. Keep visible food and serving facts intact and invent only consistent staging. Use model-native audio: one conversational introduction connects a visible food feature to serving. Give the actual contact sound room to be heard; honor the user's sound preferences and locked script."
+    "zh": "叙事方法：拍同一份食物从原处到面前、快要吃到第一口的过程。首秒先见可食主体，以一处有据的色泽或纹路抓住视线，同时让取用方向可读；随后跟着同一只手和同一份食物，看清取离、移动、落盘或上桌，再把这一份递到用餐者面前。重心是上桌，不演后厨，也不逐张复刻参考图。开盒仅在有依据、确有必要且能连续露出同一食物时使用；已有露出的食物可直接从开盒后开始。拍点可重组，不固定餐具、场地、人物或秒点；一次生成请求可包含多个画面镜头。每秒都有动作或新信息，末拍兑现递到面前，默认完全静止最多0.5秒；用户明确静帧与既有后期尾卡除外。单图创作：一张清楚主体图即可，按同一空间补足取用方向和视角，守住已见份量。 声画创作：以商品理解、讲解或推广为目标时，默认根据素材写产品介绍。不逐镜报点，给动作声和环境声留白；关键词同拍，声音意图与锁定脚本优先。",
+    "en": "Food serving: show the food in the first second, then follow one identifiable portion from its source to the place where it will be eaten. Show pickup, continuous transfer, supported contact and the invitation to take the first bite. Keep known quantities and both source and destination states consistent. Only open packaging when the contents can be revealed continuously and have a reference. Treat beats as adaptable, not as a shot quota; one generation may contain several shots. Use every second for visible action or new information; keep the final static hold to at most 0.5 seconds by default. Single-image creation: one clear subject image suffices. Keep visible food and serving facts intact and invent only consistent staging. Native audio: For product information or promotion, use a grounded introduction that serves a clear point. Do not narrate the shot order. Leave room for action and ambience; align key facts with visible evidence. Honor explicit sound preferences and locked scripts."
   },
   "industries": [
     "食品",
@@ -62,8 +62,8 @@
     "look": "像坐在桌边就能伸手取到：食物的真实色泽与干湿质感先被看清。以稳定柔侧光扫过干点纹路，湿润菜品保留窄高光而非整片油膜；浅色餐具保留瓷面层次。背景低对比，包装退居辅助，不为色彩新增装饰食材。只有适合且有依据的热菜才有稀薄自然热气，冷食和常温食品不套蒸汽。",
     "lens": "先用桌边近景同时建立食物与目的地，再用手边或盘沿角度给接触，最后用靠近食客的同侧斜角。竖屏沿前后景排原容器与接盘，宽屏把两者和移动路线放在同一可读区域；手、工具前端、食物与落点不出安全构图区。近摄带可识别的轮廓、盛器边或取用工具，不拍脱离上下文的纹理。",
     "motion": "锁定同侧动作轴、同一只操作手及同一工具。按食物选端整盘、分取或倒入一种主动作；入场、取离、接触、撤手接在一条线上。起动可跟，落点固定观察；短片优先合拍，取离与落点尽量在同一生成段，独立生成段优先在食物落稳的状态交接，不把拍点拆成等量调用。长片可用有据的分批装盘、前后份量或交付视角增加信息，不把单个取用动作放慢拖满。每秒有动作或新信息，交付到尾段才完成，默认完全静止最多0.5秒，不以慢推、悬停或重放开盒填时长；用户明确静帧与既有后期尾卡除外。",
-    "sound": "本单默认视频模型原声。首秒从可见环境或动作起声，正常说话力度的人声清晰可听；配乐用轻、稀疏的无歌词乐句，在台词下退让。优先留一处明确的接触音效：夹与松开、点心触瓷、端盘落桌或液体入碗，只配真实可见事件对应的材质声；落点前后让出短呼吸，不用通用重击、假酥脆声或锅声。中间生成段延续相近声场和配乐母题，完整台词在自然句末交接；仅全片最终段自然收束，保留撤手、餐具或室内尾音。接点前后各0.1秒是观察窗，不是静音或裁切区，跨独立段不承诺同一音乐轨。语气像在桌边招呼熟人，一两处重音，不平板念稿、不咀嚼收音、不剪出两条争抢的语音。用户明确的声音限制优先，不自动开启独立付费声音服务。",
-    "narration": "产品介绍只写一条口播线：用一个具体、可见的食物特征开口，再自然带到这一份怎么上桌或怎么拿，不报盒色、空标签、格数或分镜步骤；真实且关键的份量卖点例外。15秒默认两句完整口语句（约25～40字），长版有明确的第二个特点才增加台词。参考口吻（不照抄）：‘这盒曲奇，花纹一圈圈绕到边上。想吃的时候，夹几块到盘里就好。’开句对准食物纹理，‘到盘里’的关键词与移向盘面的画面同拍，着盘瞬间让给接触声。末句回到用餐场景，勿重复题头；一句最多并列两个名词，讲不顺就少讲一个特点；一句可在同段跨相邻拍，不能跨独立生成段截断。用户明确声音要求和锁定脚本优先。按本单语言，把准确台词、说话者、语气和声画锚点写入对应shots[].prompt的唯一声音小节。"
+    "sound": "本单默认视频模型原声。首秒从可见环境或动作起声，若有台词，正常说话力度的人声清晰可听；配乐用轻、稀疏的无歌词乐句，在台词下退让。优先留一处明确的接触音效：夹与松开、点心触瓷、端盘落桌或液体入碗，只配真实可见事件对应的材质声；落点前后让出短呼吸，不用通用重击、假酥脆声或锅声。中间生成段延续相近声场和配乐母题，完整台词在自然句末交接；仅全片最终段自然收束，保留撤手、餐具或室内尾音。接点前后各0.1秒是观察窗，不是静音或裁切区，跨独立段不承诺同一音乐轨。语气像在桌边招呼熟人，重音随语义，不平板念稿、不咀嚼收音、不剪出两条争抢的语音。用户明确的声音限制优先，不自动开启独立付费声音服务。",
+    "narration": "以商品理解、讲解或推广为目标时，默认根据素材写产品介绍。像在桌边招呼人，围绕这一份为什么值得递给对方、怎么取用或有什么可见质感。盒色、空标签、格数与状态变化不逐项念，真实且关键的份量信息例外。留出真实着盘接触声，不编口感或食用方式。先明确对谁说、为什么此刻说，选少量能支持表达的有据内容。不逐镜报点，不复述运镜或照读画面；时长是上限，不为开头、结尾或每拍安排台词，给音乐和环境留白。已选关键词须有同拍画面依据；同一生成段可跨相邻拍自然说完，不跨独立段断句。材质不明只说外观，创作补全不证明功能或内部结构。用户明确声音意图与锁定script优先；纯氛围或ASMR不硬塞人声。有台词时将准确原句、说话者、语气和锚点写入shots[].prompt唯一声音小节，屏内对白口型同步。"
   },
   "beats": [
     {
@@ -75,7 +75,7 @@
       "seconds": 3,
       "tier": "core",
       "act": "看见食物",
-      "sound": "声音（模型原声）：匹配素材，桌边近场声和轻音乐先后入场；产品介绍的口播线以可见特点开口，名称或特征与食物同拍。"
+      "sound": "声音（模型原声）：匹配素材，桌边近场声和轻音乐先后入场；可只听见空间与动作，不强制开口。"
     },
     {
       "purpose": "用掠过纹路的光补充食物识别。",
@@ -97,7 +97,7 @@
       "seconds": 3,
       "tier": "core",
       "act": "看见食物",
-      "sound": "声音（模型原声）：匹配素材，轻触或夹合只在接触时出现；开句可在同一段自然说完，关键词同拍，不为此动作另添一句。"
+      "sound": "声音（模型原声）：匹配素材，轻触或夹合只在接触时出现；有话在同一段自然说完，不为此动作另添一句。"
     },
     {
       "purpose": "补足手位，不复演夹取。",
@@ -119,7 +119,7 @@
       "seconds": 3,
       "tier": "core",
       "act": "同份上桌",
-      "sound": "声音（模型原声）：匹配素材，口播线可在这一段说到取用方式，关键词与移动方向同拍；不播报取了几块，落点前让句子自然停下。"
+      "sound": "声音（模型原声）：匹配素材，让真实移动声承接取离，有台词也给后续落点留出呼吸；不播报取了几块。"
     },
     {
       "purpose": "看见食物接近盘面时的距离与体量。",
@@ -163,7 +163,7 @@
       "seconds": 3,
       "tier": "core",
       "act": "第一口前",
-      "sound": "声音（模型原声）：匹配素材；配乐在接触声后轻回，口播线如需继续可转向怎么享用，关键词与上桌状态同拍，不重读原处格数。"
+      "sound": "声音（模型原声）：匹配素材；配乐在接触声后轻回，留给桌边动作，不重读原处格数。"
     },
     {
       "purpose": "把视线从来源移到享用的一侧。",
@@ -196,7 +196,7 @@
       "seconds": 3,
       "tier": "core",
       "act": "第一口前",
-      "sound": "声音（模型原声）：匹配素材；口播线的末句若还未说完，与同一份递到面前同拍，不追加总结。最终生成段让实际的擦桌、撤手或室内尾音与音乐一起收住；无假咬合声，不提前静音。"
+      "sound": "声音（模型原声）：匹配素材；不为了递送加总结。最终生成段让实际的擦桌、撤手或室内尾音与音乐一起收住；无假咬合声，不提前静音。"
     }
   ],
   "qualityChecks": [
@@ -206,7 +206,7 @@
     "取用方向、工具、同一只手和落点连续，先承托再松开；不出现瞬移、漂浮、工具穿过食物或食物凭空增减。",
     "真实色泽、干湿与冷热状态可读；主体不被包装、字幕、手或过度浅景深抢走，不给常温食物添蒸汽、油膜、汁液或配料。",
     "真实名称、食用方式、用料与规格都有明确依据；留白包装不长出字标，字幕和标识按本单后期配置处理。",
-    "旁白连起来朗读像在桌边招呼人：有一处可见特点和一个上桌落点，关键词同拍，不念盒色、空标签、格数与动作清单。用户锁定文案和声音意图优先。",
+    "若有台词，像在桌边招呼人，不念盒色、空标签、格数和取放清单，不掩盖落点。若有台词，连起来朗读应像在对人说话：不逐镜报点、复述摄影动作或堆名词，不设字量或发言配额，不赶读或硬补片尾总结。关键字有同拍依据，留出动作与环境声；正常人声清楚，配乐与音效可辨，开场有声不等于开口。用户声音意图、锁定script及事实边界优先，准确台词进入shots[].prompt，自检不冒充成片听审。",
     "着盘同拍听得清材质接触，关键接触不被口播和音乐盖住；开场有声，段间声场不重启，最后动作与音尾自然完成。自检不得冒充已听审。",
     "每秒推进动作或揭示信息，交付在末拍兑现；默认最后完全静止最多0.5秒，无信息慢推不算推进。用户明确静帧及既有后期尾卡除外。",
     "单图也能执行：每段实际shots[].prompt写清身份、同侧轴线、起始与完成份量及准确台词；未见事实不补写，strict及用户精确要求优先，不冒称已通过成片审核。"
