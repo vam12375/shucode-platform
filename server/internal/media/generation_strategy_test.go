@@ -106,17 +106,19 @@ func TestWholeDurationGenerationSoundGuard(t *testing.T) {
 			b.GenerationPolicy = policy
 			b.Finishing.NativeAudio = true
 			b.Finishing.Voiceover, b.Finishing.Music = post, post
+			// 同一段带着原创镜头和环境声提交时，后期独白开关不应再把配音或统一棚拍限制写回提示词。
+			p.Shots[0].Prompt = "衣褶切入纸浪，回到领口。声音只有纸张翻卷。"
 			models[0].GenerateAudio = true
 			if body := videoSubmitBody(models[0], b, p.Shots[0], ""); body["generate_audio"] != true || body["duration"] != 30 {
 				t.Fatalf("native full duration request changed: %v", body)
 			}
 			got, err := finishingGenerationPlan(&Project{Brief: b}, p.Shots[0])
-			if err != nil || !strings.Contains(got.Prompt, "声音由视频模型原生生成") {
+			if err != nil || !strings.HasPrefix(got.Prompt, p.Shots[0].Prompt) || !strings.Contains(got.Prompt, "声音由视频模型原生生成") {
 				t.Fatalf("native audio lost: %s %v", got.Prompt, err)
 			}
-			for _, forbidden := range []string{"不要解说", "不另配音乐", "不重复生成旁白", "仅保留需要的环境声"} {
+			for _, forbidden := range []string{"不要解说", "不另配音乐", "不重复生成旁白", "仅保留需要的环境声", "旁白、对白、音乐、环境声与音效", "无悬浮光效"} {
 				if strings.Contains(got.Prompt, forbidden) {
-					t.Fatalf("native audio restricted: %s", got.Prompt)
+					t.Fatalf("guard conflicts with planned scene or sound: %s", got.Prompt)
 				}
 			}
 		}
