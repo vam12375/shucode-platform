@@ -12,7 +12,7 @@ func expectedRecipeVersion(id string) string {
 	switch id {
 	case "product-detail-reassembly":
 		return "3.0.2"
-	case "material-assembly-timepiece":
+	case "material-assembly-timepiece", "electronic-pulse-showcase", "precision-detail-lineup":
 		return "3.0.0"
 	case "brand-kv-unfold":
 		return "2.1.6"
@@ -28,8 +28,8 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(templates) != 64 {
-		t.Fatalf("expected 64 recipes, got %d", len(templates))
+	if len(templates) != 66 {
+		t.Fatalf("expected 66 recipes, got %d", len(templates))
 	}
 	seen := map[string]bool{}
 	actions := map[string]bool{}
@@ -39,7 +39,16 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 			// 新模板给可重组叙事方法；KV 保留主角方法并修正收尾与声音。
 			timed := recipe.NominalSeconds != 0
 			versionOK := recipe.Version == expectedRecipeVersion(recipe.ID)
-			structureOK := timed && versionOK && len(recipe.Beats) >= 12 && len(recipe.Beats) <= 16
+			beatCountOK := len(recipe.Beats) >= 12 && len(recipe.Beats) <= 16
+			switch recipe.ID {
+			case "precision-detail-lineup":
+				// 十个参考镜头两两配成一个核心拍，拍内硬切，长短版均保留十镜。
+				beatCountOK = len(recipe.Beats) == 5
+			case "electronic-pulse-showcase":
+				// 这条配方的六场都保留。白棚和工坊另有三个镜内延展段。
+				beatCountOK = len(recipe.Beats) == 9
+			}
+			structureOK := timed && versionOK && beatCountOK
 			if seen[recipe.ID] || !structureOK || len(recipe.VerifiedModelIDs) != 0 {
 				t.Fatalf("identity or verification changed: id=%s version=%s beats=%d verified=%v duplicate=%v", recipe.ID, recipe.Version, len(recipe.Beats), recipe.VerifiedModelIDs, seen[recipe.ID])
 			}

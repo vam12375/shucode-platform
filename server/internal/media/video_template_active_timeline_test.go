@@ -11,7 +11,7 @@ func TestEveryTemplateUsesTheWholeTimeline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(recipes) != 64 {
+	if len(recipes) != 66 {
 		t.Fatalf("incomplete catalog: %d", len(recipes))
 	}
 	for _, recipe := range recipes {

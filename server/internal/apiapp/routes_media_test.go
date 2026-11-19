@@ -136,7 +136,7 @@ func TestMediaAuthUploadTeamIsolationAndAdminBoundary(t *testing.T) {
 			Tests      []media.VideoTemplate `json:"videoTestTemplates"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &catalogs); err != nil || len(catalogs.Data.Production) != 64 || len(catalogs.Data.Tests) != 31 {
+	if err := json.Unmarshal(w.Body.Bytes(), &catalogs); err != nil || len(catalogs.Data.Production) != 66 || len(catalogs.Data.Tests) != 31 {
 		t.Fatal("separate template catalogs", err)
 	}
 	for _, item := range catalogs.Data.Production {
