@@ -7,8 +7,9 @@ import (
 	"testing"
 )
 
-// 白棚和工坊的支持拍只延长镜内行程。压短时所有核心镜仍能依次执行，到第三轮粒子回落结束。
-func TestElectronicPulseShowcaseKeepsSixScenesThroughLastPulse(t *testing.T) {
+// 旧配方把音箱样片的道具写进必拍场次，导致只有外观图的游戏机也会绕线、起声浪。
+// 六场的时序仍须保留，可用的外观拍法也须留在压缩后实际下发的核心拍。
+func TestElectronicPulseShowcaseKeepsAssetChoicesAcrossDurations(t *testing.T) {
 	templates, err := VideoTemplateDefinitions()
 	if err != nil {
 		t.Fatal(err)
@@ -22,22 +23,23 @@ func TestElectronicPulseShowcaseKeepsSixScenesThroughLastPulse(t *testing.T) {
 		t.Fatalf("unexpected duration range %+v, nominal %d", recipe.DurationRange, recipe.NominalSeconds)
 	}
 
-	type scene struct {
-		name     string
-		cues     []string
-		soundCue string
+	scenes := []struct {
+		name    string
+		choices []string
+	}{
+		{"白棚巡航", nil},
+		// 12 秒会删除全部延展拍；独立布景及切回实物的办法必须在核心拍里。
+		{"结构层次", []string{"结构图", "完整外壳", "布景", "切回", "strict"}},
+		{"特征引入", []string{"接口", "焦点"}},
+		{"特征落点", []string{"接口", "焦点"}},
+		{"明暗转面", []string{"防水", "干景"}},
+		{"节拍收束", []string{"音箱", "游戏机", "轮廓"}},
 	}
-	scenes := []scene{
-		{"白棚巡航", []string{"悬空间隙", "回正急推", "读侧口", "横扫背纹", "绕控制键", "从背面飞退", "顶沿遮住远侧"}, "反拉和回正急推"},
-		{"微缩工坊", []string{"台前缓推", "前景机械臂", "完整外壳", "后墙仪表", "加速"}, "工具掠过"},
-		{"螺旋绕线", []string{"线头露边", "第二圈", "独立悬空光丝", "后圈被壳遮住", "连接侧"}, "线头起势"},
-		{"同轴对位", []string{"沿轴靠近", "与开口重合", "F434插稳", "外侧对齐停住", "保留细缝"}, "光丝对齐停住"},
-		{"飞溅慢转", []string{"水幕外扩", "画面平面内", "逆时针慢转", "越过水平", "暖光回扫"}, "机身滚过水平"},
-		{"黑台脉冲", []string{"实体圆台", "落回台面", "F530–542", "F552–564", "F574–586", "F590剪止"}, "F577亮击在上升途中"},
-	}
+	labels := slices.Clone(recipe.Keywords)
 	sceneForBeat := make([]int, len(recipe.Beats))
 	var coreIndices []int
 	for i, beat := range recipe.Beats {
+		labels = append(labels, beat.Purpose, beat.Act)
 		name, _, _ := strings.Cut(beat.Purpose, "｜")
 		if beat.Tier == TemplateTierCore {
 			coreIndices = append(coreIndices, i)
@@ -49,17 +51,21 @@ func TestElectronicPulseShowcaseKeepsSixScenesThroughLastPulse(t *testing.T) {
 		sceneForBeat[i] = index
 		if beat.Tier != TemplateTierCore {
 			if index > 1 || beat.Tier != TemplateTierSupport || beat.Act != recipe.Beats[coreIndices[index]].Act {
-				t.Fatalf("beat %d must extend the existing white studio or workshop shot", i+1)
+				t.Fatalf("beat %d must extend the existing cruise or detail shot", i+1)
 			}
 			continue
 		}
-		// 多张正面图也可能看不到接口。可替换的动作和声音须写在核心拍，短版才会交给导演。
-		if !strings.Contains(beat.Sound, scenes[index].soundCue) {
-			t.Errorf("core scene %s lost sound cue %s", name, scenes[index].soundCue)
-		}
-		for _, cue := range scenes[index].cues {
+		for _, cue := range scenes[index].choices {
 			if !strings.Contains(beat.Action, cue) {
-				t.Fatalf("core scene %s lost %s", name, cue)
+				t.Errorf("core scene %s lacks material choice %s", name, cue)
+			}
+		}
+	}
+	// 标题、段名和检索词直接用于选片，不能把某个有条件的演法又标成全片的通用卖点。
+	for _, label := range labels {
+		for _, prop := range []string{"机器人", "工坊", "机械臂", "绕线", "线缆", "光丝", "水冠", "飞溅", "声波", "同心纹"} {
+			if strings.Contains(label, prop) {
+				t.Errorf("unconditional label %q prescribes %s", label, prop)
 			}
 		}
 	}

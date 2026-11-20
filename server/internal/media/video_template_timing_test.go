@@ -208,6 +208,9 @@ func TestProductDetailReassemblyRetainsFiveStages(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"总览开场", "特写", "微距", "聚合", "全貌收束"}
+	if recipe.DurationRange.Min != 12 || recipe.DurationRange.Max != 30 {
+		t.Fatalf("unexpected duration range %+v", recipe.DurationRange)
+	}
 	for target := recipe.DurationRange.Min; target <= recipe.DurationRange.Max; target++ {
 		kept, seconds, ok := planTemplateTiming(timingBeats(recipe.Beats), recipe.DurationRange, target)
 		if !ok || target == 15 && len(kept) != len(want) {
@@ -232,21 +235,23 @@ func TestProductDetailReassemblyRetainsFiveStages(t *testing.T) {
 			if len(kept) != len(want) {
 				t.Fatalf("shortest cut unexpectedly depends on optional beats: %v", kept)
 			}
-			for _, stage := range []struct {
-				index int
-				cues  []string
-			}{
-				{2, []string{"同一个单元", "满幅纹场", "定向纹带", "画内的位置"}},
-				{3, []string{"纹带", "画内位置", "错层展开", "逐条排齐", "切回原部位的实边"}},
-				{4, []string{"实边", "商品中景", "剪止", "0.5秒"}},
-			} {
-				action := recipe.Beats[kept[stage.index]].Action
-				for _, cue := range stage.cues {
-					_, rest, found := strings.Cut(action, cue)
-					if !found {
-						t.Fatalf("shortest cut: %s lost ordered action %q", want[stage.index], cue)
+			cues := map[string][]string{
+				"微距":   {"同一个特征", "尺度"},
+				"聚合":   {"只有外观图", "同款拆解图", "同一部位"},
+				"全貌收束": {"该部位和整件", "剪止", "0.5秒"},
+			}
+			for i, index := range kept {
+				beat := recipe.Beats[index]
+				for _, cue := range cues[stages[i]] {
+					if !strings.Contains(beat.Action, cue) {
+						t.Errorf("shortest cut: %s lost %q", stages[i], cue)
 					}
-					action = rest
+				}
+				// 样片里的具体商品曾进入必拍动作，导致其他品类也复现同一种道具。
+				for _, prop := range []string{"牙刷", "刷毛", "草叶", "耳壳"} {
+					if strings.Contains(beat.Purpose+beat.Action, prop) {
+						t.Errorf("core stage %s prescribes %q", stages[i], prop)
+					}
 				}
 			}
 		}

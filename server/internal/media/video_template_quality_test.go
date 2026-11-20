@@ -8,10 +8,8 @@ import (
 
 func expectedRecipeVersion(id string) string {
 	switch id {
-	case "product-detail-reassembly":
-		return "3.0.2"
-	case "electronic-pulse-showcase":
-		return "3.0.1"
+	case "electronic-pulse-showcase", "product-detail-reassembly":
+		return "3.0.3"
 	case "material-assembly-timepiece", "precision-detail-lineup":
 		return "3.0.0"
 	case "brand-kv-unfold":
@@ -45,7 +43,7 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 				// 十个参考镜头两两配成一个核心拍，拍内硬切，长短版均保留十镜。
 				beatCountOK = len(recipe.Beats) == 5
 			case "electronic-pulse-showcase":
-				// 这条配方的六场都保留。白棚和工坊另有三个镜内延展段。
+				// 六个核心场次覆盖所有时长，白棚巡航与结构层次另有三个镜内延展段。
 				beatCountOK = len(recipe.Beats) == 9
 			}
 			structureOK := timed && versionOK && beatCountOK
