@@ -2,17 +2,10 @@ package media
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"os"
 	"slices"
-	"time"
 	"unicode/utf8"
 )
-
-const TemplateReviewsKey = "media.video-template-reviews"
 
 type TemplateText struct {
 	ZH string `json:"zh"`
@@ -87,24 +80,6 @@ type TemplateExperiment struct {
 	SuiteID      string `json:"suiteId"`
 	FormulaID    string `json:"formulaId"`
 	Instructions string `json:"instructions,omitempty"`
-}
-type TemplateReviewInput struct {
-	TemplateID      string `json:"templateId"`
-	TemplateVersion string `json:"templateVersion"`
-	ProjectTeamID   string `json:"projectTeamId"`
-	ProjectID       string `json:"projectId"`
-	Score           int    `json:"score"`
-	Approved        bool   `json:"approved"`
-	Note            string `json:"note"`
-}
-type TemplateReview struct {
-	RecipeDigest string `json:"recipeDigest,omitempty"`
-	TemplateReviewInput
-	ModelID        string    `json:"modelId"`
-	ModelSignature string    `json:"modelSignature"`
-	OutputAssetID  string    `json:"outputAssetId"`
-	ReviewerID     string    `json:"reviewerId"`
-	ReviewedAt     time.Time `json:"reviewedAt"`
 }
 
 func VideoTemplateDefinitions() ([]VideoTemplate, error) {
@@ -185,89 +160,34 @@ func validTemplateTiming(t VideoTemplate) bool {
 	}
 	return total == t.NominalSeconds
 }
-func templateModelSignature(m Model) string {
-	raw, _ := json.Marshal(m)
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:])
-}
-func (r Repository) TemplateReviews(ctx context.Context) ([]TemplateReview, error) {
-	raw, err := r.Store.GetConfigValue(ctx, TemplateReviewsKey)
+
+// VideoTemplateCatalog 只为团队可用的视频模型计算兼容性，公式正文仅在选定后随快照下发。
+func (s *Service) VideoTemplateCatalog(ctx context.Context, models []Model) (regular, formulas []VideoTemplate, err error) {
+	catalog, err := s.resolveTemplateCatalog(ctx, models)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	out := []TemplateReview{}
-	if len(raw) > 0 {
-		if err = json.Unmarshal(raw, &out); err != nil {
-			return nil, fmt.Errorf("video_templates_unavailable")
+	regular, formulas = []VideoTemplate{}, []VideoTemplate{}
+	for _, entry := range catalog {
+		if !entry.enabled {
+			continue
 		}
-	}
-	return out, nil
-}
-func (s *Service) VideoTemplates(ctx context.Context) ([]VideoTemplate, error) {
-	models, err := s.Repo.Models(ctx)
-	if err != nil {
-		return nil, err
-	}
-	all, err := s.videoTemplatesForModels(ctx, models)
-	if err != nil {
-		return nil, err
-	}
-	out := []VideoTemplate{}
-	for _, t := range all {
+		t := entry.snapshot.Template
+		// 旧客户端的解码上限为 100，超出会导致整份目录解析失败。上限只作用于兼容字段。
+		const legacyModelLimit = 100
+		t.VerifiedModelIDs = t.VerifiedModelIDs[:min(len(t.VerifiedModelIDs), legacyModelLimit)]
 		if t.Experiment == nil {
-			out = append(out, t)
+			regular = append(regular, t)
+			continue
 		}
+		meta := *t.Experiment
+		meta.Instructions = ""
+		t.Experiment = &meta
+		formulas = append(formulas, t)
 	}
-	return out, nil
+	return regular, formulas, nil
 }
 
-func (s *Service) VideoFormulaTestTemplates(ctx context.Context) ([]VideoTemplate, error) {
-	models, err := s.Repo.Models(ctx)
-	if err != nil {
-		return nil, err
-	}
-	all, err := s.videoTemplatesForModels(ctx, models)
-	if err != nil {
-		return nil, err
-	}
-	out := []VideoTemplate{}
-	for _, t := range all {
-		if t.Experiment != nil {
-			meta := *t.Experiment
-			meta.Instructions = ""
-			t.Experiment = &meta
-			out = append(out, t)
-		}
-	}
-	return out, nil
-}
-
-func (s *Service) videoTemplatesForModels(ctx context.Context, models []Model) ([]VideoTemplate, error) {
-	catalog, err := s.resolveTemplateCatalog(ctx, models)
-	if err != nil {
-		return nil, err
-	}
-	out := []VideoTemplate{}
-	for _, entry := range catalog {
-		if entry.enabled {
-			out = append(out, entry.snapshot.Template)
-		}
-	}
-	return out, nil
-}
-
-// 管理目录保留停用模板；消费与准入统一读取过滤后的目录。
-func (s *Service) AllVideoTemplates(ctx context.Context, models []Model) ([]VideoTemplate, error) {
-	catalog, err := s.resolveTemplateCatalog(ctx, models)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]VideoTemplate, 0, len(catalog))
-	for _, entry := range catalog {
-		out = append(out, entry.snapshot.Template)
-	}
-	return out, nil
-}
 func findVideoTemplate(templates []VideoTemplate, id, version string) (VideoTemplate, error) {
 	for _, t := range templates {
 		if t.ID == id && t.Version == version {
@@ -275,20 +195,6 @@ func findVideoTemplate(templates []VideoTemplate, id, version string) (VideoTemp
 		}
 	}
 	return VideoTemplate{}, adaptiveResearchError()
-}
-func (s *Service) validateTemplateBrief(ctx context.Context, b Brief, models []Model) error {
-	if !adaptiveResearch(b) || b.TemplateID == "" {
-		return nil
-	}
-	templates, err := s.videoTemplatesForModels(ctx, models)
-	if err != nil {
-		return err
-	}
-	t, err := validateTemplateSelection(b, templates)
-	if err != nil {
-		return err
-	}
-	return validateFormulaTestModel(b, t, models)
 }
 
 func validateTemplateSelection(b Brief, templates []VideoTemplate) (VideoTemplate, error) {
@@ -319,11 +225,6 @@ func validateTemplateSelection(b Brief, templates []VideoTemplate) (VideoTemplat
 	}
 	// 新导演模板的六个编辑时段不是供应商请求；只走已有整片分段，旧快照仍保留原规则。
 	if t.Experiment != nil && t.Experiment.SuiteID == productAdDirectorSuite && b.GenerationPolicy != "whole-first" {
-		return VideoTemplate{}, adaptiveResearchError()
-	}
-	// 图片优先流程已明确点击直接成片；未验证配方只作原创结构，不增加人工审阅门槛。
-	imageFirstRecipe := b.Mode == "auto" && b.ImageAnalysisFirst && b.GenerationPolicy == "whole-first"
-	if !slices.Contains(t.VerifiedModelIDs, b.VideoModel) && !b.ReviewPlan && !imageFirstRecipe {
 		return VideoTemplate{}, adaptiveResearchError()
 	}
 	return t, nil
@@ -394,59 +295,6 @@ func (s *Service) validateAdaptivePlan(_ context.Context, b Brief, p Plan, model
 	}
 	// 模板已在制作单创建/选择时冻结；目录、验证与研究说明不重复否决已完成镜头。
 	return validateResearchPlan(b, p)
-}
-func (s *Service) ReviewVideoTemplate(ctx context.Context, reviewer string, input TemplateReviewInput) (TemplateReview, error) {
-	if reviewer == "" || input.Score < 1 || input.Score > 100 || input.Approved && input.Score < 85 || !boundedNonempty(input.Note, 2000) {
-		return TemplateReview{}, ErrInvalid
-	}
-	templates, err := allVideoTemplateDefinitions()
-	if err != nil {
-		return TemplateReview{}, err
-	}
-	definition, err := findVideoTemplate(templates, input.TemplateID, input.TemplateVersion)
-	if err != nil {
-		return TemplateReview{}, err
-	}
-	p, err := s.Repo.Get(ctx, input.ProjectTeamID, input.ProjectID)
-	if err != nil {
-		return TemplateReview{}, err
-	}
-	if p == nil || p.Status != "completed" || p.CancelRequested || p.OutputAssetID == "" || p.Canvas != nil || p.Agent != nil || p.Plan == nil || p.Plan.Research == nil || p.Plan.Research.TemplateID != input.TemplateID || p.Plan.Research.TemplateVersion != input.TemplateVersion {
-		return TemplateReview{}, adaptiveResearchError()
-	}
-	found := false
-	assets, err := s.Repo.Assets(ctx, p.TeamID)
-	if err != nil {
-		return TemplateReview{}, err
-	}
-	for _, asset := range assets {
-		if asset.ID == p.OutputAssetID && asset.Kind == "video" && asset.Size > 0 {
-			found = true
-		}
-	}
-	info, fileErr := os.Stat(s.Blobs.Path(p.TeamID, p.OutputAssetID))
-	if !found || fileErr != nil || !info.Mode().IsRegular() || info.Size() <= 0 {
-		return TemplateReview{}, adaptiveResearchError()
-	}
-	model, err := FindModel(p.Models, p.Brief.VideoModel, "video")
-	if err != nil {
-		return TemplateReview{}, err
-	}
-	if len(definition.SkillIDs) > 0 && !frozenTemplateMatches(p.Brief, p.TemplateSnapshot) {
-		return TemplateReview{}, adaptiveResearchError()
-	}
-	review := TemplateReview{TemplateReviewInput: input, ModelID: model.ID, ModelSignature: templateModelSignature(model), OutputAssetID: p.OutputAssetID, ReviewerID: reviewer, ReviewedAt: time.Now().UTC()}
-	if p.TemplateSnapshot != nil {
-		review.RecipeDigest = p.TemplateSnapshot.Digest
-	}
-	err = updateJSON(ctx, s.Repo.Store, TemplateReviewsKey, []TemplateReview{}, func(rows *[]TemplateReview) error {
-		if len(*rows) >= 10000 {
-			return fmt.Errorf("template_review_limit")
-		}
-		*rows = append(*rows, review)
-		return nil
-	})
-	return review, err
 }
 
 // 测试使用全能参考；新整片制作按真实能力分段，旧单仍验证短段能力。

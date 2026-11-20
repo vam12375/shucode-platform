@@ -21,8 +21,6 @@ runInNewContext(compiled, {
     if (name === "react") return { useCallback() {}, useEffect() {}, useState() {} };
     if (name === "react/jsx-runtime") return { jsx() {}, jsxs() {} };
     if (name === "../api.js") return { api() {} };
-    if (name === "../auth.js") return { useAuth: () => ({ canManagePlatform: true }) };
-    if (name === "./MediaTemplateReviews.js") return { MediaTemplateReviews: "MediaTemplateReviews" };
     if (name === "../components/Feedback.js") return { toastErr() {}, toastOk() {} };
     if (name === "../components/Select.js") return { Select: "Select" };
     if (name === "../components/StatusChip.js") return { Chip: "Chip", Notice: "Notice" };
@@ -275,8 +273,7 @@ test("shared configuration must stay identical across tiers of one card", () => 
   assert.match(output.validateDrafts(drafts, [provider]), /共享配置不一致/);
 });
 
-async function mountModels(models, providers = [provider], root = true) {
-  let rootValue = root;
+async function mountModels(models, providers = [provider]) {
   const states = new Map();
   const effects = [];
   const calls = [];
@@ -319,8 +316,6 @@ async function mountModels(models, providers = [provider], root = true) {
         return models;
       } };
       if (name === "../components/Feedback.js") return { toastErr() {}, toastOk() {} };
-      if (name === "../auth.js") return { useAuth: () => ({ canManagePlatform: rootValue }) };
-      if (name === "./MediaTemplateReviews.js") return { MediaTemplateReviews: "MediaTemplateReviews" };
       if (name === "../components/Select.js") return { Select: "Select" };
       if (name === "../components/StatusChip.js") return { Chip: "Chip", Notice: "Notice" };
       if (name === "./MediaReconciliation.js") return { MediaReconciliation: "MediaReconciliation" };
@@ -353,7 +348,6 @@ async function mountModels(models, providers = [provider], root = true) {
   return {
     render,
     calls,
-    setRoot(value) { rootValue = value; return render(); },
     failSave(error) { mutationError = error; },
     async settle() { await new Promise(setImmediate); return render(); },
   };
@@ -992,30 +986,19 @@ test("page sections switch without dropping the model draft in progress", async 
   nodes(tree, (node) => (node.props?.["aria-label"] ?? "").endsWith("售价"))[0].props.onChange({ target: { value: "0.7" } });
   tree = f.render();
   const panels = () => nodes(tree, (node) => typeof node.props?.id === "string" && node.props.id.startsWith("media-panel-"));
-  assert.deepEqual(panels().map((panel) => panel.props.hidden), [false, true, true, true]);
+  assert.deepEqual(panels().map((panel) => panel.props.hidden), [false, true, true]);
   nodes(tree, (node) => node.type === "button" && nodeText(node) === "原片解析与定价")[0].props.onClick();
   tree = f.render();
-  assert.deepEqual(panels().map((panel) => panel.props.hidden), [true, false, true, true]);
+  assert.deepEqual(panels().map((panel) => panel.props.hidden), [true, false, true]);
   assert.ok(nodes(tree, (node) => node.type === "SourceParserStatus").length === 1);
+  nodes(tree, (node) => node.props?.id === "media-tab-reconcile")[0].props.onClick();
+  tree = f.render();
+  assert.deepEqual(panels().map((panel) => panel.props.hidden), [true, true, false]);
+  assert.equal(nodes(tree, (node) => node.type === "MediaReconciliation").length, 1);
   nodes(tree, (node) => node.type === "button" && nodeText(node) === "模型清单")[0].props.onClick();
   tree = f.render();
   assert.match(nodeText(tree), /有未保存修改/);
   assert.equal(nodes(tree, (node) => (node.props?.["aria-label"] ?? "").endsWith("售价"))[0].props.value, "0.7");
-});
-
-test("only root can enter template review and the panel mounts on demand", async () => {
-  const f = await mountModels([model]);
-  let tree = f.render();
-  assert.equal(nodes(tree, (node) => node.type === "MediaTemplateReviews").length, 0);
-  nodes(tree, (node) => node.props?.id === "media-tab-templates")[0].props.onClick();
-  tree = f.render();
-  assert.equal(nodes(tree, (node) => node.type === "MediaTemplateReviews").length, 1);
-  tree = f.setRoot(false);
-  assert.equal(nodes(tree, (node) => node.props?.id === "media-tab-templates").length, 0);
-  assert.equal(nodes(tree, (node) => node.type === "MediaTemplateReviews").length, 0);
-  assert.equal(nodes(tree, (node) => node.props?.id === "media-panel-models")[0].props.hidden, false);
-  const other = await mountModels([model], [provider], false);
-  assert.equal(nodes(other.render(), (node) => node.props?.id === "media-tab-templates").length, 0);
 });
 
 test("media route pools round trip per SKU through price edits and JSON without changing capability identity", () => {

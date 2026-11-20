@@ -174,7 +174,11 @@ func (s *Service) Revise(ctx context.Context, team, id string, version int64, pl
 		if p.Status != "review" {
 			return ErrConflict
 		}
-		plan = normalizeAutoPlanMetadata(p.Brief, plan, p.TemplateSnapshot)
+		normalized, err := s.normalizeNewPlan(ctx, p, plan)
+		if err != nil {
+			return err
+		}
+		plan = normalized
 		if p.RetryContext != nil {
 			// 换模型后旧成功镜头可能超过新模型时长；按重规划上下文校验，保留成功段准入例外。
 			if _, _, err := s.buildRetryPlan(ctx, p, plan); err != nil {
@@ -186,7 +190,6 @@ func (s *Service) Revise(ctx context.Context, team, id string, version int64, pl
 		if err := validateSourceBoundaries(p, plan); err != nil {
 			return err
 		}
-		var err error
 		plan, err = referenceReviewPlan(p, plan)
 		if err != nil {
 			return err
@@ -277,7 +280,7 @@ func (s *Service) action(ctx context.Context, team, id string, version int64, ac
 			if p.Plan == nil {
 				return ErrInvalid
 			}
-			normalized := normalizeAutoPlanMetadata(p.Brief, *p.Plan, p.TemplateSnapshot)
+			normalized := p.normalizeAcceptedPlan(*p.Plan)
 			p.Plan = &normalized
 			if p.RetryContext != nil {
 				if _, _, err := s.buildRetryPlan(ctx, p, *p.Plan); err != nil {

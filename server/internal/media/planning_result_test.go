@@ -232,8 +232,8 @@ func TestCompleteChinesePlanKeepsAllImagesAndOneGeneration(t *testing.T) {
 			if actual.Prompt != shot.Prompt || actual.Duration != 15 || actual.AssetID != "" || !reflect.DeepEqual(actual.Creative.AssetIDs, b.AssetIDs) || !reflect.DeepEqual(actual.Beats, shot.Beats) {
 				t.Fatal("compiled execution content changed")
 			}
-			if accepted.Plan.Research.Mode != "original" || accepted.Plan.Research.TemplateID != b.TemplateID || accepted.Plan.Research.TemplateVersion != b.TemplateVersion {
-				t.Fatal("unverified template changed the frozen identity or execution mode")
+			if accepted.Plan.Research.Mode != "template" || accepted.Plan.Research.TemplateID != b.TemplateID || accepted.Plan.Research.TemplateVersion != b.TemplateVersion {
+				t.Fatal("existing frozen recipe lost its template identity or mode")
 			}
 			again, err := f.s.acceptAnalysisPlan(ctx, f.team, p.ID, version, "same-input", plan)
 			if err != nil || again.Version != accepted.Version || !reflect.DeepEqual(again.Shots, accepted.Shots) || again.QuoteMicro != accepted.QuoteMicro {

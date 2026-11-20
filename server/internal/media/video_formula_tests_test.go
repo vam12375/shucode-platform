@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -38,20 +39,37 @@ func TestFormulaTestCatalogIsolationAndFrozenInstructions(t *testing.T) {
 	}
 	f := setup(t)
 	ctx := context.Background()
-	public, err := f.s.VideoFormulaTestTemplates(ctx)
-	if err != nil || len(public) != 31 || public[0].Experiment.Instructions != "" {
-		t.Fatal("overview must expose metadata only", err)
+	// 四个目录项分别覆盖可用视频、无法生成合法时长、缺少全能参考和图片模型。
+	models := []Model{
+		{ID: "v", Kind: "video", Adapter: "ark", UpstreamModel: "doubao-seedance-2-0-260128", Durations: []int{5, 6}},
+		{ID: "no-duration", Kind: "video", Adapter: "ark", UpstreamModel: "doubao-seedance-2-0-260128"},
+		{ID: "no-reference", Kind: "video", UpstreamModel: "plain", Durations: []int{15}},
+		{ID: "image", Kind: "image"},
+	}
+	_, public, err := f.s.VideoTemplateCatalog(ctx, models)
+	if err != nil || len(public) != 31 {
+		t.Fatal("formula overview", err)
+	}
+	for _, tpl := range public {
+		if tpl.Experiment == nil || tpl.Experiment.Instructions != "" || !slices.Equal(tpl.VerifiedModelIDs, []string{"v"}) {
+			t.Fatalf("invalid formula availability or metadata: %s, %v", tpl.ID, tpl.VerifiedModelIDs)
+		}
 	}
 	public[0].Experiment.FormulaID = "mutated"
-	b := Brief{Mode: "auto", ResearchPolicy: "disabled", Product: "fixture", AssetIDs: []string{"a"}, Platforms: []string{}, ReferenceURLs: []string{}, VideoModel: "v", Resolution: "720p", AspectRatio: "16:9", Duration: 30, ReviewPlan: true, TemplateID: fresh[30].ID, TemplateVersion: fresh[30].Version, GenerationPolicy: "whole-first", ReferenceMode: "multimodal", CreativeExpansion: "related"}
-	models, _ := f.s.Repo.Models(ctx)
-	// 夹具模型显式声明全能参考；不根据名称推测能力。
-	models[0].Adapter = "ark"
-	models[0].UpstreamModel = "doubao-seedance-2-0-260128"
-	models[0].Durations = []int{5, 6}
+	b := Brief{Mode: "auto", ResearchPolicy: "disabled", Product: "fixture", AssetIDs: []string{"a"}, Platforms: []string{}, ReferenceURLs: []string{}, VideoModel: "v", Resolution: "720p", AspectRatio: "16:9", Duration: 30, ReviewPlan: false, TemplateID: fresh[30].ID, TemplateVersion: fresh[30].Version, GenerationPolicy: "whole-first", ReferenceMode: "multimodal", CreativeExpansion: "related"}
 	snapshot, err := f.s.freezeTemplate(ctx, b, models)
-	if err != nil || snapshot == nil || snapshot.Template.Experiment.Instructions == "" {
+	if err != nil || snapshot == nil || snapshot.Template.Experiment.Instructions == "" || !slices.Equal(snapshot.Template.VerifiedModelIDs, []string{b.VideoModel}) {
 		t.Fatal("freeze", err)
+	}
+	legacy := cloneTemplateSnapshot(snapshot)
+	legacy.Template.VerifiedModelIDs = []string{}
+	project := Project{Brief: b, TemplateSnapshot: legacy}
+	view := project.View()
+	if !slices.Equal(view.TemplateSnapshot.Template.VerifiedModelIDs, []string{b.VideoModel}) || len(legacy.Template.VerifiedModelIDs) != 0 {
+		t.Fatal("old formula projection changed its frozen source")
+	}
+	if normalized := normalizeAutoPlanMetadata(b, Plan{}, legacy, nil); normalized.Research.Mode != "template" {
+		t.Fatal("selected formula was downgraded in planning")
 	}
 	before, _ := json.Marshal(snapshot)
 	repo := templatelibrary.Repository{Store: f.s.Repo.Store}
@@ -71,7 +89,7 @@ func TestFormulaTestCatalogIsolationAndFrozenInstructions(t *testing.T) {
 	if string(before) != string(after) {
 		t.Fatal("old snapshot changed")
 	}
-	prod, err := f.s.VideoTemplates(ctx)
+	prod, _, err := f.s.VideoTemplateCatalog(ctx, models)
 	if err != nil || len(prod) != 66 {
 		t.Fatal("test toggle altered production", err)
 	}

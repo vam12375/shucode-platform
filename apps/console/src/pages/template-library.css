@@ -16,9 +16,6 @@
   line-height: 1;
   margin-right: 6px;
 }
-.library-register-note {
-  margin-left: auto;
-}
 .library-signal {
   display: inline-block;
   width: 6px;
@@ -233,9 +230,6 @@
   }
   .library-editor {
     position: static;
-  }
-  .library-register-note {
-    margin-left: 0;
   }
 }
 @media (max-width: 520px) {

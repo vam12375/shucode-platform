@@ -1,11 +1,9 @@
 package media
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 )
 
 func expectedRecipeVersion(id string) string {
@@ -182,52 +180,6 @@ func TestRecipesUseModelNativeAudioAndVariedShotScales(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestRewrittenTemplateDoesNotInheritPreviousVersionReview(t *testing.T) {
-	f, project, input := templateReviewFixture(t)
-	ctx := context.Background()
-	// 夹具取目录首条配方的现行版本；它随配方重写升版（商品质感现为 2.0.0），这里不写死，
-	// 只要求现行版本确实不同于下面伪造的旧版审核。
-	currentVersion := input.TemplateVersion
-	if currentVersion == "1.0.0" {
-		t.Fatal("fixture recipe must have been rewritten past 1.0.0")
-	}
-	input.TemplateVersion = "1.0.0"
-	signature := ""
-	for _, model := range project.Models {
-		if model.ID == project.Brief.VideoModel {
-			signature = templateModelSignature(model)
-		}
-	}
-	if signature == "" {
-		t.Fatal("fixture model missing")
-	}
-	// 配方正文改写后必须使用新版本，不能因同一模型和模板id而借用旧成片审核。
-	legacy := TemplateReview{TemplateReviewInput: input, ModelID: project.Brief.VideoModel, ModelSignature: signature, OutputAssetID: project.OutputAssetID, ReviewerID: "root-fixture", ReviewedAt: time.Now()}
-	raw, err := json.Marshal([]TemplateReview{legacy})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = f.s.Repo.Store.SetConfigValue(ctx, TemplateReviewsKey, raw); err != nil {
-		t.Fatal(err)
-	}
-	templates, err := f.s.VideoTemplates(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	current, err := findVideoTemplate(templates, input.TemplateID, currentVersion)
-	if err != nil || len(current.VerifiedModelIDs) != 0 {
-		t.Fatalf("previous-version review leaked: %+v %v", current, err)
-	}
-	previousBrief := project.Brief
-	previousBrief.TemplateVersion = "1.0.0"
-	if err = f.s.validateTemplateBrief(ctx, previousBrief, project.Models); err == nil {
-		t.Fatal("previous explicit version silently upgraded")
-	}
-	if previousBrief.TemplateVersion != "1.0.0" {
-		t.Fatal("validation mutated the frozen version")
 	}
 }
 

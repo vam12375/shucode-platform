@@ -144,7 +144,6 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 	if current == nil {
 		return nil, ErrInvalid
 	}
-	plan = normalizeAutoPlanMetadata(current.Brief, plan, current.TemplateSnapshot)
 	if !imageFirstPlanningBound(current) {
 		return nil, ErrConflict
 	}
@@ -155,7 +154,7 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 		plan.Story = &story
 	}
 	// 原计划请求可能已成功但响应丢失；无固定分析费的图片任务同样需要同 input 幂等恢复。
-	if !current.CancelRequested && current.Analysis != nil && current.Analysis.InputID == input && current.Plan != nil && equalAnalysisPlan(normalizeAutoPlanMetadata(current.Brief, *current.Plan, current.TemplateSnapshot), plan) {
+	if !current.CancelRequested && current.Analysis != nil && current.Analysis.InputID == input && current.Plan != nil && equalAnalysisPlan(current.normalizeAcceptedPlan(*current.Plan), current.normalizeAcceptedPlan(plan)) {
 		if current.Status == "analysis_settling" {
 			return s.finishAnalysisFee(ctx, current)
 		}
@@ -185,6 +184,11 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 		if v.Brief.GenerationMode == "video_reference" && (v.SourceAnalysis == nil || v.Analysis.Kind != "adaptation") {
 			return fmt.Errorf("video_reference_source_analysis_required")
 		}
+		normalized, err := s.normalizeNewPlan(ctx, v, plan)
+		if err != nil {
+			return err
+		}
+		plan = normalized
 		if err := validateSourceBoundaries(v, plan); err != nil {
 			return err
 		}

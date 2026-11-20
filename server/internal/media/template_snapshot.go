@@ -47,7 +47,7 @@ type resolvedTemplate struct {
 	enabled  bool
 }
 
-// 模板开关和技能正文来自同一次目录读取，防止创建时混用两次读取的审核与内容。
+// 模板开关和技能正文来自同一次目录读取，防止创建时混用两次读取的开关与内容。
 func (s *Service) resolveTemplateCatalog(ctx context.Context, models []Model) ([]resolvedTemplate, error) {
 	definitions, err := allVideoTemplateDefinitions()
 	if err != nil {
@@ -65,9 +65,17 @@ func (s *Service) resolveTemplateCatalog(ctx context.Context, models []Model) ([
 	for _, e := range entries {
 		byID[e.ID] = e
 	}
-	reviews, err := s.Repo.TemplateReviews(ctx)
-	if err != nil {
-		return nil, err
+	regularModels, formulaModels := []string{}, []string{}
+	for _, m := range models {
+		if m.Kind != "video" || m.ID == "" {
+			continue
+		}
+		regularModels = append(regularModels, m.ID)
+		// 测试公式固定交付 30 秒并引用商品图，按与新建制作单相同的模型能力和分段规则展示。
+		caps := CanvasCapabilitiesFor(m)
+		if caps != nil && slices.Contains(caps.Modes, "multimodal") && caps.MaxImages > 0 && len(planGenerationDurations(30, m)) > 0 {
+			formulaModels = append(formulaModels, m.ID)
+		}
 	}
 	out := make([]resolvedTemplate, 0, len(definitions))
 	for _, t := range definitions {
@@ -91,22 +99,13 @@ func (s *Service) resolveTemplateCatalog(ctx context.Context, models []Model) ([
 		raw, _ := json.Marshal(snapshot)
 		sum := sha256.Sum256(raw)
 		snapshot.Digest = hex.EncodeToString(sum[:])
-		// 停用只影响新单准入；管理页仍保留完整的历史审核证据。
-		skillsAvailable := len(snapshot.Skills) == len(t.SkillIDs)
-		for _, model := range models {
-			if model.Kind != "video" {
-				continue
+		// 旧客户端用此字段决定模板能否选用。目录随视频模型发布，正文摘要不随模型变化。
+		if enabled {
+			models := regularModels
+			if t.Experiment != nil {
+				models = formulaModels
 			}
-			var latest *TemplateReview
-			for i := range reviews {
-				r := &reviews[i]
-				if r.TemplateID == t.ID && r.TemplateVersion == t.Version && r.ModelID == model.ID {
-					latest = r
-				}
-			}
-			if skillsAvailable && latest != nil && latest.Approved && latest.Score >= 85 && latest.ModelSignature == templateModelSignature(model) && (latest.RecipeDigest == snapshot.Digest || latest.RecipeDigest == "" && len(t.SkillIDs) == 0) {
-				snapshot.Template.VerifiedModelIDs = append(snapshot.Template.VerifiedModelIDs, model.ID)
-			}
+			snapshot.Template.VerifiedModelIDs = slices.Clone(models)
 		}
 		if preview := byID[templatelibrary.VideoID(t.ID)].Preview; preview != nil {
 			snapshot.Template.Preview = &TemplatePreview{CoverURL: templatelibrary.PreviewURL(s.Blobs.Origin, preview.Cover), VideoURL: templatelibrary.PreviewURL(s.Blobs.Origin, preview.Video)}
@@ -134,15 +133,14 @@ func (s *Service) freezeTemplate(ctx context.Context, b Brief, models []Model) (
 		if err = validateFormulaTestModel(b, entry.snapshot.Template, models); err != nil {
 			return nil, err
 		}
-		return cloneTemplateSnapshot(&entry.snapshot), nil
+		snapshot := cloneTemplateSnapshot(&entry.snapshot)
+		// 制作单只需声明本单模型，避免把整个模型目录冻结进可分享的项目。
+		snapshot.Template.VerifiedModelIDs = []string{b.VideoModel}
+		return snapshot, nil
 	}
 	return nil, adaptiveResearchError()
 }
 
 func frozenTemplateMatches(b Brief, snapshot *TemplateSnapshot) bool {
 	return snapshot != nil && snapshot.Template.ID == b.TemplateID && snapshot.Template.Version == b.TemplateVersion && len(snapshot.Skills) == len(snapshot.Template.SkillIDs)
-}
-
-func snapshotAllowsTemplateMode(b Brief, snapshot *TemplateSnapshot) bool {
-	return slices.Contains(snapshot.Template.VerifiedModelIDs, b.VideoModel)
 }

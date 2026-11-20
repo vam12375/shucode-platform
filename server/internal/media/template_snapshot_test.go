@@ -115,60 +115,12 @@ func TestProductionSkillSnapshotIsolationAndReplay(t *testing.T) {
 		t.Fatalf("old order cannot continue: %v", err)
 	}
 	plan.Research.Mode = "template"
-	if normalized := normalizeAutoPlanMetadata(b, plan, p.TemplateSnapshot); normalized.Research.Mode != "original" {
-		t.Fatal("unreviewed draft promoted to verified template")
+	if normalized := normalizeAutoPlanMetadata(b, plan, p.TemplateSnapshot, nil); normalized.Research.Mode != "template" {
+		t.Fatal("old order lost its frozen template after directory change")
 	}
 	b.TemplateID, b.TemplateVersion = "", ""
 	clean, err := f.s.Create(ctx, f.team, f.user, "", uuid.NewString(), b)
 	if err != nil || clean.TemplateSnapshot != nil {
 		t.Fatal("new original order inherited skills", err)
 	}
-}
-
-func TestTemplateReviewCannotSurviveSkillContentChange(t *testing.T) {
-	f, p, input := templateReviewFixture(t)
-	ctx := context.Background()
-	b := p.Brief
-	b.TemplateID, b.TemplateVersion = "black-gold-reveal", currentTemplateVersion(t, "black-gold-reveal")
-	snapshot, err := f.s.freezeTemplate(ctx, b, p.Models)
-	if err != nil {
-		t.Fatal(err)
-	}
-	p, err = f.s.Mutate(ctx, f.team, p.ID, p.Version, func(v *Project) error {
-		v.Brief = b
-		v.TemplateSnapshot = snapshot
-		v.Plan.Research.TemplateID, v.Plan.Research.TemplateVersion = b.TemplateID, b.TemplateVersion
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	input.TemplateID, input.TemplateVersion = b.TemplateID, b.TemplateVersion
-	if _, err = f.s.ReviewVideoTemplate(ctx, "root-fixture", input); err != nil {
-		t.Fatal(err)
-	}
-	check := func(want bool) {
-		t.Helper()
-		rows, err := f.s.VideoTemplates(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, row := range rows {
-			if row.ID == b.TemplateID && slices.Contains(row.VerifiedModelIDs, b.VideoModel) == want {
-				return
-			}
-		}
-		t.Fatalf("verification should be %v", want)
-	}
-	check(true)
-	updateProductionSkill(t, f, func(input *templatelibrary.Mutation, e templatelibrary.Entry) {
-		fields := e.Fields
-		fields.Content += "\n不同的落版方法。\n"
-		input.Fields = &fields
-	})
-	check(false)
-	if _, err = f.s.ReviewVideoTemplate(ctx, "root-fixture", input); err != nil {
-		t.Fatal(err)
-	}
-	check(false)
 }

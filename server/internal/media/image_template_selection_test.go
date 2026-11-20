@@ -76,7 +76,7 @@ func TestImageTemplateSelectionFreezesOnceAndAutomaticallyQueues(t *testing.T) {
 	plan.Research.TemplateID, plan.Research.TemplateVersion = selection.TemplateID, selection.TemplateVersion
 	result, err := f.s.acceptAnalysisPlan(ctx, f.team, p.ID, retried.Version, a.InputID, plan)
 	if err != nil || result.Status != "queued" || result.Analysis.TaskID != "same-task" {
-		t.Fatal("unverified recipe required an extra manual step", err)
+		t.Fatal("selected recipe required an extra manual step", err)
 	}
 	if f.submits.Load() != 0 {
 		t.Fatal("binding or plan acceptance directly invoked the paid supplier")
@@ -139,7 +139,7 @@ func TestImageTemplateSelectionRejectsInvalidOrStaleWithoutMutation(t *testing.T
 	}
 }
 
-func TestImageTemplateSelectionCannotChangeAfterBindingOrClaimVerification(t *testing.T) {
+func TestImageTemplateSelectionStaysBoundAndNeedsNoReview(t *testing.T) {
 	f, p, a, selection := imageTemplateFixture(t)
 	ctx := context.Background()
 	p, err := f.s.Bind(ctx, f.team, p.ID, p.Version, a, selection)
@@ -154,12 +154,12 @@ func TestImageTemplateSelectionCannotChangeAfterBindingOrClaimVerification(t *te
 	_, plan, _ := wholeDurationFixture([]int{15}, 15)
 	plan.Research.Mode = "template"
 	plan.Research.TemplateID, plan.Research.TemplateVersion = selection.TemplateID, selection.TemplateVersion
-	if accepted, err := f.s.acceptAnalysisPlan(ctx, f.team, p.ID, p.Version, a.InputID, plan); err != nil || accepted.Plan.Research.Mode != "original" {
-		t.Fatal("unverified recipe failed original execution", err)
+	if accepted, err := f.s.acceptAnalysisPlan(ctx, f.team, p.ID, p.Version, a.InputID, plan); err != nil || accepted.Plan.Research.Mode != "template" {
+		t.Fatal("bound recipe did not execute as a template", err)
 	}
 	advanced := p.Brief
 	advanced.ImageAnalysisFirst = false
-	if _, err = validateTemplateSelection(advanced, []VideoTemplate{p.TemplateSnapshot.Template}); err == nil {
-		t.Fatal("advanced flow lost its draft review requirement")
+	if _, err = validateTemplateSelection(advanced, []VideoTemplate{p.TemplateSnapshot.Template}); err != nil {
+		t.Fatal("advanced flow required extra review", err)
 	}
 }

@@ -15,7 +15,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"slices"
 	"strings"
 	"time"
 )
@@ -178,7 +177,6 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 	registerMediaSourceRoutes(router, deps)
 	registerCanvasGenerationRoutes(router, deps)
 	registerMediaAgentGenerationRoutes(router, deps)
-	registerMediaTemplateRoutes(router, deps)
 	// 供应商会用 HEAD 探测参考媒体；复用 GET 验签与资产检查，避免合法媒体被误判为不可达。
 	serveMediaBlob := func(c *gin.Context) {
 		team, id := c.Param("team"), c.Param("id")
@@ -276,26 +274,10 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(503, fail(503, "reference_pricing_unavailable"))
 			return
 		}
-		templates, e := s.VideoTemplates(ctx)
+		templates, testTemplates, e := s.VideoTemplateCatalog(ctx, models)
 		if e != nil {
 			c.JSON(503, fail(503, "video_templates_unavailable"))
 			return
-		}
-		testTemplates, e := s.VideoFormulaTestTemplates(ctx)
-		if e != nil {
-			c.JSON(503, fail(503, "video_formula_tests_unavailable"))
-			return
-		}
-		for _, catalog := range [][]media.VideoTemplate{templates, testTemplates} {
-			for i := range catalog {
-				visible := []string{}
-				for _, id := range catalog[i].VerifiedModelIDs {
-					if slices.ContainsFunc(models, func(model media.Model) bool { return model.ID == id }) {
-						visible = append(visible, id)
-					}
-				}
-				catalog[i].VerifiedModelIDs = visible
-			}
 		}
 		publicMediaData(c, deps, gin.H{"user": gin.H{"id": a.User.ID, "name": a.User.DisplayName}, "team": gin.H{"id": m.Team.ID, "name": m.Team.Name, "availableMicro": quota - used, "reservedMicro": int64(0), "unlimited": m.Team.Unlimited}, "models": publicMediaModels(models), "videoTemplates": templates, "videoTestTemplates": testTemplates, "assets": assets, "mediaLibrary": library, "projects": projects, "generations": generations, "compositionAvailable": media.CompositionAvailable(), "referencePricing": pricing, "capabilities": s.FinishingCapabilities(ctx), "mediaOrigin": s.Blobs.Origin})
 	})

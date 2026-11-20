@@ -380,9 +380,6 @@ function LibraryContent() {
           {entries.filter((entry) => entry.enabled).length} 条启用
         </span>
         <span>{entries.filter((entry) => !entry.enabled).length} 条停用</span>
-        <span className="library-register-note">
-          模板启停与视频效果审核独立
-        </span>
       </div>
       {error ? (
         <Notice tone="stop" k={conflict ? "版本冲突" : "操作未完成"}>
@@ -620,10 +617,6 @@ function LibraryContent() {
                   <>
                     <h3>{fields.name}</h3>
                     <p>{fields.description}</p>
-                    <Notice>
-                      视频配方按版本维护。启用后可供选择，自动采用仍需通过对应模型的成片审核。
-                    </Notice>
-                    <a href="#/media-models">前往媒体模型查看模板审核</a>
                     <section className="library-preview-editor">
                       <h3>封面与示例视频</h3>
                       <p className="muted">公开展示素材，单个文件最多 64 MiB。发布后使用内容指纹地址缓存一年；更新素材自动换址。</p>

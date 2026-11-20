@@ -5,7 +5,6 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { Clapperboard, FileJson, Plus } from "lucide-react";
 import { api } from "../api.js";
-import { useAuth } from "../auth.js";
 import { toastErr, toastOk } from "../components/Feedback.js";
 import { Glyph, PageTitle } from "../components/Icon.js";
 import { Select } from "../components/Select.js";
@@ -13,7 +12,6 @@ import { Chip, Notice } from "../components/StatusChip.js";
 import { MediaReconciliation } from "./MediaReconciliation.js";
 import { ReferencePricing } from "./ReferencePricing.js";
 import { SourceParserStatus } from "./SourceParserStatus.js";
-import { MediaTemplateReviews } from "./MediaTemplateReviews.js";
 
 const KIND_OPTIONS = [
   { value: "video", label: "视频" },
@@ -1206,13 +1204,12 @@ export function draftsFromJson(raw: string): MediaModelDraft[] {
 
 const PREVIEW_PLACEHOLDER = 10;
 
-type MediaSection = "models" | "source" | "reconcile" | "templates";
+type MediaSection = "models" | "source" | "reconcile";
 
 const MEDIA_SECTIONS: { id: MediaSection; label: string }[] = [
   { id: "models", label: "模型清单" },
   { id: "source", label: "原片解析与定价" },
   { id: "reconcile", label: "提交核对" },
-  { id: "templates", label: "模板审核" },
 ];
 
 type FamilyChange = "new" | "modified" | "unchanged";
@@ -1302,7 +1299,6 @@ function familyChange(
 }
 
 export function MediaModelsPage() {
-  const { canManagePlatform } = useAuth();
   const [drafts, setDrafts] = useState<MediaModelDraft[]>([]);
   const [providers, setProviders] = useState<ProviderOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2117,8 +2113,6 @@ export function MediaModelsPage() {
     },
   ];
   const presetsDisabled = loading || busy || providers.length === 0;
-  const sections = MEDIA_SECTIONS.filter((item) => item.id !== "templates" || canManagePlatform);
-  const activeSection = section === "templates" && !canManagePlatform ? "models" : section;
 
   return (
     <div>
@@ -2134,25 +2128,24 @@ export function MediaModelsPage() {
         </span>
       </header>
 
-      {/* 分区保留模型草稿，审核页只在有权限且进入时读取平台事实。 */}
       <div className="page-tabs" role="tablist" aria-label="媒体模型页面分区">
-        {sections.map((item) => (
+        {MEDIA_SECTIONS.map((item) => (
           <button
             key={item.id}
             id={`media-tab-${item.id}`}
             type="button"
             role="tab"
             className="page-tab"
-            aria-selected={activeSection === item.id}
+            aria-selected={section === item.id}
             aria-controls={`media-panel-${item.id}`}
-            tabIndex={activeSection === item.id ? 0 : -1}
+            tabIndex={section === item.id ? 0 : -1}
             onClick={() => setSection(item.id)}
             onKeyDown={(event) => {
               const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
               if (!step) return;
               event.preventDefault();
-              const index = sections.findIndex((entry) => entry.id === activeSection);
-              const next = sections[(index + step + sections.length) % sections.length];
+              const index = MEDIA_SECTIONS.findIndex((entry) => entry.id === section);
+              const next = MEDIA_SECTIONS[(index + step + MEDIA_SECTIONS.length) % MEDIA_SECTIONS.length];
               setSection(next.id);
               document.getElementById(`media-tab-${next.id}`)?.focus();
             }}
@@ -2169,7 +2162,7 @@ export function MediaModelsPage() {
         id="media-panel-models"
         role="tabpanel"
         aria-labelledby="media-tab-models"
-        hidden={activeSection !== "models"}
+        hidden={section !== "models"}
       >
         <Notice k="计费口径">
           一个上游模型一张卡：分辨率价格条目在卡内维护，镜头时长按模型能力配置（Seedance 2.0 为 4–15 秒，Seedance 2.5 为 4–30 秒），共享配置只填一次。保存后仍按每个分辨率条目下发一条模型；视频按模型计费单位（按秒、按次或按 Token）结算，图片按张计价，1 credit = ¥1。Token 模型以供应商返回的实际 usage 结算；按次模型默认固定售价，配置时长分档后按实际输出时长命中分档。
@@ -2467,7 +2460,7 @@ export function MediaModelsPage() {
         id="media-panel-source"
         role="tabpanel"
         aria-labelledby="media-tab-source"
-        hidden={activeSection !== "source"}
+        hidden={section !== "source"}
       >
         <SourceParserStatus />
         <ReferencePricing />
@@ -2477,13 +2470,10 @@ export function MediaModelsPage() {
         id="media-panel-reconcile"
         role="tabpanel"
         aria-labelledby="media-tab-reconcile"
-        hidden={activeSection !== "reconcile"}
+        hidden={section !== "reconcile"}
       >
         <MediaReconciliation onPendingCount={setPendingReconcile} />
       </div>
-      {canManagePlatform ? <div id="media-panel-templates" role="tabpanel" aria-labelledby="media-tab-templates" hidden={activeSection !== "templates"}>
-        {activeSection === "templates" ? <MediaTemplateReviews /> : null}
-      </div> : null}
     </div>
   );
 }

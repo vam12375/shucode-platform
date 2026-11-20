@@ -338,7 +338,7 @@ func buildShotsPreservingSuccesses(b Brief, plan Plan, models []Model, scriptVer
 	if scriptVersion != 0 && scriptVersion != 1 {
 		return nil, 0, ErrInvalid
 	}
-	plan = normalizeAutoPlanMetadata(b, plan, nil)
+	plan = normalizeAutoPlanMetadata(b, plan, nil, nil)
 	if err := validateResearchPlan(b, plan); err != nil {
 		return nil, 0, err
 	}

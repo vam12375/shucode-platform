@@ -589,8 +589,13 @@ func (p Project) View() ProjectView {
 		}
 		shots = append(shots, ShotView{ImageOutputs: outputs, Plan: s.Plan, Status: s.Status, Attempt: s.Attempt, VideoTaskID: publicVideoTaskID(s.VideoTaskID), ImageAssetID: s.ImageAssetID, OutputAssetID: s.OutputAssetID, LastFrameAssetID: s.LastFrameAssetID, Error: s.Error, ProviderError: diagnostic, ChargedMicro: s.ChargedMicro, QuoteMicro: s.QuoteMicro})
 	}
+	snapshot := cloneTemplateSnapshot(p.TemplateSnapshot)
+	if frozenTemplateMatches(p.Brief, snapshot) && p.Brief.VideoModel != "" {
+		// 旧单可能冻结了空的审核名单；在返回给旧客户端的副本中提供本单模型。
+		snapshot.Template.VerifiedModelIDs = []string{p.Brief.VideoModel}
+	}
 	archives := currentGeneratedArchives(p)
-	return ProjectView{RetryContext: cloneRetryContext(p.RetryContext), PlanningResult: clonePlanningResult(p.PlanningResult), ImageAnalysis: cloneImageAnalysis(p.ImageAnalysis), TemplateSnapshot: cloneTemplateSnapshot(p.TemplateSnapshot), MachineReview: p.MachineReview, PlanReview: p.PlanReview, Composition: p.Composition, QualityReport: p.QualityReport, SourceAnalysis: cloneSourceAnalysis(p.SourceAnalysis), AnalysisChargedMicro: p.AnalysisChargedMicro, Canvas: p.Canvas, TeamAssetArchives: archives, ReservedMicro: 0, ReleasedMicro: 0, ID: p.ID, Version: p.Version, Status: p.Status, Brief: p.Brief, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Analysis: p.Analysis, Plan: p.Plan, Shots: shots, QuoteMicro: p.QuoteMicro, ChargedMicro: p.ChargedMicro, OutputAssetID: p.OutputAssetID, Error: p.Error, CancelRequested: p.CancelRequested}
+	return ProjectView{RetryContext: cloneRetryContext(p.RetryContext), PlanningResult: clonePlanningResult(p.PlanningResult), ImageAnalysis: cloneImageAnalysis(p.ImageAnalysis), TemplateSnapshot: snapshot, MachineReview: p.MachineReview, PlanReview: p.PlanReview, Composition: p.Composition, QualityReport: p.QualityReport, SourceAnalysis: cloneSourceAnalysis(p.SourceAnalysis), AnalysisChargedMicro: p.AnalysisChargedMicro, Canvas: p.Canvas, TeamAssetArchives: archives, ReservedMicro: 0, ReleasedMicro: 0, ID: p.ID, Version: p.Version, Status: p.Status, Brief: p.Brief, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Analysis: p.Analysis, Plan: p.Plan, Shots: shots, QuoteMicro: p.QuoteMicro, ChargedMicro: p.ChargedMicro, OutputAssetID: p.OutputAssetID, Error: p.Error, CancelRequested: p.CancelRequested}
 }
 
 func directGenerationRequest(p Project) (CanvasRequest, bool) {
