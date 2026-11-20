@@ -8,9 +8,11 @@ import (
 
 func expectedRecipeVersion(id string) string {
 	switch id {
+	case "chromatic-micro-world":
+		return "3.0.1"
 	case "electronic-pulse-showcase", "product-detail-reassembly":
 		return "3.0.3"
-	case "material-assembly-timepiece", "precision-detail-lineup", "chromatic-micro-world", "raking-light-layered-reveal", "rhythmic-feature-demo":
+	case "material-assembly-timepiece", "precision-detail-lineup", "raking-light-layered-reveal", "rhythmic-feature-demo":
 		return "3.0.0"
 	case "brand-kv-unfold":
 		return "2.1.6"
