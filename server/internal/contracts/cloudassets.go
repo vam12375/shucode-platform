@@ -2,7 +2,7 @@ package contracts
 
 import "time"
 
-// 对齐客户端 packages/shared/src/cloudAsset.ts；内容地址不属于通用资产契约。
+// 对齐客户端 packages/shared/src/cloudAsset.ts；图片预览地址是认证列表的可选投影。
 const (
 	CloudAssetMaxBytes              int64 = 100 << 20
 	CloudAssetTeamStorageLimitBytes int64 = 5 << 30
@@ -15,14 +15,16 @@ type CloudAssetUploader struct {
 }
 
 type CloudAsset struct {
-	ID          string             `json:"id"`
-	Name        string             `json:"name"`
-	Kind        string             `json:"kind"`
-	Mime        string             `json:"mime"`
-	Size        int64              `json:"size"`
-	CreatedAt   time.Time          `json:"createdAt"`
-	UploadedBy  CloudAssetUploader `json:"uploadedBy"`
-	ContentHash string             `json:"contentHash,omitempty"`
+	ID           string             `json:"id"`
+	Name         string             `json:"name"`
+	Kind         string             `json:"kind"`
+	Mime         string             `json:"mime"`
+	Size         int64              `json:"size"`
+	CreatedAt    time.Time          `json:"createdAt"`
+	UploadedBy   CloudAssetUploader `json:"uploadedBy"`
+	ContentHash  string             `json:"contentHash,omitempty"`
+	PreviewURL   string             `json:"previewUrl,omitempty"`
+	ThumbnailURL string             `json:"thumbnailUrl,omitempty"`
 }
 
 type ManagedCloudAsset struct {
@@ -43,9 +45,10 @@ type CloudAssetTeam struct {
 }
 
 type CloudAssetPage struct {
-	Team       CloudAssetTeam `json:"team"`
-	Assets     []CloudAsset   `json:"assets"`
-	NextCursor *string        `json:"nextCursor"`
+	MediaOrigin string         `json:"mediaOrigin,omitempty"`
+	Team        CloudAssetTeam `json:"team"`
+	Assets      []CloudAsset   `json:"assets"`
+	NextCursor  *string        `json:"nextCursor"`
 }
 
 type CloudAssetDeletionRequest struct {
@@ -97,6 +100,7 @@ type CloudAssetCapabilities struct {
 	ContentHash bool `json:"contentHash"`
 }
 type ManagedCloudAssetPage struct {
+	MediaOrigin  string                 `json:"mediaOrigin,omitempty"`
 	Team         CloudAssetTeam         `json:"team"`
 	Assets       []ManagedCloudAsset    `json:"assets"`
 	NextCursor   *string                `json:"nextCursor"`

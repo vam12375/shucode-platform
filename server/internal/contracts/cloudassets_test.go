@@ -18,7 +18,8 @@ func TestCloudAssetClientFixtures(t *testing.T) {
 	if err := json.Unmarshal(raw, &fixtures); err != nil {
 		t.Fatal(err)
 	}
-	if len(fixtures.Pages) != 2 {
+	// 图片展示字段必须进入冻结样本，避免 Go 镜像静默丢弃客户端可选投影。
+	if len(fixtures.Pages) != 3 {
 		t.Fatal("缺少客户端 schema 冻结样本")
 	}
 	for _, raw := range fixtures.Pages {
@@ -98,7 +99,8 @@ func TestManagedCloudAssetClientFixtures(t *testing.T) {
 	if err := json.Unmarshal(raw, &fixtures); err != nil {
 		t.Fatal(err)
 	}
-	if len(fixtures.Pages) != 2 {
+	// 同时保留旧版、未修改响应和带短签名媒体地址的新版列表。
+	if len(fixtures.Pages) != 3 {
 		t.Fatal("缺少客户端 schema 冻结样本")
 	}
 	for _, raw := range fixtures.Pages {

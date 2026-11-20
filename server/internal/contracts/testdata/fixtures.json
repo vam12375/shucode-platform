@@ -416,6 +416,35 @@
         }
       ],
       "nextCursor": "opaque-cursor"
+    },
+    {
+      "mediaOrigin": "https://cdn.example.test",
+      "team": {
+        "id": "87b3e38a-f39c-4b73-af47-81191bbec8fd",
+        "name": "契约团队",
+        "storage": {
+          "usedBytes": 2048,
+          "limitBytes": 5368709120
+        }
+      },
+      "assets": [
+        {
+          "id": "6772cde5-72de-4cff-a29a-4a60f15b361c",
+          "name": "契约图片.png",
+          "kind": "image",
+          "mime": "image/png",
+          "size": 2048,
+          "createdAt": "2026-11-20T00:00:00Z",
+          "uploadedBy": {
+            "id": "user-fixture",
+            "name": "成员"
+          },
+          "contentHash": "abababababababababababababababababababababababababababababababab",
+          "previewUrl": "https://cdn.example.test/api/v1/team-asset-media/87b3e38a-f39c-4b73-af47-81191bbec8fd/6772cde5-72de-4cff-a29a-4a60f15b361c/original?v=abababababababababababababababababababababababababababababababab&expires=1795190100&signature=cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "thumbnailUrl": "https://cdn.example.test/api/v1/team-asset-media/87b3e38a-f39c-4b73-af47-81191bbec8fd/6772cde5-72de-4cff-a29a-4a60f15b361c/thumbnail?v=abababababababababababababababababababababababababababababababab&expires=1795190100&signature=cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        }
+      ],
+      "nextCursor": null
     }
   ],
   "cloudAssetDeletionOverviews": [
@@ -5717,6 +5746,68 @@
         "kinds": [],
         "uploaders": [],
         "tags": [],
+        "tagsTruncated": false,
+        "uploadersTruncated": false
+      }
+    },
+    {
+      "mediaOrigin": "https://cdn.example.test",
+      "team": {
+        "id": "87b3e38a-f39c-4b73-af47-81191bbec8fd",
+        "name": "契约团队",
+        "storage": {
+          "usedBytes": 2048,
+          "limitBytes": 5368709120
+        }
+      },
+      "assets": [
+        {
+          "id": "6772cde5-72de-4cff-a29a-4a60f15b361c",
+          "name": "契约图片.png",
+          "kind": "image",
+          "mime": "image/png",
+          "size": 2048,
+          "createdAt": "2026-11-20T00:00:00Z",
+          "uploadedBy": {
+            "id": "user-fixture",
+            "name": "成员"
+          },
+          "contentHash": "abababababababababababababababababababababababababababababababab",
+          "previewUrl": "https://cdn.example.test/api/v1/team-asset-media/87b3e38a-f39c-4b73-af47-81191bbec8fd/6772cde5-72de-4cff-a29a-4a60f15b361c/original?v=abababababababababababababababababababababababababababababababab&expires=1795190100&signature=cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "thumbnailUrl": "https://cdn.example.test/api/v1/team-asset-media/87b3e38a-f39c-4b73-af47-81191bbec8fd/6772cde5-72de-4cff-a29a-4a60f15b361c/thumbnail?v=abababababababababababababababababababababababababababababababab&expires=1795190100&signature=cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "tags": [
+            "图片"
+          ],
+          "favorite": false
+        }
+      ],
+      "nextCursor": null,
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:8",
+      "notModified": false,
+      "capabilities": {
+        "management": true,
+        "thumbnail": true,
+        "contentHash": true
+      },
+      "facets": {
+        "total": 1,
+        "kinds": [
+          {
+            "kind": "image",
+            "count": 1,
+            "bytes": 2048
+          }
+        ],
+        "uploaders": [
+          {
+            "id": "user-fixture",
+            "name": "成员",
+            "count": 1
+          }
+        ],
+        "tags": [
+          "图片"
+        ],
         "tagsTruncated": false,
         "uploadersTruncated": false
       }
