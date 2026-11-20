@@ -45,7 +45,7 @@ func TestTemplateOverviewDefaultAvailabilityRespectsTeamModelWhitelist(t *testin
 	}
 	data := dataOf(t, response)
 	alias := publicMediaAliasForTest(t, f, "allowed-video")
-	for key, count := range map[string]int{"videoTemplates": 66, "videoTestTemplates": 31} {
+	for key, count := range map[string]int{"videoTemplates": 69, "videoTestTemplates": 31} {
 		items := data[key].([]any)
 		if len(items) != count {
 			t.Fatalf("%s: %d templates, want %d", key, len(items), count)

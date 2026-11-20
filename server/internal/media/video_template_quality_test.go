@@ -10,7 +10,7 @@ func expectedRecipeVersion(id string) string {
 	switch id {
 	case "electronic-pulse-showcase", "product-detail-reassembly":
 		return "3.0.3"
-	case "material-assembly-timepiece", "precision-detail-lineup":
+	case "material-assembly-timepiece", "precision-detail-lineup", "chromatic-micro-world", "raking-light-layered-reveal", "rhythmic-feature-demo":
 		return "3.0.0"
 	case "brand-kv-unfold":
 		return "2.1.6"
@@ -26,8 +26,8 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(templates) != 66 {
-		t.Fatalf("expected 66 recipes, got %d", len(templates))
+	if len(templates) != 69 {
+		t.Fatalf("expected 69 recipes, got %d", len(templates))
 	}
 	seen := map[string]bool{}
 	actions := map[string]bool{}
@@ -39,6 +39,12 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 			versionOK := recipe.Version == expectedRecipeVersion(recipe.ID)
 			beatCountOK := len(recipe.Beats) >= 12 && len(recipe.Beats) <= 16
 			switch recipe.ID {
+			case "rhythmic-feature-demo":
+				// 六个编辑窗口保留接触、反馈与明暗的节奏，拍内起音不是独立生成请求。
+				beatCountOK = len(recipe.Beats) == 6
+			case "chromatic-micro-world", "raking-light-layered-reveal":
+				// 五个核心编辑窗口在拍内保留近观快切或连续视差，不拆成供应商短请求。
+				beatCountOK = len(recipe.Beats) == 5
 			case "precision-detail-lineup":
 				// 十个参考镜头两两配成一个核心拍，拍内硬切，长短版均保留十镜。
 				beatCountOK = len(recipe.Beats) == 5
