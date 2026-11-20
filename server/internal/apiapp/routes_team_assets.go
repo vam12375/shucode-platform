@@ -29,6 +29,7 @@ func registerTeamAssetRoutes(router *gin.Engine, deps *Deps) {
 		Now:        deps.Now,
 		Logger:     deps.Logger,
 	}
+	registerTeamAssetMediaRoutes(router, deps, service)
 
 	resolveActor := func(c *gin.Context) (*AuthenticatedDevice, *store.TeamMembership, bool) {
 		auth, err := authenticateDevice(c.Request.Context(), deps, c)
@@ -69,11 +70,12 @@ func registerTeamAssetRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		c.JSON(http.StatusOK, okData(gin.H{
+			"mediaOrigin": deps.Media.Blobs.Origin,
 			"team": gin.H{
 				"id": membership.Team.ID, "name": membership.Team.Name,
 				"storage": page.Storage,
 			},
-			"assets": page.Assets, "nextCursor": page.NextCursor,
+			"assets": teamAssetsWithMediaURLs(deps, membership.Team.ID, page.Assets), "nextCursor": page.NextCursor,
 		}))
 	})
 

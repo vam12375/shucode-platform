@@ -89,9 +89,10 @@ func TestMediaPreviewOverviewSignedAccessIsolationAndPersistentCache(t *testing.
 	file.Close()
 	for _, method := range []string{"GET", "HEAD"} {
 		response := request(method, u.RequestURI(), false)
-		if response.Code != 200 || response.Header().Get("Content-Type") != "image/jpeg" || response.Header().Get("Cache-Control") != "private, max-age=300" || response.Header().Get("Cross-Origin-Resource-Policy") != "cross-origin" {
+		if response.Code != 200 || response.Header().Get("Content-Type") != "image/jpeg" || response.Header().Get("Cross-Origin-Resource-Policy") != "cross-origin" {
 			t.Fatal(method, response.Code, response.Header())
 		}
+		assertSignedImageCache(t, response, 300)
 		if method == "HEAD" && response.Body.Len() != 0 {
 			t.Fatal("HEAD returned bytes")
 		}

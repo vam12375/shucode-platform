@@ -93,7 +93,10 @@ func serveManagedTeamAssets(c *gin.Context, deps *Deps, service teamassets.Servi
 		teamAssetRouteError(c, deps, err)
 		return
 	}
-	c.JSON(200, okData(gin.H{"team": gin.H{"id": membership.Team.ID, "name": membership.Team.Name, "storage": page.Storage}, "assets": page.Assets, "nextCursor": page.NextCursor, "revision": page.Revision, "notModified": page.NotModified, "facets": page.Facets, "capabilities": teamAssetCapabilities}))
+	for i := range page.Assets {
+		page.Assets[i].CloudAsset = withTeamAssetMediaURLs(deps, membership.Team.ID, page.Assets[i].CloudAsset)
+	}
+	c.JSON(200, okData(gin.H{"team": gin.H{"id": membership.Team.ID, "name": membership.Team.Name, "storage": page.Storage}, "mediaOrigin": deps.Media.Blobs.Origin, "assets": page.Assets, "nextCursor": page.NextCursor, "revision": page.Revision, "notModified": page.NotModified, "facets": page.Facets, "capabilities": teamAssetCapabilities}))
 }
 
 func decodeTeamAssetManagement(c *gin.Context, target any) error {

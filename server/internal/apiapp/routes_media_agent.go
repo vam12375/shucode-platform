@@ -301,7 +301,7 @@ func agentGenerationProjection(ctx context.Context, service *media.Service, proj
 			archiveStatus = "pending"
 		}
 		resultAssets = append(resultAssets, agentGenerationAsset{
-			ID: asset.ID, Kind: asset.Kind, Mime: asset.Mime, URL: service.Blobs.URL(project.TeamID, asset.ID),
+			ID: asset.ID, Kind: asset.Kind, Mime: asset.Mime, URL: service.Blobs.WithPreviewURL(project.TeamID, asset).URL,
 			Name: asset.Name, Width: asset.Width, Height: asset.Height, DurationSeconds: asset.DurationSeconds,
 			TeamAssetID: archive.TeamAssetID, ArchiveStatus: archiveStatus, ArchiveError: archive.Error,
 		})

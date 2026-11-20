@@ -60,7 +60,6 @@ func registerMediaLibraryRoutes(router *gin.Engine, deps *Deps) {
 			mediaLibraryError(c, deps, err)
 			return
 		}
-		asset.URL = deps.Media.Blobs.URL(membership.Team.ID, asset.ID)
 		asset = deps.Media.Blobs.WithPreviewURL(membership.Team.ID, asset)
 		c.JSON(200, okData(asset))
 	})

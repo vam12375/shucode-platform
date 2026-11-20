@@ -179,8 +179,10 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 	registerMediaAgentGenerationRoutes(router, deps)
 	// 供应商会用 HEAD 探测参考媒体；复用 GET 验签与资产检查，避免合法媒体被误判为不可达。
 	serveMediaBlob := func(c *gin.Context) {
+		prepareSignedMediaResponse(c)
 		team, id := c.Param("team"), c.Param("id")
-		if !s.Blobs.Verify(team, id, c.Query("expires"), c.Query("signature")) {
+		params, valid := signedMediaQuery(c, false)
+		if !valid || !s.Blobs.Verify(team, id, params.Get("expires"), params.Get("signature")) {
 			c.Status(403)
 			return
 		}
@@ -191,12 +193,15 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		}
 		for _, a := range assets {
 			if a.ID == id {
-				// 签名 URL 允许 Desktop/Web 以 no-cors 跨源加载预览；只放宽此媒体响应，脚本 CORS 仍关闭。
-				c.Header("Cross-Origin-Resource-Policy", "cross-origin")
-				c.Header("Content-Type", a.Mime)
-				c.Header("Content-Disposition", "inline")
-				c.Header("Cache-Control", "private, max-age=300")
-				c.File(s.Blobs.Path(team, id))
+				version := a.Checksum
+				if version == "" {
+					version = a.ID
+				}
+				if params.Has("v") && params.Get("v") != version {
+					c.Status(403)
+					return
+				}
+				serveSignedMediaFile(c, s.Blobs.Path(team, id), a.Mime, "blob-"+id+"-"+version, params.Get("expires"))
 				return
 			}
 		}
@@ -246,7 +251,6 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 				continue
 			}
 
-			asset.URL = s.Blobs.URL(m.Team.ID, asset.ID)
 			asset = s.Blobs.WithPreviewURL(m.Team.ID, asset)
 			visibleAssets = append(visibleAssets, asset)
 		}

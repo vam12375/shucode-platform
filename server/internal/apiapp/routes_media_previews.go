@@ -8,9 +8,11 @@ import (
 func registerMediaPreviewRoutes(router *gin.Engine, deps *Deps) {
 	cache := media.NewPreviewCache()
 	handler := func(c *gin.Context) {
+		prepareSignedMediaResponse(c)
 		s := deps.Media
 		team, id := c.Param("team"), c.Param("id")
-		if !s.Blobs.Verify(team, id, c.Query("expires"), c.Query("signature")) {
+		params, valid := signedMediaQuery(c, false)
+		if !valid || !s.Blobs.Verify(team, id, params.Get("expires"), params.Get("signature")) {
 			c.Status(403)
 			return
 		}
@@ -23,6 +25,15 @@ func registerMediaPreviewRoutes(router *gin.Engine, deps *Deps) {
 			if asset.ID != id || asset.Internal || (asset.Kind != "image" && asset.Kind != "video") {
 				continue
 			}
+			version := asset.Checksum
+			if version == "" {
+				version = asset.ID
+			}
+			version = media.MediaPreviewVersion + "-" + version
+			if params.Has("v") && params.Get("v") != version {
+				c.Status(403)
+				return
+			}
 			path, err := cache.Get(c.Request.Context(), s.Blobs, team, asset)
 			if err != nil {
 				// 缩略图失败只影响当前读取；不得重试原始生成或改写原件/任务状态。
@@ -30,11 +41,7 @@ func registerMediaPreviewRoutes(router *gin.Engine, deps *Deps) {
 				c.JSON(422, fail(422, "media_preview_failed"))
 				return
 			}
-			c.Header("Cross-Origin-Resource-Policy", "cross-origin")
-			c.Header("Content-Type", "image/jpeg")
-			c.Header("Content-Disposition", "inline")
-			c.Header("Cache-Control", "private, max-age=300")
-			c.File(path)
+			serveSignedMediaFile(c, path, "image/jpeg", version, params.Get("expires"))
 			return
 		}
 		c.Status(404)

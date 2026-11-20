@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"image/jpeg"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +15,8 @@ import (
 	"github.com/google/uuid"
 )
 
-const previewVersion = "jpeg-640-v1"
+const MediaPreviewVersion = "jpeg-640-v1"
+const previewVersion = MediaPreviewVersion
 
 type previewResult struct {
 	done chan struct{}
@@ -34,17 +36,31 @@ func NewPreviewCache() *PreviewCache {
 }
 
 func (b Blobs) PreviewURL(team, id string) string {
-	return strings.Replace(b.URL(team, id), "/api/v1/media/blobs/", "/api/v1/media/previews/", 1)
+	return strings.Replace(b.DisplayURL(team, id), "/api/v1/media/blobs/", "/api/v1/media/previews/", 1)
+}
+
+func mediaVersionURL(raw, version string) string {
+	parsed, _ := url.Parse(raw)
+	params := parsed.Query()
+	params.Set("v", version)
+	parsed.RawQuery = params.Encode()
+	return parsed.String()
 }
 
 func (b Blobs) WithPreviewURL(team string, asset Asset) Asset {
 	asset.ThumbnailURL, asset.PosterURL = "", ""
 	if !asset.Internal {
+		version := asset.Checksum
+		if version == "" {
+			version = asset.ID
+		}
+		asset.URL = mediaVersionURL(b.URL(team, asset.ID), version)
 		if asset.Kind == "image" {
-			asset.ThumbnailURL = b.PreviewURL(team, asset.ID)
+			asset.URL = mediaVersionURL(b.DisplayURL(team, asset.ID), version)
+			asset.ThumbnailURL = mediaVersionURL(b.PreviewURL(team, asset.ID), previewVersion+"-"+version)
 		}
 		if asset.Kind == "video" {
-			asset.PosterURL = b.PreviewURL(team, asset.ID)
+			asset.PosterURL = mediaVersionURL(b.PreviewURL(team, asset.ID), previewVersion+"-"+version)
 		}
 	}
 	return asset

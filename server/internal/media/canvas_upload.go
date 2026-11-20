@@ -86,7 +86,7 @@ func (s *Service) UploadCanvasMediaForUser(ctx context.Context, team, name, prod
 		return Asset{}, err
 	}
 	saved = true
-	a.URL = s.Blobs.URL(team, id)
+	a = s.Blobs.WithPreviewURL(team, a)
 	return (assetRecord{Asset: a, UploaderID: actor.UserID, UploaderName: actor.Name}).public(actor), nil
 }
 

@@ -44,7 +44,8 @@ func TestMediaOriginalSignedHeadAndRange(t *testing.T) {
 	if head.Code != 200 || head.Body.Len() != 0 || head.Header().Get("Content-Length") != strconv.Itoa(len(raw)) {
 		t.Fatalf("合法 HEAD 应只返回原件元数据: status=%d body=%q headers=%v", head.Code, head.Body.String(), head.Header())
 	}
-	if head.Header().Get("Cache-Control") != "private, max-age=300" || head.Header().Get("Cross-Origin-Resource-Policy") != "cross-origin" {
+	assertSignedImageCache(t, head, 300)
+	if head.Header().Get("Cross-Origin-Resource-Policy") != "cross-origin" {
 		t.Fatalf("HEAD 必须保留媒体缓存和跨源展示边界: %v", head.Header())
 	}
 	partial := request("GET", u.RequestURI(), "bytes=4-9")
@@ -129,6 +130,10 @@ func TestMediaOverviewUsesCDNForOriginalsAndPreviews(t *testing.T) {
 			}
 			if !f.deps.Media.Blobs.Verify(team, asset.ID, u.Query().Get("expires"), u.Query().Get("signature")) {
 				t.Fatalf("CDN 地址未保留有效签名: %q", raw)
+			}
+			expires, err := strconv.ParseInt(u.Query().Get("expires"), 10, 64)
+			if err != nil || expires <= time.Now().Unix() || ((asset.Kind == "image" || raw == preview) && expires > time.Now().Unix()+300) {
+				t.Fatal("用户展示授权超过五分钟", raw)
 			}
 		}
 	}

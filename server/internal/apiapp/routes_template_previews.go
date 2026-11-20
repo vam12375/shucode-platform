@@ -32,7 +32,7 @@ func registerTemplatePreviewRoutes(router *gin.Engine, deps *Deps) {
 	})
 	serve := func(c *gin.Context) {
 		name := c.Param("name")
-		c.Header("Cache-Control", "no-store")
+		prepareSignedMediaResponse(c)
 		if !templatelibrary.ValidPreviewName(name) {
 			c.Status(404)
 			return
