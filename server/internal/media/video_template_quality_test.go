@@ -12,7 +12,9 @@ func expectedRecipeVersion(id string) string {
 	switch id {
 	case "product-detail-reassembly":
 		return "3.0.2"
-	case "material-assembly-timepiece", "electronic-pulse-showcase", "precision-detail-lineup":
+	case "electronic-pulse-showcase":
+		return "3.0.1"
+	case "material-assembly-timepiece", "precision-detail-lineup":
 		return "3.0.0"
 	case "brand-kv-unfold":
 		return "2.1.6"
