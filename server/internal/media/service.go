@@ -179,6 +179,9 @@ func (s *Service) Revise(ctx context.Context, team, id string, version int64, pl
 			return err
 		}
 		plan = normalized
+		if err := validateReplicaReadinessRevision(p, plan); err != nil {
+			return err
+		}
 		if p.RetryContext != nil {
 			// 换模型后旧成功镜头可能超过新模型时长；按重规划上下文校验，保留成功段准入例外。
 			if _, _, err := s.buildRetryPlan(ctx, p, plan); err != nil {
@@ -261,6 +264,8 @@ func (s *Service) FailAnalysis(ctx context.Context, team, id string, version int
 		return nil, ErrInvalid
 	}
 	switch code {
+	case "video_replica_reference_mapping_invalid":
+	case "video_replica_purpose_invalid", "video_replica_adaptation_required", "video_replica_adaptation_invalid", "video_replica_adaptation_conflict", "video_replica_adaptation_blocked", "video_replica_adaptation_revision_required", "video_replica_adaptation_unavailable", "video_replica_target_description_required":
 	case "analysis_failed", "video_analysis_scope_invalid", "video_analysis_scope_budget_exhausted", "video_analysis_scope_unavailable", "source_timeline_invalid", "source_url_mismatch", "source_report_invalid", "video_reference_duration_unsupported", "model_not_configured", "duration_or_budget_exceeded", "video_reference_plan_invalid", "video_reference_prompt_limit", "video_reference_unsupported", "video_reference_image_limit", "first_frame_required", "reference_images_required", "video_source_changed", "video_plan_copy_invalid", "video_research_invalid", "video_story_invalid", "video_story_review_required", "video_story_review_conflict", "narration_empty", "narration_too_long", "narration_script_mismatch":
 	default:
 		return nil, ErrInvalid
@@ -281,6 +286,15 @@ func (s *Service) action(ctx context.Context, team, id string, version int64, ac
 				return ErrInvalid
 			}
 			normalized := p.normalizeAcceptedPlan(*p.Plan)
+			var normalizeErr error
+			normalized, normalizeErr = normalizeReplicaAdaptationPlan(p.Brief, normalized)
+			if normalizeErr != nil {
+				return normalizeErr
+			}
+			// 准入在项目 CAS 内再次检查，不能用 UI 绕过或把“暂不执行”占位计划排入付费队列。
+			if err := validateReplicaGenerationReady(p.Brief, normalized); err != nil {
+				return err
+			}
 			p.Plan = &normalized
 			if p.RetryContext != nil {
 				if _, _, err := s.buildRetryPlan(ctx, p, *p.Plan); err != nil {

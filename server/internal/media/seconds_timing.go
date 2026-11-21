@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"math"
+	"strings"
 )
 
 // 秒级创作在准入边界转换为历史编辑刻度；该刻度不代表供应商编码帧率。
@@ -37,6 +38,11 @@ func (p *Plan) UnmarshalJSON(raw []byte) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		return err
+	}
+	for key, field := range fields {
+		if strings.EqualFold(key, "adaptation") && (key != "adaptation" || bytes.Equal(bytes.TrimSpace(field), []byte("null"))) {
+			return ErrInvalid
+		}
 	}
 	var shots []map[string]json.RawMessage
 	if err := json.Unmarshal(fields["shots"], &shots); err != nil {

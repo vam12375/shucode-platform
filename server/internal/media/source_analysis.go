@@ -211,7 +211,7 @@ func (s *Service) ConfigureReference(ctx context.Context, team, id string, versi
 	if !current.Brief.SourceOnly && reflect.DeepEqual(current.Brief, brief) {
 		return current, nil
 	}
-	if current.Status != "source_ready" || !current.Brief.SourceOnly {
+	if (current.Status != "source_ready" || !current.Brief.SourceOnly) && !canReconfigureBlockedReplica(current) {
 		return nil, ErrConflict
 	}
 	models, err := s.Repo.Models(ctx)
@@ -236,11 +236,13 @@ func (s *Service) ConfigureReference(ctx context.Context, team, id string, versi
 		return nil, ErrInvalid
 	}
 	configured, err := s.Mutate(ctx, team, id, version, func(v *Project) error {
-		if v.Status != "source_ready" || !v.Brief.SourceOnly || v.SourceAnalysis == nil {
+		if ((v.Status != "source_ready" || !v.Brief.SourceOnly) && !canReconfigureBlockedReplica(v)) || v.SourceAnalysis == nil {
 			return ErrConflict
 		}
 		v.Brief = brief
 		v.Models = models
+		// 阻塞改编返回同一制作单重分析；只清理尚未执行的旧投影，保留原片、任务与已结算分析身份。
+		v.Plan, v.Shots, v.QuoteMicro = nil, []Shot{}, 0
 		// 原片与改编属于同一聊天；配置期保留定位，下一阶段仍须以新 input/kind 经 CAS 原子替换。
 		v.Status = "draft"
 		v.Error = ""

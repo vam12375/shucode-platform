@@ -60,6 +60,9 @@ func referenceReviewPlan(project *Project, plan Plan) (Plan, error) {
 type wholeReferenceSegment struct{ first, last int }
 
 func validateBriefReferenceMode(b Brief) error {
+	if err := validateReplicaPurpose(b); err != nil {
+		return err
+	}
 	if b.ReferenceMode != "" && b.ReferenceMode != "frames" && b.ReferenceMode != "multimodal" {
 		return ErrInvalid
 	}
@@ -304,20 +307,29 @@ func buildWholeReferenceExecution(b Brief, plan Plan, model Model, models []Mode
 	var total int64
 	for index, segment := range segments {
 		facts := plan.Shots[segment.first:segment.last]
+		compiledFacts, err := replicaExecutionFacts(b, facts, true)
+		if err != nil {
+			return nil, 0, err
+		}
 		duration := durations[index]
 		if duration == 0 {
 			return nil, 0, fmt.Errorf("video_reference_duration_unsupported")
 		}
 		var script strings.Builder
+		script.WriteString(replicaInputGuidance(b, replicaSegmentImageCount(b, facts), true))
 		if b.ReplacementInstructions != "" {
-			script.WriteString("替换目标：" + b.ReplacementInstructions + "\n")
+			instructions, err := replicaExecutionReferenceText(b, replicaExecutionImageIDs(b, facts), true, b.ReplacementInstructions)
+			if err != nil {
+				return nil, 0, err
+			}
+			script.WriteString("替换目标：" + instructions + "\n")
 		}
 		// 旧 frames 绑定只表示段首起始画面；multimodal 使用制作单全局参考，
 		// 不能为了通过旧首帧校验把同一图片复制为每个执行段的首帧。
-		firstImage, firstImagePrompt, clipID, audioID := facts[0].AssetID, facts[0].ImagePrompt, "", ""
+		firstImage, firstImagePrompt, clipID, audioID := facts[0].AssetID, compiledFacts[0].ImagePrompt, "", ""
 		images := map[string]bool{}
 		boundClips, boundAudios := 0, 0
-		for _, fact := range facts {
+		for _, fact := range compiledFacts {
 			if fact.AssetID != "" {
 				images[fact.AssetID] = true
 			}
@@ -362,7 +374,7 @@ func buildWholeReferenceExecution(b Brief, plan Plan, model Model, models []Mode
 		} else if b.ReferenceMode != "multimodal" && firstImage == "" {
 			return nil, 0, fmt.Errorf("first_frame_required")
 		}
-		execution := facts[0]
+		execution := compiledFacts[0]
 		execution.Anchors = nil
 		execution.SourceStart, execution.SourceEnd, execution.Duration = facts[0].SourceStart, facts[len(facts)-1].SourceEnd, duration
 		execution.AssetID, execution.ReferenceVideoAssetID, execution.ReferenceAudioAssetID = firstImage, clipID, audioID

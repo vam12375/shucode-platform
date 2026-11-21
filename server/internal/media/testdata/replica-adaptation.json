@@ -1,0 +1,1580 @@
+[
+  {
+    "name": "valid-motion",
+    "valid": true,
+    "generationReady": true,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "ready",
+        "blockers": []
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "valid-preserve",
+    "valid": true,
+    "generationReady": true,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "preserve",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "ready",
+        "blockers": []
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "valid-legacy",
+    "valid": true,
+    "generationReady": true,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "valid-blocked",
+    "valid": true,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "blocked",
+        "blockers": [
+          {
+            "code": "missing_target_structure",
+            "message": "缺少真实内部结构证据",
+            "shotIndices": [
+              0
+            ]
+          }
+        ]
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-purpose-enum",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "edit",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "ready",
+        "blockers": []
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-purpose-null",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": null,
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "ready",
+        "blockers": []
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-auto-purpose",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "auto",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "ready",
+        "blockers": []
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-source-only-purpose",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": true,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "ready",
+        "blockers": []
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-missing-readiness",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-readiness-null",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": null,
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-readiness-unknown-field",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "ready",
+        "blockers": [],
+        "unknown": true
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-readiness-status",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "unknown",
+        "blockers": []
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-ready-with-blocker",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "ready",
+        "blockers": [
+          {
+            "code": "missing_target_structure",
+            "message": "缺少真实内部结构证据",
+            "shotIndices": [
+              0
+            ]
+          }
+        ]
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-blocked-empty",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "blocked",
+        "blockers": []
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-blockers-null",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "ready",
+        "blockers": null
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-blocker-unknown-code",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "blocked",
+        "blockers": [
+          {
+            "code": "unknown",
+            "message": "缺少真实内部结构证据",
+            "shotIndices": [
+              0
+            ]
+          }
+        ]
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-blocker-unknown-field",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "blocked",
+        "blockers": [
+          {
+            "code": "missing_target_structure",
+            "message": "缺少真实内部结构证据",
+            "shotIndices": [
+              0
+            ],
+            "unknown": true
+          }
+        ]
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-blocker-null-message",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "blocked",
+        "blockers": [
+          {
+            "code": "missing_target_structure",
+            "message": null,
+            "shotIndices": [
+              0
+            ]
+          }
+        ]
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-blocker-empty-message",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "blocked",
+        "blockers": [
+          {
+            "code": "missing_target_structure",
+            "message": "  ",
+            "shotIndices": [
+              0
+            ]
+          }
+        ]
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-blocker-null-indices",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "blocked",
+        "blockers": [
+          {
+            "code": "missing_target_structure",
+            "message": "缺少真实内部结构证据",
+            "shotIndices": null
+          }
+        ]
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-blocker-negative-index",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "blocked",
+        "blockers": [
+          {
+            "code": "missing_target_structure",
+            "message": "缺少真实内部结构证据",
+            "shotIndices": [
+              -1
+            ]
+          }
+        ]
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-blocker-duplicate-indices",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "blocked",
+        "blockers": [
+          {
+            "code": "missing_target_structure",
+            "message": "缺少真实内部结构证据",
+            "shotIndices": [
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-blocker-out-of-range-index",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "blocked",
+        "blockers": [
+          {
+            "code": "missing_target_structure",
+            "message": "缺少真实内部结构证据",
+            "shotIndices": [
+              1
+            ]
+          }
+        ]
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-blocker-index-thirty",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "blocked",
+        "blockers": [
+          {
+            "code": "missing_target_structure",
+            "message": "缺少真实内部结构证据",
+            "shotIndices": [
+              30
+            ]
+          }
+        ]
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  },
+  {
+    "name": "invalid-duplicate-images",
+    "valid": false,
+    "generationReady": false,
+    "brief": {
+      "mode": "replicate",
+      "generationMode": "video_reference",
+      "sourceOnly": false,
+      "referenceVideoPurpose": "motion",
+      "product": "合成商品",
+      "sellingPoints": "",
+      "assetIds": [
+        "replacement",
+        "replacement"
+      ],
+      "referenceAssetId": "source",
+      "referenceDurationSeconds": 5,
+      "referenceUrls": [],
+      "platforms": [
+        "douyin"
+      ],
+      "videoModel": "v",
+      "referenceMode": "multimodal",
+      "resolution": "480p",
+      "aspectRatio": "16:9",
+      "duration": 5,
+      "reviewPlan": true
+    },
+    "plan": {
+      "adaptation": {
+        "status": "ready",
+        "blockers": []
+      },
+      "references": [
+        {
+          "url": "",
+          "title": "合成原片",
+          "capturedAt": "2026-11-21T00:00:00Z",
+          "likes": null,
+          "evidence": "受控夹具",
+          "selectionReason": "用户选择"
+        }
+      ],
+      "shots": [
+        {
+          "sourceUrl": "",
+          "sourceStart": 0,
+          "sourceEnd": 5,
+          "duration": 5,
+          "framing": "商品近景",
+          "camera": "从近景缓慢拉远",
+          "action": "展示目标商品已有外观",
+          "purpose": "商品展示",
+          "prompt": "@图片1提供目标外观，@视频1只参考运镜",
+          "assetId": "",
+          "imagePrompt": "",
+          "subtitle": ""
+        }
+      ]
+    }
+  }
+]

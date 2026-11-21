@@ -200,35 +200,36 @@ type Asset struct {
 	Internal        bool                            `json:"internal,omitempty"`
 }
 type Brief struct {
-	AssetUnderstanding       *AssetUnderstanding `json:"assetUnderstanding,omitempty"`
-	ImageAnalysisFirst       bool                `json:"imageAnalysisFirst,omitempty"`
-	PromptPolicy             string              `json:"promptPolicy,omitempty"` // 缺省两段式；direct 规则见 direct_prompt.go
-	GenerationPolicy         string              `json:"generationPolicy,omitempty"`
-	CreativeExpansion        string              `json:"creativeExpansion,omitempty"`
-	ResearchPolicy           string              `json:"researchPolicy,omitempty"`
-	CreativeIntent           string              `json:"creativeIntent,omitempty"`
-	DistributionPlatform     string              `json:"distributionPlatform,omitempty"`
-	TemplateID               string              `json:"templateId,omitempty"`
-	TemplateVersion          string              `json:"templateVersion,omitempty"`
-	SourceOnly               bool                `json:"sourceOnly,omitempty"`
-	GenerationMode           string              `json:"generationMode,omitempty"`
-	ReferenceMode            string              `json:"referenceMode,omitempty"`
-	Mode                     string              `json:"mode"`
-	Product                  string              `json:"product"`
-	SellingPoints            string              `json:"sellingPoints"`
-	AssetIDs                 []string            `json:"assetIds"`
-	ReferenceURLs            []string            `json:"referenceUrls"`
-	Platforms                []string            `json:"platforms"`
-	VideoModel               string              `json:"videoModel"`
-	ImageModel               string              `json:"imageModel,omitempty"`
-	Resolution               string              `json:"resolution"`
-	AspectRatio              string              `json:"aspectRatio"`
-	Duration                 int                 `json:"duration"`
-	MaxCreditsMicro          int64               `json:"maxCreditsMicro,omitempty"`
-	ReviewPlan               bool                `json:"reviewPlan"`
-	ReferenceAssetID         string              `json:"referenceAssetId,omitempty"`
-	ReferenceDurationSeconds float64             `json:"referenceDurationSeconds,omitempty"`
-	ReplacementInstructions  string              `json:"replacementInstructions,omitempty"`
+	AssetUnderstanding       *AssetUnderstanding     `json:"assetUnderstanding,omitempty"`
+	ImageAnalysisFirst       bool                    `json:"imageAnalysisFirst,omitempty"`
+	PromptPolicy             string                  `json:"promptPolicy,omitempty"` // 缺省两段式；direct 规则见 direct_prompt.go
+	GenerationPolicy         string                  `json:"generationPolicy,omitempty"`
+	CreativeExpansion        string                  `json:"creativeExpansion,omitempty"`
+	ResearchPolicy           string                  `json:"researchPolicy,omitempty"`
+	CreativeIntent           string                  `json:"creativeIntent,omitempty"`
+	DistributionPlatform     string                  `json:"distributionPlatform,omitempty"`
+	TemplateID               string                  `json:"templateId,omitempty"`
+	TemplateVersion          string                  `json:"templateVersion,omitempty"`
+	SourceOnly               bool                    `json:"sourceOnly,omitempty"`
+	GenerationMode           string                  `json:"generationMode,omitempty"`
+	ReferenceMode            string                  `json:"referenceMode,omitempty"`
+	ReferenceVideoPurpose    ReplicaReferencePurpose `json:"referenceVideoPurpose,omitempty"`
+	Mode                     string                  `json:"mode"`
+	Product                  string                  `json:"product"`
+	SellingPoints            string                  `json:"sellingPoints"`
+	AssetIDs                 []string                `json:"assetIds"`
+	ReferenceURLs            []string                `json:"referenceUrls"`
+	Platforms                []string                `json:"platforms"`
+	VideoModel               string                  `json:"videoModel"`
+	ImageModel               string                  `json:"imageModel,omitempty"`
+	Resolution               string                  `json:"resolution"`
+	AspectRatio              string                  `json:"aspectRatio"`
+	Duration                 int                     `json:"duration"`
+	MaxCreditsMicro          int64                   `json:"maxCreditsMicro,omitempty"`
+	ReviewPlan               bool                    `json:"reviewPlan"`
+	ReferenceAssetID         string                  `json:"referenceAssetId,omitempty"`
+	ReferenceDurationSeconds float64                 `json:"referenceDurationSeconds,omitempty"`
+	ReplacementInstructions  string                  `json:"replacementInstructions,omitempty"`
 	// 创作意图与文案控制，全部可选；客户端仅在 overview 声明 capability 时发送。
 	Audience          string            `json:"audience,omitempty"`
 	Tone              string            `json:"tone,omitempty"`
@@ -415,11 +416,12 @@ type ShotPlan struct {
 	Sound                 string `json:"sound,omitempty"`
 }
 type Plan struct {
-	Segmentation *Segmentation     `json:"segmentation,omitempty"`
-	Story        *StoryPlan        `json:"story,omitempty"`
-	Research     *ResearchDecision `json:"research,omitempty"`
-	References   []Reference       `json:"references"`
-	Shots        []ShotPlan        `json:"shots"`
+	Adaptation   *ReplicaAdaptation `json:"adaptation,omitempty"`
+	Segmentation *Segmentation      `json:"segmentation,omitempty"`
+	Story        *StoryPlan         `json:"story,omitempty"`
+	Research     *ResearchDecision  `json:"research,omitempty"`
+	References   []Reference        `json:"references"`
+	Shots        []ShotPlan         `json:"shots"`
 }
 type Analysis struct {
 	Kind              string `json:"kind,omitempty"`

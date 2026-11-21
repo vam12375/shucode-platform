@@ -335,6 +335,9 @@ func buildShotsWithReferenceScript(b Brief, plan Plan, models []Model, scriptVer
 }
 
 func buildShotsPreservingSuccesses(b Brief, plan Plan, models []Model, scriptVersion int, preserved map[int]Shot) ([]Shot, int64, error) {
+	if err := validateReplicaAdaptation(b, plan); err != nil {
+		return nil, 0, err
+	}
 	if scriptVersion != 0 && scriptVersion != 1 {
 		return nil, 0, ErrInvalid
 	}
@@ -470,9 +473,19 @@ func buildShotsPreservingSuccesses(b Brief, plan Plan, models []Model, scriptVer
 			p.AssetID, p.ImagePrompt = "", ""
 		}
 		if replica && !wholeReference && scriptVersion == 1 {
+			facts, err := replicaExecutionFacts(b, []ShotPlan{p}, false)
+			if err != nil {
+				return nil, 0, err
+			}
+			p = facts[0]
 			var script strings.Builder
+			script.WriteString(replicaInputGuidance(b, replicaSegmentImageCount(b, []ShotPlan{p}), false))
 			if b.ReplacementInstructions != "" {
-				script.WriteString("替换目标：" + b.ReplacementInstructions + "\n")
+				instructions, err := replicaExecutionReferenceText(b, replicaExecutionImageIDs(b, []ShotPlan{p}), false, b.ReplacementInstructions)
+				if err != nil {
+					return nil, 0, err
+				}
+				script.WriteString("替换目标：" + instructions + "\n")
 			}
 			appendWholeReferenceScript(&script, p, p.SourceStart, p.SourceEnd, p.Duration, scriptVersion)
 			if len(utf16.Encode([]rune(script.String()))) > 4000 {

@@ -69,6 +69,9 @@ func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int
 	}
 	adaptation := a.Kind == "adaptation"
 	if adaptation {
+		if p.Brief.ReferenceVideoPurpose != "" && (p.Analysis == nil || a.TaskID != p.Analysis.TaskID || a.InputID == p.Analysis.InputID || a.WorkspacePath != p.Analysis.WorkspacePath || a.WorkspaceIdentity != p.Analysis.WorkspaceIdentity) {
+			return nil, ErrConflict
+		}
 		if p.AnalysisFee == nil || p.SourceAnalysis == nil || p.SourceAnalysis.SourceChecksum != p.SourceChecksum {
 			return nil, ErrConflict
 		}
@@ -143,6 +146,10 @@ func (s *Service) acceptAnalysisPlan(ctx context.Context, team, id string, versi
 	}
 	if current == nil {
 		return nil, ErrInvalid
+	}
+	plan, err = normalizeReplicaAdaptationPlan(current.Brief, plan)
+	if err != nil {
+		return nil, err
 	}
 	if !imageFirstPlanningBound(current) {
 		return nil, ErrConflict

@@ -79,6 +79,11 @@ func (p *Project) normalizeAcceptedPlan(plan Plan) Plan {
 // 普通自动规划可以根据公开目录选配方。仅在初次采纳新身份时查目录，重放、生成和未改选的修订沿用已受理结果。
 func (s *Service) normalizeNewPlan(ctx context.Context, project *Project, plan Plan) (Plan, error) {
 	b := project.Brief
+	var err error
+	plan, err = normalizeReplicaAdaptationPlan(b, plan)
+	if err != nil {
+		return Plan{}, err
+	}
 	normalized := project.normalizeAcceptedPlan(plan)
 	if !automaticRecipeClaim(b, &plan) || normalized.Research.Mode == "template" {
 		return normalized, nil

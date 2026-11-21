@@ -1,6 +1,7 @@
 package media
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -76,6 +77,25 @@ func (v *StoryAssetRole) UnmarshalJSON(raw []byte) error {
 func (v *StoryGap) UnmarshalJSON(raw []byte) error {
 	type plain StoryGap
 	var x plain
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	if fields["description"] == nil && fields["gap"] != nil {
+		if fields["resolution"] != nil || fields["suggestion"] != nil {
+			return ErrInvalid
+		}
+		// 旧模型用 gap/action/reason 表达同一素材缺口；先无损迁移，再严格校验，避免 upload 阻塞失效。
+		fields["description"], fields["resolution"], fields["suggestion"] = fields["gap"], fields["action"], fields["reason"]
+		delete(fields, "gap")
+		delete(fields, "action")
+		delete(fields, "reason")
+		var err error
+		raw, err = json.Marshal(fields)
+		if err != nil {
+			return err
+		}
+	}
 	if _, err := decodeCompositionFields(raw, &x, []string{"description", "suggestion", "resolution"}, nil); err != nil {
 		return err
 	}
