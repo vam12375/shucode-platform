@@ -31,6 +31,11 @@ test("production assets enforce public, session, platform and setup boundaries",
     }
     assert.ok((await readdir(join(outDir, "assets"))).every((name) => !name.endsWith(".map")));
     const html = await readFile(join(outDir, "index.html"), "utf8");
+    assert.equal(policy.files["theme.js"], "public");
+    assert.match(html, /<script src="\/console\/theme\.js"\s*><\/script>/);
+    assert.ok(html.indexOf("/console/theme.js") < html.indexOf("<body>"));
+    assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>/);
+    assert.match(await readFile(join(outDir, "theme.js"), "utf8"), /console-theme/);
     for (const [file, level] of Object.entries(policy.files)) {
       if (level !== "public") assert.ok(!html.includes(file), `private asset preloaded: ${file}`);
     }

@@ -3,6 +3,7 @@ import { api, navigate } from "./api.js";
 import { LoginPage } from "./pages/Login.js";
 import { InvitePage } from "./pages/Invite.js";
 import { DialogHost, ToastHost } from "./components/Feedback.js";
+import { ThemePicker } from "./components/ThemePicker.js";
 import type { SessionData } from "./permissions.js";
 
 // 登录前只交付认证入口；动态模块的文件权限由构建清单与服务端共同执行。
@@ -74,5 +75,8 @@ export function Entry() {
   );
   else if (route.startsWith("#/invite")) content = <><ToastHost /><DialogHost /><InvitePage onAccepted={refreshSession} /></>;
   else content = <LoginPage onLogin={onLogin} />;
-  return <LoadBoundary><Suspense fallback={<div className="center">加载中…</div>}>{content}</Suspense></LoadBoundary>;
+  return <>
+    {!session || session.mfaSetupRequired ? <div className="theme-floating"><ThemePicker /></div> : null}
+    <LoadBoundary><Suspense fallback={<div className="center">加载中…</div>}>{content}</Suspense></LoadBoundary>
+  </>;
 }

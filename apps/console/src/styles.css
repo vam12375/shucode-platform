@@ -21,6 +21,34 @@
   --ok-text: #226b35;
   --info: #2e7dbf;
   --info-text: #1f5f92;
+  --rail: #e9eae4;
+  --surface-hover: #edeee8;
+  --row-hover: #f0f1eb;
+  --control: #fff;
+  --placeholder: #9ba1a3;
+  --gauge-track: #dde0d6;
+  --switch-track: #d5d8ce;
+  --switch-thumb: #fff;
+  --ink-on-accent: #20242a;
+  --signal-fill: #bf3a1f;
+  --ink-on-signal: #fff;
+  --signal-border: rgba(191, 58, 31, 0.4);
+  --signal-tint: rgba(191, 58, 31, 0.06);
+  --notice: #fbf4df;
+  --notice-stop: #f9e9e4;
+  --turnstile-error: #8d3d28;
+  --amber-stripe: #f4c55a;
+  --switch-active-border: #c98a05;
+  --shadow-color: rgba(34, 38, 42, 0.14);
+  --overlay: rgba(34, 38, 42, 0.4);
+  --scrollbar: rgba(34, 38, 42, 0.28);
+  --scrollbar-hover: rgba(34, 38, 42, 0.45);
+  --donut-color-1: #e8a008;
+  --donut-color-2: #8a5c03;
+  --donut-color-3: #f2ac2c;
+  --donut-color-4: #b07804;
+  --donut-color-5: #f2cf7a;
+  --donut-color-6: #666d70;
   --font-din:
     "DIN Condensed", "DIN Alternate", "Avenir Next Condensed", "Arial Narrow",
     sans-serif;
@@ -29,6 +57,44 @@
     sans-serif;
   --font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --radius: 4px;
+}
+
+/* 深色沿用石墨面板与琥珀刻度；文字、控件和状态色分别适配对比度。 */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --panel: #191d21;
+  --surface: #242a2e;
+  --surface-2: #2a3135;
+  --ink: #e8ebe6;
+  --ink-soft: #abb4b4;
+  --line: #4e595b;
+  --line-soft: #384247;
+  --amber-text: #f2c15b;
+  --amber-deep: #dca133;
+  --signal: #ff927b;
+  --ok: #6bce8a;
+  --ok-text: #8bdba5;
+  --info: #6db7ed;
+  --info-text: #91c9f1;
+  --rail: #20262a;
+  --surface-hover: #333c40;
+  --row-hover: #2c3438;
+  --control: #1c2226;
+  --placeholder: #899596;
+  --gauge-track: #384247;
+  --switch-track: #465155;
+  --signal-border: rgba(255, 146, 123, 0.45);
+  --signal-tint: rgba(255, 146, 123, 0.08);
+  --notice: #373020;
+  --notice-stop: #3b2926;
+  --turnstile-error: #ff927b;
+  --shadow-color: rgba(0, 0, 0, 0.28);
+  --overlay: rgba(0, 0, 0, 0.6);
+  --scrollbar: rgba(171, 180, 180, 0.32);
+  --scrollbar-hover: rgba(171, 180, 180, 0.5);
+  --donut-color-2: #f2c15b;
+  --donut-color-4: #dca133;
+  --donut-color-6: #abb4b4;
 }
 
 *,
@@ -134,7 +200,7 @@ a:hover {
   display: grid;
   /* 左侧范围段窄一档；右侧四格读数等分。 */
   grid-template-columns: minmax(170px, 0.75fr) repeat(4, minmax(0, 1fr));
-  background: #e9eae4;
+  background: var(--rail);
   border-bottom: 1px solid var(--line);
 }
 
@@ -286,7 +352,7 @@ a:hover {
 }
 
 .side nav.is-scrolling {
-  scrollbar-color: rgba(34, 38, 42, 0.28) transparent;
+  scrollbar-color: var(--scrollbar) transparent;
 }
 
 .brand {
@@ -346,7 +412,7 @@ a.nav-item:hover {
 }
 
 a.nav-item.active {
-  background: #edeee8;
+  background: var(--surface-hover);
   box-shadow: inset 3px 0 0 var(--amber);
   font-weight: 600;
 }
@@ -355,6 +421,60 @@ a.nav-item.active {
   margin-top: auto;
   padding: 10px 0 0;
   flex: none;
+}
+
+/* 三档主题在登录页与侧栏共用，选中态沿用琥珀刻度线。 */
+.theme-picker {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.theme-option {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.theme-option:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.theme-option[aria-pressed="true"] {
+  background: var(--surface-hover);
+  box-shadow: inset 0 -2px 0 var(--amber);
+  color: var(--ink);
+}
+
+.side-foot > .theme-picker {
+  margin-bottom: 10px;
+}
+
+.theme-floating {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 50;
+}
+
+.theme-floating .theme-picker {
+  width: 204px;
 }
 
 /* ---- 侧栏底部参考区：UI 组件库入口，钉在导航与用户卡之间 ---- */
@@ -378,7 +498,7 @@ a.nav-item.active {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
-  box-shadow: 0 1px 0 rgba(34, 38, 42, 0.04);
+  box-shadow: 0 1px 0 var(--shadow-color);
 }
 
 .user-card-top {
@@ -394,7 +514,7 @@ a.nav-item.active {
   flex: none;
   border-radius: 50%;
   background: var(--amber);
-  color: #20242a;
+  color: var(--ink-on-accent);
   display: grid;
   place-items: center;
   font-weight: 700;
@@ -432,7 +552,7 @@ a.nav-item.active {
   justify-content: center;
   gap: 6px;
   padding: 6px 10px;
-  border: 1px solid rgba(191, 58, 31, 0.4);
+  border: 1px solid var(--signal-border);
   border-radius: 3px;
   background: transparent;
   color: var(--signal);
@@ -445,7 +565,7 @@ a.nav-item.active {
 }
 
 .user-card .logout:hover {
-  background: rgba(191, 58, 31, 0.06);
+  background: var(--signal-tint);
   border-color: var(--signal);
 }
 
@@ -563,7 +683,7 @@ h2 {
   position: relative;
   width: 190px;
   height: 10px;
-  background: #dde0d6;
+  background: var(--gauge-track);
   border-radius: 2px;
   background-image: repeating-linear-gradient(
     90deg,
@@ -660,7 +780,7 @@ h2 {
 }
 
 .table tbody tr:hover {
-  background: #f0f1eb;
+  background: var(--row-hover);
 }
 
 .table .num {
@@ -675,7 +795,7 @@ h2 {
   font-family: var(--font-mono);
   font-size: 12.5px;
   font-weight: 600;
-  background: #edeee8;
+  background: var(--surface-hover);
   font-variant-numeric: tabular-nums;
 }
 
@@ -819,7 +939,7 @@ h2 {
   border-radius: 3px;
   border: 1px solid var(--amber);
   background: var(--amber);
-  color: #20242a;
+  color: var(--ink-on-accent);
   cursor: pointer;
   transition:
     background 0.15s ease,
@@ -842,18 +962,18 @@ h2 {
 }
 
 .btn-ghost:hover {
-  background: #edeee8;
+  background: var(--surface-hover);
   border-color: var(--ink);
 }
 
 .btn-danger {
   background: transparent;
-  border-color: rgba(191, 58, 31, 0.4);
+  border-color: var(--signal-border);
   color: var(--signal);
 }
 
 .btn-danger:hover {
-  background: rgba(191, 58, 31, 0.06);
+  background: var(--signal-tint);
   border-color: var(--signal);
 }
 
@@ -874,13 +994,13 @@ h2 {
   padding: 7px 10px;
   border: 1px solid var(--line);
   border-radius: 3px;
-  background: #fff;
+  background: var(--control);
   color: var(--ink);
   min-width: 0;
 }
 
 .input::placeholder {
-  color: #9ba1a3;
+  color: var(--placeholder);
 }
 
 .input:read-only {
@@ -912,7 +1032,7 @@ textarea {
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 3px;
-  background: #fff;
+  background: var(--control);
   color: var(--ink);
 }
 
@@ -960,7 +1080,7 @@ textarea {
 .switch i {
   position: absolute;
   inset: 0;
-  background: #d5d8ce;
+  background: var(--switch-track);
   border: 1px solid var(--line);
   border-radius: 10px;
   transition: background 0.15s ease;
@@ -973,7 +1093,7 @@ textarea {
   left: 2px;
   width: 14px;
   height: 14px;
-  background: #fff;
+  background: var(--switch-thumb);
   border: 1px solid var(--line);
   border-radius: 50%;
   transition: transform 0.15s ease;
@@ -986,7 +1106,7 @@ textarea {
 
 .switch input:checked + i::after {
   transform: translateX(16px);
-  border-color: #c98a05;
+  border-color: var(--switch-active-border);
 }
 
 .switch input:focus-visible + i {
@@ -1057,7 +1177,7 @@ textarea {
   background: repeating-linear-gradient(
     45deg,
     var(--amber) 0 4px,
-    #f4c55a 4px 8px
+    var(--amber-stripe) 4px 8px
   );
 }
 
@@ -1133,7 +1253,7 @@ textarea {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 8px 10px;
-  box-shadow: 0 8px 24px rgba(34, 38, 42, 0.12);
+  box-shadow: 0 8px 24px var(--shadow-color);
   font-size: 12px;
   min-width: 150px;
 }
@@ -1278,7 +1398,7 @@ textarea {
   padding: 9px 14px;
   border: 1px solid var(--line);
   border-left: 3px solid var(--amber);
-  background: #fbf4df;
+  background: var(--notice);
   font-size: 13px;
   margin: 0 0 18px;
   border-radius: 3px;
@@ -1300,7 +1420,7 @@ textarea {
 
 .notice.stop {
   border-left-color: var(--signal);
-  background: #f9e9e4;
+  background: var(--notice-stop);
 }
 
 .notice.stop .k {
@@ -1336,7 +1456,7 @@ textarea {
   border-left: 3px solid var(--amber);
   border-radius: 3px;
   background: var(--surface);
-  box-shadow: 0 6px 18px rgba(34, 38, 42, 0.14);
+  box-shadow: 0 6px 18px var(--shadow-color);
   font-size: 13px;
 }
 
@@ -1401,7 +1521,7 @@ textarea {
   display: grid;
   place-items: center;
   padding: 16px;
-  background: rgba(34, 38, 42, 0.4);
+  background: var(--overlay);
 }
 
 .dialog {
@@ -1415,7 +1535,7 @@ textarea {
   border: 1px solid var(--line);
   border-top: 3px solid var(--amber);
   border-radius: 3px;
-  box-shadow: 0 12px 32px rgba(34, 38, 42, 0.22);
+  box-shadow: 0 12px 32px var(--shadow-color);
 }
 
 .dialog.danger {
@@ -1477,7 +1597,7 @@ textarea {
   padding: 7px 10px;
   border: 1px solid var(--line);
   border-radius: 3px;
-  background: #fff;
+  background: var(--control);
   color: var(--ink);
   cursor: pointer;
   text-align: left;
@@ -1510,7 +1630,7 @@ textarea {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 3px;
-  box-shadow: 0 10px 26px rgba(34, 38, 42, 0.16);
+  box-shadow: 0 10px 26px var(--shadow-color);
 }
 
 .ui-select-option {
@@ -1529,7 +1649,7 @@ textarea {
 }
 
 .ui-select-option.highlighted {
-  background: #edeee8;
+  background: var(--surface-hover);
 }
 
 .ui-select-option.selected {
@@ -1548,7 +1668,7 @@ textarea {
   padding: 4px 10px;
   border: 1px solid var(--line);
   border-radius: 3px;
-  background: #fff;
+  background: var(--control);
   color: var(--ink);
   cursor: pointer;
 }
@@ -1556,7 +1676,7 @@ textarea {
 .import-chip.selected,
 .choice-chip.selected {
   border-color: var(--amber);
-  background: #fbf4df;
+  background: var(--notice);
   color: var(--amber-text);
   font-weight: 600;
 }
@@ -1625,8 +1745,8 @@ textarea {
   min-width: 18px;
   padding: 0 5px;
   border-radius: 999px;
-  background: var(--signal);
-  color: #fff;
+  background: var(--signal-fill);
+  color: var(--ink-on-signal);
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
@@ -1785,7 +1905,7 @@ textarea {
 
 .media-tier-pill.is-missing {
   border-style: dashed;
-  border-color: rgba(191, 58, 31, 0.45);
+  border-color: var(--signal-border);
   background: transparent;
 }
 
@@ -1804,7 +1924,7 @@ textarea {
 .media-change-tag {
   padding: 1px 6px;
   border-radius: 2px;
-  background: #fbf4df;
+  background: var(--notice);
   color: var(--amber-text);
   font-size: 11px;
   font-weight: 600;
@@ -1854,7 +1974,7 @@ textarea {
 
 /* 有未保存修改时整条换成琥珀底，离开页面前仍能一眼看到。 */
 .media-save-bar.is-dirty {
-  background: #fbf4df;
+  background: var(--notice);
   border-top-color: var(--amber);
 }
 
@@ -2200,13 +2320,13 @@ textarea {
 }
 
 :is(.main, .side, .vscroll, .table-scroll, .ui-select-menu).is-scrolling {
-  scrollbar-color: rgba(34, 38, 42, 0.28) transparent;
+  scrollbar-color: var(--scrollbar) transparent;
   /* 浮现：要快。 */
   transition: scrollbar-color 0.12s ease;
 }
 
 :is(.main, .side, .vscroll, .table-scroll, .ui-select-menu).is-scrolling:hover {
-  scrollbar-color: rgba(34, 38, 42, 0.45) transparent;
+  scrollbar-color: var(--scrollbar-hover) transparent;
 }
 
 /* API Key 等非登录凭据的遮罩输入：用 CSS 圆点伪装成密码样式，
@@ -2241,7 +2361,7 @@ textarea {
 }
 
 .cell-box.editing {
-  background: #fff;
+  background: var(--control);
   box-shadow: inset 0 0 0 1px var(--amber);
 }
 
@@ -2281,7 +2401,7 @@ textarea {
 .model-card {
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--control);
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
@@ -2406,7 +2526,7 @@ textarea {
   display: grid;
   place-items: center;
   background: var(--panel);
-  padding: 24px;
+  padding: 80px 24px 24px;
 }
 
 .login-card {
@@ -2490,7 +2610,7 @@ textarea {
 }
 
 .turnstile-error {
-  color: #8d3d28;
+  color: var(--turnstile-error);
 }
 
 .login-card .btn {
@@ -2774,12 +2894,6 @@ textarea {
 }
 
 .donut-ring {
-  --donut-color-1: #e8a008;
-  --donut-color-2: #8a5c03;
-  --donut-color-3: #f2ac2c;
-  --donut-color-4: #b07804;
-  --donut-color-5: #f2cf7a;
-  --donut-color-6: #666d70;
   flex: 0 0 auto;
   width: 176px;
   height: 176px;
@@ -3126,7 +3240,7 @@ textarea {
   position: fixed;
   inset: 0;
   z-index: 70;
-  background: rgba(34, 38, 42, 0.4);
+  background: var(--overlay);
 }
 
 .drawer {
@@ -3140,7 +3254,7 @@ textarea {
   width: min(440px, 94vw);
   background: var(--surface);
   border-left: 1px solid var(--line);
-  box-shadow: -12px 0 32px rgba(34, 38, 42, 0.18);
+  box-shadow: -12px 0 32px var(--shadow-color);
 }
 
 .drawer-h {

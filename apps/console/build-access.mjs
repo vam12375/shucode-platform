@@ -68,6 +68,7 @@ export function consoleAssetAccess() {
         }
       }
       files["favicon.png"] = "public";
+      files["theme.js"] = "public";
       await writeFile(resolve(dir, "asset-access.json"), JSON.stringify({ version: 1, files }));
     },
   };

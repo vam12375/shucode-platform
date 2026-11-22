@@ -40,21 +40,17 @@ interface SwatchRow {
   dotVar: string;
   name: string;
   doc: string;
-  dot: string;
-  text: string;
   usage: string;
   chips: Array<{ label: string; where: string }>;
 }
 
-/** 五级语义色板：dot/text 色值与 styles.css 令牌一一对应。 */
+/** 五级语义色板：浅色与深色共用语义令牌。 */
 const TONES: SwatchRow[] = [
   {
     tone: "ok",
     dotVar: "ok",
     name: "成功",
     doc: "--ok / --ok-text",
-    dot: "#2E8B47",
-    text: "#226B35",
     usage: "操作按预期完成，或资源当前可用——确定性、结论性的状态。",
     chips: [
       { label: "成功", where: "用量流水 / 用量明细" },
@@ -70,8 +66,6 @@ const TONES: SwatchRow[] = [
     dotVar: "info",
     name: "进行中",
     doc: "--info / --info-text",
-    dot: "#2E7DBF",
-    text: "#1F5F92",
     usage: "异步动作已受理但未出结果——时间性状态，结束后必须转为 ok 或 stop。",
     chips: [
       { label: "进行中", where: "预留 · 长任务" },
@@ -83,8 +77,6 @@ const TONES: SwatchRow[] = [
     dotVar: "amber",
     name: "告警",
     doc: "--amber / --amber-text",
-    dot: "#E8A008",
-    text: "#8A5C03",
     usage: "未失败但需要留意的临界态——额度逼近或客户端中断。",
     chips: [
       { label: "近额", where: "团队（用量 ≥ 90%）" },
@@ -97,8 +89,6 @@ const TONES: SwatchRow[] = [
     dotVar: "signal",
     name: "失败",
     doc: "--signal",
-    dot: "#BF3A1F",
-    text: "#BF3A1F",
     usage: "已发生错误或资源被强制终止——需要人工介入的状态。",
     chips: [
       { label: "错误", where: "用量流水" },
@@ -112,8 +102,6 @@ const TONES: SwatchRow[] = [
     dotVar: "line",
     name: "中性",
     doc: "--line / --ink-soft",
-    dot: "#C7CBC1",
-    text: "#666D70",
     usage: "降噪：非当前、非活跃或无语义结果——不参与告警但保留信息。",
     chips: [
       { label: "不限", where: "团队额度" },
@@ -204,7 +192,7 @@ export function UiLibraryPage() {
                   {row.name} · {row.tone}
                 </div>
                 <p className="swatch-hex">
-                  {row.dot} / 文字 {row.text}
+                  {row.doc}
                 </p>
                 <p className="swatch-use">{row.usage}</p>
                 <div className="swatch-chips">

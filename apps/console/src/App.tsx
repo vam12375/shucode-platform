@@ -17,6 +17,7 @@ import { DialogHost, ToastHost } from "./components/Feedback.js";
 import { MfaSettings } from "./components/MfaSettings.js";
 import { Glyph } from "./components/Icon.js";
 import { ReadoutRail } from "./components/ReadoutRail.js";
+import { ThemePicker } from "./components/ThemePicker.js";
 import { AuditPage } from "./pages/Audit.js";
 import { DevicesPage } from "./pages/Devices.js";
 import { InvitePage } from "./pages/Invite.js";
@@ -299,6 +300,7 @@ export function App({ session, onSignedOut }: { session: SessionData; onSignedOu
           </nav>
           {referenceNav}
           <div className="side-foot">
+            <ThemePicker />
             {canManagePlatform ? (
               <a href="#/profile" className="nav-item">
                 <Glyph icon={UserCog} />
