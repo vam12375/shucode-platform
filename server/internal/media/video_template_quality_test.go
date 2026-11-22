@@ -27,7 +27,7 @@ func expectedRecipeVersion(id string) string {
 		return "3.0.0"
 	case "brand-kv-unfold":
 		return "2.1.6"
-	case "food-serving", "fresh-ingredient", "floating-exploded-showcase":
+	case "black-gold-reveal", "food-serving", "fresh-ingredient", "floating-exploded-showcase":
 		return "3.0.7"
 	default:
 		return "3.0.6"
@@ -58,6 +58,8 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 				}
 			}
 			switch recipe.ID {
+			case "black-gold-reveal":
+				beatCountOK = len(recipe.Beats) == 7
 			case "rhythmic-feature-demo":
 				// 六个编辑窗口保留接触、反馈与明暗的节奏，拍内起音不是独立生成请求。
 				beatCountOK = len(recipe.Beats) == 6
