@@ -109,7 +109,7 @@ export function UsageDateRange({ preset, from, to, label, onApply }: {
       id={panelId}
       role="dialog"
       aria-label="趋势日期范围"
-      style={{ position: "fixed", ...anchor, zIndex: 80, overflow: "auto", boxSizing: "border-box", padding: 16, border: "1px solid var(--line)", borderRadius: "var(--radius)", background: "var(--surface)", boxShadow: "0 8px 28px rgba(0, 0, 0, 0.14)" }}
+      style={{ position: "fixed", ...anchor, zIndex: 80, overflow: "auto", boxSizing: "border-box", padding: 16, border: "1px solid var(--line)", borderRadius: "var(--radius)", background: "var(--surface)", boxShadow: "0 8px 28px var(--shadow-color)" }}
     >
       <p className="readout" style={{ margin: "0 0 10px" }}>选择趋势范围 · 上海时间</p>
       <div role="group" aria-label="趋势范围预设" style={{ display: "grid", gridTemplateColumns: `repeat(${anchor.width < 336 ? 3 : 4}, minmax(0, 1fr))`, gap: 6 }}>
