@@ -11,7 +11,7 @@ import (
 
 func TestTemplateFilesManifestAndIsolation(t *testing.T) {
 	got, err := loadVideoTemplateCatalog(videoTemplateFiles)
-	if err != nil || len(got) != 69 {
+	if err != nil || len(got) != 84 {
 		t.Fatalf("catalog: count=%d err=%v", len(got), err)
 	}
 	var names []string

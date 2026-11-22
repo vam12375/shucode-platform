@@ -6,7 +6,18 @@ import (
 	"testing"
 )
 
+var onlineProductAdRecipeIDs = map[string]bool{
+	"velocity-light-matchcut": true, "celestial-spark-reveal": true, "mixed-media-stride": true,
+	"street-pop-product": true, "sport-to-detail-eyewear": true, "luminous-outline-turn": true,
+	"editorial-product-pages": true, "botanical-sculpture-reveal": true, "counterbalance-object-film": true,
+	"light-cone-material-response": true, "metallic-drape-orbit": true, "trunk-spatial-choreography": true,
+	"sole-silhouette-formation": true, "screen-world-roundtrip": true, "mineral-frame-product": true,
+}
+
 func expectedRecipeVersion(id string) string {
+	if onlineProductAdRecipeIDs[id] {
+		return "3.0.0"
+	}
 	switch id {
 	case "chromatic-micro-world":
 		return "3.0.1"
@@ -28,8 +39,8 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(templates) != 69 {
-		t.Fatalf("expected 69 recipes, got %d", len(templates))
+	if len(templates) != 84 {
+		t.Fatalf("expected 84 recipes, got %d", len(templates))
 	}
 	seen := map[string]bool{}
 	actions := map[string]bool{}
@@ -40,6 +51,12 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 			timed := recipe.NominalSeconds != 0
 			versionOK := recipe.Version == expectedRecipeVersion(recipe.ID)
 			beatCountOK := len(recipe.Beats) >= 12 && len(recipe.Beats) <= 16
+			if onlineProductAdRecipeIDs[recipe.ID] {
+				beatCountOK = len(recipe.Beats) == 5
+				if recipe.Family != "product" || recipe.Provenance == nil || !strings.HasPrefix(recipe.Provenance.URL, "https://") || recipe.Provenance.Observation == "" || recipe.Provenance.Adaptation == "" {
+					t.Fatal("online product recipe lost its public source or adaptation boundary")
+				}
+			}
 			switch recipe.ID {
 			case "rhythmic-feature-demo":
 				// 六个编辑窗口保留接触、反馈与明暗的节奏，拍内起音不是独立生成请求。
@@ -98,6 +115,11 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 			actions[string(actionJSON)] = true
 			checks[string(checksJSON)] = true
 		})
+	}
+	for id := range onlineProductAdRecipeIDs {
+		if !seen[id] {
+			t.Fatalf("missing online product recipe: %s", id)
+		}
 	}
 }
 
