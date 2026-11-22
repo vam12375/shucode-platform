@@ -27,7 +27,9 @@ func expectedRecipeVersion(id string) string {
 		return "3.0.0"
 	case "brand-kv-unfold":
 		return "2.1.6"
-	case "black-gold-reveal", "food-serving", "fresh-ingredient", "floating-exploded-showcase":
+	case "black-gold-reveal":
+		return "3.0.8"
+	case "food-serving", "fresh-ingredient", "floating-exploded-showcase":
 		return "3.0.7"
 	default:
 		return "3.0.6"

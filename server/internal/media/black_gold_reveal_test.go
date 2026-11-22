@@ -14,7 +14,7 @@ import (
 
 func readBlackGoldRevealSnapshot(t *testing.T) TemplateSnapshot {
 	t.Helper()
-	raw, err := os.ReadFile("testdata/black-gold-reveal-v3.json")
+	raw, err := os.ReadFile("testdata/black-gold-reveal-v3.0.8.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestBlackGoldRevealDesktopSnapshotContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	recipe, err := findVideoTemplate(templates, "black-gold-reveal", "3.0.7")
+	recipe, err := findVideoTemplate(templates, "black-gold-reveal", "3.0.8")
 	if err != nil || !reflect.DeepEqual(recipe, snapshot.Template) {
 		t.Fatal("desktop snapshot differs from the production recipe", err)
 	}

@@ -1,14 +1,14 @@
 {
   "id": "black-gold-reveal",
-  "version": "3.0.7",
+  "version": "3.0.8",
   "family": "brand",
   "name": {
     "zh": "黑金轮廓揭幕",
     "en": "Black and gold reveal"
   },
   "description": {
-    "zh": "叙事方法：以局部轮廓暗示、身份细节、一次完整主揭幕与辨识回扣递进。默认开场只露一处边缘，主揭幕前不提前亮出完整正面；主揭幕后保持已揭示状态，通过不同细节增加信息。黑金来自深炭黑层次、窄暖金轮廓光与保留商品原色的中性补光，不锁定棚台，不把商品改成金色材质。拍点是可重组示例，短版保留四个核心事件；长版在拍内增加不同已知部件、已提供的包装关系或角度，不等比拉长慢推。一次生成请求可包含多个镜头，拍数不是付费请求数。每秒有可见的动作进展、反应或信息揭示；末段完整主体提前可读，光影或辨识信息继续推进，默认最终完全静止最多0.5秒，不以微抖或无信息慢推填时长。用户明确静帧、锁定脚本和既有后期尾卡窗口优先。单图创作：一张清楚主体图即可，按同款逻辑补全未见视角和创意场景，跨镜复用身份与补全设定；准确标识只用真实资料，缺少Logo不阻断。声画以同一音乐母题、环境与实际动作推进，主揭幕形成一次音乐落点；不默认旁白，不逐镜报点，明确用户声音意图优先。",
-    "en": "Narrative method: partial silhouette, a recognizable detail, one complete reveal, then identity recall. Open on one edge; keep the full front concealed until the main reveal. Afterward, add distinct details without hiding and revealing the subject again. Layered charcoal blacks, a narrow warm-gold rim light and neutral fill preserve the original product color; gold is lighting, not a material claim. Adapt the setting and shots. Short cuts keep four core events; longer cuts add different known parts, supplied packaging relationships or views within each beat rather than stretching a slow push. Develop the silhouette and identity phases through distinct known contours, connections and color relationships while reserving the complete front for the main reveal; do not prolong an already readable detail with repeated light sweeps. Multiple visual shots may share one generation request. Use every second for visible progress, reaction or revelation. Make the complete subject readable early in the final phase while meaningful lighting or identity information develops; default fully static settling is at most 0.5 seconds. Honor explicit still frames, locked scripts and existing finishing windows. Single-image creation: one clear subject image suffices; keep inferred views and identity consistent. Use verified logos only; a missing logo does not block creation. Develop one musical motif, place one accent on the main reveal, and use ambience and actual action sounds. Speech is optional; do not narrate the shot order. Honor explicit sound preferences."
+    "zh": "叙事方法：以局部轮廓暗示、身份细节、一次完整主揭幕与辨识回扣递进。默认开场只露一处边缘，主揭幕前不提前亮出完整正面；主揭幕后保持已揭示状态，通过不同细节增加信息。黑金来自深炭黑层次、窄暖金轮廓光与保留商品原色的中性补光，不锁定棚台，不把商品改成金色材质。拍点是可重组示例，短版保留四个核心事件；长版在拍内增加不同已知部件、已提供的包装关系或角度，不等比拉长慢推。一次生成请求可包含多个镜头，拍数不是付费请求数。每秒有可见的动作进展、反应或信息揭示；末段用已显露局部到整体及所在空间的连续退拉做尺度回扣：商品可辨认，但最终落幅尚未完成；完整主体入画后继续交代已有支承与周围空间，直到末0.5秒才抵达终幅。每秒有可感知的尺度或空间变化，默认最终完全静止最多0.5秒，不以同一全貌小弧移、高光、呼吸感或微抖填时长。用户明确静帧、锁定脚本和既有后期尾卡窗口优先。单图创作：一张清楚主体图即可，按同款逻辑补全未见视角和创意场景，跨镜复用身份与补全设定；准确标识只用真实资料，缺少Logo不阻断。声画以同一音乐母题、环境与实际动作推进，主揭幕形成一次音乐落点；不默认旁白，不逐镜报点，明确用户声音意图优先。",
+    "en": "Narrative method: partial silhouette, a recognizable detail, one complete reveal, then identity recall. Open on one edge; keep the full front concealed until the main reveal. Afterward, add distinct details without hiding and revealing the subject again. Layered charcoal blacks, a narrow warm-gold rim light and neutral fill preserve the original product color; gold is lighting, not a material claim. Adapt the setting and shots. Short cuts keep four core events; longer cuts add different known parts, supplied packaging relationships or views within each beat rather than stretching a slow push. Develop the silhouette and identity phases through distinct known contours, connections and color relationships while reserving the complete front for the main reveal; do not prolong an already readable detail with repeated light sweeps. Multiple visual shots may share one generation request. Use every second for visible progress, reaction or revelation. End with one continuous pullback from an already revealed detail to the whole subject and its existing surroundings. Keep identity readable while the final composition remains unfinished: after the whole subject enters frame, continue revealing its support and spatial relationship. Reach the final framing only within the last 0.5 seconds; default fully static settling is at most 0.5 seconds. Do not prolong the same full view with tiny arcs, highlight changes or breathing-like micro-motion. Honor explicit still frames, locked scripts and existing finishing windows. Single-image creation: one clear subject image suffices; keep inferred views and identity consistent. Use verified logos only; a missing logo does not block creation. Develop one musical motif, place one accent on the main reveal, and use ambience and actual action sounds. Speech is optional; do not narrate the shot order. Honor explicit sound preferences."
   },
   "industries": [
     "美妆",
@@ -64,8 +64,8 @@
   "nominalSeconds": 20,
   "style": {
     "look": "深炭黑背景或场景暗部保留微弱层次，主体与背景边界清楚。单侧窄暖金轮廓光沿一处已知边缘推进，中性柔补光在主揭幕时打开正面，保留商品本色；不以大面积浅灰米色或通体金光替代黑金反差。玻璃看已知厚度与折射，金属看真实反光，非反光主体用边缘明暗，不默认透明、镀金或自身发光。主光方向、色温、主体比例与补全设定跨镜一致。场地可创作，不冒称实拍。",
-    "lens": "开场近景只给局部边缘，特写给另一处可辨身份细节，主揭幕才让完整主体与正面同时清楚；后续特写必须揭示不同信息。按素材选择焦距与景深，关键结构和真实标识在阅读窗口保持清晰、完整入画，避免高光淹没文字、边缘裁切或反复失焦。完整主体留出呼吸空间与本单需要的文案安全区，不强制固定机位或镜头数量。",
-    "motion": "先确定一条可见的揭幕机制：窄光由边缘展开，或机位越过前景遮挡；写清起态、路径与完成态。主揭幕只发生一次，完成后不重遮再揭。细节观察以短侧移、焦点转移或有信息的固定观察推进，不连续重复慢推。短版压缩可选拍，长版的轮廓与身份阶段按不同已知转折、部件连接及配色关系分成连续局部观察，完整正面仍留到主揭幕；同一已读清局部不靠持续慢推或往返扫光延长。揭幕后在拍内增加不同已知结构、包装关系或角度的多镜头，不把同一全貌等比拉长。每秒有动作进展、反应或信息揭示；末段主体提前可读，有效光影或辨识变化继续到末拍，默认最终完全静止最多0.5秒。微抖、颗粒和无信息慢推不算推进。用户明确静帧、锁定脚本与既有后期尾卡窗口优先。",
+    "lens": "开场近景只给局部边缘，特写给另一处可辨身份细节，主揭幕才让完整主体与正面同时清楚；后续特写必须揭示不同信息。按素材选择焦距与景深，关键结构和真实标识在阅读窗口保持清晰、完整入画，避免高光淹没文字、边缘裁切或反复失焦。末拍从已读清局部退到完整主体与已有空间，起幅、中幅、落幅的尺度与关系应有可感知区别。中段完整主体入画后，身份与真实标识保持可辨，不把阅读要求变成固定机位或固定屏幕像素位置；终幅保留本单需要的安全留白。",
+    "motion": "先确定一条可见的揭幕机制：窄光由边缘展开，或机位越过前景遮挡；写清起态、路径与完成态。主揭幕只发生一次，完成后不重遮再揭。细节观察以短侧移、焦点转移或有信息的固定观察推进，不连续重复慢推。短版压缩可选拍，长版的轮廓与身份阶段按不同已知转折、部件连接及配色关系分成连续局部观察，完整正面仍留到主揭幕；同一已读清局部不靠持续慢推或往返扫光延长。揭幕后在拍内增加不同已知结构、包装关系或角度的多镜头，不把同一全貌等比拉长。每秒有动作进展、反应或信息揭示；末拍只用一条连续退拉做尺度回扣，起幅是已显露的局部，中幅让完整主体进入画面，后段继续交代已有支承与周围空间，终幅直到末0.5秒才完成。主体在场景中原位、轮廓比例不变，屏幕占比须随后退明显减小，手机画面能辨认进展；不沿用前拍同一全貌小弧移或高光延伸。默认最终完全静止最多0.5秒。微抖、颗粒和无信息慢推不算推进。用户明确静帧、锁定脚本与既有后期尾卡窗口优先。",
     "sound": "按本单要求使用视频模型原声。用同一弦乐、键盘与精细打击母题：开场建立可听的悬念，身份细节增加一层音色，完整主揭幕当拍形成一次明确音乐落点，后段延续并在最终动作完成时解决。配乐、环境与音效清晰可听，环境声交代实际空间；接触声只跟随画面中真实发生的动作，纯光影和静物观察不编造开盖、喷雾、碰撞或功能声音。有人声时正常说话力度清楚居前，配乐适当退让，句间承接，动作声可辨，避免削波。中间生成段交接延续母题与空间声，完整台词在自然句末交接，不重复引子或提前停声；仅全片最终段解决。接点前后各0.1秒是观察窗，不是静音或裁切区，跨独立段不承诺同一音乐轨。用户明确声音限制优先，不自动开启独立后期付费声音服务。有人声时明确对谁说与态度，停顿、重音与呼吸随语义变化，避免逐字等速、播音腔与平板念稿。",
     "narration": "先由音乐、环境与实际动作建立品牌氛围，不默认加旁白；只有本单确需传达有据的商品信息或指定台词才开口。明确对谁说、为何此刻说，以自然语气选少量有据内容，不逐镜报点、复述运镜或照读画面，不为每拍或片尾设发言配额。给音乐和环境留白，关键词须有同拍依据；同一生成段可跨相邻拍自然说完，不跨独立段断句。品牌名、口号与承诺只用真实资料，未知材质只说外观，补全不证明成分、功能或内部结构。准确台词、说话者、语气与画面锚点写入shots[].prompt唯一声音小节，屏内对白口型同步。纯氛围或ASMR不硬塞人声；用户明确声音意图与锁定script优先。"
   },
@@ -137,15 +137,15 @@
       "sound": "声音（模型原声）：匹配素材与本拍事件；复用开场已有音色并改变层次，连接同一视觉母题；环境声按实际空间保留，不因反射或光影新增实体声源。"
     },
     {
-      "purpose": "结果与回扣：完整主体与辨识信息提前可读，光影完成后干净收束（可重组示例）。",
-      "framing": "中景保留完整主体、真实标识阅读区与本单需要的安全留白。",
-      "action": "起态：承接已揭示主体，最后阶段前部就让完整轮廓与关键结构可读，不等最后一帧才出现。动作：用开场窄暖金光完成一次有信息的边缘到正面关系变化，或从已读清细节回到完整构图；真实Logo、名称仅按本单原始资产和既有后期配置完整呈现，缺少标识时以已知轮廓与配色回扣。长版在本拍内部补充不同已知细节的辨识与回到整体，不持续拉长相同全貌。完成：每秒有动作进展、反应或信息揭示，末拍完成有效光影与辨识回扣，默认最终完全静止最多0.5秒，不用微抖或无信息慢推填时长；用户明确静帧与既有后期尾卡窗口优先。",
-      "camera": "起幅：已揭示主体或已读清细节入画。路径：在本拍前部抵达完整可读构图，之后由有信息的光线或辨识关系继续推进，阅读区保持清楚；不反复失焦或重新遮挡。落幅：完整主体和真实身份清晰，最后0.5秒内自然稳定收束。",
+      "purpose": "结果与回扣：从已显露局部连续退拉到主体及所在空间，末尾才完成最终落幅（可重组示例）。",
+      "framing": "从已读清局部的近景或特写退至完整主体与已有支承、周围空间同框；终幅尺度按画幅安排。",
+      "action": "起态：主体已完成唯一主揭幕，本拍从一处已读清边缘或部件的近景起步，最终主体与已有空间的关系尚未完整入画；沿用已打开的照明与显露状态。动作：只安排一条连续退拉，相机实际后退，商品在场景中保持原位与已知轮廓比例，屏幕中的主体占比持续明显减小。前段由局部进入整体，中段让完整主体可读，后段继续露出已有支承面、接触阴影或周围空间，每秒有手机可感知的尺度或空间关系进展；终幅不在本拍前部抵达，不沿用前拍同一全貌小弧移，不用局部亮线或呼吸感填时，不重遮或压暗制造第二次揭幕。保留素材可辨的真实标识，准确文字仅用原始资产与既有后期配置，不生成额外文字或猜测重画标识。完成：退拉行程与最终构图在全片末0.5秒才完成，默认完全静止最多0.5秒，不能提前停住等待；用户明确静帧、锁定脚本与既有后期尾卡窗口优先。",
+      "camera": "起幅：前段已显露局部的近景，身份可辨，最终空间落幅未抵达。路径：一条连续退拉，不叠加小弧移；主体屏幕占比明显减小，中段完整主体入画后仍继续露出已有支承与周围空间。落幅：全片末0.5秒才抵达完整主体与空间关系清楚的终幅，随后自然稳定；按画幅保留可读主体与安全留白，不靠放大空背景凑时。",
       "weight": 3,
       "seconds": 3,
       "tier": "core",
       "act": "结果与回扣",
-      "sound": "声音（模型原声）：匹配素材与本拍事件；同一音乐主题随最终光影或辨识落点自然解决，保持可听环境，不提前淡成静音；有台词时按自然句末完成，不追加固定口号或总结。"
+      "sound": "声音（模型原声）：匹配素材与本拍事件；同一音乐主题随退拉的尺度回扣继续发展，在最终构图完成点自然解决，环境声持续可听；有台词时自然句末完成，不追加固定口号或总结，声音结束不要求画面提前停住。"
     }
   ],
   "qualityChecks": [
@@ -155,8 +155,8 @@
     "配时检验：短版保留轮廓暗示、身份细节、唯一主揭幕和完整主体收束四个核心事件；支持或可删拍不改变主线状态。长版在拍内增加不同已知信息的多镜头，不按标称秒数机械照拍，拍数不是供应商请求数。",
     "身份检验：跨镜轮廓、比例、配色、部件布局、内容物与数量连续；每段实际shots[].prompt复述同一身份锚点、补全设定与主光方向。单图可执行，补全不作为真实结构、成分或功能证据，strict及用户精确要求优先。",
     "素材检验：全部选图按商品、角色、空间、风格和准确标识职责进入实际生成；同一主体多视角合并为身份参考，Logo可沿本单既有后期绑定出现，不强制作为剧情道具，不因缺少可选图阻断。",
-    "品牌检验：有真实标识时完整入画、清晰可读，避免裁切、快速掠过、失焦或高光遮住文字；准确文字用原始资产与本单既有后期配置。无Logo时用已知轮廓与配色回扣，不猜测重画名称、商标或口号。",
-    "末拍检验：完整主体在最后阶段提前可读，之后每秒仍有动作进展、反应或信息揭示；有效光影或辨识回扣完成后默认完全静止最多0.5秒，不提前完成等待，不以微抖、颗粒或无信息慢推填时长。用户明确静帧、锁定脚本与既有后期尾卡窗口优先。",
+    "品牌检验：有真实标识时完整入画、清晰可读，避免裁切、快速掠过、失焦或高光遮住文字；准确文字用原始资产与本单既有后期配置。无Logo时用已知轮廓与配色回扣，不猜测重画名称、商标或口号。阅读不要求摄影停住或主体固定像素位置。",
+    "末拍检验：起幅局部、中幅完整主体、落幅已有空间关系须可区分；中段主体可读之后，退拉仍每秒以手机可感知的尺度或空间变化推进。最终行程与构图直到全片末0.5秒才完成，默认完全静止最多0.5秒；不以同一全貌小弧移、亮线变化、呼吸感、颗粒或微抖填时。保持已揭示状态，不再遮挡、调暗或制造二次揭幕。用户明确静帧、锁定脚本与既有后期尾卡窗口优先。",
     "声音检验：同一母题从悬念发展到主揭幕的一次落点，再到最终解决；音乐、环境与实际动作声清楚可听。纯光影不编造开盖、喷雾、接触或功能声，独立段不重复引子或提前停声。",
     "人声检验：声音服从用户意图，不为填时长加旁白；若有台词，连起来朗读应像在对人自然说话，不逐镜报点、复述摄影动作或硬补结尾总结。关键词有同拍依据，准确台词、说话者、语气与锚点进入shots[].prompt唯一声音小节，给音乐和环境留白。",
     "审核边界：自检不冒充成片画面或听感已审核，旧版本审核不认证新版；商品功能、价格、成分、规格和承诺仅在真实资料支持且本片表达时使用。"
