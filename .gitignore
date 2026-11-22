@@ -17,3 +17,4 @@ server/data/
 output/
 # 本地 agent 会话与计划产物,不入库。
 .shucode/
+.claude/
