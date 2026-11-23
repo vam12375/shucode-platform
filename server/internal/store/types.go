@@ -351,6 +351,7 @@ type OpsSeriesPoint struct {
 	Requests     int64
 	Errors       int64
 	CreditsMicro int64
+	P50LatencyMs *float64
 	P95LatencyMs *float64
 }
 

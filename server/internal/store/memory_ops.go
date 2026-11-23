@@ -836,6 +836,7 @@ func (s *memoryStore) OpsSeries(_ context.Context, since time.Time, bucketMinute
 		values := latencies[key]
 		sort.Float64s(values)
 		row := grouped[key]
+		row.P50LatencyMs = percentileCont(values, 0.50)
 		row.P95LatencyMs = percentileCont(values, 0.95)
 		out = append(out, *row)
 	}

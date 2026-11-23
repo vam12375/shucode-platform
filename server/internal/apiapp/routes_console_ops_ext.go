@@ -379,6 +379,7 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 			rows = append(rows, gin.H{
 				"bucketStart": point.BucketStart, "requests": point.Requests,
 				"errors": point.Errors, "creditsMicro": point.CreditsMicro,
+				"p50LatencyMs": point.P50LatencyMs,
 				"p95LatencyMs": point.P95LatencyMs,
 			})
 		}

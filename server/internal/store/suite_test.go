@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -974,6 +975,9 @@ func testOpsAlerts(t *testing.T, ctx context.Context, s PlatformStore) {
 	points, err := s.OpsSeries(ctx, base.Add(-time.Minute), 60)
 	if err != nil || len(points) != 1 || points[0].Requests != 2 {
 		t.Fatalf("ops series 不符: %v %+v", err, points)
+	}
+	if points[0].P50LatencyMs == nil || *points[0].P50LatencyMs != 200 || points[0].P95LatencyMs == nil || math.Abs(*points[0].P95LatencyMs-290) > 1e-6 {
+		t.Fatalf("ops series 分位不符: %+v", points[0])
 	}
 	rule, err := s.UpsertAlertRule(ctx, UpsertAlertRuleInput{
 		Name: "错误率-" + suffix, Metric: "error_rate", Threshold: "0.100000", WindowMinutes: 15, Enabled: true,

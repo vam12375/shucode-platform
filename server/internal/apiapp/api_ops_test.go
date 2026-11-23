@@ -95,6 +95,18 @@ func TestUsageExportRequestIDAndOps(t *testing.T) {
 	if overview["requests"].(float64) < 1 || overview["creditsMicro"].(float64) < 123_456 {
 		t.Fatalf("ops overview 指标不符: %v", overview)
 	}
+	seriesRec := f.do("GET", "/console/api/ops/series?hours=1&bucketMinutes=5", adminCookie, "")
+	if seriesRec.Code != 200 {
+		t.Fatalf("ops series 失败: %d %s", seriesRec.Code, seriesRec.Body.String())
+	}
+	points := dataOf(t, seriesRec)["series"].([]any)
+	if len(points) != 1 {
+		t.Fatalf("ops series 桶数不符: %v", points)
+	}
+	point := points[0].(map[string]any)
+	if point["p50LatencyMs"] != float64(latency) || point["p95LatencyMs"] != float64(latency) {
+		t.Fatalf("ops series 延迟分位不符: %v", point)
+	}
 
 	// 告警规则创建与列表。
 	ruleRec := f.do("POST", "/console/api/ops/alert-rules", adminCookie,

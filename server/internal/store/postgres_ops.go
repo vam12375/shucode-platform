@@ -1066,6 +1066,7 @@ func (s *PostgresStore) OpsSeries(ctx context.Context, since time.Time, bucketMi
 			count(*)::bigint,
 			count(*) FILTER (WHERE status = 'error')::bigint,
 			COALESCE(sum(credits_micro), 0)::bigint,
+			percentile_cont(0.50) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE latency_ms IS NOT NULL),
 			percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE latency_ms IS NOT NULL)
 		FROM usage_records
 		WHERE created_at >= $1
@@ -1078,7 +1079,7 @@ func (s *PostgresStore) OpsSeries(ctx context.Context, since time.Time, bucketMi
 	out := []OpsSeriesPoint{}
 	for rows.Next() {
 		var p OpsSeriesPoint
-		if err := rows.Scan(&p.BucketStart, &p.Requests, &p.Errors, &p.CreditsMicro, &p.P95LatencyMs); err != nil {
+		if err := rows.Scan(&p.BucketStart, &p.Requests, &p.Errors, &p.CreditsMicro, &p.P50LatencyMs, &p.P95LatencyMs); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
