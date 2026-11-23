@@ -15,11 +15,8 @@ var onlineProductAdRecipeIDs = map[string]bool{
 }
 
 func expectedRecipeVersion(id string) string {
-	if onlineProductAdRecipeIDs[id] {
-		return "3.0.0"
-	}
 	switch id {
-	case "chromatic-micro-world":
+	case "chromatic-micro-world", "botanical-sculpture-reveal":
 		return "3.0.1"
 	case "electronic-pulse-showcase", "product-detail-reassembly":
 		return "3.0.3"
@@ -32,6 +29,9 @@ func expectedRecipeVersion(id string) string {
 	case "food-serving", "fresh-ingredient":
 		return "3.0.7"
 	default:
+		if onlineProductAdRecipeIDs[id] {
+			return "3.0.0"
+		}
 		return "3.0.6"
 	}
 }
