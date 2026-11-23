@@ -39,6 +39,9 @@ func (s *Service) bindAnalysis(ctx context.Context, team, id string, version int
 		return p, nil
 	}
 	// 方向只在识图完成到首次规划之间可写；已受理 input 的重放在上面只比较，不改内容。
+	if p.Brief.TemplateAutoGenerate && !p.TemplateAutoStopped && direction != nil && *direction != p.Brief.SellingPoints {
+		return nil, ErrConflict
+	}
 	if direction != nil && (p.Brief.Mode != "auto" || !p.Brief.ImageAnalysisFirst || p.Status != "image_review" || a.Kind != "planning" || p.ImageAnalysis == nil || p.Plan != nil || p.PlanningResult != nil || len(p.Shots) != 0 || p.OutputAssetID != "") {
 		return nil, ErrConflict
 	}

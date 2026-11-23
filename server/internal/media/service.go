@@ -310,6 +310,11 @@ func (s *Service) action(ctx context.Context, team, id string, version int64, ac
 				return e
 			}
 			p.Status = "queued"
+		case "stop-template-auto":
+			if !p.Brief.TemplateAutoGenerate || p.TemplateAutoStopped || p.CancelRequested || p.Analysis == nil || p.Analysis.Kind != "images" || (p.Status != "analyzing" && p.Status != "image_review") {
+				return ErrConflict
+			}
+			p.TemplateAutoStopped = true
 		case "cancel":
 			if p.Status == "completed" || p.Status == "cancelled" {
 				return ErrConflict

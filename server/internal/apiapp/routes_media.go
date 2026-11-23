@@ -406,7 +406,7 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 			c.Status(http.StatusNotFound)
 			return
 		}
-		if current != nil && current.SourceChecksum != "" && (current.UserID != auth.User.ID || current.DeviceID != auth.Device.ID) {
+		if current != nil && (current.SourceChecksum != "" || current.Brief.TemplateAutoGenerate) && (current.UserID != auth.User.ID || current.DeviceID != auth.Device.ID) {
 			c.JSON(403, fail(403, "video_analysis_scope_invalid"))
 			return
 		}

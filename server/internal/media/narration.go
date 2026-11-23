@@ -127,6 +127,7 @@ func (s *Service) FinishingCapabilities(ctx context.Context) map[string]any {
 	capabilities["imageDrivenCreation"] = available
 	capabilities["stagedImageAnalysis"] = available
 	capabilities["stagedTemplateSelection"] = available
+	capabilities["templateAutoGeneration"] = available
 	capabilities["stagedCreativeDirection"] = available
 	capabilities["planningResults"] = true
 	// 直出复用图片优先入口与方案原文接收，只在两者都可用时声明。

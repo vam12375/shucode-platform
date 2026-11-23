@@ -80,6 +80,9 @@ func (p ShotPlan) hasCompleteSource() bool { return p.sourceFields == 0 }
 func adaptiveResearchError() error         { return fmt.Errorf("video_research_invalid") }
 func adaptiveResearch(b Brief) bool        { return b.ResearchPolicy != "" }
 func validateAdaptiveBrief(b Brief) error {
+	if b.TemplateAutoGenerate && (b.Mode != "auto" || !b.ImageAnalysisFirst || b.GenerationPolicy != "whole-first" || b.ReviewPlan || b.PromptPolicy == "direct" || b.TemplateID == "" || b.TemplateVersion == "" || b.ReferenceAssetID != "" || b.SourceOnly || len(b.AssetIDs) == 0) {
+		return ErrInvalid
+	}
 	if !adaptiveResearch(b) {
 		if b.CreativeIntent != "" || b.DistributionPlatform != "" || b.TemplateID != "" || b.TemplateVersion != "" {
 			return adaptiveResearchError()

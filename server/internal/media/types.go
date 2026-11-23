@@ -201,6 +201,7 @@ type Asset struct {
 }
 type Brief struct {
 	AssetUnderstanding       *AssetUnderstanding     `json:"assetUnderstanding,omitempty"`
+	TemplateAutoGenerate     bool                    `json:"templateAutoGenerate,omitempty"`
 	ImageAnalysisFirst       bool                    `json:"imageAnalysisFirst,omitempty"`
 	PromptPolicy             string                  `json:"promptPolicy,omitempty"` // 缺省两段式；direct 规则见 direct_prompt.go
 	GenerationPolicy         string                  `json:"generationPolicy,omitempty"`
@@ -516,19 +517,20 @@ type Project struct {
 	QuoteMicro           int64                         `json:"quoteMicro"`
 	// CompositionAssetID 在合成开始前持久化，跨 worker lease/进程恢复复用同一最终资产身份。
 	// 这是平台内部恢复事实，不进入 ProjectView；OutputAssetID 仍是已完成成片的公开事实。
-	CompositionAssetID string    `json:"compositionAssetId,omitempty"`
-	ChargedMicro       int64     `json:"chargedMicro"`
-	OutputAssetID      string    `json:"outputAssetId,omitempty"`
-	Error              string    `json:"error,omitempty"`
-	CancelRequested    bool      `json:"cancelRequested"`
-	TeamID             string    `json:"teamId"`
-	UserID             string    `json:"userId"`
-	DeviceID           string    `json:"deviceId"`
-	BillingBindingID   string    `json:"billingBindingId,omitempty"`
-	BillingDeviceID    string    `json:"billingDeviceId,omitempty"`
-	Models             []Model   `json:"models"`
-	LeaseOwner         string    `json:"leaseOwner,omitempty"`
-	LeaseUntil         time.Time `json:"leaseUntil"`
+	CompositionAssetID  string    `json:"compositionAssetId,omitempty"`
+	ChargedMicro        int64     `json:"chargedMicro"`
+	OutputAssetID       string    `json:"outputAssetId,omitempty"`
+	Error               string    `json:"error,omitempty"`
+	TemplateAutoStopped bool      `json:"templateAutoStopped,omitempty"`
+	CancelRequested     bool      `json:"cancelRequested"`
+	TeamID              string    `json:"teamId"`
+	UserID              string    `json:"userId"`
+	DeviceID            string    `json:"deviceId"`
+	BillingBindingID    string    `json:"billingBindingId,omitempty"`
+	BillingDeviceID     string    `json:"billingDeviceId,omitempty"`
+	Models              []Model   `json:"models"`
+	LeaseOwner          string    `json:"leaseOwner,omitempty"`
+	LeaseUntil          time.Time `json:"leaseUntil"`
 }
 
 // 用户投影不携带供应商路由、准入身份、锁定售价或 worker lease；opaque task ID 仅用于受理证据与排查。
@@ -561,6 +563,7 @@ type ProjectView struct {
 	ChargedMicro         int64                    `json:"chargedMicro"`
 	OutputAssetID        string                   `json:"outputAssetId,omitempty"`
 	Error                string                   `json:"error,omitempty"`
+	TemplateAutoStopped  bool                     `json:"templateAutoStopped,omitempty"`
 	CancelRequested      bool                     `json:"cancelRequested"`
 }
 type ShotView struct {
@@ -597,7 +600,7 @@ func (p Project) View() ProjectView {
 		snapshot.Template.VerifiedModelIDs = []string{p.Brief.VideoModel}
 	}
 	archives := currentGeneratedArchives(p)
-	return ProjectView{RetryContext: cloneRetryContext(p.RetryContext), PlanningResult: clonePlanningResult(p.PlanningResult), ImageAnalysis: cloneImageAnalysis(p.ImageAnalysis), TemplateSnapshot: snapshot, MachineReview: p.MachineReview, PlanReview: p.PlanReview, Composition: p.Composition, QualityReport: p.QualityReport, SourceAnalysis: cloneSourceAnalysis(p.SourceAnalysis), AnalysisChargedMicro: p.AnalysisChargedMicro, Canvas: p.Canvas, TeamAssetArchives: archives, ReservedMicro: 0, ReleasedMicro: 0, ID: p.ID, Version: p.Version, Status: p.Status, Brief: p.Brief, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Analysis: p.Analysis, Plan: p.Plan, Shots: shots, QuoteMicro: p.QuoteMicro, ChargedMicro: p.ChargedMicro, OutputAssetID: p.OutputAssetID, Error: p.Error, CancelRequested: p.CancelRequested}
+	return ProjectView{RetryContext: cloneRetryContext(p.RetryContext), PlanningResult: clonePlanningResult(p.PlanningResult), ImageAnalysis: cloneImageAnalysis(p.ImageAnalysis), TemplateSnapshot: snapshot, MachineReview: p.MachineReview, PlanReview: p.PlanReview, Composition: p.Composition, QualityReport: p.QualityReport, SourceAnalysis: cloneSourceAnalysis(p.SourceAnalysis), AnalysisChargedMicro: p.AnalysisChargedMicro, Canvas: p.Canvas, TeamAssetArchives: archives, ReservedMicro: 0, ReleasedMicro: 0, ID: p.ID, Version: p.Version, Status: p.Status, Brief: p.Brief, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, Analysis: p.Analysis, Plan: p.Plan, Shots: shots, QuoteMicro: p.QuoteMicro, ChargedMicro: p.ChargedMicro, OutputAssetID: p.OutputAssetID, Error: p.Error, CancelRequested: p.CancelRequested, TemplateAutoStopped: p.TemplateAutoStopped}
 }
 
 func directGenerationRequest(p Project) (CanvasRequest, bool) {
