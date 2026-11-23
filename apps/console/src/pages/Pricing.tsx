@@ -372,7 +372,7 @@ export function PricingPage() {
   });
 
   return (
-    <div>
+    <div className="pricing-page">
       <header className="page-head">
         <div>
           <p className="eyebrow">下发 / 参考</p>

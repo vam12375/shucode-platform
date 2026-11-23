@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+import { formatCreditsDisplay } from "@shucode-platform/contracts/credits";
 import * as helpers from "../src/payments.ts";
 
 const source = await readFile(new URL("../src/pages/Payments.tsx", import.meta.url), "utf8");
@@ -32,6 +33,7 @@ async function mount({ root = false, manager = false, storage = new Map(), panel
     window: { matchMedia: () => ({ matches: false }), setTimeout: (fn) => { const id = ++timerId; timers.set(id, fn); return id; }, clearTimeout: (id) => timers.delete(id), location: { assign: (url) => navigations.push(url), hash: "#/payments?status=success" } },
     require(name) {
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
+      if (name === "@shucode-platform/contracts/credits") return { formatCreditsDisplay };
       if (name === "react") return {
         lazy: () => "PaymentConfigPanel", Suspense: "Suspense",
         useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = typeof initial === "function" ? initial() : initial; return [slots[i], (v) => { slots[i] = typeof v === "function" ? v(slots[i]) : v; }]; },
@@ -142,7 +144,7 @@ test("可信paid查单后刷新余额；失败查单清楚显示而不改成支�
   ui.setAccount({ ...account, personal: { ...account.personal, balanceCredits: "12.000000" } });
   ui.setMutation(async () => ({ order: { ...order, status: "paid", paidAt: "2026-11-02T00:01:00Z" } }));
   button(ui.render(), "查询支付宝并核对").props.onClick(); await ui.settle();
-  assert.match(text(ui.render()), /已支付并入账/); assert.match(text(ui.render()), /12.000000/); assert.equal(ui.timers.size, 0);
+  assert.match(text(ui.render()), /已支付并入账/); assert.equal(text(nodes(ui.render(), "strong")[0]), "12 credit"); assert.equal(ui.timers.size, 0);
 });
 
 test("私钥只写入不回显，空密钥保留，保存失败保留草稿并防止重复写入", async () => {
@@ -164,6 +166,6 @@ test("账户及配置载入失败有明确重试，尚无个人账本仍可充�
   const failed = await mount({ loadFailure: true });
   assert.match(text(failed.render()), /fixture读取失败/); assert.equal(button(failed.render(), "前往支付宝付款").props.disabled, true);
   failed.setFailure(false); failed.setAccount({ ...account, personal: null }); button(failed.render(), "重新载入").props.onClick(); await failed.settle();
-  assert.match(text(failed.render()), /0.000000/); assert.equal(button(failed.render(), "前往支付宝付款").props.disabled, false);
+  assert.equal(text(nodes(failed.render(), "strong")[0]), "0 credit"); assert.equal(button(failed.render(), "前往支付宝付款").props.disabled, false);
   const panel = await mount({ panel: true, loadFailure: true }); assert.ok(button(panel.render(), "重试读取支付配置"));
 });

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { ExternalLink, HandCoins, RefreshCw } from "lucide-react";
+import { formatCreditsDisplay } from "@shucode-platform/contracts/credits";
 import { api } from "../api.js";
 import { useAuth } from "../auth.js";
 import { toastOk } from "../components/Feedback.js";
@@ -49,7 +50,7 @@ function OrderRow({ order, onReconcile, disabled }: { order: PaymentOrder; onRec
     <tr>
       <td className="readout payments-order-id">{order.outTradeNo}{order.testPayment ? <div><Chip tone="info">0.01 元测试</Chip></div> : null}</td>
       <td className="num">{order.amountYuan} 元</td>
-      <td className="num">+{order.creditAmount} credit</td>
+      <td className="num">+{formatCreditsDisplay(order.creditAmount)} credit</td>
       <td>{order.targetType === "personal" ? "个人账户" : "团队共享"}</td>
       <td><Chip tone={status.tone}>{status.label}</Chip></td>
       <td className="readout">{formatShanghaiTime(order.createdAt)}</td>
@@ -252,6 +253,7 @@ export function PaymentsPage() {
   };
 
   const mode = account?.mode ?? "personal";
+  // 账本返回六位定点值，余额与到账读数只在展示时格式化；支付提交仍使用原始金额。
   const balance = mode === "personal" ? account?.personal?.balanceCredits ?? "0.000000" : account?.team?.balanceCredits;
   const targetName = targetType === "personal" ? "本人个人账户" : manageableTeams.find((item) => item.id === targetTeamId)?.name ?? "请选择团队";
   const selectedTargetName = selectedOrder?.targetType === "personal" ? "本人个人账户" : teams.find((item) => item.id === selectedOrder?.teamId)?.name ?? "团队 " + (selectedOrder?.teamId ?? "");
@@ -260,7 +262,7 @@ export function PaymentsPage() {
     <header className="page-head"><div><p className="eyebrow">账户 / 支付宝充值</p><PageTitle icon={HandCoins}>充值与余额</PageTitle></div><button className="btn btn-ghost btn-sm" type="button" disabled={locked} onClick={() => void refresh()}><Glyph icon={RefreshCw} size={13} />重新载入</button></header>
     {accountError ? <Notice tone="stop" k="余额读取失败">{accountError}。当前余额可能未更新，请重新载入。</Notice> : null}
     {account ? <section className="pane"><div className="pane-h"><h2>消费账户</h2><Chip tone={account.enabled ? "ok" : "mute"}>{account.enabled ? "支付宝充值已开放" : "支付宝充值未开放"}</Chip></div><div className="pane-b">
-      <div className="payments-readouts"><div><span className="field-label">本人个人余额</span><strong className="num">{account.personal?.balanceCredits ?? "0.000000"} <small>credit</small></strong></div><div><span className="field-label">当前消费余额 · {mode === "personal" ? "个人" : "团队"}</span><strong className="num">{balance ?? "—"} <small>credit</small></strong></div></div>
+      <div className="payments-readouts"><div><span className="field-label">本人个人余额</span><strong>{formatCreditsDisplay(account.personal?.balanceCredits ?? "0")} <small>credit</small></strong></div><div><span className="field-label">当前消费余额 · {mode === "personal" ? "个人" : "团队"}</span><strong>{balance == null ? "—" : formatCreditsDisplay(balance)} <small>credit</small></strong></div></div>
       <label className="field"><span className="field-label">消费归属（选择后保存）</span><Select ariaLabel="消费账户" value={mode} onChange={(value) => void saveMode(value as AccountMode)} options={[{ value: "personal", label: "个人 · " + (account.personal?.name ?? "本人余额") }, ...(account.team || mode === "team" ? [{ value: "team", label: "团队 · " + (account.team?.name ?? team?.name ?? "当前团队") }] : [])]} disabled={locked} /></label>
       <p className="readout">充值到个人或团队不会自动切换消费账户；消费余额不足时不会自动借用另一个账户。</p>
     </div></section> : !accountError ? <Notice k="账户">正在读取账户余额…</Notice> : null}
@@ -281,8 +283,8 @@ export function PaymentsPage() {
 
     {orderError ? <Notice tone="stop" k="订单核对失败">{orderError}。状态尚未更新，请重试查询。</Notice> : null}
     {selectedOrder ? <section className="pane d1"><div className="pane-h"><h2>当前支付订单</h2><Chip tone={statusText[selectedOrder.status].tone}>{statusText[selectedOrder.status].label}</Chip></div><div className="pane-b">
-      <p className="readout payments-order-id">订单 {selectedOrder.outTradeNo}</p><p>¥{selectedOrder.amountYuan} → {selectedOrder.creditAmount} credit · {selectedTargetName}</p>
-      {selectedOrder.status === "pending" ? <><Notice k="等待可信确认">请在支付宝完成付款。跳回本页只会读取订单状态，款项确认以支付宝通知或主动查单结果为准。</Notice><p className="readout">付款截止：{formatShanghaiTime(selectedOrder.expiresAt)}。超过截止时间仍可核对订单；本页不会凭到期时间判定款项未付。</p></> : selectedOrder.status === "paid" ? <Notice k="已确认入账">支付宝付款已确认，该订单已增加 {selectedOrder.creditAmount} credit。</Notice> : <Notice k="已关闭">支付宝已确认该订单关闭。</Notice>}
+      <p className="readout payments-order-id">订单 {selectedOrder.outTradeNo}</p><p>¥{selectedOrder.amountYuan} → {formatCreditsDisplay(selectedOrder.creditAmount)} credit · {selectedTargetName}</p>
+      {selectedOrder.status === "pending" ? <><Notice k="等待可信确认">请在支付宝完成付款。跳回本页只会读取订单状态，款项确认以支付宝通知或主动查单结果为准。</Notice><p className="readout">付款截止：{formatShanghaiTime(selectedOrder.expiresAt)}。超过截止时间仍可核对订单；本页不会凭到期时间判定款项未付。</p></> : selectedOrder.status === "paid" ? <Notice k="已确认入账">支付宝付款已确认，该订单已增加 {formatCreditsDisplay(selectedOrder.creditAmount)} credit。</Notice> : <Notice k="已关闭">支付宝已确认该订单关闭。</Notice>}
       <button className="btn btn-ghost" type="button" disabled={locked} onClick={() => void reconcile(selectedOrder)}><Glyph icon={RefreshCw} size={14} />{busy === "reconcile" ? "正在查询…" : "查询支付宝并核对"}</button>
     </div></section> : null}
 
