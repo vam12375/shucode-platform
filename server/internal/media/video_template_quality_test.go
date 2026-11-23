@@ -12,6 +12,13 @@ var onlineProductAdRecipeIDs = map[string]bool{
 	"editorial-product-pages": true, "botanical-sculpture-reveal": true, "counterbalance-object-film": true,
 	"light-cone-material-response": true, "metallic-drape-orbit": true, "trunk-spatial-choreography": true,
 	"sole-silhouette-formation": true, "screen-world-roundtrip": true, "mineral-frame-product": true,
+	"landscape-listening": true, "emblem-to-imaginary-world": true, "pet-food-bowl-trail": true,
+	"citrus-sensory-break": true, "seasonal-harvest-in-a-glass": true, "gift-aisle-pursuit": true,
+	"plush-character-rescue": true, "doorstep-box-to-first-slice": true, "lint-track-and-roller": true,
+	"rain-to-sun-lip-colour": true, "mirror-outfit-vote": true, "pillow-press-to-rest": true,
+	"circular-portal-wearable": true, "tool-control-detail-map": true, "floor-route-to-dock": true,
+	"unplanned-trail-detour": true, "silhouette-to-wearable-fit": true, "one-home-two-generations": true,
+	"winter-gift-on-the-road": true, "expedition-to-pocket-object": true,
 }
 
 func expectedRecipeVersion(id string) string {
@@ -41,8 +48,8 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(templates) != 84 {
-		t.Fatalf("expected 84 recipes, got %d", len(templates))
+	if len(templates) != 104 {
+		t.Fatalf("expected 104 recipes, got %d", len(templates))
 	}
 	seen := map[string]bool{}
 	actions := map[string]bool{}

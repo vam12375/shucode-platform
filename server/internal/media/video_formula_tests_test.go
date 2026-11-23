@@ -13,7 +13,7 @@ import (
 
 func TestFormulaTestCatalogIsolationAndFrozenInstructions(t *testing.T) {
 	regular, err := VideoTemplateDefinitions()
-	if err != nil || len(regular) != 84 {
+	if err != nil || len(regular) != 104 {
 		t.Fatalf("production catalog: %d %v", len(regular), err)
 	}
 	tests, err := VideoFormulaTestDefinitions()
@@ -90,7 +90,7 @@ func TestFormulaTestCatalogIsolationAndFrozenInstructions(t *testing.T) {
 		t.Fatal("old snapshot changed")
 	}
 	prod, _, err := f.s.VideoTemplateCatalog(ctx, models)
-	if err != nil || len(prod) != 84 {
+	if err != nil || len(prod) != 104 {
 		t.Fatal("test toggle altered production", err)
 	}
 }

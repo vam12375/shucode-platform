@@ -43,7 +43,7 @@ func TestLibraryPermissionsAndPublishing(t *testing.T) {
 			regularCount++
 		}
 	}
-	if regularCount != 179 || testCount != 31 {
+	if regularCount != 199 || testCount != 31 {
 		t.Fatalf("incomplete catalog: %d", len(entries))
 	}
 	var selected map[string]any
