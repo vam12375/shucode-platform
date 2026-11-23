@@ -2,8 +2,8 @@ import {
   MICRO_CREDITS_PER_CREDIT,
   formatCreditsDisplay,
 } from "@shucode-platform/contracts/credits";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Plus, Users } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { ArrowUpRight, Plus, Users, X } from "lucide-react";
 import { api } from "../api.js";
 import {
   confirmDialog,
@@ -11,11 +11,14 @@ import {
   toastErr,
   toastOk,
 } from "../components/Feedback.js";
-import { Gauge } from "../components/Gauge.js";
 import { Glyph, PageTitle } from "../components/Icon.js";
 import { Select } from "../components/Select.js";
 import { Chip, Notice, type ChipTone } from "../components/StatusChip.js";
 import { formatShanghaiDate, formatShanghaiTime } from "../time.js";
+import { CreditComposition, CreditSegments, CreditSparkline, QuotaBullet, QuotaDistribution, type CreditSample } from "./organization-charts.js";
+import { TeamDetailPage } from "./TeamDetail.js";
+import { resolveUsageChartRange } from "../usage-range.js";
+import "./polar-organization.css";
 
 type UserRole = "admin" | "user";
 
@@ -84,14 +87,15 @@ const MEMBER_ROLE_LABEL: Record<string, string> = {
   member: "成员",
 };
 
-const HOT_RATIO = 0.9;
+const HOT_RATIO = 0.85;
 
-/** 按「成功率状态」取印章语义：不限 → mute，近额 → hot，其余 → ok 生效。 */
 function teamStatusChip(team: TeamRow): { tone?: ChipTone; label: string } {
   if (team.unlimited) return { tone: "mute", label: "不限" };
   const quota = Number.parseFloat(team.quotaCredits) || 0;
   const used = Number.parseFloat(team.usedCredits) || 0;
-  const ratio = quota > 0 ? Math.min(used / quota, 1) : 0;
+  // 已结算余额为零时网关会拒绝新请求，不能继续显示「生效」或仅显示「近额」。
+  if (quota <= 0 || used >= quota) return { tone: "stop", label: "已停" };
+  const ratio = used / quota;
   return ratio >= HOT_RATIO
     ? { tone: "hot", label: "近额" }
     : { tone: "ok", label: "生效" };
@@ -115,6 +119,14 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
   const [teamFilter, setTeamFilter] = useState("");
   const [search, setSearch] = useState("");
   const [drawerId, setDrawerId] = useState<string | null>(null);
+  const [teamDrawerId, setTeamDrawerId] = useState<string | null>(null);
+  const closeTeamDrawer = useCallback(() => setTeamDrawerId(null), []);
+  const [teamStatusFilter, setTeamStatusFilter] = useState("all");
+  const [teamTrends, setTeamTrends] = useState<Record<string, CreditSample[]>>({});
+  const [teamTrendErrors, setTeamTrendErrors] = useState<Record<string, string>>({});
+  const [teamDevices, setTeamDevices] = useState<Record<string, number> | null>(null);
+  const [trendRange] = useState(() => resolveUsageChartRange("30d"));
+  const trendCache = useRef(new Map<string, CreditSample[]>());
 
   const [showCreateAccount, setShowCreateAccount] = useState(false);
   const [showCreateTeam, setShowCreateTeam] = useState(false);
@@ -143,6 +155,47 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!teams) return;
+    let current = true, next = 0;
+    const queue = teams.filter((team) => !trendCache.current.has(team.id));
+    const worker = async () => {
+      while (current && next < queue.length) {
+        const team = queue[next++]!;
+        const params = new URLSearchParams({ teamId: team.id, from: trendRange.queryFrom, to: trendRange.queryTo, granularity: "day" });
+        try {
+          const data = await api<{ series: Array<{ bucketStart: string; creditsMicro: number }> }>(`/usage/series?${params}`);
+          if (!current) return;
+          const byDate = new Map(data.series.map((row) => [row.bucketStart, row.creditsMicro / MICRO_CREDITS_PER_CREDIT]));
+          const rows = trendRange.bucketKeys.map((day) => ({ label: day.slice(5, 10), value: byDate.get(day) ?? 0 }));
+          trendCache.current.set(team.id, rows);
+          setTeamTrends((previous) => ({ ...previous, [team.id]: rows }));
+        } catch (failure) {
+          if (current) setTeamTrendErrors((previous) => ({ ...previous, [team.id]: errorMessage(failure) }));
+        }
+      }
+    };
+    void Promise.all(Array.from({ length: Math.min(4, queue.length) }, () => worker()));
+    return () => { current = false; };
+  }, [teams, trendRange]);
+
+  useEffect(() => {
+    if (!accounts) return;
+    let current = true;
+    // 组织总表不继承当前工作台的团队筛选；设备按账号当前团队归属统计。
+    void api<{ devices: DeviceRow[] }>("/devices?teamId=").then((data) => {
+      if (!current) return;
+      const byEmail = new Map(accounts.filter((account) => account.team).map((account) => [account.email, account.team!.teamId]));
+      const counts: Record<string, number> = {};
+      for (const device of data.devices) {
+        const owner = byEmail.get(device.userEmail);
+        if (owner && !device.revokedAt) counts[owner] = (counts[owner] ?? 0) + 1;
+      }
+      setTeamDevices(counts);
+    }).catch(() => { if (current) setTeamDevices(null); });
+    return () => { current = false; };
+  }, [accounts]);
 
   // 操作失败也刷新列表：换团队是「移出+加入」两段调用，失败时可能已移出。
   const run = async (
@@ -377,16 +430,23 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
     (sum, team) => sum + (Number.parseFloat(team.usedCredits) || 0),
     0,
   );
+  const boundedTeams = teamRows.filter((team) => !team.unlimited);
+  const boundedQuota = boundedTeams.reduce((sum, team) => sum + (Number(team.quotaCredits) || 0), 0);
+  const boundedUsed = boundedTeams.reduce((sum, team) => sum + (Number(team.usedCredits) || 0), 0);
+  const nearQuotaCount = teamRows.filter((team) => teamStatusChip(team).label === "近额").length;
+  const stoppedCount = teamRows.filter((team) => teamStatusChip(team).label === "已停").length;
+  const shownTeams = teamRows.filter((team) => teamStatusFilter === "all" || teamStatusChip(team).label === teamStatusFilter);
   const drawerAccount = drawerId
     ? ((accounts ?? []).find((account) => account.id === drawerId) ?? null)
     : null;
 
   return (
-    <div>
+    <div className="organization-page">
       <header className="page-head">
         <div>
-          <p className="eyebrow">组织 / 台账</p>
+          <p className="eyebrow">Organization</p>
           <PageTitle icon={Users}>团队与账号</PageTitle>
+          <p className="organization-page-description">{teamRows.length} 个团队 · {totalMembers} 名成员 · 团队额度合计 {formatCreditsDisplay(boundedQuota)} credit</p>
         </div>
         <div className="form-row">
           <button
@@ -401,7 +461,7 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
             {showCreateAccount ? "收起" : "新建账号"}
           </button>
           <button
-            className="btn btn-ghost"
+            className="btn"
             type="button"
             onClick={() => {
               setShowCreateAccount(false);
@@ -413,10 +473,6 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
           </button>
         </div>
       </header>
-      <p className="readout" style={{ margin: 0, marginBottom: 18 }}>
-        团队是额度与计费单元，一个账号同一时间只归属一个团队；新建账号可直接选团队，
-        账号的团队归属在「所属团队」列内调整。点账号行查看用量、设备与成员预算。
-      </p>
 
       {error ? (
         <Notice tone="stop" k="操作未完成">
@@ -537,57 +593,75 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
         </section>
       ) : null}
 
-      <section className="pane">
+      <div className="organization-summary-grid">
+        <section className="pane organization-quota-summary">
+          <div className="pane-h"><div><h2>团队额度使用</h2><p className="organization-panel-description">按已结算用量扣减</p></div></div>
+          <div className="organization-quota-body">
+            <p className="organization-big">{Math.round(totalUsed).toLocaleString("en-US")}</p>
+            <p className="organization-panel-description">已用 credit / 有限额度合计 {formatCreditsDisplay(boundedQuota)}（不含不限额团队）</p>
+            <CreditSegments label="团队额度已用与剩余占比" rows={[{ id: "used", label: "已用", value: boundedUsed, color: "var(--accent)" }, { id: "remaining", label: "剩余", value: Math.max(0, boundedQuota - boundedUsed), color: "#24323F" }]} />
+          </div>
+        </section>
+        <section className="pane organization-quota-distribution">
+          <div className="pane-h"><div><h2>额度使用率分布</h2><p className="organization-panel-description">每个点是一个团队 · 85% 以上进入近额区</p></div></div>
+          <div className="pane-b"><QuotaDistribution teams={teamRows} /></div>
+        </section>
+      </div>
+
+      <section className="pane organization-teams-pane">
         <div className="pane-h">
-          <h2>团队</h2>
-          <span className="readout">实时 · 网关计量</span>
+          <div><h2>团队</h2><p className="organization-panel-description">点击一行查看详情</p></div>
+          <div className="organization-segment" role="group" aria-label="团队状态筛选">
+            {[["all", `全部 ${teamRows.length}`], ["近额", `近额 ${nearQuotaCount}`], ["已停", `已停 ${stoppedCount}`]].map(([value, label]) => <button key={value} type="button" className={teamStatusFilter === value ? "active" : ""} aria-pressed={teamStatusFilter === value} onClick={() => setTeamStatusFilter(value)}>{label}</button>)}
+          </div>
         </div>
         <div className="pane-b flush table-scroll">
-          <table className="table">
+          <table className="table organization-team-table">
             <thead>
               <tr>
                 <th scope="col">团队</th>
                 <th scope="col" className="num">
                   成员
                 </th>
-                <th scope="col">额度尺</th>
+                <th scope="col" className="num" title="当前有效设备凭据数">设备</th>
+                <th scope="col" className="organization-quota-column">额度使用</th>
+                <th scope="col" className="num">可用余额</th>
+                <th scope="col">近 30 天消耗</th>
                 <th scope="col">状态</th>
-                <th scope="col" className="num">
-                  立账
-                </th>
               </tr>
             </thead>
             <tbody>
-              {teamRows.map((team) => {
+              {shownTeams.map((team) => {
                 const used = Number.parseFloat(team.usedCredits) || 0;
                 const quotaValue = Number.parseFloat(team.quotaCredits) || 0;
                 const status = teamStatusChip(team);
                 return (
-                  <tr key={team.id}>
+                  <tr key={team.id} className="row-click" tabIndex={0} onClick={(event) => { if (!(event.target as HTMLElement).closest("a, button")) { setDrawerId(null); setTeamDrawerId(team.id); } }} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setDrawerId(null); setTeamDrawerId(team.id); } }}>
                     <td>
-                      <a className="name" href={`#/teams/${team.id}`}>
-                        {team.name}
+                      <a className="name organization-team-name" href={`#/teams/${team.id}`} onClick={(event) => { if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); setDrawerId(null); setTeamDrawerId(team.id); } }}>
+                        <span className="organization-avatar">{team.name.slice(0, 1)}</span>{team.name}
                       </a>
                     </td>
                     <td className="num">{team.memberCount}</td>
+                    <td className="num">{teamDevices === null ? "—" : teamDevices[team.id] ?? 0}</td>
                     <td>
-                      <Gauge
+                      <QuotaBullet
                         used={used}
                         quota={team.unlimited ? null : quotaValue}
-                        hotAt={HOT_RATIO}
                       />
                     </td>
+                    <td className="num">{team.unlimited ? "不限" : formatCreditsDisplay(quotaValue - used)}</td>
+                    <td>{teamTrends[team.id] ? <CreditSparkline rows={teamTrends[team.id]} /> : <span className="readout" title={teamTrendErrors[team.id]}>{teamTrendErrors[team.id] ? "加载失败" : "加载中…"}</span>}</td>
                     <td>
                       <Chip tone={status.tone}>{status.label}</Chip>
                     </td>
-                    <td className="num">{formatShanghaiDate(team.createdAt)}</td>
                   </tr>
                 );
               })}
-              {teamRows.length === 0 ? (
+              {shownTeams.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="readout">
-                    还没有团队，先创建一个。
+                  <td colSpan={7} className="readout">
+                    {teamRows.length ? "当前状态下没有团队。" : "还没有团队，先创建一个。"}
                   </td>
                 </tr>
               ) : null}
@@ -596,7 +670,8 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
               <tr>
                 <td>合计 · {teamRows.length} 个团队</td>
                 <td className="num">{totalMembers}</td>
-                <td colSpan={2}>
+                <td className="num">{teamDevices === null ? "—" : teamRows.reduce((sum, team) => sum + (teamDevices[team.id] ?? 0), 0)}</td>
+                <td colSpan={3}>
                   已用 {formatCreditsDisplay(totalUsed)} credit
                 </td>
                 <td />
@@ -631,9 +706,10 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
               onChange={(event) => setSearch(event.target.value)}
             />
           </div>
+          <p className="organization-panel-description">账号的团队归属可直接调整，点击账号行查看用量、设备与成员预算。</p>
         </div>
         <div className="pane-b flush table-scroll">
-          <table className="table">
+          <table className="table organization-account-table">
             <thead>
               <tr>
                 <th scope="col">邮箱</th>
@@ -656,6 +732,8 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
                   <tr
                     key={account.id}
                     className="row-click"
+                    tabIndex={0}
+                    onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setDrawerId(account.id); } }}
                     onClick={(event) => {
                       if (
                         (event.target as HTMLElement).closest(
@@ -811,8 +889,38 @@ export function OrgPage({ currentUserId }: { currentUserId: string }) {
           onTeamChanged={(account, nextTeamId) => changeTeam(account, nextTeamId)}
         />
       ) : null}
+      {teamDrawerId ? <OrganizationTeamDrawer teamId={teamDrawerId} onClose={closeTeamDrawer} onUpdated={load} /> : null}
     </div>
   );
+}
+
+function OrganizationTeamDrawer({ teamId, onClose, onUpdated }: { teamId: string; onClose: () => void; onUpdated: () => Promise<void> }) {
+  const drawer = useRef<HTMLElement>(null);
+  const close = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    close.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (isDialogOpen()) return;
+      if (event.key === "Escape" && !event.defaultPrevented) onClose();
+      if (event.key !== "Tab") return;
+      const controls = [...(drawer.current?.querySelectorAll<HTMLElement>("a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex='0']") ?? [])].filter((element) => element.offsetParent !== null);
+      const first = controls[0], last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", onKey); previouslyFocused?.focus(); };
+  }, [onClose]);
+  return <>
+    <div className="organization-team-backdrop" onClick={onClose} aria-hidden="true" />
+    <aside ref={drawer} className="organization-team-drawer" role="dialog" aria-modal="true" aria-label="团队详情">
+      <div className="organization-drawer-toolbar"><span className="eyebrow">Team</span><a className="btn btn-ghost btn-sm" href={`#/teams/${teamId}`} onClick={onClose}>完整页面<Glyph icon={ArrowUpRight} size={14} /></a><button ref={close} className="organization-close" type="button" aria-label="关闭团队详情" onClick={onClose}><Glyph icon={X} size={18} /></button></div>
+      <TeamDetailPage teamId={teamId} drawer onUpdated={onUpdated} />
+    </aside>
+  </>;
 }
 
 interface UserDrawerProps {
@@ -1004,7 +1112,7 @@ function UserDrawer({
     <>
       <div className="drawer-backdrop" onClick={onClose} aria-hidden="true" />
       <aside
-        className="drawer"
+        className="drawer organization-account-drawer"
         role="dialog"
         aria-modal="true"
         aria-label={`账号详情 ${account.email}`}
@@ -1171,6 +1279,7 @@ function UserDrawer({
                   <b>{formatCreditsDisplay(totalCredits)}</b> credit ·{" "}
                   {usage.length} 个模型
                 </p>
+                {usage.length > 0 ? <CreditComposition rows={usage.map((row) => ({ id: row.model, label: row.model, value: row.creditsMicro / MICRO_CREDITS_PER_CREDIT }))} /> : null}
                 {topModels.length === 0 ? (
                   <p className="readout drawer-note">近 30 日暂无请求。</p>
                 ) : (

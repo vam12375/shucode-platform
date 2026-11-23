@@ -8,12 +8,14 @@ import { useAuth } from "../auth.js";
 import { Select } from "../components/Select.js";
 import { api, navigate } from "../api.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
-import { Gauge } from "../components/Gauge.js";
 import { Glyph, PageTitle } from "../components/Icon.js";
 import { Chip, Notice, type ChipTone } from "../components/StatusChip.js";
 import { formatShanghaiTime } from "../time.js";
 import { UsageModel } from "../components/UsageModel.js";
 import type { UsageReasoningParameters } from "../usage-reasoning.js";
+import { resolveUsageChartRange } from "../usage-range.js";
+import { CreditBarChart, CreditComposition, CreditRing, MemberCreditRanking, type CreditSample } from "./organization-charts.js";
+import "./polar-organization.css";
 
 interface TeamDetail {
   team: {
@@ -72,7 +74,7 @@ function statusChip(status: string): { tone?: ChipTone; label: string } {
   return { tone: "stop", label: "错误" };
 }
 
-export function TeamDetailPage({ teamId }: { teamId: string }) {
+export function TeamDetailPage({ teamId, drawer = false, onUpdated }: { teamId: string; drawer?: boolean; onUpdated?: () => Promise<void> }) {
   const { selectTeam, canManagePlatform } = useAuth();
   const [detail, setDetail] = useState<TeamDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -84,14 +86,26 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
   const [memberEmail, setMemberEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [addingCredit, setAddingCredit] = useState(false);
+  const [editingQuota, setEditingQuota] = useState(!drawer);
   const [creditAmount, setCreditAmount] = useState("");
   const [creditError, setCreditError] = useState<string | null>(null);
   const creditAttempt = useRef<{ amountCredits: string; requestId: string } | null>(null);
   const creditInFlight = useRef(false);
+  const detailRequest = useRef(0);
+  const [spendRange] = useState(() => resolveUsageChartRange("30d"));
+  const [spend, setSpend] = useState<CreditSample[] | null>(null);
+  const [spendError, setSpendError] = useState<string | null>(null);
+  const [deviceCount, setDeviceCount] = useState<number | null>(null);
+  const [memberRanking, setMemberRanking] = useState<Array<{ id: string; name: string; credits: number; requests: number }> | null>(null);
+  const [memberRankingError, setMemberRankingError] = useState<string | null>(null);
+  const memberScope = detail?.team.id === teamId ? detail.members.map((member) => `${member.user.id}:${member.user.displayName}:${member.user.email}`).join("|") : "";
 
   const load = useCallback(async () => {
+    const request = ++detailRequest.current;
     try {
       const data = await api<TeamDetail>(`/teams/${teamId}`);
+      // 快速切换团队或刷新时，旧请求不能把另一团队的额度与成员带回详情面板。
+      if (request !== detailRequest.current) return;
       setDetail(data);
       setQuota(data.team.quotaCredits);
       setUnlimited(data.team.unlimited);
@@ -100,13 +114,56 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
       setConcurrencyLimit(String(data.team.concurrencyLimit ?? 0));
       setError(null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "加载失败");
+      if (request === detailRequest.current) setError(loadError instanceof Error ? loadError.message : "加载失败");
     }
   }, [teamId]);
 
   useEffect(() => {
+    setDetail(null);
+    setError(null);
     void load();
+    return () => { detailRequest.current += 1; };
   }, [load]);
+
+  useEffect(() => {
+    let current = true;
+    setSpend(null);
+    setSpendError(null);
+    const query = new URLSearchParams({ teamId, from: spendRange.queryFrom, to: spendRange.queryTo, granularity: "day" });
+    void api<{ series: Array<{ bucketStart: string; creditsMicro: number }> }>(`/usage/series?${query.toString()}`).then((data) => {
+      if (!current) return;
+      const byDate = new Map(data.series.map((row) => [row.bucketStart, row.creditsMicro / MICRO_CREDITS_PER_CREDIT]));
+      setSpend(spendRange.bucketKeys.map((date) => ({ label: date.slice(5, 10), value: byDate.get(date) ?? 0 })));
+    }).catch((loadError) => { if (current) setSpendError(loadError instanceof Error ? loadError.message : "趋势加载失败"); });
+    return () => { current = false; };
+  }, [teamId, spendRange]);
+
+  useEffect(() => {
+    let current = true;
+    setDeviceCount(null);
+    void api<{ devices: Array<{ revokedAt: string | null }> }>(`/devices?teamId=${encodeURIComponent(teamId)}`).then((data) => { if (current) setDeviceCount(data.devices.filter((device) => !device.revokedAt).length); }).catch(() => { if (current) setDeviceCount(null); });
+    return () => { current = false; };
+  }, [teamId]);
+
+  useEffect(() => {
+    let current = true, next = 0;
+    setMemberRanking(null);
+    setMemberRankingError(null);
+    if (!detail || detail.team.id !== teamId) return;
+    const members = detail.members;
+    const rows: Array<{ id: string; name: string; credits: number; requests: number }> = [];
+    const worker = async () => {
+      while (current && next < members.length) {
+        const member = members[next++]!;
+        // limit 只限制明细页；完整聚合用于排行，不把一页明细误当成员总用量。
+        const query = new URLSearchParams({ teamId, userId: member.user.id, from: spendRange.queryFrom, to: spendRange.queryTo, limit: "1" });
+        const data = await api<{ aggregates: Array<{ requests: number; creditsMicro: number }> }>(`/usage?${query}`);
+        rows.push({ id: member.user.id, name: member.user.displayName || member.user.email, credits: data.aggregates.reduce((sum, row) => sum + row.creditsMicro, 0) / MICRO_CREDITS_PER_CREDIT, requests: data.aggregates.reduce((sum, row) => sum + row.requests, 0) });
+      }
+    };
+    void Promise.all(Array.from({ length: Math.min(4, members.length) }, () => worker())).then(() => { if (current) setMemberRanking(rows.sort((a, b) => b.credits - a.credits).slice(0, 7)); }).catch((failure) => { if (current) setMemberRankingError(failure instanceof Error ? failure.message : "成员用量加载失败"); current = false; });
+    return () => { current = false; };
+  }, [memberScope, teamId, spendRange]);
 
   const loadMoreUsage = async (): Promise<void> => {
     const cursor = detail?.recentUsageNextCursor;
@@ -139,6 +196,7 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
     try {
       await action();
       await load();
+      await onUpdated?.();
       if (success) toastOk(success);
     } catch (actionError) {
       toastErr(actionError instanceof Error ? actionError.message : "操作失败");
@@ -180,13 +238,13 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
 
   if (!detail) {
     return (
-      <div>
-        <p className="eyebrow">
+      <div className="organization-team-detail-loading">
+        {!drawer ? <p className="eyebrow">
           <a href="#/org">
             <Glyph icon={ArrowLeft} size={12} strokeWidth={2} />
             返回团队与账号
           </a>
-        </p>
+        </p> : null}
         {error ? (
           <Notice tone="stop" k="加载失败">
             {error}
@@ -205,16 +263,17 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
   const totalRequests = aggregates.reduce((sum, row) => sum + row.requests, 0);
 
   return (
-    <div>
+    <div className={drawer ? "organization-team-detail organization-team-detail-drawer" : "organization-team-detail"}>
       <header className="page-head">
         <div>
-          <p className="eyebrow">
+          {!drawer ? <p className="eyebrow">
             <a href="#/org">
               <Glyph icon={ArrowLeft} size={12} strokeWidth={2} />
               返回团队与账号
             </a>
-          </p>
+          </p> : null}
           <PageTitle icon={Building2}>{team.name}</PageTitle>
+          <div className="organization-team-meta"><Chip tone={team.unlimited ? "mute" : quotaValue - used <= 0 ? "stop" : used / quotaValue > 0.85 ? "hot" : "ok"}>{team.unlimited ? "不限" : quotaValue - used <= 0 ? "已停" : used / quotaValue > 0.85 ? "近额" : "生效"}</Chip><span>{members.length} 名成员 · {deviceCount === null ? "—" : deviceCount} 台设备</span></div>
         </div>
         <span className="readout m0">
           共 {totalRequests.toLocaleString("en-US")} 次请求 · {credits(totalCredits)} credit
@@ -227,15 +286,17 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
         </Notice>
       ) : null}
 
-      <section className="pane">
+      <section className="pane organization-team-quota">
         <div className="pane-h">
           <h2>额度</h2>
           <span className="readout">实时 · 网关计量</span>
         </div>
         <div className="pane-b">
-          <div style={{ marginBottom: 14 }}>
-            <Gauge used={used} quota={team.unlimited ? null : quotaValue} />
+          <div className="organization-team-credit">
+            <CreditRing used={used} quota={team.unlimited ? null : quotaValue} />
+            <div><p className="organization-panel-description">可用余额</p><p className="organization-big">{team.unlimited ? "不限" : (quotaValue - used).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p><p className="organization-panel-description">已用 {formatCreditsDisplay(used)}{team.unlimited ? "" : ` / 额度 ${formatCreditsDisplay(quotaValue)}`}</p><div className="form-row organization-credit-actions"><button type="button" className="btn btn-sm" onClick={() => setEditingQuota((open) => !open)} aria-expanded={editingQuota}>调整额度</button>{canManagePlatform ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAddingCredit((open) => !open)} aria-expanded={addingCredit}>添加余额</button> : null}</div></div>
           </div>
+          {editingQuota ? <>
           <div className="form-row">
             <input
               className="input num"
@@ -274,18 +335,9 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
             >
               保存
             </button>
-            {canManagePlatform ? (
-              <button
-                className="btn btn-ghost"
-                type="button"
-                disabled={busy}
-                onClick={() => setAddingCredit((open) => !open)}
-                aria-expanded={addingCredit}
-              >
-                添加余额
-              </button>
-            ) : null}
           </div>
+          <p className="readout" style={{ margin: 0, marginTop: 10 }}>可用余额 {team.unlimited ? "不限" : `${formatCreditsDisplay(quotaValue - used)} credit`} · 按已结算用量扣减。</p>
+          </> : null}
           {addingCredit && canManagePlatform ? (
             <form
               onSubmit={(event) => {
@@ -336,14 +388,27 @@ export function TeamDetailPage({ teamId }: { teamId: string }) {
               ) : null}
             </form>
           ) : null}
-          <p className="readout" style={{ margin: 0, marginTop: 10 }}>
-            可用余额{" "}
-            {team.unlimited
-              ? "不限"
-              : `${formatCreditsDisplay(quotaValue - used)} credit`}{" "}
-            · 已用 {formatCreditsDisplay(used)} credit。按已结算用量扣减，页面展示为实时汇总。
-          </p>
         </div>
+      </section>
+
+      <section className="pane organization-team-spend">
+        <div className="pane-h"><div><h2>近 30 天消耗</h2><p className="organization-panel-description">credit · 按上海时间分桶</p></div></div>
+        <div className="pane-b">{spendError ? <Notice tone="stop">{spendError}</Notice> : spend === null ? <div className="organization-chart-empty">趋势加载中…</div> : <CreditBarChart rows={spend} />}</div>
+      </section>
+
+      <section className="pane organization-team-composition">
+        <div className="pane-h"><div><h2>模型消费构成</h2><p className="organization-panel-description">团队累计已结算消费</p></div></div>
+        <div className="pane-b"><CreditComposition rows={aggregates.map((row) => ({ id: row.model, label: row.modelDisplayName || row.model, value: row.creditsMicro / MICRO_CREDITS_PER_CREDIT }))} /></div>
+      </section>
+
+      <section className="pane organization-team-ranking">
+        <div className="pane-h"><div><h2>成员用量排行</h2><p className="organization-panel-description">当前成员 · 近 30 天 credit 消耗前 7 名</p></div></div>
+        <div className="pane-b">{memberRankingError ? <Notice tone="stop">{memberRankingError}</Notice> : memberRanking === null ? <div className="organization-chart-empty">成员用量加载中…</div> : <MemberCreditRanking rows={memberRanking} />}</div>
+      </section>
+
+      <section className="pane organization-team-timeline">
+        <div className="pane-h"><h2>额度变更记录</h2></div>
+        <div className="pane-b">{quotaAdjustments.length ? <div className="organization-quota-timeline">{quotaAdjustments.map((row) => { const delta = Number(row.newQuotaCredits) - Number(row.oldQuotaCredits); return <div key={row.id}><b>{row.oldUnlimited !== row.newUnlimited ? row.newUnlimited ? "取消额度上限" : "恢复额度上限" : row.action === "approve_quota_request" ? "额度申请已批准" : "调整团队额度"}</b> <span className="organization-timeline-delta">{delta > 0 ? "+" : ""}{formatCreditsDisplay(delta)}</span><small>{formatShanghaiTime(row.createdAt).slice(5, 16)} · {row.actorEmail || "系统"} · {formatCreditsDisplay(row.oldQuotaCredits)} → {formatCreditsDisplay(row.newQuotaCredits)}</small></div>; })}</div> : <p className="readout">暂无额度变更记录。</p>}</div>
       </section>
 
       <section className="pane d1">

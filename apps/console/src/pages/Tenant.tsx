@@ -5,7 +5,8 @@ import { api } from "../api.js";
 import { useAuth } from "../auth.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { MfaSettings } from "../components/MfaSettings.js";
-import { Gauge } from "../components/Gauge.js";
+import { CreditRing } from "./organization-charts.js";
+import "./polar-organization.css";
 import { PageTitle } from "../components/Icon.js";
 import { Chip, Notice, type ChipTone } from "../components/StatusChip.js";
 import type { ConsoleTeam, ConsoleUser } from "../permissions.js";
@@ -182,7 +183,7 @@ export function TenantPage({ section }: { section: string }) {
           ? Settings2
           : Building2;
   return (
-    <div>
+    <div className="organization-tenant-page">
       <header className="page-head">
         <div>
           <p className="eyebrow">团队工作台 / {team?.name ?? "加载中"}</p>
@@ -213,8 +214,8 @@ export function TenantPage({ section }: { section: string }) {
                 {team.unlimited ? "不限额度" : "已获批额度"}
               </Chip>
             </div>
-            <div className="pane-b">
-              <Gauge
+            <div className="pane-b organization-tenant-credit">
+              <CreditRing
                 used={Number(team.usedCredits)}
                 quota={team.unlimited ? null : Number(team.quotaCredits)}
               />
@@ -1028,7 +1029,7 @@ export function CatalogPage() {
   };
 
   return (
-    <div>
+    <div className="organization-tenant-page">
       <header className="page-head">
         <div>
           <p className="eyebrow">接入 / 模型目录</p>
@@ -1189,7 +1190,7 @@ export function ProfilePage() {
     }
   };
   return (
-    <div>
+    <div className="organization-tenant-page">
       <header className="page-head">
         <div>
           <p className="eyebrow">账户 / 安全</p>
