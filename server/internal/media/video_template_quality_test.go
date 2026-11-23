@@ -27,9 +27,9 @@ func expectedRecipeVersion(id string) string {
 		return "3.0.0"
 	case "brand-kv-unfold":
 		return "2.1.6"
-	case "black-gold-reveal":
+	case "black-gold-reveal", "floating-exploded-showcase":
 		return "3.0.8"
-	case "food-serving", "fresh-ingredient", "floating-exploded-showcase":
+	case "food-serving", "fresh-ingredient":
 		return "3.0.7"
 	default:
 		return "3.0.6"
@@ -60,6 +60,8 @@ func TestVideoTemplateRewrittenCatalogContract(t *testing.T) {
 				}
 			}
 			switch recipe.ID {
+			case "floating-exploded-showcase":
+				beatCountOK = len(recipe.Beats) == 8
 			case "black-gold-reveal":
 				beatCountOK = len(recipe.Beats) == 7
 			case "rhythmic-feature-demo":
