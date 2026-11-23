@@ -24,7 +24,7 @@ function compact(value: number): string {
   return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
 }
 
-/** 数字进位（count-up）：700ms 三次缓出；reduced-motion 时直接落终值。 */
+/** 数字进位：1100ms 三次缓出；减少动态效果时直接显示终值。 */
 export function useCountUp(target: number, decimals = 0): string {
   const [text, setText] = useState(() => withDecimals(prefersReducedMotion() ? target : 0, decimals));
 
@@ -36,7 +36,7 @@ export function useCountUp(target: number, decimals = 0): string {
     let raf = 0;
     const t0 = performance.now();
     const tick = (t: number) => {
-      const p = Math.min((t - t0) / 700, 1);
+      const p = Math.min((t - t0) / 1100, 1);
       const ease = 1 - (1 - p) ** 3;
       setText(withDecimals(target * ease, decimals));
       if (p < 1) raf = requestAnimationFrame(tick);

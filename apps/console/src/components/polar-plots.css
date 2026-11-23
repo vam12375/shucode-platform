@@ -1,0 +1,50 @@
+.polar-plot{width:100%;position:relative;min-width:0}
+.polar-plot>svg{display:block;max-width:100%;overflow:visible}
+.polar-plot-grid{stroke:var(--grid);stroke-width:1}
+.polar-plot-axis{fill:var(--muted);font:10.5px var(--mono);font-variant-numeric:tabular-nums}
+.polar-plot-end{fill:var(--ink);font:600 11px var(--mono)}
+.polar-plot-cross line{stroke:rgba(220,234,244,.35);stroke-width:1}
+.polar-plot-ref{stroke:var(--warn);stroke-width:1;stroke-dasharray:4 4;opacity:.8}
+.polar-plot-ref-label{fill:var(--ink-2);font:10.5px var(--mono)}
+.polar-plot-band{fill:rgba(255,90,95,.07)}
+.polar-plot-bars:hover .polar-plot-col:not(:hover) .polar-plot-bar{opacity:.45}
+.polar-plot-bars:focus-within .polar-plot-col:not(:focus) .polar-plot-bar{opacity:.45}
+.polar-plot-bar{transition:opacity .12s}
+.polar-plot-col,.polar-plot-hit{outline:none}
+.polar-plot-col:focus-visible,.polar-plot-hit:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
+.polar-plot-legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;color:var(--ink-2);font-size:11.5px}
+.polar-plot-legend span{display:inline-flex;align-items:center;gap:6px;min-width:0}
+.polar-plot-legend i{width:8px;height:8px;border-radius:2px;display:inline-block;flex:none}
+.polar-plot-legend b{font:500 11px var(--mono);color:var(--ink);margin-left:2px}
+.polar-hbars{display:flex;flex-direction:column;gap:9px}
+.polar-hbar-row{display:grid;grid-template-columns:92px minmax(0,1fr) 74px;align-items:center;gap:10px;border-radius:6px;outline:none}
+.polar-hbar-label{color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px;font-size:13px}
+.polar-hbar-label em{font:normal 10px var(--mono);color:var(--muted)}
+.polar-hbar-label i{width:8px;height:8px;border-radius:2px;flex:none}
+.polar-hbar-track{height:6px;border-radius:999px;background:rgba(220,234,244,.06);overflow:hidden}
+.polar-hbar-fill{display:block;height:100%;border-radius:999px;transform-origin:left;animation:polar-plot-grow .9s cubic-bezier(.2,.8,.2,1) both}
+.polar-hbar-value{text-align:right;font:12px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
+.polar-hbar-row:hover .polar-hbar-label,.polar-hbar-row:focus-visible .polar-hbar-label{color:var(--ink)}
+.polar-hbar-row:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.polar-segments{display:flex;gap:2px;border-radius:999px;overflow:hidden}
+.polar-segments span{display:block;min-width:3px;transition:filter .12s;outline:none}
+.polar-segments span:hover,.polar-segments span:focus-visible{filter:brightness(1.25)}
+.polar-segments span:focus-visible{box-shadow:inset 0 0 0 1px var(--ink)}
+.polar-heat-scale{display:flex;align-items:center;gap:8px;margin-top:8px;color:var(--muted);font-size:11px}
+.polar-heat-scale i{width:120px;height:6px;border-radius:999px}
+.polar-heat-cell{transition:opacity .1s;outline:none}
+.polar-heat-cell:hover,.polar-heat-cell:focus-visible{stroke:var(--ink);stroke-width:1.5}
+.polar-plot-in{animation:polar-plot-fade .8s ease both;animation-delay:var(--d,0ms)}
+.polar-plot-line{stroke-dasharray:3000;stroke-dashoffset:3000;animation:polar-plot-draw 1.4s ease forwards}
+.polar-plot-line.dashed{stroke-dashoffset:0;animation:polar-plot-fade .8s ease both}
+.polar-spark{display:block;flex:none}
+.polar-status-hexes{display:flex;gap:3px;flex-wrap:wrap}
+.polar-status-hex{width:14px;height:16px;clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);background:rgba(61,220,151,.75);outline:none}
+.polar-status-hex.warn{background:var(--warn)}
+.polar-status-hex.crit{background:var(--crit)}
+.polar-status-hex.idle{background:rgba(220,234,244,.12)}
+.polar-status-hex:hover,.polar-status-hex:focus-visible{filter:brightness(1.25)}
+@keyframes polar-plot-grow{from{transform:scaleX(0)}}
+@keyframes polar-plot-draw{to{stroke-dashoffset:0}}
+@keyframes polar-plot-fade{from{opacity:0}}
+@media(prefers-reduced-motion:reduce){.polar-plot-in,.polar-plot-line,.polar-hbar-fill{animation:none}.polar-plot-line{stroke-dashoffset:0}.polar-plot-bar,.polar-segments span,.polar-heat-cell{transition:none}}

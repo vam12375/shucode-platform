@@ -33,12 +33,12 @@ export interface ChartSeries {
 }
 
 const DONUT_COLORS = [
-  "var(--donut-color-1, #e8a008)",
-  "var(--donut-color-2, #8a5c03)",
-  "var(--donut-color-3, #f2ac2c)",
-  "var(--donut-color-4, #b07804)",
-  "var(--donut-color-5, #f2cf7a)",
-  "var(--donut-color-6, #666d70)",
+  "var(--donut-color-1, #3d93d6)",
+  "var(--donut-color-2, #d9703f)",
+  "var(--donut-color-3, #26a87d)",
+  "var(--donut-color-4, #b38d1f)",
+  "var(--donut-color-5, #a06ae0)",
+  "var(--donut-color-6, #db5c80)",
 ];
 
 interface TooltipPayloadItem {
@@ -139,7 +139,7 @@ export function ComposedTrendChart({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <ComposedChart data={data} margin={{ top: 14, right: rightSeries.length > 0 ? 14 : 16, bottom: 0, left: 4 }}>
-        <CartesianGrid stroke="var(--line-soft)" strokeDasharray="3 3" vertical={false} />
+        <CartesianGrid stroke="var(--grid)" vertical={false} />
         <XAxis
           dataKey="label"
           tick={{ fontSize: 11, fill: "var(--ink-soft)" }}
@@ -188,7 +188,7 @@ export function ComposedTrendChart({
                 dataKey={item.key}
                 name={item.label}
                 fill={item.color}
-                radius={[2, 2, 0, 0]}
+                radius={[4, 4, 0, 0]}
                 maxBarSize={30}
               />
             );
@@ -202,7 +202,7 @@ export function ComposedTrendChart({
                 dataKey={item.key}
                 name={item.label}
                 stroke={item.color}
-                strokeWidth={1.5}
+                strokeWidth={2}
                 fill={item.color}
                 fillOpacity={0.18}
                 dot={false}
@@ -217,7 +217,7 @@ export function ComposedTrendChart({
               dataKey={item.key}
               name={item.label}
               stroke={item.color}
-              strokeWidth={1.8}
+              strokeWidth={2}
               dot={false}
               activeDot={{ r: 3 }}
             />
