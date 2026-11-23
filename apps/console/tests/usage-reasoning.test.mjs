@@ -133,6 +133,11 @@ async function mountUsage(records, canManagePlatform = true, usageOptions = {}, 
     "../components/UsageModel.js": { UsageModel },
     "../components/Icon.js": icons,
     "../components/charts.js": { ComposedTrendChart: "chart", ModelDonutChart: "donut" },
+    "../components/PolarPlots.js": { PolarTrendChart: "chart", PolarBarChart: "bar-chart", PolarBars: "bars", PolarSegments: "segments", RecordHeatmap: "heatmap", polarCompact: String },
+    "../components/polar-colors.js": { entityColor: () => "#3D93D6" },
+    "./polar-metrics.css": {},
+    // 静态行为测试不加载 CSS；布局效果由实际浏览器验收。
+    "./polar-ops-layout.css": {},
     "../components/Feedback.js": {},
     "../components/Gauge.js": { formatPct: String },
     "../components/Select.js": { Select: "select" },
@@ -211,10 +216,12 @@ test("root usage keeps zero user charges beside a nonzero frozen supplier cost a
   assert.ok(headers.includes("用户实扣（credit）"));
   assert.ok(headers.includes("供应商成本（估算）"));
   const requestRows = elements(tree, "tr").filter((row) => elements(row, "button").some((button) => button.props["aria-label"]?.startsWith("查看请求详情")));
-  assert.equal(nodeText(elements(requestRows[0], "td")[6]), "0");
-  assert.equal(nodeText(elements(requestRows[0], "td")[7]), "CNY 0.000001");
+  const chargeColumn = headers.lastIndexOf("用户实扣（credit）") - headers.lastIndexOf("时间");
+  const costColumn = headers.lastIndexOf("供应商成本（估算）") - headers.lastIndexOf("时间");
+  assert.equal(nodeText(elements(requestRows[0], "td")[chargeColumn]), "0");
+  assert.equal(nodeText(elements(requestRows[0], "td")[costColumn]), "CNY 0.000001");
   assert.match(nodeText(requestRows[1]), /原片分镜分析（固定费）/);
-  assert.equal(nodeText(elements(requestRows[1], "td")[6]), "1");
+  assert.equal(nodeText(elements(requestRows[1], "td")[chargeColumn]), "1");
   assert.match(nodeText(requestRows[1]), /无历史快照/);
   assert.match(nodeText(requestRows[2]), /成本未知/);
   assert.match(nodeText(tree), /模型请求的用户实扣为 0/);
@@ -281,8 +288,8 @@ test("usage filters and distribution labels use projected names while filter val
   const filter = elements(tree, "select").find((node) => node.props.ariaLabel === "按模型筛选");
   assert.deepEqual(Array.from(filter.props.options, (option) => ({ ...option })), [{ value: "", label: "全部模型" }, { value: key, label: "门道绘图" }]);
   assert.match(nodeText(tree), /门道绘图/);
-  const chart = elements(tree, "donut")[0];
-  assert.equal(chart.props.segments[0].label, "门道绘图");
+  const chart = elements(tree, "segments").find((node) => node.props.rows[0]?.key === key);
+  assert.equal(chart.props.rows[0].label, "门道绘图");
   elements(tree, "button").find((button) => button.props["aria-label"] === "查看请求详情 request-cost").props.onClick();
   const dialog = elements(ui.render(), "div").find((node) => node.props.role === "dialog");
   assert.equal(nodeText(elements(dialog, "h3")[0]), "门道绘图");

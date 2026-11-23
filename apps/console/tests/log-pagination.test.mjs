@@ -29,8 +29,8 @@ function text(tree) {
   if (!tree || typeof tree !== "object") return tree ?? "";
   return text(tree.props?.children);
 }
-async function mount(kind, loader, metadataLoader, seriesLoader) {
-  const slots = [], effects = [], calls = [], seriesCalls = [];
+async function mount(kind, loader, metadataLoader, seriesLoader, rangeLoader) {
+  const slots = [], effects = [], calls = [], seriesCalls = [], chartCalls = [];
   let cursor = 0, dirty = false;
   let auth = { teamId: "team-a", user: { id: "user", email: "fixture@example.test" }, canManagePlatform: true, canManageTeam: true };
   const memo = (fn, deps) => {
@@ -60,6 +60,10 @@ async function mount(kind, loader, metadataLoader, seriesLoader) {
       if (name === "../auth.js") return { useAuth: () => auth };
       if (name === "../api.js") return { api: async (path) => {
         const query = new URL(path, "https://fixture.invalid");
+        if (query.pathname === "/usage" && query.searchParams.get("limit") === "1" && query.searchParams.has("from") && query.searchParams.has("to")) {
+          chartCalls.push({ path, params: query.searchParams, teamId: auth.teamId, canManagePlatform: auth.canManagePlatform });
+          return rangeLoader ? rangeLoader(query.searchParams, { ...auth }) : { records: [], aggregates: [], nextCursor: null, costSummary: null };
+        }
         if (query.pathname === "/usage" || query.pathname === "/audit") {
           calls.push({ path, params: query.searchParams, teamId: auth.teamId, canManagePlatform: auth.canManagePlatform });
           return loader ? loader(query.searchParams, { ...auth }) : response(kind, query.searchParams.get("cursor") ? "page-two" : "page-one", query.searchParams.has("cursor") ? null : "cursor-next");
@@ -84,6 +88,10 @@ async function mount(kind, loader, metadataLoader, seriesLoader) {
       if (name === "../components/UsageDateRange.js") return { UsageDateRange: "UsageDateRange" };
       if (name === "../components/UsageModel.js") return { UsageModel: "UsageModel" };
       if (name === "../components/charts.js") return { ComposedTrendChart: "chart", ModelDonutChart: "donut" };
+      if (name === "../components/PolarPlots.js") return { PolarTrendChart: "chart", PolarBarChart: "bar-chart", PolarBars: "bars", PolarSegments: "segments", RecordHeatmap: "heatmap", polarCompact: String };
+      if (name === "../components/polar-colors.js") return { entityColor: () => "#3D93D6" };
+      // VM 只验证分页行为，新增布局样式与现有样式一样由浏览器加载。
+      if (name === "./polar-metrics.css" || name === "./polar-ops-layout.css") return {};
       if (name === "../components/Feedback.js") return {};
       if (name === "../components/Gauge.js") return { formatPct: String };
       if (name === "../components/Select.js") return { Select: "Select" };
@@ -103,7 +111,7 @@ async function mount(kind, loader, metadataLoader, seriesLoader) {
   const shown = () => kind === "Usage" ? nodes(render(), (node) => node.type === "UsageModel").map((node) => node.props.record.id)
     : nodes(render(), (node) => node.type === "tbody").flatMap((node) => nodes(node, (row) => row.type === "tr")).map((node) => text(node)).filter((value) => !value.includes("加载中"));
   render(); await settle();
-  return { render, settle, calls, seriesCalls, button, shown, setAuth(patch) { auth = { ...auth, ...patch }; render(); },
+  return { render, settle, calls, seriesCalls, chartCalls, button, shown, setAuth(patch) { auth = { ...auth, ...patch }; render(); },
     setPageSize(size) { nodes(render(), (node) => node.type === "Select" && node.props.ariaLabel?.endsWith("每页条数"))[0].props.onChange(String(size)); render(); },
     filterStatus(value) { nodes(render(), (node) => node.type === "Select" && node.props.ariaLabel === "按状态筛选")[0].props.onChange(value); render(); },
     rangeApply(preset, from, to) { nodes(render(), (node) => node.type === "UsageDateRange")[0].props.onApply(preset, from, to); render(); },
@@ -244,8 +252,50 @@ test("Usage: a pending previous range cannot repopulate either chart after a new
   const chartSizes = () => nodes(ui.render(), (node) => node.type === "chart").map((node) => node.props.data.length);
   ui.rangeApply("custom", "2026-10-10", "2026-10-10");
   assert.deepEqual(chartSizes(), [0, 0], "old chart rows disappear immediately when the active window changes");
+  await new Promise(setImmediate);
+  assert.equal(typeof resolveOld, "function", "the old range remains in flight after its model discovery finishes");
   ui.rangeApply("custom", "2026-10-12", "2026-10-13"); await ui.settle();
   assert.deepEqual(chartSizes(), [2, 2]);
   resolveOld({ series: [] }); await ui.settle();
   assert.deepEqual(chartSizes(), [2, 2], "late old rows cannot change the window or repopulate its 24 hour buckets");
+});
+
+test("Usage: each stacked model layer comes from its own real bucket query", async () => {
+  const bucket = (hour, creditsMicro, cacheReadTokens = 0, inputTokens = 0) => ({ bucketStart: `2026-10-10T${hour}:00:00`, requests: 1, creditsMicro, cacheReadTokens, inputTokens, cacheCreationTokens: 0 });
+  const ui = await mount("Usage", undefined, undefined, (params) => {
+    if (params.get("from") !== "2026-10-09T16:00:00") return { series: [] };
+    if (params.get("model") === "gpt-a") return { series: [bucket("00", 1_000_000), bucket("01", 4_000_000)] };
+    if (params.get("model") === "claude-b") return { series: [bucket("00", 5_000_000), bucket("01", 1_000_000)] };
+    return { series: [bucket("00", 6_000_000, 3, 7), bucket("01", 5_000_000, 9, 1)] };
+  }, (params) => ({ records: [], nextCursor: null, costSummary: null,
+    aggregates: params.get("from") === "2026-10-09T16:00:00" ? [{ model: "gpt-a", modelDisplayName: "模型 A" }, { model: "claude-b", modelDisplayName: "模型 B" }] : [] }));
+  const listCalls = ui.calls.length;
+  ui.rangeApply("custom", "2026-10-10", "2026-10-10"); await ui.settle();
+  const charts = nodes(ui.render(), (node) => node.type === "chart");
+  assert.equal(charts[0].props.stacked, true);
+  assert.deepEqual(Array.from(charts[0].props.series, (series) => series.label), ["模型 A", "模型 B"]);
+  assert.equal(charts[0].props.data[0]["model:gpt-a"], 1);
+  assert.equal(charts[0].props.data[0]["model:claude-b"], 5);
+  assert.equal(charts[0].props.data[1]["model:gpt-a"], 4);
+  assert.equal(charts[0].props.data[1]["model:claude-b"], 1, "model proportions change by bucket instead of being copied from a global share");
+  assert.equal(charts[0].props.data[2]["model:gpt-a"], 0);
+  assert.equal(charts[1].props.data[0].hitRate, 30);
+  assert.equal(charts[1].props.data[1].hitRate, 90);
+  assert.equal(charts[1].props.data[2].hitRate, null, "a missing prompt denominator remains unknown");
+  assert.equal(charts[1].props.reference.value, 60, "the reference is weighted by the same actual prompt tokens");
+  assert.equal(ui.calls.length, listCalls, "model discovery and model series never replace the current recent-request page");
+  assert.deepEqual(ui.chartCalls.at(-1).params.get("limit"), "1");
+});
+
+test("Usage: stale model discovery cannot issue series queries in a new identity scope", async () => {
+  let resolveOld;
+  const ui = await mount("Usage", undefined, undefined, undefined, (_params, scope) => scope.teamId === "team-a"
+    ? new Promise((resolve) => { resolveOld = resolve; })
+    : { records: [], aggregates: [], nextCursor: null, costSummary: null });
+  assert.equal(ui.seriesCalls.length, 0);
+  ui.setAuth({ teamId: "team-b", canManagePlatform: false, canManageTeam: false }); await ui.settle();
+  const freshCalls = ui.seriesCalls.length;
+  resolveOld({ records: [], aggregates: [{ model: "private-old-model" }], nextCursor: null, costSummary: null }); await ui.settle();
+  assert.equal(ui.seriesCalls.length, freshCalls, "a late discovery response must not send old private model identifiers to the new scope");
+  assert.ok(!ui.seriesCalls.some((params) => params.get("model") === "private-old-model"));
 });

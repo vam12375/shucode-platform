@@ -27,12 +27,9 @@ import {
 import { UsageModel } from "../components/UsageModel.js";
 import { UsageDateRange } from "../components/UsageDateRange.js";
 import { resolveUsageChartRange, type UsageChartPreset } from "../usage-range.js";
-import {
-  ComposedTrendChart,
-  ModelDonutChart,
-  type ChartDatum,
-  type ChartSeries,
-} from "../components/charts.js";
+import { type ChartDatum, type ChartSeries } from "../components/charts.js";
+import { PolarBarChart, PolarBars, PolarSegments, PolarTrendChart, RecordHeatmap, polarCompact } from "../components/PolarPlots.js";
+import { entityColor } from "../components/polar-colors.js";
 import { showToast, toastErr } from "../components/Feedback.js";
 import { formatPct } from "../components/Gauge.js";
 import { Glyph, PageTitle } from "../components/Icon.js";
@@ -43,6 +40,8 @@ import {
   shanghaiDayEndUtc,
   shanghaiDayStartUtc,
 } from "../time.js";
+import "./polar-metrics.css";
+import "./polar-ops-layout.css";
 
 interface TeamOption {
   id: string;
@@ -144,6 +143,12 @@ interface DayPoint {
   cacheReadTokens: number;
   /** 当日总 prompt token：入（新输入）+ 缓存读 + 缓存写，缓存率分母。 */
   promptTokens: number;
+}
+
+interface ModelTrend {
+  model: string;
+  label: string;
+  buckets: Record<string, number>;
 }
 
 interface UsageCostGroup {
@@ -282,8 +287,9 @@ export function UsagePage() {
   const [metadataScope, setMetadataScope] = useState("");
   const [seriesScope, setSeriesScope] = useState("");
   const [dayRows, setDays] = useState<DayPoint[]>([]);
+  const [modelTrendRows, setModelTrends] = useState<ModelTrend[]>([]);
   const [chartSelection, setChartSelection] = useState<{ preset: UsageChartPreset; from: string; to: string }>({ preset: "today", from: "", to: "" });
-  const [donutBy, setDonutBy] = useState<"tokens" | "credits">("tokens");
+  const [donutBy, setDonutBy] = useState<"tokens" | "credits">("credits");
   const [error, setError] = useState<string | null>(null);
   const [seriesError, setSeriesError] = useState<string | null>(null);
   const [seriesReloadKey, setSeriesReloadKey] = useState(0);
@@ -302,6 +308,7 @@ export function UsagePage() {
   const modelOptions = currentMetadata ? catalogModels : [];
   const devices = currentMetadata ? deviceRows : [];
   const days = seriesScope === chartScope ? dayRows : [];
+  const modelTrends = seriesScope === chartScope ? modelTrendRows : [];
 
   // 游标只属于创建它的筛选和身份范围，切换团队/权限时不得复用或展示上一范围的记录。
   const pageScope = JSON.stringify([teamId, user.id, canManagePlatform, canManageTeam, from, to,
@@ -358,8 +365,8 @@ export function UsagePage() {
     return () => { current = false; };
   }, [canManagePlatform, canManageTeam, user, teamId, identityScope]);
 
-  // 趋势图为平台口径，与页内筛选无关；一次 series 请求按上海墙钟分桶，
-  // 前端补零对齐时间轴（积分图与缓存率图共用这份数据）。
+  // 趋势查询与最近请求分页独立。按区间聚合发现历史／媒体模型后逐模型查询，
+  // 不能用模型的全期占比拆分每日积分；每层都必须来自该模型的实际分桶结果。
   useEffect(() => {
     let current = true;
     void (async () => {
@@ -384,9 +391,19 @@ export function UsagePage() {
       });
       setSeriesError(null);
       try {
-        const data = await api<{ series: SeriesRow[] }>(
-          `/usage/series?${query.toString()}`,
-        );
+        const modelQuery = new URLSearchParams({ from: chartRange.queryFrom, to: chartRange.queryTo, limit: "1" });
+        const rangeUsage = await api<UsagePageData>(`/usage?${modelQuery.toString()}`);
+        if (!current) return;
+        const models = rangeUsage.aggregates;
+        const [data, modelData] = await Promise.all([
+          api<{ series: SeriesRow[] }>(`/usage/series?${query.toString()}`),
+          Promise.all(models.map(async (model) => {
+            const modelSeriesQuery = new URLSearchParams(query);
+            modelSeriesQuery.set("model", model.model);
+            const result = await api<{ series: SeriesRow[] }>(`/usage/series?${modelSeriesQuery.toString()}`);
+            return { model: model.model, label: usageModelName(model.model, model.modelDisplayName), buckets: Object.fromEntries(result.series.map((row) => [row.bucketStart, row.creditsMicro / MICRO_CREDITS_PER_CREDIT])) };
+          })),
+        ]);
         if (!current) return;
         for (const row of data.series) {
           const bucket = zeroed.get(row.bucketStart);
@@ -398,11 +415,13 @@ export function UsagePage() {
             row.inputTokens + row.cacheReadTokens + row.cacheCreationTokens;
         }
         setDays([...zeroed.values()]);
+        setModelTrends(modelData);
         setSeriesScope(chartScope);
       } catch (seriesLoadError) {
         if (!current) return;
         // 失败不能把空桶当成真实零用量展示。
         setDays([]);
+        setModelTrends([]);
         setSeriesScope(chartScope);
         setSeriesError(
           seriesLoadError instanceof Error
@@ -656,30 +675,13 @@ export function UsagePage() {
 
   const costTrend: ChartDatum[] = days.map((day) => ({
     label: bucketLabel(day.date),
-    credits: day.creditsMicro / MICRO_CREDITS_PER_CREDIT,
-    requests: day.requests,
+    ...Object.fromEntries(modelTrends.map((model) => [`model:${model.model}`, model.buckets[day.date] ?? 0])),
   }));
-  const costSeries: ChartSeries[] = [
-    {
-      key: "credits",
-      label: "积分 (credit)",
-      color: "var(--amber)",
-      kind: "bar",
-      format: (value) =>
-        value.toLocaleString("en-US", { maximumFractionDigits: 4 }),
-      axisFormat: (value) =>
-        value.toLocaleString("en-US", { maximumFractionDigits: 2 }),
-    },
-    {
-      key: "requests",
-      label: "请求数",
-      color: "var(--ink)",
-      kind: "line",
-      axis: "right",
-      format: (value) => Math.round(value).toLocaleString("en-US"),
-      axisFormat: (value) => Math.round(value).toLocaleString("en-US"),
-    },
-  ];
+  const costSeries: ChartSeries[] = modelTrends.map((model) => ({
+    key: `model:${model.model}`, label: model.label, color: entityColor(model.model), kind: "area",
+    format: (value) => value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    axisFormat: polarCompact,
+  }));
 
   const cacheTrend: ChartDatum[] = days.map((day) => {
     const rate = cacheRate(day.cacheReadTokens, day.promptTokens);
@@ -691,23 +693,34 @@ export function UsagePage() {
   });
   const cacheSeries: ChartSeries[] = [
     {
-      key: "cacheRead",
-      label: "缓存读 token",
-      color: "var(--amber)",
-      kind: "area",
-      format: (value) => compactToken(value),
-      axisFormat: (value) => compactToken(value),
-    },
-    {
       key: "hitRate",
-      label: "命中率",
-      color: "var(--info)",
-      kind: "line",
-      axis: "right",
+      label: "缓存命中率",
+      color: "var(--accent)",
+      kind: "area",
       format: (value) => `${value.toFixed(1)}%`,
       axisFormat: (value) => `${Math.round(value)}%`,
     },
   ];
+  const cacheValues = cacheTrend.map((row) => row.hitRate).filter((value): value is number => typeof value === "number");
+  const cacheMinimum = Math.min(30, Math.floor(Math.min(100, ...cacheValues) / 10) * 10);
+  const cacheMaximum = Math.max(70, Math.ceil(Math.max(0, ...cacheValues) / 10) * 10);
+
+  const recordTeamRank = useMemo(() => {
+    const result = new Map<string, number>();
+    for (const record of records) result.set(record.teamId, (result.get(record.teamId) ?? 0) + record.creditsMicro);
+    return [...result].map(([id, micro]) => ({ key: id, label: teams.find((team) => team.id === id)?.name ?? id.slice(0, 8), value: micro / MICRO_CREDITS_PER_CREDIT })).sort((a, b) => b.value - a.value).slice(0, 6);
+  }, [records, teams]);
+  const reasoningRank = useMemo(() => {
+    const result = new Map<string, number>();
+    for (const record of records) {
+      const effort = reasoningEffortText(record);
+      result.set(effort, (result.get(effort) ?? 0) + 1);
+    }
+    const ordered = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "未记录", "不适用"];
+    const labels = [...new Set(["low", "medium", "high", "xhigh", "max", ...result.keys()])];
+    const ramp: Record<string, string> = { none: "#1C2E3A", minimal: "#234052", low: "#2A4A5C", medium: "#3E7590", high: "#58A2C2", xhigh: "#73C8E6", max: "#A9E9FF" };
+    return labels.sort((a, b) => (ordered.indexOf(a) < 0 ? ordered.length : ordered.indexOf(a)) - (ordered.indexOf(b) < 0 ? ordered.length : ordered.indexOf(b))).map((label) => ({ label, value: result.get(label) ?? 0, color: ramp[label] ?? "var(--muted)" }));
+  }, [records]);
 
   // 详情弹窗的设备显示：名称 + 客户端上报的系统；凭据已删除时回退 ID 前缀。
   const deviceLabel = (deviceTokenId: string | null): string => {
@@ -720,13 +733,14 @@ export function UsagePage() {
   };
 
   return (
-    <div>
+    <div className="polar-metrics polar-usage">
       <header className="page-head">
         <div>
-          <p className="eyebrow">计量 / 流水</p>
+          <p className="eyebrow">Usage analytics</p>
           <PageTitle icon={ChartColumn}>
-            {canManagePlatform ? "用量" : canManageTeam ? "用量与消费" : "我的用量"}
+            {canManagePlatform || canManageTeam ? "用量与消费" : "我的用量"}
           </PageTitle>
+          <p className="page-sub">按上海墙钟分桶 · 单个自然日与近 24 小时按小时，其余按天</p>
         </div>
         <p className="readout m0">
           {dataUnavailable
@@ -794,14 +808,11 @@ export function UsagePage() {
           </p>
         </div>
         <div className="stat-card">
-          <p className="stat-label">总 Token</p>
+          <p className="stat-label">缓存命中率</p>
           <p className="stat-value">
             {dataUnavailable
               ? "—"
-              : compactToken(
-                  totalInputTokens + totalOutputTokens + totalCacheTokens,
-                )}
-            <span className="unit">tok</span>
+              : cacheRateText(aggregates.reduce((sum, row) => sum + row.cacheReadTokens, 0), totalInputTokens + totalCacheTokens)}
           </p>
           <p
             className="stat-sub"
@@ -809,7 +820,7 @@ export function UsagePage() {
           >
             {dataUnavailable
               ? "加载失败，请重试"
-              : `输入 ${compactToken(totalInputTokens)} · 输出 ${compactToken(totalOutputTokens)} · 缓存 ${compactToken(totalCacheTokens)}（按缓存价）`}
+              : `总 ${compactToken(totalInputTokens + totalOutputTokens + totalCacheTokens)} tok · 缓存 ${compactToken(totalCacheTokens)} tok`}
           </p>
         </div>
         <div className="stat-card">
@@ -822,44 +833,25 @@ export function UsagePage() {
             {dataUnavailable ? "加载失败，请重试" : "网关计量 · 团队账单口径"}
           </p>
         </div>
-        {canManagePlatform ? (
-          <div className="stat-card">
-            <p className="stat-label">区间总成本</p>
-            <p className="stat-value">
-              {dataUnavailable || !primaryCostTotal
-                ? "—"
-                : money(
-                    primaryCostTotal.costMicro / 1_000_000,
-                    primaryCostTotal.currency,
-                  )}
-            </p>
-            <p className="stat-sub">
-              {dataUnavailable
-                ? "加载失败，请重试"
-                : costSummary
-                  ? `估算 · ${costSummary.estimatedRequests} 条成本快照 · ${costSummary.missingCostRequests} 条缺失`
-                  : "成本汇总加载中…"}
-            </p>
-          </div>
-        ) : null}
         <div className="stat-card">
-          <p className="stat-label">平均耗时</p>
+          <p className="stat-label">每请求均价</p>
           <p className="stat-value">
-            {dataUnavailable || avgLatencyS === null
+            {dataUnavailable || totalRequests === 0
               ? "—"
-              : avgLatencyS.toFixed(2)}
-            <span className="unit">s</span>
+              : formatCreditsDisplay(totalCredits / MICRO_CREDITS_PER_CREDIT / totalRequests)}
+            <span className="unit">credit</span>
           </p>
           <p className="stat-sub">
             {dataUnavailable
               ? "加载失败，请重试"
               : avgLatencyS === null
                 ? "范围内暂无带延迟记录"
-                : "成功请求均值"}
+                : `平均耗时 ${avgLatencyS.toFixed(2)} s`}
           </p>
         </div>
       </section>
 
+      <details className="polar-usage-billing-note"><summary>计费口径与当前售价对照</summary>
       <p className="readout" style={{ margin: "0 0 18px" }}>
         计费口径：总积分为请求发生时实扣，历史记录不随调价回写；缓存命中按缓存读单价计费，通常远低于输入价。
         当前售价对照（不代表历史实扣）：
@@ -877,8 +869,15 @@ export function UsagePage() {
         。
       </p>
 
-      <section className="pane">
+      </details>
+
+      <section className="pane polar-span-12 polar-usage-filters">
         <div className="pane-b">
+          <div className="form-row" style={{ marginBottom: 12 }}>
+            <span className="eyebrow" style={{ margin: 0, fontSize: 10 }}>趋势范围</span>
+            <div className="polar-segmented" aria-label="趋势日期预设">{([{ value: "today", label: "今天" }, { value: "last24h", label: "近 24 小时" }, { value: "7d", label: "近 7 天" }, { value: "30d", label: "近 30 天" }] as const).map((preset) => <button key={preset.value} type="button" aria-pressed={chartSelection.preset === preset.value} onClick={() => { setChartSelection({ preset: preset.value, from: "", to: "" }); setSeriesReloadKey((value) => value + 1); }}>{preset.label}</button>)}</div>
+            <span className="readout" style={{ fontSize: 10 }}>{chartRangeLabel}</span>
+          </div>
           <div className="form-row">
             {canManagePlatform || canManageTeam ? (
               <Select
@@ -984,7 +983,7 @@ export function UsagePage() {
         </div>
       </section>
 
-      <section className="pane d1">
+      <section className="pane d1 polar-span-8 polar-usage-trend">
         <div className="pane-h">
           <h2>积分趋势 · {presetLabel}</h2>
           <div className="form-row" style={{ gap: 8 }}>
@@ -1010,10 +1009,12 @@ export function UsagePage() {
           </div>
         </div>
         <div className="pane-b">
-          <ComposedTrendChart
+          <PolarTrendChart
             data={costTrend}
             series={costSeries}
-            height={280}
+            height={260}
+            stacked
+            ariaLabel="按模型堆叠的积分趋势"
             emptyText={
               seriesError ? "趋势数据加载失败，请重试。" : "所选范围暂无积分数据。"
             }
@@ -1021,7 +1022,7 @@ export function UsagePage() {
         </div>
       </section>
 
-      <section className="pane d1">
+      <section className="pane d1 polar-span-4 polar-usage-cache">
         <div className="pane-h">
           <h2>缓存率趋势 · {presetLabel}</h2>
           <span className="readout">
@@ -1033,10 +1034,14 @@ export function UsagePage() {
           </span>
         </div>
         <div className="pane-b">
-          <ComposedTrendChart
+          <PolarTrendChart
             data={cacheTrend}
             series={cacheSeries}
-            height={240}
+            height={260}
+            yMin={cacheMinimum}
+            yMax={cacheMaximum}
+            reference={chartCacheRate === null ? undefined : { value: chartCacheRate * 100, label: `均值 ${formatPct(chartCacheRate)}` }}
+            endLabel="value"
             emptyText={
               seriesError
                 ? "趋势数据加载失败，请重试。"
@@ -1046,74 +1051,7 @@ export function UsagePage() {
         </div>
       </section>
 
-      <section className="pane d1">
-        <div className="pane-h">
-          <h2>模型分布</h2>
-          <div className="form-row" style={{ gap: 6 }}>
-            <button
-              className="btn btn-sm"
-              type="button"
-              aria-pressed={donutBy === "tokens"}
-              style={donutBy === "tokens" ? undefined : { opacity: 0.55 }}
-              onClick={() => setDonutBy("tokens")}
-            >
-              按 Token
-            </button>
-            <button
-              className="btn btn-sm"
-              type="button"
-              aria-pressed={donutBy === "credits"}
-              style={donutBy === "credits" ? undefined : { opacity: 0.55 }}
-              onClick={() => setDonutBy("credits")}
-            >
-              按积分
-            </button>
-          </div>
-        </div>
-        <div className="pane-b donut-wrap">
-          {donutSegments.total > 0 ? (
-            <>
-              <div
-                style={{ width: 280, flex: "0 0 auto" }}
-                role="img"
-                aria-label={`按${donutBy === "tokens" ? "Token" : "积分"}的模型分布`}
-              >
-                <ModelDonutChart
-                  segments={donutSegments.segments}
-                  total={donutSegments.total}
-                  totalUnit={donutBy === "tokens" ? "tok" : "credit"}
-                  formatValue={(value) =>
-                    donutBy === "tokens" ? compactToken(value) : credits(value)
-                  }
-                />
-              </div>
-              <ul className="donut-legend">
-                {donutSegments.segments.map((segment, index) => (
-                  <li key={segment.model}>
-                    <span
-                      className={`donut-dot donut-color-${(index % 6) + 1}`}
-                      aria-hidden="true"
-                    />
-                    <span className="donut-name">{segment.label ?? usageModelName(segment.model)}</span>
-                    <span className="num readout">
-                      {donutBy === "tokens"
-                        ? compactToken(segment.value)
-                        : credits(segment.value)}
-                      · {formatPct(segment.value / donutSegments.total)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <p className="readout" style={{ margin: 0 }}>
-              所选范围内暂无分布数据。
-            </p>
-          )}
-        </div>
-      </section>
-
-      <section className="pane d1">
+      <section className="pane d1 polar-span-7 polar-usage-models">
         <div className="pane-h">
           <h2>按模型汇总</h2>
           <span className="readout">网关计量 · 团队账单口径</span>
@@ -1132,6 +1070,8 @@ export function UsagePage() {
                 <th scope="col" className="num">
                   输出 Token
                 </th>
+                <th scope="col" className="num">缓存读</th>
+                <th scope="col">Token 构成</th>
                 <th scope="col" className="num">
                   缓存命中率
                 </th>
@@ -1148,7 +1088,7 @@ export function UsagePage() {
                   row.cacheCreationTokens;
                 return (
                   <tr key={row.model}>
-                    <td>{usageModelName(row.model, row.modelDisplayName)}</td>
+                    <td><i className="polar-model-dot" style={{ background: entityColor(row.model) }} />{usageModelName(row.model, row.modelDisplayName)}</td>
                     <td className="num">
                       {row.requests.toLocaleString("en-US")}
                     </td>
@@ -1158,6 +1098,8 @@ export function UsagePage() {
                     <td className="num">
                       {row.outputTokens.toLocaleString("en-US")}
                     </td>
+                    <td className="num">{row.cacheReadTokens.toLocaleString("en-US")}</td>
+                    <td>{row.inputTokens + row.cacheReadTokens + row.outputTokens > 0 ? <PolarSegments showLegend={false} height={6} rows={[{ label: "输入", value: row.inputTokens, color: "#3D6E8F" }, { label: "缓存读", value: row.cacheReadTokens, color: "#8FE3FF" }, { label: "输出", value: row.outputTokens, color: "#DCEAF4" }]} format={(value) => `${value.toLocaleString("en-US")} tok`} /> : "—"}</td>
                     <td
                       className="num"
                       title={`缓存读 ${row.cacheReadTokens.toLocaleString("en-US")} / 总 ${prompt.toLocaleString("en-US")} tok`}
@@ -1170,7 +1112,7 @@ export function UsagePage() {
               })}
               {aggregates.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="readout">
+                  <td colSpan={8} className="readout">
                     所选范围内暂无用量。
                   </td>
                 </tr>
@@ -1193,6 +1135,8 @@ export function UsagePage() {
                       .reduce((sum, row) => sum + row.outputTokens, 0)
                       .toLocaleString("en-US")}
                   </td>
+                  <td className="num">{aggregates.reduce((sum, row) => sum + row.cacheReadTokens, 0).toLocaleString("en-US")}</td>
+                  <td />
                   <td className="num">
                     {cacheRateText(
                       aggregates.reduce(
@@ -1215,10 +1159,64 @@ export function UsagePage() {
             ) : null}
           </table>
         </div>
+        <div className="polar-token-key"><span><i style={{ background: "#3D6E8F" }} />输入</span><span><i style={{ background: "#8FE3FF" }} />缓存读</span><span><i style={{ background: "#DCEAF4" }} />输出</span></div>
+      </section>
+
+      <section className="pane d1 polar-span-5 polar-usage-distribution">
+        <div className="pane-h">
+          <h2>{donutBy === "tokens" ? "模型 Token 构成" : "模型消费构成"}</h2>
+          <div className="form-row" style={{ gap: 6 }}>
+            <button
+              className="btn btn-sm"
+              type="button"
+              aria-pressed={donutBy === "tokens"}
+              style={donutBy === "tokens" ? undefined : { opacity: 0.55 }}
+              onClick={() => setDonutBy("tokens")}
+            >
+              按 Token
+            </button>
+            <button
+              className="btn btn-sm"
+              type="button"
+              aria-pressed={donutBy === "credits"}
+              style={donutBy === "credits" ? undefined : { opacity: 0.55 }}
+              onClick={() => setDonutBy("credits")}
+            >
+              按积分
+            </button>
+          </div>
+        </div>
+        <div className="pane-b">
+          {donutSegments.total > 0 ? (
+            <>
+              <PolarSegments rows={donutSegments.segments.map((segment) => ({ key: segment.model, label: segment.label ?? usageModelName(segment.model), value: segment.value, color: entityColor(segment.model) }))} format={(value) => donutBy === "tokens" ? `${compactToken(value)} tok` : `${credits(value)} credit`} />
+            </>
+          ) : (
+            <p className="readout" style={{ margin: 0 }}>
+              所选范围内暂无分布数据。
+            </p>
+          )}
+          {canManagePlatform ? <><h3 className="polar-subheading">团队排行 · 本页请求</h3><PolarBars rows={recordTeamRank} format={(value) => `${formatCreditsDisplay(value)} credit`} emptyText="本页暂无团队消费。" /><p className="readout" style={{ margin: "12px 0 0", fontSize: 10 }}>按当前页 {records.length} 条请求汇总，不代表完整区间排名。</p></> : null}
+        </div>
+      </section>
+
+      <section className="pane d1 polar-span-7">
+        <div className="pane-h"><div><h2>用量热力 · 星期 × 小时</h2><p className="readout" style={{ margin: "6px 0 0", fontSize: 11 }}>本页请求数 · 上海墙钟 · 颜色越亮越忙</p></div></div>
+        <div className="pane-b"><RecordHeatmap records={records} /></div>
+      </section>
+      <section className="pane d1 polar-span-5">
+        <div className="pane-h"><div><h2>思考强度分布</h2><p className="readout" style={{ margin: "6px 0 0", fontSize: 11 }}>本页请求记录 · 缺少参数显示为未记录</p></div></div>
+        <div className="pane-b"><PolarBarChart
+          data={records.length ? reasoningRank.map((row) => ({ label: row.label, share: row.value / records.length * 100 })) : []}
+          series={[{ key: "share", label: "请求占比", kind: "bar", color: "var(--accent)", colorAt: (index) => reasoningRank[index].color, format: (value) => `${value.toFixed(1)}%`, axisFormat: (value) => `${Math.round(value)}%` }]}
+          height={230} ratio={.6} ticks={5} yMax={Math.max(50, Math.ceil(Math.max(0, ...reasoningRank.map((row) => records.length ? row.value / records.length * 100 : 0)) / 10) * 10)}
+          tipExtra={(index) => [{ label: "请求数", value: `${reasoningRank[index].value.toLocaleString("en-US")} 次` }]}
+          emptyText="本页暂无思考参数记录。"
+        /></div>
       </section>
 
       {canManagePlatform ? (
-        <section className="pane d1">
+        <section className="pane d1 polar-span-12 polar-usage-costs" style={{ order: 10 }}>
           <div className="pane-h">
             <h2>区间历史成本估算</h2>
             <span className="readout">
@@ -1351,7 +1349,7 @@ export function UsagePage() {
         </section>
       ) : null}
 
-      <section className="pane d2">
+      <section className="pane d2 polar-span-12 polar-usage-detail">
         <div className="pane-h">
           <h2>最近请求</h2>
           <span className="readout">每页 {pageSize} 条 · 筛选联动</span>
@@ -1367,17 +1365,19 @@ export function UsagePage() {
             <thead>
               <tr>
                 <th scope="col">时间</th>
+                <th scope="col">团队</th>
                 <th scope="col">账号</th>
-                {canManagePlatform ? <th scope="col">真实IP</th> : null}
                 <th scope="col">模型</th>
-                <th scope="col">状态</th>
-                <th scope="col" className="num">
-                  Token（入 / 出）
-                </th>
+                <th scope="col">思考</th>
+                <th scope="col" className="num">输入</th>
+                <th scope="col" className="num">缓存读</th>
+                <th scope="col" className="num">输出</th>
                 <th scope="col" className="num">
                   用户实扣（credit）
                 </th>
                 {canManagePlatform ? <th scope="col" className="num">供应商成本（估算）</th> : null}
+                <th scope="col" className="num">延迟</th>
+                <th scope="col">状态</th>
                 <th scope="col" aria-label="操作" />
               </tr>
             </thead>
@@ -1388,14 +1388,16 @@ export function UsagePage() {
                 return (
                   <tr key={record.id}>
                     <td className="num">
-                      {formatShanghaiTime(record.createdAt)}
+                      {formatShanghaiTime(record.createdAt).slice(5, 16)}
                     </td>
+                    <td>{teams.find((team) => team.id === record.teamId)?.name ?? record.teamId.slice(0, 8)}</td>
                     <td>
                       {userEmails.get(record.userId) ??
                         record.userId.slice(0, 8)}
+                      {canManagePlatform ? <div className="readout" style={{ fontSize: 10 }}>{record.clientIp ?? "—"}</div> : null}
                     </td>
-                    {canManagePlatform ? <td>{record.clientIp ?? "—"}</td> : null}
                     <td>
+                      <i className="polar-model-dot" style={{ background: entityColor(record.model) }} />
                       {record.model === "media:reference-analysis" ? (
                         <span>{usageModelName(record.model, record.modelDisplayName)}</span>
                       ) : <UsageModel record={record} />}
@@ -1405,19 +1407,18 @@ export function UsagePage() {
                         </div>
                       ) : null}
                     </td>
-                    <td>
-                      <Chip tone={status.tone}>{status.label}</Chip>
-                    </td>
-                    <td className="num">
-                      {record.inputTokens.toLocaleString("en-US")} /{" "}
-                      {record.outputTokens.toLocaleString("en-US")}
-                    </td>
+                    <td className="num" title={`思考预算：${reasoningBudgetText(record)}`}>{reasoningEffortText(record)}</td>
+                    <td className="num">{record.inputTokens.toLocaleString("en-US")}</td>
+                    <td className="num">{record.cacheReadTokens.toLocaleString("en-US")}</td>
+                    <td className="num">{record.outputTokens.toLocaleString("en-US")}</td>
                     <td className="num">{credits(record.creditsMicro)}</td>
                     {cost ? (
                       <td className="num" title={cost.reason}>
                         {cost.text}
                       </td>
                     ) : null}
+                    <td className="num">{record.latencyMs === null || record.latencyMs === undefined ? "—" : `${(record.latencyMs / 1000).toFixed(2)}s`}</td>
+                    <td><Chip tone={status.tone}>{status.label}</Chip></td>
                     <td>
                       <button
                         className="btn btn-ghost btn-sm"
@@ -1433,7 +1434,7 @@ export function UsagePage() {
               })}
               {records.length === 0 ? (
                 <tr>
-                  <td colSpan={canManagePlatform ? 9 : 7} className="readout">
+                  <td colSpan={canManagePlatform ? 13 : 12} className="readout">
                     {loading ? "加载中…" : "暂无请求记录。"}
                   </td>
                 </tr>
