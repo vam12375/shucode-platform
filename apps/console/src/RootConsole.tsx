@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Activity, Boxes, ChartColumn, Clapperboard, HandCoins, LayoutGrid, LayoutTemplate, PackageCheck, Palette, Plug, ScrollText, SlidersHorizontal, Smartphone, Tags, Users } from "lucide-react";
+import { Activity, Boxes, ChartColumn, Clapperboard, HandCoins, LayoutDashboard, LayoutGrid, LayoutTemplate, PackageCheck, Palette, Plug, ScrollText, SlidersHorizontal, Smartphone, Tags, Users } from "lucide-react";
 import { Glyph } from "./components/Icon.js";
 import type { NavGroup } from "./navigation.js";
 import { ConfigPage } from "./pages/ConfigPage.js";
@@ -7,6 +7,7 @@ import { ModelsPage } from "./pages/Models.js";
 import { ModelDisplayPage } from "./pages/ModelDisplay.js";
 import { MediaModelsPage } from "./pages/MediaModels.js";
 import { OpsPage } from "./pages/Ops.js";
+import { OverviewPage } from "./pages/Overview.js";
 import { OrgPage } from "./pages/Org.js";
 import { CreditPackagesPage } from "./pages/CreditPackages.js";
 import { PricingPage } from "./pages/Pricing.js";
@@ -17,6 +18,7 @@ import { TemplateLibraryPage } from "./pages/TemplateLibrary.js";
 import { UiLibraryPage } from "./pages/UiLibrary.js";
 
 const NAV_GROUPS = [
+  { label: "总览", items: [{ path: "/overview", label: "总览", icon: LayoutDashboard }] },
   {
     label: "组织",
     items: [
@@ -63,6 +65,7 @@ export default function RootConsole({ section, param, userId, page, children }: 
   children: (groups: NavGroup[], page: ReactNode, referenceNav: ReactNode) => ReactNode;
 }) {
   switch (section) {
+    case "overview": page = <OverviewPage />; break;
     case "credit-packages": page = <CreditPackagesPage />; break;
     case "releases": page = <ReleasesPage />; break;
     case "models": page = <ModelsPage />; break;
@@ -77,7 +80,7 @@ export default function RootConsole({ section, param, userId, page, children }: 
     case "org":
     case "users": page = <OrgPage currentUserId={userId} />; break;
     case "teams": page = param ? <TeamDetailPage teamId={param} /> : <OrgPage currentUserId={userId} />; break;
-    default: page ??= <OrgPage currentUserId={userId} />;
+    default: page ??= <OverviewPage />;
   }
   return children(NAV_GROUPS, page, (
     <div className="side-ref">

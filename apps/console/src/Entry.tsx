@@ -3,7 +3,7 @@ import { api, navigate } from "./api.js";
 import { LoginPage } from "./pages/Login.js";
 import { InvitePage } from "./pages/Invite.js";
 import { DialogHost, ToastHost } from "./components/Feedback.js";
-import { ThemePicker } from "./components/ThemePicker.js";
+import { PolarAuthBrand, PolarAuthFrame } from "./components/PolarAuth.js";
 import type { SessionData } from "./permissions.js";
 
 // 登录前只交付认证入口；动态模块的文件权限由构建清单与服务端共同执行。
@@ -58,7 +58,7 @@ export function Entry() {
   if (session === undefined) content = <div className="center">加载中…</div>;
   else if (session) content = <Workspace session={session} onSignedOut={reload} />;
   else if (route === "#/setup") content = setupAccess ? <Setup onSetup={onLogin} /> : (
-    <div className="login-page"><form className="login-card" onSubmit={async (event) => {
+    <PolarAuthFrame><form className="login-card" onSubmit={async (event) => {
       event.preventDefault();
       setBusy(true); setError("");
       try {
@@ -67,16 +67,17 @@ export function Entry() {
       } catch { setError("无法访问，请核对凭据或联系部署人员。"); }
       finally { setBusy(false); }
     }}>
-      <h1 className="login-title">MENDAO</h1>
-      <label>部署凭据<input className="input" type="password" autoComplete="off" value={credential} onChange={(event) => setCredential(event.target.value)} /></label>
+      <PolarAuthBrand />
+      <h1 className="login-title">验证部署凭据</h1>
+      <p className="login-sub">使用部署时配置的凭据继续</p>
+      <label className="polar-auth-field">部署凭据<input className="input" type="password" autoComplete="off" value={credential} onChange={(event) => setCredential(event.target.value)} /></label>
       {error ? <p className="error">{error}</p> : null}
-      <button className="btn" disabled={busy}>{busy ? "验证中…" : "继续"}</button>
-    </form></div>
+      <button className="btn polar-auth-submit" disabled={busy}>{busy ? "验证中…" : "继续"}</button>
+    </form></PolarAuthFrame>
   );
   else if (route.startsWith("#/invite")) content = <><ToastHost /><DialogHost /><InvitePage onAccepted={refreshSession} /></>;
   else content = <LoginPage onLogin={onLogin} />;
   return <>
-    {!session || session.mfaSetupRequired ? <div className="theme-floating"><ThemePicker /></div> : null}
     <LoadBoundary><Suspense fallback={<div className="center">加载中…</div>}>{content}</Suspense></LoadBoundary>
   </>;
 }

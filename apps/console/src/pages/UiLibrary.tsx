@@ -30,8 +30,8 @@ import { Select } from "../components/Select.js";
 import { Chip, Notice, type ChipTone } from "../components/StatusChip.js";
 
 /**
- * UI 组件库（参考页，#/ui）：把「计量台」设计体系可视化的自查清单。
- * 只陈列全站真实用到的令牌与组件；新增状态/组件先改 design.md §9 再来此登记。
+ * UI 组件库（参考页，#/ui）：展示极夜界面的颜色、控件与反馈状态。
+ * 色板与全站使用的语义令牌一致。
  */
 
 interface SwatchRow {
@@ -44,7 +44,7 @@ interface SwatchRow {
   chips: Array<{ label: string; where: string }>;
 }
 
-/** 五级语义色板：浅色与深色共用语义令牌。 */
+/** 五级语义色板：状态始终同时用图标与文字表达。 */
 const TONES: SwatchRow[] = [
   {
     tone: "ok",
@@ -74,9 +74,9 @@ const TONES: SwatchRow[] = [
   },
   {
     tone: "hot",
-    dotVar: "amber",
+    dotVar: "warn",
     name: "告警",
-    doc: "--amber / --amber-text",
+    doc: "--warn · #F5B841",
     usage: "未失败但需要留意的临界态——额度逼近或客户端中断。",
     chips: [
       { label: "近额", where: "团队（用量 ≥ 90%）" },
@@ -86,9 +86,9 @@ const TONES: SwatchRow[] = [
   },
   {
     tone: "stop",
-    dotVar: "signal",
+    dotVar: "crit",
     name: "失败",
-    doc: "--signal",
+    doc: "--crit · #FF5A5F",
     usage: "已发生错误或资源被强制终止——需要人工介入的状态。",
     chips: [
       { label: "错误", where: "用量流水" },
@@ -99,9 +99,9 @@ const TONES: SwatchRow[] = [
   },
   {
     tone: "mute",
-    dotVar: "line",
+    dotVar: "muted",
     name: "中性",
-    doc: "--line / --ink-soft",
+    doc: "--muted · #7A8EA1",
     usage: "降噪：非当前、非活跃或无语义结果——不参与告警但保留信息。",
     chips: [
       { label: "不限", where: "团队额度" },
@@ -113,7 +113,7 @@ const TONES: SwatchRow[] = [
   },
 ];
 
-/** 图标清单：全站真实使用的客户端同款 lucide 图标（新增页面图标先改 design.md §10）。 */
+/** 图标清单：全站真实使用的 lucide 图标。 */
 const ICON_SAMPLES: Array<{ icon: GlyphIcon; label: string; where: string }> = [
   { icon: Users, label: "团队与账号", where: "导航" },
   { icon: ScrollText, label: "审计日志", where: "导航" },
@@ -172,16 +172,36 @@ export function UiLibraryPage() {
     <div>
       <header className="page-head">
         <div>
-          <p className="eyebrow">参考 / 组件库</p>
+          <p className="eyebrow">设计 / 组件库</p>
           <PageTitle icon={Palette}>UI 组件库</PageTitle>
         </div>
-        <span className="readout m0">「计量台」视觉语言 · lucide 图标（客户端同款）· 纯 CSS 令牌</span>
+        <span className="readout m0">极夜 · 冰青读数与玻璃面板</span>
       </header>
+
+      <section className="pane">
+        <div className="pane-h"><h2>极夜色板</h2><span className="readout">深色表面 · 冰青强调</span></div>
+        <div className="pane-b">
+          <div className="swatch-grid">
+            {[
+              { label: "夜色", token: "bg", hex: "#05070A", usage: "页面底色" },
+              { label: "面板", token: "surface", hex: "#0C1016", usage: "图表与内容表面" },
+              { label: "正文", token: "ink", hex: "#DCEAF4", usage: "标题与主要内容" },
+              { label: "次文", token: "ink-2", hex: "#9FB2C3", usage: "标签与辅助说明" },
+              { label: "冰青", token: "accent", hex: "#8FE3FF", usage: "主要操作与读数" },
+              { label: "静态", token: "muted", hex: "#7A8EA1", usage: "刻度与非活跃内容" },
+            ].map((color) => <div className="swatch" key={color.token}>
+              <div className="swatch-name"><span className="swatch-dot" style={{ background: `var(--${color.token})`, border: "1px solid var(--line-2)" }} />{color.label}</div>
+              <p className="swatch-hex">{color.hex}</p>
+              <p className="swatch-use">{color.usage}</p>
+            </div>)}
+          </div>
+        </div>
+      </section>
 
       <section className="pane">
         <div className="pane-h">
           <h2>状态色板 · 五级语义</h2>
-          <span className="readout">文字色对比度 ≥ 4.5:1（design.md §9）</span>
+          <span className="readout">颜色、图标、文字共同表达状态</span>
         </div>
         <div className="pane-b">
           <div className="swatch-grid">
@@ -209,7 +229,7 @@ export function UiLibraryPage() {
                 <span className="swatch-dot" style={{ background: "var(--ink)" }} />
                 通用标签 · 缺省
               </div>
-              <p className="swatch-hex">--ink（墨点，非状态）</p>
+              <p className="swatch-hex">--ink · #DCEAF4</p>
               <p className="swatch-use">与状态无关的中性标签：不要用于任何业务状态。</p>
               <div className="swatch-chips">
                 <Chip title="上游返回的模型 ID 列表">grok-4.7-fast</Chip>
@@ -361,8 +381,8 @@ export function UiLibraryPage() {
 
       <section className="pane">
         <div className="pane-h">
-          <h2>额度尺 · 签名元素</h2>
-          <span className="readout">填充 + 指针 + 刻度 + 读数</span>
+          <h2>额度可视化</h2>
+          <span className="readout">预算进度与余额读数</span>
         </div>
         <div className="pane-b lib-pane">
           <div className="lib-row">

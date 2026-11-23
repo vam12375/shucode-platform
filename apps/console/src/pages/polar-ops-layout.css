@@ -1,0 +1,41 @@
+.polar-ops{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px}
+.polar-ops>.page-head,.polar-ops>.notice,.polar-ops>.polar-ops-live-grid,.polar-ops>.polar-ops-charts,.polar-ops>.pane,.polar-ops-window-summary,.polar-ops-extra-credits,.polar-ops-diagnostics{grid-column:1/-1;margin:0!important;min-width:0}
+.polar-ops>.page-head{order:0}
+.polar-ops>.notice{order:1}
+.polar-ops>.polar-ops-live-grid{order:2}
+.polar-ops>.polar-ops-charts{order:3}
+.polar-ops>.pane{order:10}
+.polar-ops>.polar-ops-providers{order:4}
+.polar-ops>.polar-ops-alerts,.polar-ops>.polar-ops-settlements{grid-column:span 6;order:5}
+.polar-ops-window-summary{order:20}
+.polar-ops-diagnostics{order:21}
+.polar-ops-extra-credits{order:22;border:1px solid var(--line);border-radius:14px;background:var(--glass)}
+.polar-ops-extra-credits>summary,.polar-ops-rule-settings>summary{cursor:pointer;padding:10px 14px;font-size:11.5px;color:var(--ink-2)}
+/* 表格的负边距依赖父面板内边距，附加诊断面板也必须使用同一盒模型。 */
+.polar-ops>.pane{padding:16px 18px;background:var(--glass);border:1px solid var(--line);border-radius:var(--r);backdrop-filter:blur(22px) saturate(140%)}
+.polar-ops>.pane>.pane-h{padding:0;border:0;margin-bottom:12px}
+.polar-ops>.pane>.pane-b{padding:0}
+.polar-ops>.pane>.table-scroll{margin:0 -18px;padding:0 18px}
+.polar-ops-alert-cards{display:flex;flex-direction:column;gap:8px}
+.polar-ops-alert-card{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--ink) 2.5%,transparent)}
+.polar-ops-alert-card>.glyph{color:var(--warn);margin-top:2px}
+.polar-ops-alert-card b{font-size:12.5px;font-weight:500}
+.polar-ops-alert-card p{margin:2px 0 0;color:var(--ink-2);font-size:12px;overflow-wrap:anywhere}
+.polar-ops-alert-card>div:last-child{display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.polar-ops-alert-card time{font:11px var(--mono);color:var(--muted)}
+.polar-ops-rule-settings{margin-top:14px;border-top:1px solid var(--line)}
+.polar-ops-rule-settings>summary{padding-left:0}
+.polar-ops-rule-settings .table{min-width:580px}
+.polar-ops .table th{font:10.5px var(--mono);padding:8px 10px;letter-spacing:.12em;color:var(--muted)}
+.polar-ops .table td{font-size:12.5px;padding:10px}
+.polar-ops-kpi-row .polar-spark{min-width:0;max-width:100%;flex:0 1 120px}
+.polar-usage-billing-note{grid-column:1/-1;order:11;padding:0 18px;border:1px solid var(--line);border-radius:14px;background:var(--glass)}
+.polar-usage-billing-note>summary{padding:12px 0;cursor:pointer;color:var(--ink-2);font-size:11.5px}
+.polar-usage .stat-card:nth-child(1){order:2}
+.polar-usage .stat-card:nth-child(2){order:3}
+.polar-usage .stat-card:nth-child(3){order:1}
+.polar-usage .stat-card:nth-child(4){order:4}
+.polar-usage .stat-value{font-family:var(--sans);color:var(--ink);font-variant-numeric:proportional-nums}
+@media(max-width:920px){.polar-ops>.polar-ops-alerts,.polar-ops>.polar-ops-settlements{grid-column:1/-1}.polar-ops .stat-value{font-size:22px}.polar-ops .ops-live-metric .stat-value{font-size:22px}}
+/* 四列读数挤压了固定宽度的迷你图；窄屏改为两列，说明与图线分行，避免越界。 */
+@media(max-width:640px){.polar-ops .polar-ops-live-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.polar-ops .ops-live-metric:nth-child(2){border-right:0}.polar-ops .ops-live-metric:nth-child(-n+2){border-bottom:1px solid var(--line)}.polar-ops-kpi-row{flex-direction:column;align-items:flex-start;gap:6px}.polar-ops-kpi-row .polar-spark{flex:none;width:100%;max-width:120px}.polar-ops-delta{white-space:nowrap}}

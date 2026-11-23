@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from "react";
-import { MailPlus } from "lucide-react";
+import { ArrowRight, MailPlus } from "lucide-react";
 import { api, navigate } from "../api.js";
 import { toastOk } from "../components/Feedback.js";
-import { PageTitle } from "../components/Icon.js";
+import { Glyph, PageTitle } from "../components/Icon.js";
+import { PolarAuthBrand, PolarAuthFrame } from "../components/PolarAuth.js";
 import { Notice } from "../components/StatusChip.js";
 import type { ConsoleUser } from "../permissions.js";
 
@@ -48,13 +49,12 @@ export function InvitePage({
       setBusy(false);
     }
   };
-  return (
-    <div className={user ? "" : "login-page"}>
+  const form = (
       <form
-        className={user ? "pane pane-b tenant-form" : "login-card"}
+        className={user ? "pane pane-b tenant-form" : "login-card polar-auth-invite"}
         onSubmit={(e) => void accept(e)}
       >
-        <p className="eyebrow">MENDAO / 团队邀请</p>
+        {user ? <p className="eyebrow">MENDAO / 团队邀请</p> : <PolarAuthBrand />}
         <PageTitle icon={MailPlus}>接受团队邀请</PageTitle>
         {error ? <Notice tone="stop">{error}</Notice> : null}
         {!token ? (
@@ -66,8 +66,8 @@ export function InvitePage({
         ) : (
           <>
             <p className="readout">使用受邀邮箱创建账号。已有账号请先登录。</p>
-            <label>
-              受邀邮箱
+            <label className="polar-auth-field">
+              <span>受邀邮箱</span>
               <input
                 className="input"
                 type="email"
@@ -77,8 +77,8 @@ export function InvitePage({
                 onChange={(e) => setEmail(e.target.value)}
               />
             </label>
-            <label>
-              显示名称
+            <label className="polar-auth-field">
+              <span>显示名称</span>
               <input
                 className="input"
                 required
@@ -87,8 +87,8 @@ export function InvitePage({
                 onChange={(e) => setDisplayName(e.target.value)}
               />
             </label>
-            <label>
-              设置密码
+            <label className="polar-auth-field">
+              <span>设置口令</span>
               <input
                 className="input"
                 type="password"
@@ -100,6 +100,7 @@ export function InvitePage({
               />
             </label>
             <a
+              className="polar-auth-link"
               href="#/login"
               onClick={() =>
                 sessionStorage.setItem("console-invitation", token)
@@ -109,10 +110,10 @@ export function InvitePage({
             </a>
           </>
         )}
-        <button className="btn" disabled={busy || !token}>
-          {busy ? "接受中…" : "接受邀请"}
+        <button className={user ? "btn" : "btn polar-auth-submit"} disabled={busy || !token}>
+          {busy ? "接受中…" : <>接受邀请<Glyph icon={ArrowRight} size={15} /></>}
         </button>
       </form>
-    </div>
   );
+  return user ? <div>{form}</div> : <PolarAuthFrame>{form}</PolarAuthFrame>;
 }

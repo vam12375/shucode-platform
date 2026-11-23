@@ -1,5 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { api } from "../api.js";
+import { ArrowRight, CircleAlert } from "lucide-react";
+import { Glyph } from "../components/Icon.js";
+import { PolarAuthBrand, PolarAuthFrame } from "../components/PolarAuth.js";
 import type { SessionData } from "../permissions.js";
 
 /**
@@ -36,16 +39,13 @@ export default function SetupPage({ onSetup }: { onSetup: (data: SessionData) =>
   };
 
   return (
-    <div className="login-page">
+    <PolarAuthFrame>
       <form className="login-card" onSubmit={(event) => void submit(event)}>
-        <h1 className="login-title">MENDAO</h1>
-        <p className="login-sub">初始化系统管理</p>
-        <p className="readout" style={{ margin: "0 0 14px" }}>
-          请设置系统管理账号。
-        </p>
-        <label className="sr-only" htmlFor="setup-email">
-          系统管理员邮箱
-        </label>
+        <PolarAuthBrand />
+        <h1 className="login-title">创建管理员</h1>
+        <p className="login-sub">设置首个系统管理账号</p>
+        <label className="polar-auth-field" htmlFor="setup-email">
+          <span>系统管理员邮箱</span>
         <input
           className="input"
           id="setup-email"
@@ -56,9 +56,9 @@ export default function SetupPage({ onSetup }: { onSetup: (data: SessionData) =>
           onChange={(event) => setEmail(event.target.value)}
           required
         />
-        <label className="sr-only" htmlFor="setup-name">
-          显示名
         </label>
+        <label className="polar-auth-field" htmlFor="setup-name">
+          <span>显示名称</span>
         <input
           className="input"
           id="setup-name"
@@ -68,9 +68,9 @@ export default function SetupPage({ onSetup }: { onSetup: (data: SessionData) =>
           onChange={(event) => setDisplayName(event.target.value)}
           required
         />
-        <label className="sr-only" htmlFor="setup-pass">
-          密码
         </label>
+        <label className="polar-auth-field" htmlFor="setup-pass">
+          <span>口令</span>
         <input
           className="input"
           id="setup-pass"
@@ -82,9 +82,9 @@ export default function SetupPage({ onSetup }: { onSetup: (data: SessionData) =>
           onChange={(event) => setPassword(event.target.value)}
           required
         />
-        <label className="sr-only" htmlFor="setup-confirm">
-          确认密码
         </label>
+        <label className="polar-auth-field" htmlFor="setup-confirm">
+          <span>确认口令</span>
         <input
           className="input"
           id="setup-confirm"
@@ -96,12 +96,13 @@ export default function SetupPage({ onSetup }: { onSetup: (data: SessionData) =>
           onChange={(event) => setConfirm(event.target.value)}
           required
         />
-        {error ? <p className="error">{error}</p> : null}
-        <button className="btn" type="submit" disabled={busy}>
-          {busy ? "创建中…" : "创建系统管理员"}
+        </label>
+        {error ? <p className="polar-auth-error" role="alert"><Glyph icon={CircleAlert} size={15} /><span>{error}</span></p> : null}
+        <button className="btn polar-auth-submit" type="submit" disabled={busy}>
+          {busy ? "创建中…" : <>创建系统管理员<Glyph icon={ArrowRight} size={15} /></>}
         </button>
-        <p className="login-foot">仅可初始化一次 · 密码只以哈希存入数据库</p>
+        <p className="login-foot">首次使用 · 创建完成后进入控制台</p>
       </form>
-    </div>
+    </PolarAuthFrame>
   );
 }

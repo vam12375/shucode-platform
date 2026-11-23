@@ -11,7 +11,7 @@ export type GlyphIcon = ComponentType<LucideProps>;
 export function Glyph({
   icon: Icon,
   size = 16,
-  strokeWidth = 2,
+  strokeWidth = 1.6,
   className,
   ...rest
 }: { icon: GlyphIcon } & Omit<LucideProps, "ref">) {
@@ -37,7 +37,7 @@ export function PageTitle({
 }) {
   return (
     <h1 className="page-title">
-      <Glyph icon={icon} size={20} strokeWidth={2} />
+      <Glyph icon={icon} size={24} strokeWidth={1.5} />
       <span>{children}</span>
     </h1>
   );

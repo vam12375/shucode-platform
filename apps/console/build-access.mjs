@@ -63,7 +63,7 @@ export function consoleAssetAccess() {
         if (access === "public" && modules.some((id) => /\/src\/(App|RootConsole)\.tsx$/.test(id) || /\/src\/pages\/(?!Login\.|Invite\.)/.test(id))) {
           throw new Error("Private console module included in public assets");
         }
-        if (access === "session" && modules.some((id) => id.endsWith("/src/RootConsole.tsx") || /\/src\/pages\/(Providers|Pricing|Models|ModelDisplay|MediaModels|Ops|Org|ConfigPage|PaymentConfig|RootSetup|Releases|CreditPackages|TeamDetail|TemplateLibrary|UiLibrary)\.tsx$/.test(id))) {
+        if (access === "session" && modules.some((id) => id.endsWith("/src/RootConsole.tsx") || /\/src\/pages\/(Providers|Pricing|Models|ModelDisplay|MediaModels|Overview|Ops|Org|ConfigPage|PaymentConfig|RootSetup|Releases|CreditPackages|TeamDetail|TemplateLibrary|UiLibrary)\.tsx$/.test(id))) {
           throw new Error("Management module included in session assets");
         }
       }

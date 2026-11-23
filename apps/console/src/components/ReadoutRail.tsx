@@ -27,6 +27,12 @@ interface AppVersion {
   subject?: string;
 }
 
+interface LiveOverview {
+  requests: number;
+  errorRequests: number;
+  p95LatencyMs: number | null;
+}
+
 interface RailData {
   requests: number;
   creditsMicro: number;
@@ -94,16 +100,23 @@ async function loadRail(teamId: string): Promise<RailData> {
 }
 
 /** 顶部读数条（签名元素）：今日请求 / 今日积分 / 活跃设备 / 生效版本，数值带进位动效。 */
-export function ReadoutRail() {
+export function ReadoutRail({ onAlerts }: { onAlerts?: (count: number | null) => void } = {}) {
   const { canManagePlatform, canManageTeam, teamId, team, teams, selectTeam, user, refreshSession } =
     useAuth();
   const [data, setData] = useState<RailData | null>(null);
   const [version, setVersion] = useState<AppVersion | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [live, setLive] = useState<LiveOverview | null>(null);
+  const [alerts, setAlerts] = useState<number | null>(null);
+  const [liveFailed, setLiveFailed] = useState(false);
 
   const refresh = useCallback(() => {
     // 软件版本独立加载，避免用量接口失败时把版本误显示为配置发布序号。
     void api<AppVersion>("/version").then(setVersion).catch(() => setVersion(null));
+    if (canManagePlatform) {
+      void api<LiveOverview>("/ops/overview?hours=1").then((next) => { setLive(next); setLiveFailed(false); }).catch(() => { setLive(null); setLiveFailed(true); });
+      void api<{ alerts: { id: string }[] }>("/ops/alerts?status=open&limit=200").then((next) => { setAlerts(next.alerts.length); onAlerts?.(next.alerts.length); }).catch(() => { setAlerts(null); onAlerts?.(null); });
+    }
     loadRail(teamId)
       .then((next) => {
         setData(next);
@@ -114,7 +127,7 @@ export function ReadoutRail() {
         setData(null);
         setLoadError(error instanceof Error ? error.message : "读数加载失败");
       });
-  }, [canManagePlatform, teamId]);
+  }, [canManagePlatform, teamId, onAlerts]);
 
   useEffect(() => {
     refresh();
@@ -156,6 +169,19 @@ export function ReadoutRail() {
   const showScopeSelect = canManagePlatform || teams.length > 1;
 
   return (
+    <details className="dock-readout">
+      <summary className="island" aria-label="查看实时读数与切换团队" title={canManagePlatform ? "全平台近 1 小时读数 · 点击查看今日读数或切换范围" : "今日读数 · 点击切换团队"}>
+        <i className={loadError || liveFailed ? "live error" : canManagePlatform && !live ? "live pending" : "live"} aria-hidden="true" />
+        {canManagePlatform ? <>
+          <span>请求/时 <b>{live ? live.requests.toLocaleString("en-US") : "—"}</b></span>
+          <span>错误 <b>{live && live.requests > 0 ? `${(live.errorRequests / live.requests * 100).toFixed(2)}%` : "—"}</b></span>
+          <span className="opt">P95 <b>{live?.p95LatencyMs !== null && live?.p95LatencyMs !== undefined ? `${(live.p95LatencyMs / 1000).toFixed(2)}s` : "—"}</b></span>
+          <span className="opt bad">告警 <b>{alerts ?? "—"}</b></span>
+        </> : <>
+          <span>今日请求 <b>{data ? displayed.requests.toLocaleString("en-US") : "—"}</b></span>
+          <span>credit <b>{data ? formatCreditsDisplay(displayed.creditsMicro / 1_000_000) : "—"}</b></span>
+        </>}
+      </summary>
     <header
       className={canManagePlatform ? "rail" : "rail rail-with-balance"}
       aria-label={
@@ -307,5 +333,6 @@ export function ReadoutRail() {
         ) : null}
       </div>
     </header>
+    </details>
   );
 }

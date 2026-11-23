@@ -1,4 +1,5 @@
 import { ChevronDown } from "lucide-react";
+import { createPortal } from "react-dom";
 import {
   useEffect,
   useId,
@@ -19,8 +20,9 @@ export interface SelectOption {
  * ↑/↓ 移动高亮、Enter/Space 展开（展开时选择）、Esc 关闭、Home/End 首尾；
  * 点击外部或页面滚动关闭。
  *
- * 菜单用 position: fixed 按触发器坐标计算：绝对定位会被祖先的层叠上下文
- * （面板入场动画）与滚动容器（表格 overflow）裁剪；视口下方空间不足时向上翻转。
+ * 毛玻璃与 transform 祖先会成为 fixed 的定位基准，导致视口坐标被再次偏移。
+ * 菜单通过 portal 挂到 body 后按触发器的视口坐标定位，避免偏移与表格裁剪；
+ * 视口下方空间不足时向上翻转。
  */
 export function Select({
   options,
@@ -67,7 +69,8 @@ export function Select({
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent): void => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
     };
     // 滚动/缩放时关闭（捕获阶段覆盖内部滚动容器）；菜单自身滚动不关闭。
     const onScroll = (event: Event): void => {
@@ -106,6 +109,7 @@ export function Select({
     if (!option) return;
     onChange(option.value);
     setOpen(false);
+    triggerRef.current?.focus();
   };
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
@@ -183,7 +187,7 @@ export function Select({
           style={{ transform: open ? "rotate(180deg)" : undefined }}
         />
       </button>
-      {open && menuAnchor ? (
+      {open && menuAnchor ? createPortal(
         <div
           className="ui-select-menu"
           ref={menuRef}
@@ -215,7 +219,8 @@ export function Select({
               {option.label}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );

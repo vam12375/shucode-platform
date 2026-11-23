@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, type ApiError } from "../api.js";
-import { Gauge } from "../components/Gauge.js";
+import { ArrowRight, CircleAlert, LockKeyhole, ShieldCheck } from "lucide-react";
+import { Glyph } from "../components/Icon.js";
+import { PolarAuthBrand, PolarAuthFrame } from "../components/PolarAuth.js";
 import { Turnstile } from "../components/Turnstile.js";
 import { normalizeTurnstileSiteKey, turnstileRequired } from "../turnstile.js";
 import type { SessionData } from "../permissions.js";
@@ -107,39 +109,37 @@ export function LoginPage({ onLogin }: { onLogin: (data: SessionData) => void })
   };
 
   return (
-    <div className="login-page">
+    <PolarAuthFrame>
       <form className="login-card" onSubmit={(event) => void submit(event)}>
-        <h1 className="login-title">MENDAO</h1>
-        <p className="login-sub">计量控制台 · METERING CONSOLE</p>
-        <div className="login-gauge">
-          <Gauge used={62} quota={100} bare />
-        </div>
-        <label className="sr-only" htmlFor="lg-email">
-          账号邮箱
-        </label>
+        <PolarAuthBrand />
+        <h1 className="login-title">登录控制台</h1>
+        <p className="login-sub">平台管理员与团队管理员入口</p>
+        <label className="polar-auth-field" htmlFor="lg-email">
+          <span>邮箱</span>
         <input
           className="input"
           id="lg-email"
           type="email"
-          placeholder="账号邮箱"
+          placeholder="输入账号邮箱"
           autoComplete="username"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           required
         />
-        <label className="sr-only" htmlFor="lg-pass">
-          密码
         </label>
+        <label className="polar-auth-field" htmlFor="lg-pass">
+          <span>口令</span>
         <input
           className="input"
           id="lg-pass"
           type="password"
-          placeholder="密码"
+          placeholder="输入登录口令"
           autoComplete="current-password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           required
         />
+        </label>
         {turnstileEnabled ? (
           <Turnstile
             siteKey={turnstileSiteKey}
@@ -151,11 +151,12 @@ export function LoginPage({ onLogin }: { onLogin: (data: SessionData) => void })
           <p className="turnstile-loading">正在加载安全验证…</p>
         ) : null}
         <details className="mfa-login">
-          <summary>双重验证（已启用时填写）</summary>
-          <label>
-            动态验证码
+          <summary><Glyph icon={ShieldCheck} size={15} />双重验证（已启用时填写）</summary>
+          <label className="polar-auth-field">
+            <span>动态验证码</span>
             <input
-              className="input"
+              className="input mfa-code"
+              placeholder="000000"
               inputMode="numeric"
               autoComplete="one-time-code"
               maxLength={6}
@@ -166,10 +167,11 @@ export function LoginPage({ onLogin }: { onLogin: (data: SessionData) => void })
               }}
             />
           </label>
-          <label>
-            或使用恢复码
+          <label className="polar-auth-field">
+            <span>或使用恢复码</span>
             <input
               className="input"
+              placeholder="输入恢复码"
               autoComplete="off"
               value={recoveryCode}
               onChange={(event) => {
@@ -180,13 +182,13 @@ export function LoginPage({ onLogin }: { onLogin: (data: SessionData) => void })
           </label>
         </details>
         {error ? (
-          <p className="error">
-            {error}
-            {retryAfterSeconds > 0 ? `（${retryAfterSeconds} 秒后可重试）` : ""}
+          <p className="polar-auth-error" role="alert">
+            <Glyph icon={CircleAlert} size={15} />
+            <span>{error}{retryAfterSeconds > 0 ? `（${retryAfterSeconds} 秒后可重试）` : ""}</span>
           </p>
         ) : null}
         <button
-          className="btn"
+          className="btn polar-auth-submit"
           type="submit"
           disabled={
             busy ||
@@ -195,10 +197,10 @@ export function LoginPage({ onLogin }: { onLogin: (data: SessionData) => void })
             retryAfterSeconds > 0
           }
         >
-          {busy ? "登录中…" : "登录"}
+          {busy ? "登录中…" : <>登录控制台<Glyph icon={ArrowRight} size={15} /></>}
         </button>
-        <p className="login-foot">团队与个人工作台 · SECURE ACCESS</p>
+        <p className="login-foot"><Glyph icon={LockKeyhole} size={12} />团队与个人工作台 · 安全访问</p>
       </form>
-    </div>
+    </PolarAuthFrame>
   );
 }

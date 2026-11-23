@@ -1,5 +1,5 @@
-import { Fragment, useCallback, useEffect, useState, lazy, Suspense, type ReactNode } from "react";
-import { Boxes, Building2, ChartColumn, HandCoins, LogOut, ScrollText, Settings2, ShieldCheck, Smartphone, UserCog, Users } from "lucide-react";
+import { useCallback, useEffect, useState, lazy, Suspense, type ReactNode } from "react";
+import { Boxes, Building2, ChartColumn, HandCoins, ScrollText, Settings2, ShieldCheck, Smartphone, UserCog, Users } from "lucide-react";
 import { api, navigate, setApiTeamScope } from "./api.js";
 import { AuthProvider } from "./auth.js";
 import {
@@ -15,9 +15,8 @@ import { CatalogPage, ProfilePage, TenantPage } from "./pages/Tenant.js";
 import { Notice } from "./components/StatusChip.js";
 import { DialogHost, ToastHost } from "./components/Feedback.js";
 import { MfaSettings } from "./components/MfaSettings.js";
-import { Glyph } from "./components/Icon.js";
-import { ReadoutRail } from "./components/ReadoutRail.js";
-import { ThemePicker } from "./components/ThemePicker.js";
+import { ConsoleDock } from "./components/ConsoleDock.js";
+import { PolarAuthBrand, PolarAuthFrame } from "./components/PolarAuth.js";
 import { AuditPage } from "./pages/Audit.js";
 import { DevicesPage } from "./pages/Devices.js";
 import { InvitePage } from "./pages/Invite.js";
@@ -32,9 +31,9 @@ const RootConsole = lazy(() => import("./RootConsole.js"));
 
 export type AdminUser = ConsoleUser;
 
-function normalizeHash(hash: string): string {
+function normalizeHash(hash: string, platform: boolean): string {
   const raw = hash.replace(/^#/u, "");
-  return raw.startsWith("/") ? raw : "/usage";
+  return raw.startsWith("/") && !["/", "/login"].includes(raw) ? raw : platform ? "/overview" : "/usage";
 }
 
 /**
@@ -72,9 +71,13 @@ export function App({ session, onSignedOut }: { session: SessionData; onSignedOu
   const [platformTeams, setPlatformTeams] = useState<ConsoleTeam[]>([]);
   const [teamId, setTeamId] = useState("");
   const [mfaSetupRequired, setMfaSetupRequired] = useState(session.mfaSetupRequired === true);
-  const [route, setRoute] = useState(() => normalizeHash(window.location.hash));
+  const [route, setRoute] = useState(() => normalizeHash(window.location.hash, session.user.platformAccess === true));
   const [ready, setReady] = useState(false);
   useAutoHideScrollbars();
+  useEffect(() => {
+    // 改成页面滚动后，旧位置会跨页面保留；切换页面或团队时统一回到页首。
+    window.scrollTo(0, 0);
+  }, [route, teamId]);
 
   const receiveSession = useCallback((data: SessionData) => {
     const active = (data.memberships ?? []).filter(
@@ -107,10 +110,10 @@ export function App({ session, onSignedOut }: { session: SessionData; onSignedOu
   }, [refreshSession, receiveSession, session, onSignedOut]);
 
   useEffect(() => {
-    const onHashChange = () => setRoute(normalizeHash(window.location.hash));
+    const onHashChange = () => setRoute(normalizeHash(window.location.hash, user.platformAccess === true));
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
-  }, []);
+  }, [user.platformAccess]);
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => setReady(true));
@@ -124,7 +127,7 @@ export function App({ session, onSignedOut }: { session: SessionData; onSignedOu
     setMemberships([]);
     setMfaSetupRequired(false);
     onSignedOut();
-    navigate("/usage");
+    navigate("/login");
   }, [onSignedOut]);
 
   if (mfaSetupRequired) {
@@ -145,12 +148,13 @@ export function App({ session, onSignedOut }: { session: SessionData; onSignedOu
       >
         <ToastHost />
         <DialogHost />
-        <div className="login-page">
+        <PolarAuthFrame>
           <div className="login-card mfa-gate-card">
-            <h1 className="login-title">MENDAO</h1>
-            <p className="login-sub">系统管理员安全绑定 · MANDATORY MFA</p>
+            <PolarAuthBrand />
+            <h1 className="login-title">启用双重验证</h1>
+            <p className="login-sub">系统管理员安全绑定</p>
             <p className="readout">
-              当前部署已启用强制双重验证：请先绑定身份验证器；完成绑定前，除安全设置外的控制台接口都会被拒绝。
+              请先绑定身份验证器，再进入控制台。
             </p>
             <MfaSettings />
             <button
@@ -161,7 +165,7 @@ export function App({ session, onSignedOut }: { session: SessionData; onSignedOu
               退出登录
             </button>
           </div>
-        </div>
+        </PolarAuthFrame>
       </AuthProvider>
     );
   }
@@ -275,61 +279,9 @@ export function App({ session, onSignedOut }: { session: SessionData; onSignedOu
       <div className={ready ? "app ready" : "app"}>
         <ToastHost />
         <DialogHost />
-        <ReadoutRail key={`${user.id}:${teamId}`} />
-        <aside className="side">
-          <div className="brand">
-            <div className="brand-name">MENDAO</div>
-            <div className="brand-sub">计量控制台 · METERING</div>
-          </div>
-          <nav aria-label="控制台导航">
-            {groups.map((group) => (
-              <Fragment key={group.label}>
-                <p className="nav-group">{group.label}</p>
-                {group.items.map((item) => (
-                  <a
-                    key={item.path}
-                    href={`#${item.path}`}
-                    className={section === item.path.slice(1) ? "nav-item active" : "nav-item"}
-                  >
-                    <Glyph icon={item.icon} />
-                    <span>{item.label}</span>
-                  </a>
-                ))}
-              </Fragment>
-            ))}
-          </nav>
-          {referenceNav}
-          <div className="side-foot">
-            <ThemePicker />
-            {canManagePlatform ? (
-              <a href="#/profile" className="nav-item">
-                <Glyph icon={UserCog} />
-                <span>个人设置</span>
-              </a>
-            ) : null}
-            <div className="user-card">
-              <div className="user-card-top">
-                <div className="user-avatar" aria-hidden="true">
-                  {user.email.slice(0, 1).toUpperCase()}
-                </div>
-                <div className="user-meta">
-                  <span className="user-name" title={user.displayName || user.email}>
-                    {user.displayName || user.email}
-                  </span>
-                  <span className="user-mail" title={user.email}>
-                    {canManagePlatform ? "系统管理员 · " : canManageTeam ? "团队管理员 · " : "成员 · "}
-                    {user.email}
-                  </span>
-                </div>
-              </div>
-              <button className="logout" type="button" onClick={() => void logout()}>
-                <Glyph icon={LogOut} size={13} strokeWidth={2} />
-                退出登录
-              </button>
-            </div>
-          </div>
-        </aside>
-        <main className="main">
+        <a className="skip-link" href="#console-main" onClick={(event) => { event.preventDefault(); document.getElementById("console-main")?.focus(); }}>跳到页面内容</a>
+        <ConsoleDock groups={groups} section={section} referenceNav={referenceNav} onSignOut={() => void logout()} />
+        <main className="main" id="console-main" tabIndex={-1}>
           <div className="wrap" key={`${user.id}:${teamId}:${section}`}>
             {content}
           </div>

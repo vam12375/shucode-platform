@@ -40,6 +40,7 @@ test("team management follows active membership rather than global admin", () =>
 
 test("direct navigation cannot expose platform management to team admins", () => {
   for (const section of [
+    "overview",
     "credit-packages",
     "pricing",
     "models",
