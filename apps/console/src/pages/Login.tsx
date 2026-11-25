@@ -1,16 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, type ApiError } from "../api.js";
+import { loadPublicConfig } from "../publicConfig.js";
 import { ArrowRight, CircleAlert, LockKeyhole, ShieldCheck } from "lucide-react";
 import { Glyph } from "../components/Icon.js";
 import { PolarAuthBrand, PolarAuthFrame } from "../components/PolarAuth.js";
 import { Turnstile } from "../components/Turnstile.js";
 import { normalizeTurnstileSiteKey, turnstileRequired } from "../turnstile.js";
 import type { SessionData } from "../permissions.js";
-
-interface PublicConfig {
-  turnstileSiteKey?: unknown;
-  turnstileEnabled?: unknown;
-}
 
 export function LoginPage({ onLogin }: { onLogin: (data: SessionData) => void }) {
   const [email, setEmail] = useState("");
@@ -37,19 +33,15 @@ export function LoginPage({ onLogin }: { onLogin: (data: SessionData) => void })
 
   useEffect(() => {
     let cancelled = false;
-    void api<PublicConfig>("/public-config")
-      .then((config) => {
-        if (cancelled) return;
-        const siteKey = normalizeTurnstileSiteKey(config?.turnstileSiteKey);
-        setTurnstileSiteKey(siteKey);
-        setTurnstileEnabled(config?.turnstileEnabled === true && turnstileRequired(siteKey));
-      })
-      .catch(() => {
-        // 公开配置读取失败时按未启用渲染；服务端仍会拒绝缺少 token 的登录。
-      })
-      .finally(() => {
-        if (!cancelled) setConfigReady(true);
-      });
+    // 与认证外壳共用一次公开配置请求（该接口有匿名限速）。
+    // 读取失败返回 null，按未启用渲染；服务端仍会拒绝缺少 token 的登录。
+    void loadPublicConfig().then((config) => {
+      if (cancelled) return;
+      const siteKey = normalizeTurnstileSiteKey(config?.turnstileSiteKey);
+      setTurnstileSiteKey(siteKey);
+      setTurnstileEnabled(config?.turnstileEnabled === true && turnstileRequired(siteKey));
+      setConfigReady(true);
+    });
     return () => {
       cancelled = true;
     };

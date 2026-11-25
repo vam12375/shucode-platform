@@ -61,6 +61,8 @@ func registerConsoleRoutes(router *gin.Engine, deps *Deps) {
 		c.JSON(200, okData(gin.H{
 			"turnstileSiteKey": deps.Env.TurnstileSiteKey,
 			"turnstileEnabled": deps.Env.TurnstileSiteKey != "" && deps.Turnstile != nil,
+			// 控制台认证页的 Signal 背景视频（媒体 CDN + 内容哈希）；空串表示只用程序噪声。
+			"signalVideoUrl": deviceAuthPageFor(deps).VideoURL,
 		}))
 	})
 

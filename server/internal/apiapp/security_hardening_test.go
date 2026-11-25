@@ -156,20 +156,6 @@ func TestAppPagesDoNotRequireUnsafeInlineScript(t *testing.T) {
 	}
 }
 
-func TestDeviceRedirectScriptIsServedWithoutInline(t *testing.T) {
-	f := newAPIFixture(t)
-	rec := f.do("GET", "/app/redirect.js", "", "")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("redirect.js 应 200，实际 %d", rec.Code)
-	}
-	if ct := headerOf(rec, "content-type"); !strings.Contains(ct, "javascript") {
-		t.Fatalf("content-type 异常：%q", ct)
-	}
-	if !strings.Contains(rec.Body.String(), "data-redirect") {
-		t.Fatal("脚本应读取 body[data-redirect]")
-	}
-}
-
 func TestSecurityTxtOnlyServedWhenContactConfigured(t *testing.T) {
 	f := newAPIFixture(t)
 	if rec := f.do("GET", "/.well-known/security.txt", "", ""); rec.Code != http.StatusNotFound {

@@ -64,7 +64,7 @@ func securityHeaders(deps *Deps) gin.HandlerFunc {
 		if deps.Env.TurnstileSiteKey != "" {
 			turnstileHosts = " https://challenges.cloudflare.com"
 		}
-		// 设备授权页不再内联任何 JS/事件处理器（改用 /app/redirect.js + data 属性），
+		// 设备授权页不再内联任何 JS/事件处理器（改用 /app/device-auth/auth.js + data 属性），
 		// 因此 script-src 不需要 'unsafe-inline'——内联脚本里只要有用户可控字符串
 		// 就是存储型 XSS，这里直接把它从策略里拿掉。
 		scriptSrc := "'self'" + turnstileHosts
@@ -72,6 +72,15 @@ func securityHeaders(deps *Deps) gin.HandlerFunc {
 			"img-src 'self' data:; font-src 'self'; connect-src 'self'" + turnstileHosts + "; " +
 			"frame-src 'self'" + turnstileHosts + "; " +
 			"object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		// 设备登录页与控制台认证页的背景视频经媒体 CDN 分发（specs/device-login-pages.md），
+		// 只对这些页面放行该 origin；/console/api/ 是 JSON 接口，不需要。
+		path := c.Request.URL.Path
+		if strings.HasPrefix(path, "/app/platform/") ||
+			((path == "/console" || strings.HasPrefix(path, "/console/")) && !strings.HasPrefix(path, "/console/api/")) {
+			if mediaOrigin := deviceAuthMediaOrigin(deps.Env); mediaOrigin != "" {
+				csp += "; media-src 'self' " + mediaOrigin
+			}
+		}
 		// 有 https 公开地址才要求升级混合内容；纯 http 本地开发加了会打断 vite。
 		if len(httpsOrigins) > 0 {
 			csp += "; upgrade-insecure-requests"

@@ -735,13 +735,13 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 			}
 		}
 		if flow == nil {
-			c.Data(400, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+			c.Data(400, "text/html; charset=utf-8", []byte(renderMessagePage(deviceAuthPageFor(deps), messagePageOptions{
 				Title: "链接无效", Message: "登录链接无效，请回到应用重新发起登录。", Tone: "error",
 			})))
 			return
 		}
 		if flow.Status == store.FlowStatusDenied {
-			c.Data(200, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+			c.Data(200, "text/html; charset=utf-8", []byte(renderMessagePage(deviceAuthPageFor(deps), messagePageOptions{
 				Title: "已取消", Message: "本次登录已取消，可关闭本页面。",
 			})))
 			return
@@ -758,7 +758,7 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 					return
 				}
 			}
-			c.Data(410, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+			c.Data(410, "text/html; charset=utf-8", []byte(renderMessagePage(deviceAuthPageFor(deps), messagePageOptions{
 				Title: "链接已过期", Message: "登录链接已过期，请回到应用重新发起登录。", Tone: "error",
 			})))
 			return
@@ -769,13 +769,13 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		if user == nil {
-			c.Data(200, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
+			c.Data(200, "text/html; charset=utf-8", []byte(renderLoginPage(deviceAuthPageFor(deps), loginPageOptions{
 				FlowID: flowID, DeviceName: flow.DeviceName,
 				TurnstileSiteKey: deps.Env.TurnstileSiteKey,
 			})))
 			return
 		}
-		c.Data(200, "text/html; charset=utf-8", []byte(renderAuthorizePage(authorizePageOptions{
+		c.Data(200, "text/html; charset=utf-8", []byte(renderAuthorizePage(deviceAuthPageFor(deps), authorizePageOptions{
 			FlowID: flowID, DeviceName: flow.DeviceName, DevicePlatform: flow.DevicePlatform, Email: user.Email,
 		})))
 	})
@@ -800,13 +800,13 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 			}
 		}
 		if flow == nil || flow.Status != store.FlowStatusPending || !flow.ExpiresAt.After(deps.Now()) {
-			c.Data(400, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+			c.Data(400, "text/html; charset=utf-8", []byte(renderMessagePage(deviceAuthPageFor(deps), messagePageOptions{
 				Title: "链接无效", Message: "登录链接无效或已过期，请回到应用重新发起登录。", Tone: "error",
 			})))
 			return
 		}
 		if len(email) > 254 {
-			c.Data(400, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
+			c.Data(400, "text/html; charset=utf-8", []byte(renderLoginPage(deviceAuthPageFor(deps), loginPageOptions{
 				FlowID: flowID, DeviceName: flow.DeviceName, Error: "邮箱格式不正确。",
 				TurnstileSiteKey: deps.Env.TurnstileSiteKey,
 			})))
@@ -820,12 +820,12 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 		allowed, retryAfter, err := checkLoginRateLimits(ctx, deps, c, deps.PlatformLoginLimiter, email)
 		if err != nil {
 			// 此表单也签发控制台会话；限流故障不能退化为无限次密码验证。
-			c.Data(503, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{Title: "登录暂不可用", Message: "登录验证暂不可用，请稍后重试。", Tone: "error"})))
+			c.Data(503, "text/html; charset=utf-8", []byte(renderMessagePage(deviceAuthPageFor(deps), messagePageOptions{Title: "登录暂不可用", Message: "登录验证暂不可用，请稍后重试。", Tone: "error"})))
 			return
 		}
 		if !allowed {
 			setRetryAfter(c, retryAfter)
-			c.Data(429, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
+			c.Data(429, "text/html; charset=utf-8", []byte(renderLoginPage(deviceAuthPageFor(deps), loginPageOptions{
 				FlowID: flowID, DeviceName: flow.DeviceName, Error: "尝试次数过多，请稍后再试。",
 				TurnstileSiteKey: deps.Env.TurnstileSiteKey,
 			})))
@@ -833,7 +833,7 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 		}
 		if err := requireTurnstile(ctx, deps, c, c.Request.FormValue("cf-turnstile-response")); err != nil {
 			deps.Logger.Warn("设备登录人机验证未通过", "error", err)
-			c.Data(turnstileHTMLStatus(err), "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
+			c.Data(turnstileHTMLStatus(err), "text/html; charset=utf-8", []byte(renderLoginPage(deviceAuthPageFor(deps), loginPageOptions{
 				FlowID: flowID, DeviceName: flow.DeviceName, Error: turnstileHTMLMessage(err), Email: email,
 				TurnstileSiteKey: deps.Env.TurnstileSiteKey,
 			})))
@@ -850,14 +850,14 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 		allowed, retryAfter, err = checkRootLoginLimit(ctx, deps, user)
 		if err != nil {
 			deps.Logger.Error("设备登录 root 限流不可用，拒绝登录", "error", err)
-			c.Data(503, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+			c.Data(503, "text/html; charset=utf-8", []byte(renderMessagePage(deviceAuthPageFor(deps), messagePageOptions{
 				Title: "登录暂不可用", Message: "登录验证暂不可用，请稍后重试。", Tone: "error",
 			})))
 			return
 		}
 		if !allowed {
 			setRetryAfter(c, retryAfter)
-			c.Data(429, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
+			c.Data(429, "text/html; charset=utf-8", []byte(renderLoginPage(deviceAuthPageFor(deps), loginPageOptions{
 				FlowID: flowID, DeviceName: flow.DeviceName, Error: "尝试次数过多，请稍后再试。", Email: email,
 				TurnstileSiteKey: deps.Env.TurnstileSiteKey,
 			})))
@@ -866,7 +866,7 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 		valid, gateBusy := verifyLoginPasswordWithGate(deps, user, password)
 		if gateBusy {
 			setRetryAfter(c, time.Second)
-			c.Data(429, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
+			c.Data(429, "text/html; charset=utf-8", []byte(renderLoginPage(deviceAuthPageFor(deps), loginPageOptions{
 				FlowID: flowID, DeviceName: flow.DeviceName, Error: "登录请求过多，请稍后再试。", Email: email,
 				TurnstileSiteKey: deps.Env.TurnstileSiteKey,
 			})))
@@ -879,7 +879,7 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 			}
 			writeAuthAudit(ctx, deps, userID, "auth.device.login", "failure", ip,
 				map[string]any{"reason": loginFailureReason(user)})
-			c.Data(401, "text/html; charset=utf-8", []byte(renderLoginPage(loginPageOptions{
+			c.Data(401, "text/html; charset=utf-8", []byte(renderLoginPage(deviceAuthPageFor(deps), loginPageOptions{
 				FlowID: flowID, DeviceName: flow.DeviceName, Error: "邮箱或密码不正确。", Email: email,
 				TurnstileSiteKey: deps.Env.TurnstileSiteKey,
 			})))
@@ -927,7 +927,7 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 			}
 		}
 		if flow == nil {
-			c.Data(400, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+			c.Data(400, "text/html; charset=utf-8", []byte(renderMessagePage(deviceAuthPageFor(deps), messagePageOptions{
 				Title: "链接无效", Message: "登录链接无效，请回到应用重新发起登录。", Tone: "error",
 			})))
 			return
@@ -937,7 +937,7 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 			return
 		}
 		if flow.Status != store.FlowStatusPending || !flow.ExpiresAt.After(deps.Now()) {
-			c.Data(410, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+			c.Data(410, "text/html; charset=utf-8", []byte(renderMessagePage(deviceAuthPageFor(deps), messagePageOptions{
 				Title: "链接已过期", Message: "登录链接已过期，请回到应用重新发起登录。", Tone: "error",
 			})))
 			return
@@ -962,7 +962,7 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 					c.Redirect(303, "/app/platform/authorized?flow_id="+flowID)
 					return
 				}
-				c.Data(409, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+				c.Data(409, "text/html; charset=utf-8", []byte(renderMessagePage(deviceAuthPageFor(deps), messagePageOptions{
 					Title: "授权状态已变化", Message: "本次登录授权已被处理，请回到应用重新发起登录。", Tone: "error",
 				})))
 				return
@@ -975,7 +975,7 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
-		c.Data(200, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+		c.Data(200, "text/html; charset=utf-8", []byte(renderMessagePage(deviceAuthPageFor(deps), messagePageOptions{
 			Title: "已取消", Message: "已取消本次授权，可关闭本页面。",
 		})))
 	})
@@ -993,12 +993,12 @@ func registerPlatformAuthRoutes(router *gin.Engine, deps *Deps) {
 			}
 		}
 		if flow == nil || (flow.Status != store.FlowStatusAuthorized && flow.Status != store.FlowStatusConsumed) {
-			c.Data(200, "text/html; charset=utf-8", []byte(renderMessagePage(messagePageOptions{
+			c.Data(200, "text/html; charset=utf-8", []byte(renderMessagePage(deviceAuthPageFor(deps), messagePageOptions{
 				Title: "状态未知", Message: "授权状态未知，请回到应用查看登录结果。",
 			})))
 			return
 		}
-		c.Data(200, "text/html; charset=utf-8", []byte(renderAuthorizedPage(flowID, contracts.BuildPlatformDeepLinkCallbackURL(flowID))))
+		c.Data(200, "text/html; charset=utf-8", []byte(renderAuthorizedPage(deviceAuthPageFor(deps), contracts.BuildPlatformDeepLinkCallbackURL(flowID))))
 	})
 }
 

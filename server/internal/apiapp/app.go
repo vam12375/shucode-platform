@@ -50,12 +50,9 @@ func New(deps *Deps) *gin.Engine {
 		c.JSON(200, gin.H{"ok": true})
 	})
 
-	// 设备授权页的跳转脚本作为独立静态资源提供，页面本身不内联任何 JS，
-	// 这样 /app/ 的 CSP 才能保持 script-src 'self'（见 securityHeaders）。
-	router.GET("/app/redirect.js", func(c *gin.Context) {
-		c.Header("Cache-Control", "public, max-age=31536000, immutable")
-		c.Data(http.StatusOK, "text/javascript; charset=utf-8", []byte(deviceRedirectScript))
-	})
+	// 设备登录网页（Signal 视觉）的样式、脚本与媒体作为同源静态资源提供，
+	// 页面本身不内联任何 JS，/app/ 的 CSP 才能保持 script-src 'self'（见 securityHeaders）。
+	registerDeviceAuthAssetRoutes(router)
 
 	// RFC 9116 漏洞上报渠道。Contact 是必填项，未配置时不提供该文件，
 	// 而不是编造一个收不到信的地址。
@@ -107,15 +104,6 @@ func recoveryMiddleware(deps *Deps) gin.HandlerFunc {
 		c.Next()
 	}
 }
-
-// deviceRedirectScript 读取 <body data-redirect> 后短暂停留再跳转。
-// 少了内联脚本，CSP 就不需要为设备授权页开 'unsafe-inline'。
-const deviceRedirectScript = `(function () {
-  var target = document.body && document.body.getAttribute("data-redirect");
-  if (!target) return;
-  window.setTimeout(function () { window.location.href = target; }, 300);
-})();
-`
 
 // renderSecurityTxt 生成 RFC 9116 文件。Expires 必须小于一年，这里取 180 天，
 // 由部署侧的定时任务或每次发布自然刷新。

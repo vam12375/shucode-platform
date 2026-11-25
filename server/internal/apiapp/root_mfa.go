@@ -488,8 +488,10 @@ func allowRootMFAPlatformPasswordLogin(ctx context.Context, deps *Deps, c *gin.C
 				origin = strings.TrimRight(deps.Env.PublicAPIOrigin, "/")
 			}
 			target := origin + "/console/#/login"
-			body := `<p class="brand">Mendao</p><h1>需要绑定双重验证</h1><p>系统管理员必须先登录控制台绑定身份验证器，再返回本页面继续设备授权。</p><p><a href="` + escapeHTML(target) + `" target="_blank" rel="noopener">打开控制台</a></p>`
-			c.Data(403, "text/html; charset=utf-8", []byte(htmlLayout("需要绑定双重验证 - Mendao", body, "")))
+			c.Data(403, "text/html; charset=utf-8", []byte(renderMessagePage(deviceAuthPageFor(deps), messagePageOptions{
+				Title: "需要绑定双重验证", Message: "系统管理员必须先登录控制台绑定身份验证器，再返回本页面继续设备授权。",
+				Tone: "error", Action: &pageAction{Href: target, Label: "打开控制台", External: true},
+			})))
 			return false
 		}
 		cacheSessionSecurityProof(c, user.ID, state.SecurityVersion)
@@ -500,7 +502,9 @@ func allowRootMFAPlatformPasswordLogin(ctx context.Context, deps *Deps, c *gin.C
 		origin = strings.TrimRight(deps.Env.PublicAPIOrigin, "/")
 	}
 	target := origin + "/console/#/login"
-	body := `<p class="brand">Mendao</p><h1>需要双因素验证</h1><p>请先在控制台完成登录，再返回本页面继续设备授权。</p><p><a href="` + escapeHTML(target) + `" target="_blank" rel="noopener">打开控制台登录</a></p>`
-	c.Data(403, "text/html; charset=utf-8", []byte(htmlLayout("需要双因素验证 - Mendao", body, "")))
+	c.Data(403, "text/html; charset=utf-8", []byte(renderMessagePage(deviceAuthPageFor(deps), messagePageOptions{
+		Title: "需要双因素验证", Message: "请先在控制台完成登录，再返回本页面继续设备授权。",
+		Tone: "error", Action: &pageAction{Href: target, Label: "打开控制台登录", External: true},
+	})))
 	return false
 }
