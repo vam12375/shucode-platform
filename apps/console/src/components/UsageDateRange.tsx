@@ -1,9 +1,13 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import {
   resolveUsageChartRange,
   USAGE_CHART_PRESETS,
   type UsageChartPreset,
 } from "../usage-range.js";
+
+const viewportMargin = 16;
+const triggerGap = 8;
 
 export function UsageDateRange({ preset, from, to, label, onApply }: {
   preset: UsageChartPreset;
@@ -17,11 +21,29 @@ export function UsageDateRange({ preset, from, to, label, onApply }: {
   const [draftFrom, setDraftFrom] = useState(from);
   const [draftTo, setDraftTo] = useState(to);
   const [error, setError] = useState("");
-  const [anchor, setAnchor] = useState({ left: 16, top: 16, width: 360, maxHeight: 420 });
-  const root = useRef<HTMLDivElement | null>(null);
+  const [placement, setPlacement] = useState<CSSProperties>({});
+  const panel = useRef<HTMLDivElement | null>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
   const firstPreset = useRef<HTMLButtonElement | null>(null);
   const panelId = useId();
+  const width = open ? Math.min(360, document.documentElement.clientWidth - 2 * viewportMargin) : 360;
+
+  // 毛玻璃卡片会成为 fixed 的定位基准。弹层挂到 body，在绘制前按按钮的视口坐标和实际内容高度定位。
+  useLayoutEffect(() => {
+    if (!open || !trigger.current || !panel.current) return;
+    const rect = trigger.current.getBoundingClientRect();
+    const viewport = document.documentElement;
+    const spaceBelow = viewport.clientHeight - viewportMargin - rect.bottom - triggerGap;
+    const spaceAbove = rect.top - triggerGap - viewportMargin;
+    const dialog = panel.current;
+    const height = dialog.scrollHeight + dialog.offsetHeight - dialog.clientHeight;
+    const above = height > spaceBelow && spaceAbove > spaceBelow;
+    setPlacement({
+      left: Math.max(viewportMargin, Math.min(rect.right - width, viewport.clientWidth - viewportMargin - width)),
+      ...(above ? { bottom: viewport.clientHeight - rect.top + triggerGap } : { top: rect.bottom + triggerGap }),
+      maxHeight: Math.max(0, above ? spaceAbove : spaceBelow),
+    });
+  }, [open, width, error]);
 
   const close = (): void => {
     setOpen(false);
@@ -29,19 +51,6 @@ export function UsageDateRange({ preset, from, to, label, onApply }: {
   };
   const show = (): void => {
     if (open) { close(); return; }
-    const rect = trigger.current?.getBoundingClientRect();
-    if (rect) {
-      const width = Math.min(360, window.innerWidth - 32);
-      const top = rect.bottom + 8 + 320 < window.innerHeight
-        ? rect.bottom + 8
-        : Math.max(16, rect.top - 360);
-      setAnchor({
-        left: Math.max(16, Math.min(rect.right - width, window.innerWidth - width - 16)),
-        top,
-        width,
-        maxHeight: Math.max(160, window.innerHeight - top - 16),
-      });
-    }
     setDraftPreset(preset);
     setDraftFrom(from);
     setDraftTo(to);
@@ -53,7 +62,8 @@ export function UsageDateRange({ preset, from, to, label, onApply }: {
     if (!open) return;
     firstPreset.current?.focus({ preventScroll: true });
     const onPointerDown = (event: PointerEvent): void => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!trigger.current?.contains(target) && !panel.current?.contains(target)) setOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
@@ -61,18 +71,23 @@ export function UsageDateRange({ preset, from, to, label, onApply }: {
         close();
       }
     };
-    const onViewportChange = (event: Event): void => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    const openingRect = trigger.current?.getBoundingClientRect();
+    const onResize = (): void => setOpen(false);
+    const onScroll = (event: Event): void => {
+      if (event.target instanceof Node && panel.current?.contains(event.target)) return;
+      // 浏览器先将按钮滚入视口，滚动事件可能在点击后才送达；只在按钮实际移位时收起。
+      const rect = trigger.current?.getBoundingClientRect();
+      if (rect?.top !== openingRect?.top || rect?.left !== openingRect?.left) setOpen(false);
     };
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
-    window.addEventListener("resize", onViewportChange);
-    window.addEventListener("scroll", onViewportChange, true);
+    window.addEventListener("resize", onResize);
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("resize", onViewportChange);
-      window.removeEventListener("scroll", onViewportChange, true);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [open]);
 
@@ -94,7 +109,7 @@ export function UsageDateRange({ preset, from, to, label, onApply }: {
     }
   };
 
-  return <div ref={root} style={{ position: "relative" }}>
+  return <>
     <button
       ref={trigger}
       className="btn btn-ghost"
@@ -102,17 +117,18 @@ export function UsageDateRange({ preset, from, to, label, onApply }: {
       aria-label="趋势时间范围"
       aria-haspopup="dialog"
       aria-expanded={open}
-      aria-controls={panelId}
+      aria-controls={open ? panelId : undefined}
       onClick={show}
     >{label} <span aria-hidden="true">▾</span></button>
-    {open ? <div
+    {open ? createPortal(<div
+      ref={panel}
       id={panelId}
       role="dialog"
       aria-label="趋势日期范围"
-      style={{ position: "fixed", ...anchor, zIndex: 80, overflow: "auto", boxSizing: "border-box", padding: 16, border: "1px solid var(--line)", borderRadius: "var(--radius)", background: "var(--surface)", boxShadow: "0 8px 28px var(--shadow-color)" }}
+      style={{ position: "fixed", ...placement, width, zIndex: 80, overflow: "auto", boxSizing: "border-box", padding: 16, border: "1px solid var(--line)", borderRadius: "var(--radius)", background: "var(--surface)", boxShadow: "0 8px 28px var(--shadow-color)" }}
     >
       <p className="readout" style={{ margin: "0 0 10px" }}>选择趋势范围 · 上海时间</p>
-      <div role="group" aria-label="趋势范围预设" style={{ display: "grid", gridTemplateColumns: `repeat(${anchor.width < 336 ? 3 : 4}, minmax(0, 1fr))`, gap: 6 }}>
+      <div role="group" aria-label="趋势范围预设" style={{ display: "grid", gridTemplateColumns: `repeat(${width < 336 ? 3 : 4}, minmax(0, 1fr))`, gap: 6 }}>
         {USAGE_CHART_PRESETS.map((item, index) => <button
           key={item.value}
           ref={index === 0 ? firstPreset : undefined}
@@ -139,6 +155,6 @@ export function UsageDateRange({ preset, from, to, label, onApply }: {
         <button className="btn btn-ghost" type="button" onClick={close}>取消</button>
         <button className="btn" type="button" onClick={apply}>应用</button>
       </div>
-    </div> : null}
-  </div>;
+    </div>, document.body) : null}
+  </>;
 }

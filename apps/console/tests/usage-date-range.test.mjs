@@ -18,31 +18,49 @@ function text(tree) {
   if (!tree || typeof tree !== "object") return tree ?? "";
   return text(tree.props?.children);
 }
-function mount(width = 1440) {
+function mount(width = 1440, triggerTop = 100) {
   const slots = [], effects = [], calls = [], listeners = new Map();
   let cursor = 0, focused = 0;
+  class Node {}
+  const body = new Node();
+  const panel = Object.assign(new Node(), {
+    scrollHeight: 296, clientHeight: 296, offsetHeight: 298,
+    contains: (node) => node === panel,
+  });
   const target = {
-    contains: (node) => node?.inside === true,
+    contains: (node) => node === target,
     focus: () => { focused += 1; },
-    getBoundingClientRect: () => ({ top: 100, bottom: 136, right: width - 16 }),
+    getBoundingClientRect: () => ({ top: triggerTop, bottom: triggerTop + 36, right: width - 16 }),
   };
   const events = {
     addEventListener(type, listener) { if (!listeners.has(type)) listeners.set(type, new Set()); listeners.get(type).add(listener); },
     removeEventListener(type, listener) { listeners.get(type)?.delete(listener); },
   };
   const output = {}, jsx = (type, props) => ({ type, props });
+  function scheduleEffect(effect, deps) {
+    const i = cursor++;
+    if (!(i in slots) || deps.some((dep, j) => dep !== slots[i].deps[j])) {
+      slots[i]?.cleanup?.();
+      slots[i] = { deps };
+      effects.push(() => { slots[i].cleanup = effect(); });
+    }
+  }
   runInNewContext(source, {
     exports: output, Error,
-    document: events,
+    Node, document: { ...events, body, documentElement: { clientWidth: width, clientHeight: 844 } },
     window: { ...events, innerWidth: width, innerHeight: 844 },
     require(name) {
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
+      if (name === "react-dom") return { createPortal(node, host) {
+        assert.equal(host, body);
+        return jsx("portal", { children: node });
+      } };
       if (name === "../usage-range.js") return ranges;
       if (name === "react") return {
         useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = initial; return [slots[i], (value) => { slots[i] = typeof value === "function" ? value(slots[i]) : value; }]; },
         useRef(initial) { const i = cursor++; if (!(i in slots)) slots[i] = { current: initial }; return slots[i]; },
         useId() { const i = cursor++; return `date-range-${i}`; },
-        useEffect(effect, deps) { const i = cursor++; if (!(i in slots) || deps.some((dep, j) => dep !== slots[i].deps[j])) { slots[i]?.cleanup?.(); slots[i] = { deps }; effects.push(() => { slots[i].cleanup = effect(); }); } },
+        useEffect: scheduleEffect, useLayoutEffect: scheduleEffect,
       };
       // 图标只做视觉强化：VM 测试按空组件桩渲染，不引入真实 SVG 输出。
       if (name === "lucide-react") return new Proxy({}, { get: () => () => null });
@@ -53,14 +71,15 @@ function mount(width = 1440) {
   const render = () => {
     cursor = 0;
     const tree = output.UsageDateRange({ preset: "today", from: "2026-10-26", to: "2026-10-26", label: "今天", onApply: (...args) => calls.push(args) });
-    for (const node of nodes(tree, (node) => node.props?.ref)) node.props.ref.current = target;
+    for (const node of nodes(tree, (node) => node.props?.ref)) node.props.ref.current = node.props.role === "dialog" ? panel : target;
     effects.splice(0).forEach((effect) => effect());
     return tree;
   };
   const button = (label) => nodes(render(), (node) => node.type === "button" && (node.props["aria-label"] === label || text(node) === label))[0];
   render();
   return {
-    render, calls, button,
+    render, calls, button, panel,
+    scrollBy(distance) { triggerTop -= distance; this.dispatch("scroll"); },
     open() { button("趋势时间范围").props.onClick(); render(); },
     date(label, value) { nodes(render(), (node) => node.props?.["aria-label"] === label)[0].props.onChange({ target: { value } }); render(); },
     dispatch(type, event = {}) { for (const listener of listeners.get(type) ?? []) listener({ target: {}, preventDefault() {}, ...event }); render(); },
@@ -97,7 +116,8 @@ test("Escape and outside pointer close the draft without applying and Escape res
   ui.dispatch("keydown", { key: "Escape" });
   assert.equal(ui.button("趋势时间范围").props["aria-expanded"], false);
   assert.ok(ui.focused() > focused);
-  ui.open(); ui.dispatch("pointerdown", { target: { inside: true } });
+  ui.open(); ui.dispatch("pointerdown", { target: ui.panel });
+  ui.dispatch("scroll", { target: ui.panel });
   assert.equal(ui.button("趋势时间范围").props["aria-expanded"], true);
   ui.dispatch("pointerdown");
   assert.equal(ui.button("趋势时间范围").props["aria-expanded"], false);
@@ -111,5 +131,25 @@ test("the picker stays inside desktop and narrow viewports with scrollable bound
     assert.ok(style.left >= 16 && style.left + style.width <= width - 16);
     assert.ok(style.top >= 16 && style.top + style.maxHeight <= 844 - 16);
     assert.equal(style.overflow, "auto");
+  }
+});
+
+test("the portaled dialog anchors its nearest edge to the trigger above or below", () => {
+  for (const triggerTop of [300, 612]) {
+    const ui = mount(1290, triggerTop); ui.open();
+    const portal = nodes(ui.render(), (node) => node.type === "portal")[0];
+    const { style } = portal.props.children.props;
+    if (triggerTop === 300) {
+      assert.equal(style.top, triggerTop + 36 + 8);
+      assert.equal(style.bottom, undefined);
+    } else {
+      assert.equal(style.bottom, 844 - triggerTop + 8);
+      assert.equal(style.top, undefined);
+      assert.equal(style.maxHeight, triggerTop - 8 - 16);
+    }
+    ui.dispatch("scroll");
+    assert.equal(ui.button("趋势时间范围").props["aria-expanded"], true);
+    ui.scrollBy(64);
+    assert.equal(ui.button("趋势时间范围").props["aria-expanded"], false);
   }
 });
