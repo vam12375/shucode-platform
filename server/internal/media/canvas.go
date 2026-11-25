@@ -9,8 +9,15 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode/utf8"
+	"unicode/utf16"
 )
+
+const maxCanvasPromptChars = 10_000
+
+// 前端字符串长度按 UTF-16 单位计算，服务端保持同一口径，避免长提示词回读或准入不一致。
+func canvasPromptLength(prompt string) int {
+	return len(utf16.Encode([]rune(prompt)))
+}
 
 type CanvasRequest struct {
 	ImageOptions       *ImageOptions          `json:"imageOptions,omitempty"`
@@ -72,7 +79,7 @@ func (s *Service) CreateCanvas(ctx context.Context, team, user, device, id strin
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(r.Prompt) == "" && !(seedream55Model(m) && r.ImageOptions != nil && r.ImageOptions.LayerDecomposition) || utf8.RuneCountInString(r.Prompt) > 4000 || r.Count < 1 || r.Count > 4 || r.BoardID == "" || len(r.BoardID) > 200 || r.NodeID == "" || len(r.NodeID) > 200 || r.WorkspacePath == "" || len(r.WorkspacePath) > 4096 || len(r.WorkspaceIdentity) > 4096 || len(r.RemoteSessionID) > 200 {
+	if strings.TrimSpace(r.Prompt) == "" && !(seedream55Model(m) && r.ImageOptions != nil && r.ImageOptions.LayerDecomposition) || canvasPromptLength(r.Prompt) > maxCanvasPromptChars || r.Count < 1 || r.Count > 4 || r.BoardID == "" || len(r.BoardID) > 200 || r.NodeID == "" || len(r.NodeID) > 200 || r.WorkspacePath == "" || len(r.WorkspacePath) > 4096 || len(r.WorkspaceIdentity) > 4096 || len(r.RemoteSessionID) > 200 {
 		return nil, ErrInvalid
 	}
 	if err := validateCanvasOptions(m, r); err != nil {

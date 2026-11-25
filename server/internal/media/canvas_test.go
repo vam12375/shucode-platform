@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -56,6 +57,21 @@ func TestCanvasImageLifecycleAndReplay(t *testing.T) {
 		t.Fatal("missing image result")
 	}
 }
+
+func TestCanvasPromptLimitIs10000UTF16Units(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	r := canvasRequest(t, f)
+	r.Prompt = strings.Repeat("😀", maxCanvasPromptChars/2)
+	if _, err := f.s.CreateCanvas(ctx, f.team, f.user, "", uuid.NewString(), r); err != nil {
+		t.Fatalf("10,000 UTF-16 prompt units rejected: %v", err)
+	}
+	r.Prompt += "😀"
+	if _, err := f.s.CreateCanvas(ctx, f.team, f.user, "", uuid.NewString(), r); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("prompt over 10,000 UTF-16 units: %v", err)
+	}
+}
+
 func TestCanvasQuoteValidationAndUnknownDoesNotHoldBalance(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
