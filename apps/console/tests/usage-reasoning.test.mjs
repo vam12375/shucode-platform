@@ -10,6 +10,8 @@ import * as reasoning from "../src/usage-reasoning.ts";
 import * as costs from "../src/usage-costs.ts";
 import * as time from "../src/time.ts";
 import * as ranges from "../src/usage-range.ts";
+import * as aggregate from "../src/usage-aggregate.ts";
+import * as colors from "../src/components/polar-colors.ts";
 
 const require = createRequire(import.meta.url);
 const chipSource = await readFile(new URL("../src/components/StatusChip.tsx", import.meta.url), "utf8");
@@ -34,6 +36,21 @@ const { UsageModel } = compile(modelSource, {
   "../usage-reasoning.js": reasoning,
   "./StatusChip.js": chips,
 });
+const chartImports = {
+  "../usage-aggregate.js": aggregate,
+  "../usage-costs.js": costs,
+  "./polar-colors.js": colors,
+  "./Icon.js": icons,
+  "./Gauge.js": { formatPct: String },
+};
+const { UsageModelSummary } = compile(
+  await readFile(new URL("../src/components/UsageModelSummary.tsx", import.meta.url), "utf8"),
+  { ...chartImports, "./usage-model-summary.css": {} },
+);
+const { UsageModelComposition } = compile(
+  await readFile(new URL("../src/components/UsageModelComposition.tsx", import.meta.url), "utf8"),
+  { ...chartImports, "./usage-model-composition.css": {} },
+);
 
 test("request model shows its recorded effort without replacing the model identity", () => {
   const html = renderToStaticMarkup(createElement(UsageModel, {
@@ -129,8 +146,11 @@ async function mountUsage(records, canManagePlatform = true, usageOptions = {}, 
     },
     "../auth.js": { useAuth: () => ({ canManagePlatform, canManageTeam: canManagePlatform, user: { id: "user" } }) },
     "../usage-costs.js": costs,
+    "../usage-aggregate.js": aggregate,
     "../usage-reasoning.js": reasoning,
     "../components/UsageModel.js": { UsageModel },
+    "../components/UsageModelSummary.js": { UsageModelSummary },
+    "../components/UsageModelComposition.js": { UsageModelComposition },
     "../components/Icon.js": icons,
     "../components/charts.js": { ComposedTrendChart: "chart", ModelDonutChart: "donut" },
     "../components/PolarPlots.js": { PolarTrendChart: "chart", PolarBarChart: "bar-chart", PolarBars: "bars", PolarSegments: "segments", RecordHeatmap: "heatmap", polarCompact: String },
@@ -287,9 +307,13 @@ test("usage filters and distribution labels use projected names while filter val
   const tree = ui.render();
   const filter = elements(tree, "select").find((node) => node.props.ariaLabel === "按模型筛选");
   assert.deepEqual(Array.from(filter.props.options, (option) => ({ ...option })), [{ value: "", label: "全部模型" }, { value: key, label: "门道绘图" }]);
-  assert.match(nodeText(tree), /门道绘图/);
-  const chart = elements(tree, "segments").find((node) => node.props.rows[0]?.key === key);
-  assert.equal(chart.props.rows[0].label, "门道绘图");
+  for (const component of [UsageModelSummary, UsageModelComposition]) {
+    const [chart] = elements(tree, component);
+    assert.ok(chart, component.name);
+    const html = renderToStaticMarkup(chart);
+    assert.match(html.replace(/<[^>]+>/gu, ""), /门道绘图/);
+    assert.doesNotMatch(html, /opaque-group/);
+  }
   elements(tree, "button").find((button) => button.props["aria-label"] === "查看请求详情 request-cost").props.onClick();
   const dialog = elements(ui.render(), "div").find((node) => node.props.role === "dialog");
   assert.equal(nodeText(elements(dialog, "h3")[0]), "门道绘图");

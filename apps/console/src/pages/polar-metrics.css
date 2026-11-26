@@ -88,12 +88,13 @@
 .polar-usage .polar-usage-filters .input, .polar-usage .polar-usage-filters .select-trigger { font-size: 11px; }
 .polar-usage .polar-usage-trend .pane-h { align-items: flex-start; }
 .polar-usage .polar-usage-trend .pane-h .readout { font-size: 10px; }
-.polar-usage .polar-usage-models .table td .polar-segments { width: 120px; }
-.polar-usage .polar-token-key { font-size: 10px; color: var(--muted); display: flex; align-items: center; gap: 12px; margin: 12px 18px; }
-.polar-token-key span { display: inline-flex; align-items: center; gap: 5px; }
-.polar-usage .polar-usage-models .table tfoot td { border-top: 1px solid var(--line-2); }
-.polar-usage .polar-usage-distribution .donut-wrap { gap: 16px; display: flex; flex-direction: column; }
-.polar-usage .polar-usage-distribution .donut-legend { width: 100%; }
+.usage-team-rank { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 12px; }
+.usage-team-rank h3 { margin: 0 0 9px; font-size: 12px; font-weight: 550; }
+.usage-team-rank p { margin: 8px 0 0; font-size: 10.5px; color: var(--ink-2); }
+/* 固定值列放不下带小数的积分，按实际读数留宽，剩余空间用于条形。 */
+.usage-team-rank .polar-hbar-row { grid-template-columns: minmax(0, .8fr) minmax(0, 1fr) auto; }
+.usage-team-rank .polar-hbar-label { white-space: normal; overflow-wrap: anywhere; }
+.usage-team-rank .polar-chart-empty { min-height: 0; justify-content: start; padding: 0; }
 .polar-usage .polar-usage-detail .table { min-width: 1060px; }
 .polar-usage .polar-usage-detail .pane-h { align-items: center; }
 .polar-usage .polar-usage-detail .usage-model > span:nth-child(2), .polar-usage .polar-usage-detail .usage-model > .chip { display: none; }
@@ -123,8 +124,6 @@
 .polar-usage .table { font-size: 12.5px; }
 .polar-usage .table th { padding: 8px 10px; font: 10.5px var(--mono); letter-spacing: .12em; color: var(--muted); }
 .polar-usage .table td { padding: 10px; font-size: 12.5px; }
-.polar-usage .polar-token-key { gap: 14px; margin: 10px 0 0; color: var(--ink-2); font-size: 11.5px; }
-.polar-usage .polar-token-key i { width: 8px; height: 8px; border-radius: 2px; }
 .polar-usage .stat-card { padding: 16px 18px; }
 .polar-usage .stat-value { font-size: 28px; font-weight: 300; letter-spacing: -.01em; }
 .polar-ops .polar-panel-head h2 { font-family: var(--sans); font-weight: 500; letter-spacing: .02em; }
@@ -174,7 +173,6 @@
   .polar-span-4, .polar-span-5, .polar-span-6, .polar-span-7, .polar-span-8 { grid-column: span 6; }
   .polar-topology-panel, .polar-usage-trend, .polar-usage-models, .polar-usage-distribution { grid-column: span 12; }
   .polar-topology { min-height: 300px; }
-  .polar-usage .polar-usage-distribution .donut-wrap { flex-direction: row; }
 }
 @media (max-width: 700px) {
   .polar-dashboard-grid, .polar-usage, .polar-ops .polar-ops-charts { gap: 12px; }
@@ -195,7 +193,6 @@
   .polar-usage .stat-card:nth-child(2n), .polar-ops .ops-metric:nth-child(2n) { border-right: 0 !important; }
   .polar-ops .ops-metric:last-child, .polar-usage .stat-card:last-child { border-bottom: 0 !important; }
   .polar-usage .stat-value, .polar-ops .stat-value { font-size: 26px; }
-  .polar-usage .polar-usage-distribution .donut-wrap { flex-direction: column; }
 }
 @media (prefers-reduced-motion: reduce) {
   .polar-metrics *, .polar-night-clock path { animation: none !important; transition: none !important; }

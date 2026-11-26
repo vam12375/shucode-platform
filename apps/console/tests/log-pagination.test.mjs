@@ -7,6 +7,7 @@ import * as costs from "../src/usage-costs.ts";
 import * as reasoning from "../src/usage-reasoning.ts";
 import * as time from "../src/time.ts";
 import * as ranges from "../src/usage-range.ts";
+import * as aggregate from "../src/usage-aggregate.ts";
 
 const sources = Object.fromEntries(await Promise.all(["Usage", "Audit"].map(async (name) => [name, ts.transpileModule(
   await readFile(new URL(`../src/pages/${name}.tsx`, import.meta.url), "utf8"),
@@ -85,8 +86,11 @@ async function mount(kind, loader, metadataLoader, seriesLoader, rangeLoader) {
       if (name === "../usage-reasoning.js") return reasoning;
       if (name === "../time.js") return time;
       if (name === "../usage-range.js") return ranges;
+      if (name === "../usage-aggregate.js") return aggregate;
       if (name === "../components/UsageDateRange.js") return { UsageDateRange: "UsageDateRange" };
       if (name === "../components/UsageModel.js") return { UsageModel: "UsageModel" };
+      if (name === "../components/UsageModelSummary.js") return { UsageModelSummary: "UsageModelSummary" };
+      if (name === "../components/UsageModelComposition.js") return { UsageModelComposition: "UsageModelComposition" };
       if (name === "../components/charts.js") return { ComposedTrendChart: "chart", ModelDonutChart: "donut" };
       if (name === "../components/PolarPlots.js") return { PolarTrendChart: "chart", PolarBarChart: "bar-chart", PolarBars: "bars", PolarSegments: "segments", RecordHeatmap: "heatmap", polarCompact: String };
       if (name === "../components/polar-colors.js") return { entityColor: () => "#3D93D6" };

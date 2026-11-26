@@ -24,11 +24,14 @@ import {
   reasoningEffortText,
   type UsageReasoningParameters,
 } from "../usage-reasoning.js";
+import { UsageModelSummary } from "../components/UsageModelSummary.js";
+import { UsageModelComposition } from "../components/UsageModelComposition.js";
+import { cacheRate, promptTokens, sumUsage, usageCredits as credits, type UsageAggregate } from "../usage-aggregate.js";
 import { UsageModel } from "../components/UsageModel.js";
 import { UsageDateRange } from "../components/UsageDateRange.js";
 import { resolveUsageChartRange, type UsageChartPreset } from "../usage-range.js";
 import { type ChartDatum, type ChartSeries } from "../components/charts.js";
-import { PolarBarChart, PolarBars, PolarSegments, PolarTrendChart, RecordHeatmap, polarCompact } from "../components/PolarPlots.js";
+import { PolarBarChart, PolarBars, PolarTrendChart, RecordHeatmap, polarCompact } from "../components/PolarPlots.js";
 import { entityColor } from "../components/polar-colors.js";
 import { showToast, toastErr } from "../components/Feedback.js";
 import { formatPct } from "../components/Gauge.js";
@@ -83,19 +86,6 @@ interface DeviceOption {
   id: string;
   name: string;
   platform: string | null;
-}
-
-interface AggregateRow {
-  model: string;
-  modelDisplayName?: string;
-  modelKind?: "text" | "image" | "video" | "media" | "tool";
-  requests: number;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-  creditsMicro: number;
-  latencyMsSum: number;
 }
 
 /** 与 /console/api/usage/series 响应对齐。 */
@@ -179,15 +169,11 @@ interface UsageCostSummary {
 
 /** 与 /console/api/usage 响应对齐：records 为当前页，nextCursor 为下一页游标。 */
 interface UsagePageData {
-  aggregates: AggregateRow[];
+  aggregates: UsageAggregate[];
   records: UsageRecordRow[];
   nextCursor: string | null;
   modelOptions?: UsageModelOption[];
   costSummary: UsageCostSummary | null;
-}
-
-function credits(micro: number): string {
-  return formatCreditsDisplay(micro / MICRO_CREDITS_PER_CREDIT);
 }
 
 /** 成本价库的金额展示：币种随条目；空币种按 USD（历史）处理。 */
@@ -208,19 +194,6 @@ function statusChip(status: string): { tone?: ChipTone; label: string } {
   if (status === "ok") return { tone: "ok", label: "成功" };
   if (status === "aborted") return { tone: "hot", label: "中断" };
   return { tone: "stop", label: "错误" };
-}
-
-/**
- * 缓存命中率 = 缓存读 ÷ 总 prompt token。
- * 库内 input_tokens 是不含缓存的新输入，缓存读/写单独成列，所以总 prompt
- * = 新输入 + 缓存读 + 缓存写；缓存写是首写（未命中），只进分母不进分子。
- * 范围内没有 prompt 时返回 null（显示 —），避免 0/0 假装成 0% 命中。
- */
-function cacheRate(
-  cacheReadTokens: number,
-  promptTokens: number,
-): number | null {
-  return promptTokens > 0 ? cacheReadTokens / promptTokens : null;
 }
 
 /** 缓存率的展示形式：无 prompt 显示 —，否则显示百分比。 */
@@ -275,7 +248,7 @@ export function UsagePage() {
   const [usageModels, setUsageModelOptions] = useState<UsageModelOption[]>([]);
   const [deviceRows, setDevices] = useState<DeviceOption[]>([]);
   const [detail, setDetail] = useState<UsageRecordRow | null>(null);
-  const [aggregateRows, setAggregates] = useState<AggregateRow[]>([]);
+  const [aggregateRows, setAggregates] = useState<UsageAggregate[]>([]);
   const [recordRows, setRecords] = useState<UsageRecordRow[]>([]);
   const [costTotals, setCostSummary] = useState<UsageCostSummary | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -289,7 +262,6 @@ export function UsagePage() {
   const [dayRows, setDays] = useState<DayPoint[]>([]);
   const [modelTrendRows, setModelTrends] = useState<ModelTrend[]>([]);
   const [chartSelection, setChartSelection] = useState<{ preset: UsageChartPreset; from: string; to: string }>({ preset: "today", from: "", to: "" });
-  const [donutBy, setDonutBy] = useState<"tokens" | "credits">("credits");
   const [error, setError] = useState<string | null>(null);
   const [seriesError, setSeriesError] = useState<string | null>(null);
   const [seriesReloadKey, setSeriesReloadKey] = useState(0);
@@ -411,8 +383,7 @@ export function UsagePage() {
           bucket.requests = row.requests;
           bucket.creditsMicro = row.creditsMicro;
           bucket.cacheReadTokens = row.cacheReadTokens;
-          bucket.promptTokens =
-            row.inputTokens + row.cacheReadTokens + row.cacheCreationTokens;
+          bucket.promptTokens = promptTokens(row);
         }
         setDays([...zeroed.values()]);
         setModelTrends(modelData);
@@ -547,27 +518,8 @@ export function UsagePage() {
     void load(nextCursor, pageIndex + 1, [...pageCursors.slice(0, pageIndex + 1), nextCursor]);
   };
 
-  const totalCredits = aggregates.reduce(
-    (sum, row) => sum + row.creditsMicro,
-    0,
-  );
-  const totalRequests = aggregates.reduce((sum, row) => sum + row.requests, 0);
-  const totalInputTokens = aggregates.reduce(
-    (sum, row) => sum + row.inputTokens,
-    0,
-  );
-  const totalOutputTokens = aggregates.reduce(
-    (sum, row) => sum + row.outputTokens,
-    0,
-  );
-  const totalCacheTokens = aggregates.reduce(
-    (sum, row) => sum + row.cacheReadTokens + row.cacheCreationTokens,
-    0,
-  );
-  const totalLatencyMs = aggregates.reduce(
-    (sum, row) => sum + row.latencyMsSum,
-    0,
-  );
+  const totals = useMemo(() => sumUsage(aggregates), [aggregates]);
+  const { creditsMicro: totalCredits, requests: totalRequests, latencyMsSum: totalLatencyMs } = totals;
   // 加载失败且没有任何已加载数据时，不能用 0 冒充真实用量。
   const dataUnavailable = error !== null && aggregates.length === 0;
   // 平均耗时仅在既有延迟记录时给出（部分错误/中断记录无 latency）。
@@ -624,29 +576,6 @@ export function UsagePage() {
   const chartRangeLabel = chartSelection.preset === "last24h"
     ? `${formatShanghaiTime(`${chartRange.queryFrom}Z`).slice(0, 16)} ~ ${formatShanghaiTime(`${chartRange.queryTo}Z`).slice(0, 16)}`
     : `${chartRange.from} ~ ${chartRange.to}`;
-
-  // 模型分布环形图：Token 口径 = 总 prompt（入 + 缓存读 + 缓存写），积分口径 = credit。
-  const donutSegments = useMemo(() => {
-    const valueOf = (row: AggregateRow) =>
-      donutBy === "tokens"
-        ? row.inputTokens + row.cacheReadTokens + row.cacheCreationTokens
-        : row.creditsMicro;
-    const rows = aggregates
-      .map((row) => ({ model: row.model, label: usageModelName(row.model, row.modelDisplayName), value: valueOf(row) }))
-      .filter((row) => row.value > 0)
-      .sort((a, b) => b.value - a.value);
-    const total = rows.reduce((sum, row) => sum + row.value, 0);
-    const top = rows.slice(0, 6);
-    const rest = rows.slice(6);
-    if (rest.length > 0) {
-      top.push({
-        model: `其他 ${rest.length} 模型`,
-        label: `其他 ${rest.length} 模型`,
-        value: rest.reduce((sum, row) => sum + row.value, 0),
-      });
-    }
-    return { segments: top, total };
-  }, [aggregates, donutBy]);
 
   // 近额提示：额度用量 ≥90% 的团队，取最高者。
   const nearQuotaTeam = useMemo(() => {
@@ -812,7 +741,7 @@ export function UsagePage() {
           <p className="stat-value">
             {dataUnavailable
               ? "—"
-              : cacheRateText(aggregates.reduce((sum, row) => sum + row.cacheReadTokens, 0), totalInputTokens + totalCacheTokens)}
+              : cacheRateText(totals.cacheReadTokens, promptTokens(totals))}
           </p>
           <p
             className="stat-sub"
@@ -820,7 +749,7 @@ export function UsagePage() {
           >
             {dataUnavailable
               ? "加载失败，请重试"
-              : `总 ${compactToken(totalInputTokens + totalOutputTokens + totalCacheTokens)} tok · 缓存 ${compactToken(totalCacheTokens)} tok`}
+              : `总 ${compactToken(promptTokens(totals) + totals.outputTokens)} tok · 缓存 ${compactToken(totals.cacheReadTokens + totals.cacheCreationTokens)} tok`}
           </p>
         </div>
         <div className="stat-card">
@@ -1051,153 +980,17 @@ export function UsagePage() {
         </div>
       </section>
 
-      <section className="pane d1 polar-span-7 polar-usage-models">
-        <div className="pane-h">
-          <h2>按模型汇总</h2>
-          <span className="readout">网关计量 · 团队账单口径</span>
-        </div>
-        <div className="pane-b flush table-scroll">
-          <table className="table">
-            <thead>
-              <tr>
-                <th scope="col">模型</th>
-                <th scope="col" className="num">
-                  请求数
-                </th>
-                <th scope="col" className="num">
-                  输入 Token
-                </th>
-                <th scope="col" className="num">
-                  输出 Token
-                </th>
-                <th scope="col" className="num">缓存读</th>
-                <th scope="col">Token 构成</th>
-                <th scope="col" className="num">
-                  缓存命中率
-                </th>
-                <th scope="col" className="num">
-                  积分（credit）
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {aggregates.map((row) => {
-                const prompt =
-                  row.inputTokens +
-                  row.cacheReadTokens +
-                  row.cacheCreationTokens;
-                return (
-                  <tr key={row.model}>
-                    <td><i className="polar-model-dot" style={{ background: entityColor(row.model) }} />{usageModelName(row.model, row.modelDisplayName)}</td>
-                    <td className="num">
-                      {row.requests.toLocaleString("en-US")}
-                    </td>
-                    <td className="num">
-                      {row.inputTokens.toLocaleString("en-US")}
-                    </td>
-                    <td className="num">
-                      {row.outputTokens.toLocaleString("en-US")}
-                    </td>
-                    <td className="num">{row.cacheReadTokens.toLocaleString("en-US")}</td>
-                    <td>{row.inputTokens + row.cacheReadTokens + row.outputTokens > 0 ? <PolarSegments showLegend={false} height={6} rows={[{ label: "输入", value: row.inputTokens, color: "#3D6E8F" }, { label: "缓存读", value: row.cacheReadTokens, color: "#8FE3FF" }, { label: "输出", value: row.outputTokens, color: "#DCEAF4" }]} format={(value) => `${value.toLocaleString("en-US")} tok`} /> : "—"}</td>
-                    <td
-                      className="num"
-                      title={`缓存读 ${row.cacheReadTokens.toLocaleString("en-US")} / 总 ${prompt.toLocaleString("en-US")} tok`}
-                    >
-                      {cacheRateText(row.cacheReadTokens, prompt)}
-                    </td>
-                    <td className="num">{credits(row.creditsMicro)}</td>
-                  </tr>
-                );
-              })}
-              {aggregates.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="readout">
-                    所选范围内暂无用量。
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-            {aggregates.length > 0 ? (
-              <tfoot>
-                <tr>
-                  <td>合计 · {aggregates.length} 个模型</td>
-                  <td className="num">
-                    {totalRequests.toLocaleString("en-US")}
-                  </td>
-                  <td className="num">
-                    {aggregates
-                      .reduce((sum, row) => sum + row.inputTokens, 0)
-                      .toLocaleString("en-US")}
-                  </td>
-                  <td className="num">
-                    {aggregates
-                      .reduce((sum, row) => sum + row.outputTokens, 0)
-                      .toLocaleString("en-US")}
-                  </td>
-                  <td className="num">{aggregates.reduce((sum, row) => sum + row.cacheReadTokens, 0).toLocaleString("en-US")}</td>
-                  <td />
-                  <td className="num">
-                    {cacheRateText(
-                      aggregates.reduce(
-                        (sum, row) => sum + row.cacheReadTokens,
-                        0,
-                      ),
-                      aggregates.reduce(
-                        (sum, row) =>
-                          sum +
-                          row.inputTokens +
-                          row.cacheReadTokens +
-                          row.cacheCreationTokens,
-                        0,
-                      ),
-                    )}
-                  </td>
-                  <td className="num">{credits(totalCredits)}</td>
-                </tr>
-              </tfoot>
-            ) : null}
-          </table>
-        </div>
-        <div className="polar-token-key"><span><i style={{ background: "#3D6E8F" }} />输入</span><span><i style={{ background: "#8FE3FF" }} />缓存读</span><span><i style={{ background: "#DCEAF4" }} />输出</span></div>
+      <section className="pane d1 polar-span-7 polar-usage-models" aria-label="按模型汇总">
+        <UsageModelSummary key={pageScope} rows={aggregates} totals={totals} />
       </section>
 
-      <section className="pane d1 polar-span-5 polar-usage-distribution">
-        <div className="pane-h">
-          <h2>{donutBy === "tokens" ? "模型 Token 构成" : "模型消费构成"}</h2>
-          <div className="form-row" style={{ gap: 6 }}>
-            <button
-              className="btn btn-sm"
-              type="button"
-              aria-pressed={donutBy === "tokens"}
-              style={donutBy === "tokens" ? undefined : { opacity: 0.55 }}
-              onClick={() => setDonutBy("tokens")}
-            >
-              按 Token
-            </button>
-            <button
-              className="btn btn-sm"
-              type="button"
-              aria-pressed={donutBy === "credits"}
-              style={donutBy === "credits" ? undefined : { opacity: 0.55 }}
-              onClick={() => setDonutBy("credits")}
-            >
-              按积分
-            </button>
-          </div>
-        </div>
-        <div className="pane-b">
-          {donutSegments.total > 0 ? (
-            <>
-              <PolarSegments rows={donutSegments.segments.map((segment) => ({ key: segment.model, label: segment.label ?? usageModelName(segment.model), value: segment.value, color: entityColor(segment.model) }))} format={(value) => donutBy === "tokens" ? `${compactToken(value)} tok` : `${credits(value)} credit`} />
-            </>
-          ) : (
-            <p className="readout" style={{ margin: 0 }}>
-              所选范围内暂无分布数据。
-            </p>
-          )}
-          {canManagePlatform ? <><h3 className="polar-subheading">团队排行 · 本页请求</h3><PolarBars rows={recordTeamRank} format={(value) => `${formatCreditsDisplay(value)} credit`} emptyText="本页暂无团队消费。" /><p className="readout" style={{ margin: "12px 0 0", fontSize: 10 }}>按当前页 {records.length} 条请求汇总，不代表完整区间排名。</p></> : null}
-        </div>
+      <section className="pane d1 polar-span-5 polar-usage-distribution" aria-label="模型消费构成">
+        <UsageModelComposition key={pageScope} rows={aggregates} />
+        {canManagePlatform && <div className="usage-team-rank">
+          <h3>团队排行 · 本页请求</h3>
+          <PolarBars rows={recordTeamRank} unit="积分" format={(value) => `${formatCreditsDisplay(value)} credit`} emptyText="本页暂无团队消费。" />
+          <p>按当前页 {records.length} 条请求汇总。</p>
+        </div>}
       </section>
 
       <section className="pane d1 polar-span-7">
