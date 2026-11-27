@@ -107,7 +107,7 @@ func failedReferencePreparation(t *testing.T, code string) (*fixture, *Project) 
 		}
 		p.Shots[0].Plan.ReferenceVideoAssetID, p.Shots[0].ReferenceVideoAssetID = "", ""
 	}
-	previous, err := f.s.Repo.Get(context.Background(), f.team, p.ID)
+	previous, err := f.s.Repo.Store.GetConfigValue(context.Background(), ProjectKey(f.team, p.ID))
 	if err != nil {
 		t.Fatal(err)
 	}

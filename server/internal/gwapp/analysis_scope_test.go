@@ -285,6 +285,10 @@ func TestAnalysisScopeGatewayRejectsInvalidAuthorizationAndTeamBudgetBeforeUpstr
 			case "expired":
 				ticket, err = media.IssueAnalysisScope(ctx, repo, box, p, "claude-sonnet-4-5", time.Now().Add(-2*time.Hour))
 			case "ended", "stale-input":
+				previous, readErr := f.store.GetConfigValue(ctx, media.ProjectKey(p.TeamID, p.ID))
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
 				next := *p
 				if kind == "ended" {
 					next.Status = "review"
@@ -293,7 +297,7 @@ func TestAnalysisScopeGatewayRejectsInvalidAuthorizationAndTeamBudgetBeforeUpstr
 					a.InputID = uuid.NewString()
 					next.Analysis = &a
 				}
-				err = repo.Save(ctx, &next, p)
+				err = repo.Save(ctx, &next, previous)
 			case "released-fee":
 				err = f.store.ReleaseReservationByID(ctx, p.AnalysisFee.ID, time.Now())
 			case "wrong-model":
@@ -359,6 +363,10 @@ func TestReferenceAnalysisScopesRequireActualHighBeforeUpstream(t *testing.T) {
 				t.Run(test.name, func(t *testing.T) {
 					f, repo, p, box, _, calls := gatewayAnalysisFixture(t)
 					ctx := context.Background()
+					previous, err := f.store.GetConfigValue(ctx, media.ProjectKey(p.TeamID, p.ID))
+					if err != nil {
+						t.Fatal(err)
+					}
 					next := *p
 					analysis := *p.Analysis
 					analysis.Kind = stage
@@ -371,7 +379,7 @@ func TestReferenceAnalysisScopesRequireActualHighBeforeUpstream(t *testing.T) {
 							t.Fatal(err)
 						}
 					}
-					if err := repo.Save(ctx, &next, p); err != nil {
+					if err := repo.Save(ctx, &next, previous); err != nil {
 						t.Fatal(err)
 					}
 					ticket, err := media.IssueAnalysisScope(ctx, repo, box, &next, "claude-sonnet-4-5", time.Now())

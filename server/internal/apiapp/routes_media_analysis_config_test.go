@@ -130,13 +130,17 @@ func TestAnalysisConfigRejectsWrongIdentityModelAndEndedScope(t *testing.T) {
 			case "missing-model":
 				model, status = "", 400
 			case "ended", "legacy":
+				previous, readErr := f.store.GetConfigValue(ctx, media.ProjectKey(p.TeamID, p.ID))
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
 				next := *p
 				if kind == "ended" {
 					next.Status = "review"
 				} else {
 					next.Brief.ReferenceAssetID = ""
 				}
-				err = f.deps.Media.Repo.Save(ctx, &next, p)
+				err = f.deps.Media.Repo.Save(ctx, &next, previous)
 			case "released":
 				err = f.store.ReleaseReservationByID(ctx, p.AnalysisFee.ID, time.Now())
 			case "no-box":

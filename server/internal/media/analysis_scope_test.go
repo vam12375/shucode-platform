@@ -69,6 +69,10 @@ func TestAnalysisScopeRejectsEndedAndStaleBindings(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			previous, err := f.s.Repo.Store.GetConfigValue(ctx, ProjectKey(p.TeamID, p.ID))
+			if err != nil {
+				t.Fatal(err)
+			}
 			next := *p
 			analysis := *p.Analysis
 			next.Analysis = &analysis
@@ -91,7 +95,7 @@ func TestAnalysisScopeRejectsEndedAndStaleBindings(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = f.s.Repo.Save(ctx, &next, p); err != nil {
+			if err = f.s.Repo.Save(ctx, &next, previous); err != nil {
 				t.Fatal(err)
 			}
 			if err = ValidateAnalysisScope(ctx, f.s.Repo, box, ticket, p.TeamID, p.UserID, p.DeviceID, "model-a", now, "high"); !errors.Is(err, ErrAnalysisScopeInvalid) {

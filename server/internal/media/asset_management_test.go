@@ -118,9 +118,12 @@ func TestAssetDeletionBlocksActiveReferencesAndAllowsRejection(t *testing.T) {
 	if err != nil || next.ID == req.ID {
 		t.Fatal(next, err)
 	}
-	previous := *p
+	previous, err := f.s.Repo.Store.GetConfigValue(ctx, ProjectKey(p.TeamID, p.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
 	p.Status = "completed"
-	if err = f.s.Repo.Save(ctx, p, &previous); err != nil {
+	if err = f.s.Repo.Save(ctx, p, previous); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = f.s.Repo.ReviewAssetDeletion(ctx, f.team, next.ID, "approve", admin); err != nil {

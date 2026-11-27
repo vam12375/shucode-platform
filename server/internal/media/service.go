@@ -2,7 +2,6 @@ package media
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
@@ -117,7 +116,7 @@ func (s *Service) Create(ctx context.Context, team, user, device, id string, b B
 	return p, nil
 }
 func (s *Service) Mutate(ctx context.Context, team, id string, version int64, fn func(*Project) error) (*Project, error) {
-	p, e := s.Repo.Get(ctx, team, id)
+	p, expected, e := s.Repo.readProject(ctx, team, id)
 	if e != nil {
 		return nil, e
 	}
@@ -127,15 +126,12 @@ func (s *Service) Mutate(ctx context.Context, team, id string, version int64, fn
 	if version != 0 && version != p.Version {
 		return nil, ErrConflict
 	}
-	raw, _ := json.Marshal(p)
-	var old Project
-	_ = json.Unmarshal(raw, &old)
 	if e = fn(p); e != nil {
 		return nil, e
 	}
 	p.Version++
 	p.UpdatedAt = time.Now().UTC()
-	if e = s.Repo.Save(ctx, p, &old); e != nil {
+	if e = s.Repo.Save(ctx, p, expected); e != nil {
 		return nil, e
 	}
 	return p, nil

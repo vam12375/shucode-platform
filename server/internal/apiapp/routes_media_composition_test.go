@@ -124,7 +124,10 @@ func TestMediaRecomposeChecksProjectAccountAndTeamBeforeReplay(t *testing.T) {
 	f, token, team, p, edit := compositionAPIFixture(t)
 	ctx := context.Background()
 	p.UserID = uuid.NewString()
-	previous, _ := f.deps.Media.Repo.Get(ctx, team, p.ID)
+	previous, err := f.store.GetConfigValue(ctx, media.ProjectKey(team, p.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := f.deps.Media.Repo.Save(ctx, p, previous); err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +168,10 @@ func TestMediaOverviewExcludesAllInternalAssetsAndPreservesHistoricalEvidence(t 
 		add(id, "image")
 	}
 	add(narration, "audio")
-	previous, _ := f.deps.Media.Repo.Get(ctx, team, p.ID)
+	previous, err := f.store.GetConfigValue(ctx, media.ProjectKey(team, p.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
 	p.QualityReport = &media.VideoQualityReport{Version: 1, Status: "passed", Keyframes: []media.VideoQualityKeyframe{{Frame: 0, AssetID: shown}, {Frame: 1, AssetID: narration}}}
 	if err := f.deps.Media.Repo.Save(ctx, p, previous); err != nil {
 		t.Fatal(err)

@@ -42,12 +42,15 @@ func TestMediaFailureDiagnosticsRequireRootAndFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	previous := *recovered
+	previous, err := f.store.GetConfigValue(ctx, media.ProjectKey(recovered.TeamID, recovered.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
 	recovered.ProviderDiagnostics = append([]media.ProviderDiagnostic(nil), recovered.ProviderDiagnostics...)
 	recovered.Status = "completed"
 	recovered.Shots = []media.Shot{{Status: "succeeded"}}
 	recovered.ProviderDiagnostics[0].Code = "RateLimitExceeded"
-	if err := repo.Save(ctx, recovered, &previous); err != nil {
+	if err := repo.Save(ctx, recovered, previous); err != nil {
 		t.Fatal(err)
 	}
 	rec = f.do("GET", "/console/api/ops/media-failures?status=completed&category=rate_limit", f.rootCookie, "")

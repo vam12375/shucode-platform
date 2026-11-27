@@ -32,28 +32,33 @@ func (r Repository) Models(ctx context.Context) ([]Model, error) {
 	return models, err
 }
 func (r Repository) Get(ctx context.Context, team, id string) (*Project, error) {
+	p, _, err := r.readProject(ctx, team, id)
+	return p, err
+}
+
+func (r Repository) readProject(ctx context.Context, team, id string) (*Project, []byte, error) {
 	raw, err := r.Store.GetConfigValue(ctx, ProjectKey(team, id))
 	if err != nil || len(raw) == 0 {
-		return nil, err
+		return nil, nil, err
 	}
 	var p Project
 	err = json.Unmarshal(raw, &p)
-	return &p, err
+	return &p, raw, err
 }
-func (r Repository) Save(ctx context.Context, p *Project, previous *Project) error {
-	var old []byte
-	var err error
-	if previous != nil {
-		old, err = json.Marshal(previous)
-		if err != nil {
-			return err
-		}
-	}
+
+func (r Repository) Save(ctx context.Context, p *Project, expected []byte) error {
 	raw, err := json.Marshal(p)
 	if err != nil {
 		return err
 	}
-	ok, err := r.Store.CompareAndSwapConfigValue(ctx, ProjectKey(p.TeamID, p.ID), old, raw)
+	if expected != nil {
+		raw, err = preserveProjectSnapshotFields(expected, raw)
+		if err != nil {
+			return err
+		}
+	}
+	// 旧项目缺少后来新增的零值字段，按现版结构重编码会产生假冲突。比较本次读到的快照。
+	ok, err := r.Store.CompareAndSwapConfigValue(ctx, ProjectKey(p.TeamID, p.ID), expected, raw)
 	if err != nil {
 		return err
 	}
