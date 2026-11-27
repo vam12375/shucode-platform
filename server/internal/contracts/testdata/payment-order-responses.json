@@ -1,0 +1,48 @@
+{
+  "pending": {
+    "code": 0,
+    "data": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "outTradeNo": "contractOrder001",
+      "targetType": "personal",
+      "targetId": "00000000-0000-4000-8000-000000000002",
+      "teamId": "00000000-0000-4000-8000-000000000003",
+      "userId": "00000000-0000-4000-8000-000000000002",
+      "amountYuan": "1.00",
+      "creditAmount": "1.000000",
+      "status": "pending",
+      "testPayment": false,
+      "tradeNo": "",
+      "subject": "充值契约样本",
+      "createdAt": "2026-11-26T12:00:00Z",
+      "expiresAt": "2026-11-26T12:15:00Z",
+      "paidAt": null,
+      "closedAt": null,
+      "purchaseKind": "custom",
+      "package": null
+    }
+  },
+  "paid": {
+    "code": 0,
+    "data": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "outTradeNo": "contractOrder001",
+      "targetType": "personal",
+      "targetId": "00000000-0000-4000-8000-000000000002",
+      "teamId": "00000000-0000-4000-8000-000000000003",
+      "userId": "00000000-0000-4000-8000-000000000002",
+      "amountYuan": "1.00",
+      "creditAmount": "1.000000",
+      "status": "paid",
+      "testPayment": false,
+      "tradeNo": "fixtureTrade001",
+      "subject": "充值契约样本",
+      "createdAt": "2026-11-26T12:00:00Z",
+      "expiresAt": "2026-11-26T12:15:00Z",
+      "paidAt": "2026-11-26T12:01:00Z",
+      "closedAt": null,
+      "purchaseKind": "custom",
+      "package": null
+    }
+  }
+}

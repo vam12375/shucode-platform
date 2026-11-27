@@ -339,7 +339,8 @@ func registerClientPaymentRoutes(router *gin.Engine, deps *Deps) {
 		if !found {
 			return
 		}
-		c.JSON(200, okData(gin.H{"order": clientPaymentOrderPublic(order)}))
+		// 桌面端解开 data 后直接校验订单；额外包一层 order 会让已到账订单无法刷新余额。
+		c.JSON(200, okData(clientPaymentOrderPublic(order)))
 	})
 	client("/api/v1/client/payments/orders/:outTradeNo/reconcile", func(c *gin.Context) {
 		if c.Request.Method != http.MethodPost {
@@ -359,7 +360,7 @@ func registerClientPaymentRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(502, fail(502, "支付宝核对未完成，请稍后重试"))
 			return
 		}
-		c.JSON(200, okData(gin.H{"order": clientPaymentOrderPublic(saved)}))
+		c.JSON(200, okData(clientPaymentOrderPublic(saved)))
 	})
 }
 
