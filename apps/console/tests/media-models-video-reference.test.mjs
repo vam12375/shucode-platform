@@ -307,13 +307,14 @@ async function mountModels(models, providers = [provider]) {
       };
       if (name === "../api.js") return { api: async (path, options) => {
         calls.push({ path, options });
-        if (options) {
-          if (mutationError) throw mutationError;
-          return JSON.parse(options.body);
-        }
         if (path === "/providers") return { providers };
         if (path.includes("/models?")) return { models: ["fixture-video"] };
-        return models;
+        throw new Error("Unexpected API request " + path);
+      }, apiWithResponse: async (path, options) => {
+        calls.push({ path, options });
+        if (options && mutationError) throw mutationError;
+        return { data: options ? JSON.parse(options.body) : models,
+          response: { headers: new Headers({ ETag: options ? '"catalog-2"' : '"catalog-1"' }) } };
       } };
       if (name === "../components/Feedback.js") return { toastErr() {}, toastOk() {} };
       if (name === "../components/Select.js") return { Select: "Select" };
@@ -400,6 +401,7 @@ test("legacy duration conversion requires an explicit action then the ordinary s
   assert.equal(save.props.disabled, false);
   save.props.onClick();
   tree = await f.settle();
+  assert.equal(f.calls.find((call) => call.options).options.headers["If-Match"], '"catalog-1"');
   const payload = JSON.parse(f.calls.find((call) => call.options).options.body);
   assert.equal(payload.length, 2);
   for (const tier of payload) {
@@ -442,6 +444,20 @@ test("failed duration conversion save remains dirty and can be discarded", async
   tree = await f.settle();
   assert.match(nodeText(tree), /旧枚举/);
   assert.equal(nodes(tree, (node) => node.props?.type === "range").length, 0);
+});
+
+test("a stale catalog keeps the local draft and blocks another whole-catalog write until reloaded", async () => {
+  const f = await mountModels([{ ...model, durations: [4, 5, 10, 15] }]);
+  const findButton = (tree, name) => nodes(tree, (node) => node.type === "button" && nodeText(node) === name)[0];
+  nodes(f.render(), (node) => node.type === "button" && /转换为连续区间 4–15 秒/.test(nodeText(node)))[0].props.onClick();
+  f.failSave(Object.assign(new Error("目录已更新"), { code: 409 }));
+  findButton(f.render(), "保存配置").props.onClick();
+  const conflicted = await f.settle();
+  assert.match(nodeText(conflicted), /本地草稿已保留/);
+  assert.ok(nodes(conflicted, (node) => node.props?.type === "range").length > 0);
+  assert.equal(findButton(conflicted, "保存配置").props.disabled, true);
+  findButton(conflicted, "保存配置").props.onClick();
+  assert.equal(f.calls.filter((call) => call.options?.method === "PUT").length, 1);
 });
 
 test("mixed shared fields are named and explicitly repaired without changing tier identities or prices", async () => {

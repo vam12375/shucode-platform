@@ -101,7 +101,7 @@ func TestGatewayTeamModelPolicyCannotBeBypassed(t *testing.T) {
 	if rec.Code != 200 || len(body.Data) != 1 || body.Data[0].ID != "allowed-model" {
 		t.Fatalf("模型列表必须遵循相同白名单: %d %s", rec.Code, rec.Body.String())
 	}
-	if _, err := f.store.SaveTeamPolicy(ctx, store.TeamPolicyRecord{TeamID: f.teamID, AllowedModelIDs: []string{"missing-model"}}); err != nil {
+	if _, err := f.store.SaveTeamPolicy(ctx, store.TeamPolicyRecord{TeamID: f.teamID, Revision: 1, AllowedModelIDs: []string{"missing-model"}}); err != nil {
 		t.Fatal(err)
 	}
 	rec = f.do("GET", "/v1/models", f.token, "")

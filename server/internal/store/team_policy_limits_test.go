@@ -33,11 +33,28 @@ func testTeamPolicyLimits(t *testing.T, ctx context.Context, s PlatformStore) {
 	if err != nil || loaded.RPMLimit != 10 || loaded.TPMLimit != 1000000 || loaded.ConcurrencyLimit != 20 {
 		t.Fatalf("拒绝非法写入时不能篡改旧策略: %+v %v", loaded, err)
 	}
-	if _, err := s.SaveTeamPolicy(ctx, TeamPolicyRecord{TeamID: team.ID}); err != nil {
-		t.Fatal(err)
+	// 两个管理员都读过同一版本，只能有一人提交成功；输掉的写入不能清空新预算。
+	results := make(chan error, 2)
+	for range 2 {
+		go func(revision int64) {
+			_, err := s.SaveTeamPolicy(ctx, TeamPolicyRecord{TeamID: team.ID, Revision: revision, DailyBudgetCredits: "3"})
+			results <- err
+		}(loaded.Revision)
+	}
+	conflicts := 0
+	for range 2 {
+		err := <-results
+		if errors.Is(err, ErrTeamPolicyRevisionConflict) {
+			conflicts++
+		} else if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if conflicts != 1 {
+		t.Fatalf("同版本并发写入的冲突次数: %d", conflicts)
 	}
 	loaded, err = s.GetTeamPolicy(ctx, team.ID)
-	if err != nil || loaded.RPMLimit != 0 || loaded.TPMLimit != 0 || loaded.ConcurrencyLimit != 0 {
+	if err != nil || loaded.Revision != 2 || loaded.DailyBudgetCredits != "3.000000" || loaded.RPMLimit != 0 || loaded.TPMLimit != 0 || loaded.ConcurrencyLimit != 0 {
 		t.Fatalf("显式0必须恢复继承语义: %+v %v", loaded, err)
 	}
 }

@@ -343,7 +343,7 @@ func testTenantBudgetBoundary(t *testing.T, ctx context.Context, s PlatformStore
 	if got := reserve("after-boundary", after, 1000000); got != ReserveReserved {
 		t.Fatalf("上海 00:00 新月/新日应重置预算: %s", got)
 	}
-	if _, err := s.SaveTeamPolicy(ctx, TeamPolicyRecord{TeamID: team.ID, DailyBudgetCredits: "0"}); err != nil {
+	if _, err := s.SaveTeamPolicy(ctx, TeamPolicyRecord{TeamID: team.ID, Revision: 1, DailyBudgetCredits: "0"}); err != nil {
 		t.Fatal(err)
 	}
 	if got := reserve("zero-hard-limit", after, 0); got != ReserveDeniedBudget {

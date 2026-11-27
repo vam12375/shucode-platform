@@ -369,7 +369,7 @@ func TestMediaAgentGenerationRouteStrictBodyDoesNotCreateOrCharge(t *testing.T) 
 				if err := f.store.SetConfigValue(ctx, media.ConfigKey, raw); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := f.store.SaveTeamPolicy(ctx, store.TeamPolicyRecord{TeamID: teamID, AllowedModelIDs: []string{model.ID}}); err != nil {
+				if _, err := f.store.SaveTeamPolicy(ctx, store.TeamPolicyRecord{TeamID: teamID, Revision: 1, AllowedModelIDs: []string{model.ID}}); err != nil {
 					t.Fatal(err)
 				}
 				request["kind"], request["modelId"], request["resolution"], request["duration"] = kind, model.ID, "720p", 4

@@ -1,7 +1,7 @@
 import { formatCreditsDisplay } from "@shucode-platform/contracts/credits";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Boxes, Building2, Settings2, ShieldCheck, UserCog, Users } from "lucide-react";
-import { api } from "../api.js";
+import { api, type ApiError } from "../api.js";
 import { useAuth } from "../auth.js";
 import { confirmDialog, toastErr, toastOk } from "../components/Feedback.js";
 import { MfaSettings } from "../components/MfaSettings.js";
@@ -32,7 +32,6 @@ interface Model {
   displayName: string;
 }
 interface Policy {
-  availableModels?: Array<{ modelId: string; displayName: string }>;
   dailyBudgetCredits: string;
   monthlyBudgetCredits: string;
   allowedModelIds: string[];
@@ -40,6 +39,11 @@ interface Policy {
   rpmLimit: number;
   tpmLimit: number;
   concurrencyLimit: number;
+}
+interface PolicySnapshot extends Policy {
+  teamId: string;
+  revision: number;
+  availableModels: Model[];
 }
 interface CanvasToolPolicy {
   teamId: string;
@@ -61,6 +65,20 @@ const EMPTY_POLICY: Policy = {
   tpmLimit: 0,
   concurrencyLimit: 0,
 };
+
+function policyChanges(base: Policy, draft: Policy): Partial<Policy> {
+  return Object.fromEntries((Object.keys(EMPTY_POLICY) as Array<keyof Policy>)
+    .filter((key) => JSON.stringify(base[key]) !== JSON.stringify(draft[key]))
+    .map((key) => [key, draft[key]]));
+}
+
+async function readPolicy(teamId: string): Promise<PolicySnapshot> {
+  const policy = await api<PolicySnapshot>(`/teams/${teamId}/policy`);
+  if (policy.teamId !== teamId || !Number.isSafeInteger(policy.revision) || policy.revision < 0) {
+    throw new Error("未取得当前团队的策略版本，请重新读取。");
+  }
+  return policy;
+}
 const EMPTY_CANVAS_TOOL_POLICY: CanvasToolPolicy = {
   teamId: "",
   revision: 0,
@@ -93,8 +111,13 @@ export function TenantPage({ section }: { section: string }) {
   const [team, setTeam] = useState<ConsoleTeam | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
-  const [models, setModels] = useState<Model[]>([]);
   const [policy, setPolicy] = useState<Policy>(EMPTY_POLICY);
+  const [policyBase, setPolicyBase] = useState<PolicySnapshot | null>(null);
+  const [policyError, setPolicyError] = useState("");
+  const [policyConflict, setPolicyConflict] = useState(false);
+  const [policyAttempt, setPolicyAttempt] = useState(0);
+  const policyReady = policyBase !== null && policyBase.teamId === teamId;
+  const models = policyReady ? policyBase.availableModels : [];
   const [canvasPolicy, setCanvasPolicy] = useState<CanvasToolPolicy>(EMPTY_CANVAS_TOOL_POLICY);
   const [notifications, setNotifications] = useState<
     Array<{ kind: string; message: string; tone: string }>
@@ -108,12 +131,10 @@ export function TenantPage({ section }: { section: string }) {
   const load = useCallback(async () => {
     if (!teamId) return;
     try {
-      const [detail, invitationData, policyData, modelData, noticeData, canvasPolicyData] =
+      const [detail, invitationData, noticeData, canvasPolicyData] =
         await Promise.all([
           api<{ team: ConsoleTeam; members: Member[] }>(`/teams/${teamId}`),
           api<{ invitations: Invitation[] }>(`/teams/${teamId}/invitations`),
-          api<Policy>(`/teams/${teamId}/policy`),
-          api<{ models: Model[] }>("/models"),
           api<{
             notifications: Array<{
               kind: string;
@@ -135,9 +156,7 @@ export function TenantPage({ section }: { section: string }) {
         ),
       );
       setInvitations(invitationData.invitations);
-      setPolicy({ ...EMPTY_POLICY, ...policyData });
       setCanvasPolicy({ ...EMPTY_CANVAS_TOOL_POLICY, ...canvasPolicyData });
-      setModels(policyData.availableModels ?? modelData.models);
       setNotifications(noticeData.notifications);
       setError("");
     } catch (e) {
@@ -147,6 +166,59 @@ export function TenantPage({ section }: { section: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    let current = true;
+    setPolicyBase(null);
+    setPolicyError("");
+    setPolicyConflict(false);
+    if (teamId) {
+      // 消费策略独立读取，其他面板的失败不能使空预算、空白名单成为可提交的草稿。
+      void readPolicy(teamId).then((snapshot) => {
+        if (current) {
+          setPolicyBase(snapshot);
+          setPolicy(snapshot);
+        }
+      }).catch((cause) => { if (current) setPolicyError(errorMessage(cause)); });
+    }
+    return () => { current = false; };
+  }, [teamId, policyAttempt]);
+  const savePolicy = async () => {
+    if (!policyReady || busy || policyConflict) return;
+    const changes = policyChanges(policyBase, policy);
+    if (!Object.keys(changes).length) return;
+    setBusy(true);
+    try {
+      const saved = await api<PolicySnapshot>(`/teams/${teamId}/policy`, {
+        method: "PUT", body: JSON.stringify({ expectedRevision: policyBase.revision, ...changes }),
+      });
+      const next = { ...saved, availableModels: policyBase.availableModels };
+      setPolicyBase(next);
+      setPolicy(next);
+      setPolicyError("");
+      toastOk("团队策略已保存");
+    } catch (cause) {
+      setPolicyConflict((cause as ApiError).code === 409);
+      setPolicyError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const refreshPolicyDraft = async () => {
+    if (!policyReady || busy) return;
+    setBusy(true);
+    try {
+      const latest = await readPolicy(teamId);
+      setPolicy({ ...latest, ...policyChanges(policyBase, policy) });
+      setPolicyBase(latest);
+      setPolicyError("");
+      setPolicyConflict(false);
+      toastOk("已读取最新策略，请核对保留的本地修改后保存");
+    } catch (cause) {
+      setPolicyError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
   const run = async (action: () => Promise<unknown>, message: string) => {
     setBusy(true);
     try {
@@ -234,23 +306,23 @@ export function TenantPage({ section }: { section: string }) {
             <div className="stat-card">
               <p className="stat-label">每日预算</p>
               <p className="stat-value">
-                {policy.dailyBudgetCredits
-                  ? `${money(policy.dailyBudgetCredits)} credit`
+                {!policyReady ? "—" : policyBase.dailyBudgetCredits
+                  ? `${money(policyBase.dailyBudgetCredits)} credit`
                   : "不限"}
               </p>
             </div>
             <div className="stat-card">
               <p className="stat-label">每月预算</p>
               <p className="stat-value">
-                {policy.monthlyBudgetCredits
-                  ? `${money(policy.monthlyBudgetCredits)} credit`
+                {!policyReady ? "—" : policyBase.monthlyBudgetCredits
+                  ? `${money(policyBase.monthlyBudgetCredits)} credit`
                   : "不限"}
               </p>
             </div>
             <div className="stat-card">
               <p className="stat-label">可用模型</p>
               <p className="stat-value">
-                {policy.allowedModelIds.length || models.length}
+                {policyReady ? policyBase.allowedModelIds.length || models.length : "—"}
                 <span className="unit">个</span>
               </p>
             </div>
@@ -565,26 +637,17 @@ export function TenantPage({ section }: { section: string }) {
             <h2>消费策略</h2>
             <span className="readout">预算按团队计费口径执行</span>
           </div>
+          {policyError && <Notice tone="stop" k="消费策略">{policyError}</Notice>}
+          {!policyReady ? (
+            <div className="pane-b readout">{policyError
+              ? <button type="button" className="btn btn-ghost" onClick={() => setPolicyAttempt((value) => value + 1)}>重新读取策略</button>
+              : "正在读取消费策略…"}</div>
+          ) : (
           <form
             className="pane-b tenant-form"
             onSubmit={(e) => {
               e.preventDefault();
-              void run(
-                () =>
-                  api(`/teams/${teamId}/policy`, {
-                    method: "PUT",
-                    body: JSON.stringify({
-                      dailyBudgetCredits: policy.dailyBudgetCredits,
-                      monthlyBudgetCredits: policy.monthlyBudgetCredits,
-                      allowedModelIds: policy.allowedModelIds,
-                      budgetAlertPercent: policy.budgetAlertPercent,
-                      rpmLimit: policy.rpmLimit,
-                      tpmLimit: policy.tpmLimit,
-                      concurrencyLimit: policy.concurrencyLimit,
-                    }),
-                  }),
-                "团队策略已保存",
-              );
+              void savePolicy();
             }}
           >
             <label>
@@ -596,6 +659,7 @@ export function TenantPage({ section }: { section: string }) {
                 step="0.000001"
                 placeholder="留空不限"
                 value={policy.dailyBudgetCredits ?? ""}
+                disabled={busy}
                 onChange={(e) =>
                   setPolicy({ ...policy, dailyBudgetCredits: e.target.value })
                 }
@@ -610,6 +674,7 @@ export function TenantPage({ section }: { section: string }) {
                 step="0.000001"
                 placeholder="留空不限"
                 value={policy.monthlyBudgetCredits ?? ""}
+                disabled={busy}
                 onChange={(e) =>
                   setPolicy({ ...policy, monthlyBudgetCredits: e.target.value })
                 }
@@ -624,6 +689,7 @@ export function TenantPage({ section }: { section: string }) {
                 max="100"
                 required
                 value={policy.budgetAlertPercent}
+                disabled={busy}
                 onChange={(e) =>
                   setPolicy({
                     ...policy,
@@ -635,17 +701,17 @@ export function TenantPage({ section }: { section: string }) {
             <p className="readout">
               预算留空表示不额外限制，0 表示停止消费；团队总额度仍由平台控制。
             </p>
-            <fieldset>
+            <fieldset disabled={busy}>
               <legend>团队速率限制</legend>
               <p className="readout">
                 0
                 继承平台上限。实际取团队限制与平台上限中较小的非零值，无法放大平台上限；平台上限为不限时，可设置团队限制。
               </p>
-              <p className="readout">
-                平台上限：{team?.rpmLimit || "不限"} RPM ·{" "}
-                {team?.tpmLimit || "不限"} TPM ·{" "}
-                {team?.concurrencyLimit || "不限"} 并发
-              </p>
+              {team ? (
+                <p className="readout">
+                  平台上限：{team.rpmLimit || "不限"} RPM · {team.tpmLimit || "不限"} TPM · {team.concurrencyLimit || "不限"} 并发
+                </p>
+              ) : null}
               <div className="tenant-rate-limits">
                 {(
                   [
@@ -675,7 +741,7 @@ export function TenantPage({ section }: { section: string }) {
                 ))}
               </div>
             </fieldset>
-            <fieldset>
+            <fieldset disabled={busy}>
               <legend>模型白名单</legend>
               <p className="readout">
                 未勾选模型时允许所有平台开放模型；勾选后仅允许所选模型。
@@ -702,10 +768,11 @@ export function TenantPage({ section }: { section: string }) {
                 ))}
               </div>
             </fieldset>
-            <button className="btn" disabled={busy}>
+            {policyConflict && <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void refreshPolicyDraft()}>读取最新版并保留本地修改</button>}
+            <button className="btn" disabled={busy || policyConflict || !Object.keys(policyChanges(policyBase, policy)).length}>
               {busy ? "保存中…" : "保存消费策略"}
             </button>
-          </form>
+          </form>)}
         </section>
         <section className="pane">
           <div className="pane-h">

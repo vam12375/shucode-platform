@@ -736,6 +736,7 @@ type TeamMemberPatch struct {
 }
 
 type TeamPolicyRecord struct {
+	Revision             int64     `json:"revision"`
 	TeamID               string    `json:"teamId"`
 	DailyBudgetCredits   string    `json:"dailyBudgetCredits"`
 	MonthlyBudgetCredits string    `json:"monthlyBudgetCredits"`

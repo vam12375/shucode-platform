@@ -26,8 +26,12 @@ window.fetch = async (input, init={}) => {
   if (url.origin !== location.origin || !url.pathname.startsWith('/console/api/')) throw new Error('fixture blocks external network');
   const path=url.pathname, method=init.method || 'GET';
   window.__fixture.calls.push({path,search:url.search,method,...(init.body?{body:JSON.parse(init.body)}:{})});
-  let data;
+  let data, etag;
   if(path.endsWith('/media/models')) {
+    const version = Number(localStorage.getItem('toapis-catalog-version') || '0');
+    etag = '"fixture-' + version + '"';
+    if(method==='PUT' && init.headers['If-Match'] !== etag) return Response.json({code:409,msg:'目录已更新'},{status:409});
+    if(method==='PUT') {localStorage.setItem('toapis-catalog-version',String(version+1));etag='"fixture-' + (version+1) + '"';}
     if(method==='PUT') {window.__fixture.models=JSON.parse(init.body).map(model=>({...model,aspectRatios:model.kind==='image'&&model.adapter==='toapis'?['1:1','3:2','2:3','4:3','3:4','5:4','4:5','16:9','9:16','21:9',...(model.upstreamModel==='gpt-image-2'?['2:1','1:2','9:21']:[])]:['auto','16:9','4:3','1:1','3:4','9:16','21:9']}));localStorage.setItem('toapis-catalog-fixture',JSON.stringify(window.__fixture.models));}
     data=window.__fixture.models;
   } else if(path.endsWith('/providers')) data={providers:[{id:'ark',name:'Ark 测试供应商',baseUrl:'https://ark.example/api/v3',enabled:true},{id:'toapis',name:'ToAPIs 测试供应商',baseUrl:'https://toapis.com/v1',enabled:true}]};
@@ -37,7 +41,7 @@ window.fetch = async (input, init={}) => {
   else if(path.endsWith('/media/projects')) data=window.__fixture.projects;
   else if(path.endsWith('/reconcile')&&method==='POST') {const project=window.__fixture.projects.find(project=>path.includes('/'+project.id+'/'));const body=JSON.parse(init.body);project.shots[body.shot].status=body.outcome==='image_task'?'image_running':body.outcome==='image_result'?'image_generated':'failed';data=project;}
   else throw new Error('unsupported fixture API');
-  return new Response(JSON.stringify({code:0,data}),{headers:{'content-type':'application/json'}});
+  return new Response(JSON.stringify({code:0,data}),{headers:{'content-type':'application/json',...(etag?{ETag:etag}:{})}});
 };
 </script>
 <script type="module">

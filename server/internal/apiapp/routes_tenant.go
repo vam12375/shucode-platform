@@ -364,6 +364,10 @@ func registerTenantRoutes(router *gin.Engine, deps *Deps) {
 			internalError(c, deps, err)
 			return
 		}
+		if policy == nil {
+			c.JSON(404, fail(404, "团队不存在"))
+			return
+		}
 		models, err := deps.Store.ListModels(c.Request.Context(), false)
 		if err != nil {
 			internalError(c, deps, err)
@@ -376,7 +380,7 @@ func registerTenantRoutes(router *gin.Engine, deps *Deps) {
 		c.JSON(200, okData(gin.H{"teamId": policy.TeamID, "dailyBudgetCredits": policy.DailyBudgetCredits,
 			"monthlyBudgetCredits": policy.MonthlyBudgetCredits, "allowedModelIds": policy.AllowedModelIDs, "budgetAlertPercent": policy.BudgetAlertPercent,
 			"rpmLimit": policy.RPMLimit, "tpmLimit": policy.TPMLimit, "concurrencyLimit": policy.ConcurrencyLimit,
-			"updatedAt": isoString(policy.UpdatedAt), "availableModels": available}))
+			"revision": policy.Revision, "updatedAt": isoString(policy.UpdatedAt), "availableModels": available}))
 	})
 	group.PUT("/teams/:id/policy", func(c *gin.Context) {
 		ctx := c.Request.Context()
@@ -393,9 +397,27 @@ func registerTenantRoutes(router *gin.Engine, deps *Deps) {
 			c.JSON(400, fail(400, "请求参数不合法"))
 			return
 		}
+		if _, exists := body["expectedRevision"]; !exists {
+			c.JSON(428, fail(428, "请刷新团队消费策略后再保存"))
+			return
+		}
+		expected, valid := intInRange(body["expectedRevision"], 0, 9_007_199_254_740_991)
+		delete(body, "expectedRevision")
+		if !valid || len(body) == 0 {
+			c.JSON(400, fail(400, "必须提供有效版本和需要修改的策略字段"))
+			return
+		}
 		policy, err := deps.Store.GetTeamPolicy(ctx, membership.Team.ID)
 		if err != nil {
 			internalError(c, deps, err)
+			return
+		}
+		if policy == nil {
+			c.JSON(404, fail(404, "团队不存在"))
+			return
+		}
+		if policy.Revision != expected {
+			c.JSON(409, fail(409, "团队消费策略已更新，请核对最新配置"))
 			return
 		}
 		fields := []string{}
@@ -469,8 +491,16 @@ func registerTenantRoutes(router *gin.Engine, deps *Deps) {
 			fields = append(fields, key)
 		}
 		updated, err := deps.Store.SaveTeamPolicy(ctx, *policy)
+		if errors.Is(err, store.ErrTeamPolicyRevisionConflict) {
+			c.JSON(409, fail(409, "团队消费策略已更新，请核对最新配置"))
+			return
+		}
 		if err != nil {
 			internalError(c, deps, err)
+			return
+		}
+		if updated == nil {
+			c.JSON(404, fail(404, "团队不存在"))
 			return
 		}
 		writeTeamAudit(ctx, deps, actor, policy.TeamID, "policy.update", "team", policy.TeamID, map[string]any{"fields": fields})

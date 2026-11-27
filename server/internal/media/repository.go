@@ -18,18 +18,24 @@ type Repository struct{ Store store.PlatformStore }
 func ProjectKey(team, id string) string { return "media:project:" + team + ":" + id }
 func assetKey(team string) string       { return "media:assets:" + team }
 func (r Repository) Models(ctx context.Context) ([]Model, error) {
-	models := []Model{}
+	models, _, err := r.ModelCatalog(ctx)
+	return models, err
+}
+
+// ModelCatalog 从同一次读取派生控制台展示内容与 CAS 基线，避免显示值和版本属于两次不同的写入。
+func (r Repository) ModelCatalog(ctx context.Context) ([]Model, []byte, error) {
 	raw, err := r.Store.GetConfigValue(ctx, ConfigKey)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	models := []Model{}
 	if len(raw) > 0 {
 		err = json.Unmarshal(raw, &models)
 	}
 	for index := range models {
 		models[index] = NormalizeSeedanceDuration(models[index])
 	}
-	return models, err
+	return models, raw, err
 }
 func (r Repository) Get(ctx context.Context, team, id string) (*Project, error) {
 	p, _, err := r.readProject(ctx, team, id)

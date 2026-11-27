@@ -137,6 +137,10 @@ func (s *memoryStore) SaveTeamPolicy(_ context.Context, record TeamPolicyRecord)
 	if err != nil {
 		return nil, err
 	}
+	if s.teamPolicies[record.TeamID].Revision != record.Revision {
+		return nil, ErrTeamPolicyRevisionConflict
+	}
+	normalized.Revision++
 	s.teamPolicies[record.TeamID] = normalized
 	normalized.AllowedModelIDs = append([]string{}, normalized.AllowedModelIDs...)
 	return &normalized, nil

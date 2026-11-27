@@ -26,15 +26,29 @@ func TestMediaCatalogRoutePoolRoundTripAndProviderValidation(t *testing.T) {
 		Adapter: "ark", UpstreamModel: "shared-upstream-image", Resolutions: []string{"2K"}, PriceMicro: 100_000, PriceVersion: "v1",
 		Routes: []media.ModelRoute{{ProviderID: first.ID, Priority: 100, Weight: 2, Enabled: true}, {ProviderID: second.ID, Priority: 200, Weight: 1, Enabled: false}},
 	}
-	save := func() int {
+	const path = "/console/api/media/models"
+	initial := f.do("GET", path, f.rootCookie, "").Header().Get("ETag")
+	if initial == "" {
+		t.Fatal("媒体目录缺少初始版本")
+	}
+	save := func(etag string) int {
 		t.Helper()
 		raw, _ := json.Marshal([]media.Model{model})
-		return f.do("PUT", "/console/api/media/models", f.rootCookie, string(raw)).Code
+		return f.doForge("PUT", path, f.rootCookie, string(raw), map[string]string{
+			"Origin": f.deps.Env.PublicAPIOrigin, "Sec-Fetch-Site": "same-origin", "If-Match": etag,
+		}).Code
 	}
-	if code := save(); code != 200 {
+	if code := save(""); code != 428 {
+		t.Fatalf("目录写入必须提供版本: %d", code)
+	}
+	if code := save(initial); code != 200 {
 		t.Fatalf("valid pool rejected: %d", code)
 	}
-	response := f.do("GET", "/console/api/media/models", f.rootCookie, "")
+	response := f.do("GET", path, f.rootCookie, "")
+	current := response.Header().Get("ETag")
+	if current == initial || save(initial) != 409 {
+		t.Fatal("旧目录覆盖了已保存配置")
+	}
 	if response.Code != 200 || !strings.Contains(response.Body.String(), `"weight":2`) || !strings.Contains(response.Body.String(), second.ID) {
 		t.Fatalf("console lost route config: %d %s", response.Code, response.Body.String())
 	}
@@ -49,7 +63,7 @@ func TestMediaCatalogRoutePoolRoundTripAndProviderValidation(t *testing.T) {
 		}
 	}
 	model.Routes[1].ProviderID = uuid.NewString()
-	if code := save(); code != 400 {
+	if code := save(current); code != 400 {
 		t.Fatalf("missing route provider accepted: %d", code)
 	}
 	stored, _ = f.deps.Media.Repo.Models(ctx)
@@ -57,7 +71,7 @@ func TestMediaCatalogRoutePoolRoundTripAndProviderValidation(t *testing.T) {
 		t.Fatal("invalid save replaced the existing catalog")
 	}
 	model.Routes[1].ProviderID = first.ID
-	if code := save(); code != 400 && code != 422 {
+	if code := save(current); code != 400 && code != 422 {
 		t.Fatalf("duplicate route provider accepted: %d", code)
 	}
 }

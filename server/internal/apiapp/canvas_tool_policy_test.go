@@ -68,7 +68,7 @@ func TestCanvasToolPolicyTeamScopeValidationAndCAS(t *testing.T) {
 		t.Fatalf("stale canvas policy write must return current revision: %d %s", conflict.Code, conflict.Body.String())
 	}
 
-	if rec := f.do("PUT", "/console/api/teams/"+f.team.ID+"/policy", f.adminCookie, `{"dailyBudgetCredits":"10"}`); rec.Code != 200 {
+	if rec := f.do("PUT", "/console/api/teams/"+f.team.ID+"/policy", f.adminCookie, `{"expectedRevision":0,"dailyBudgetCredits":"10"}`); rec.Code != 200 {
 		t.Fatalf("legacy budget policy update: %d %s", rec.Code, rec.Body.String())
 	}
 	retained := dataOf(t, f.do("GET", path, f.adminCookie, ""))

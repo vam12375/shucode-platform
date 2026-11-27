@@ -27,6 +27,7 @@ func New(deps *Deps) *gin.Engine {
 			}
 			c.Header("Access-Control-Allow-Origin", deps.Env.PublicConsoleOrigin)
 			c.Header("Access-Control-Allow-Credentials", "true")
+			c.Header("Access-Control-Expose-Headers", "ETag")
 			c.Header("Vary", "Origin")
 			if c.Request.Method == http.MethodOptions {
 				c.Header("Access-Control-Allow-Methods", "GET,HEAD,PUT,POST,DELETE,PATCH")

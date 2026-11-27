@@ -335,9 +335,20 @@ func TestTenantInvitationsAndProfile(t *testing.T) {
 	if user, _ := f.store.FindUserByEmail(ctx, "invalid@tenant.test"); user != nil {
 		t.Fatal("invalid invite created account")
 	}
-	policy := fmt.Sprintf(`{"dailyBudgetCredits":"5","monthlyBudgetCredits":"30","allowedModelIds":[],"budgetAlertPercent":50}`)
+	policy := fmt.Sprintf(`{"expectedRevision":0,"dailyBudgetCredits":"5","monthlyBudgetCredits":"30","allowedModelIds":[],"budgetAlertPercent":50}`)
 	if rec := f.do("PUT", "/console/api/teams/"+f.team.ID+"/policy", f.adminCookie, policy); rec.Code != 200 {
 		t.Fatalf("policy write: %d %s", rec.Code, rec.Body.String())
+	}
+	path := "/console/api/teams/" + f.team.ID + "/policy"
+	if rec := f.do("PUT", path, f.adminCookie, `{"dailyBudgetCredits":""}`); rec.Code != 428 {
+		t.Fatalf("无版本写策略: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.do("PUT", path, f.adminCookie, `{"expectedRevision":0,"dailyBudgetCredits":""}`); rec.Code != 409 {
+		t.Fatalf("旧版本写策略: %d %s", rec.Code, rec.Body.String())
+	}
+	savedPolicy := dataOf(t, f.do("PUT", path, f.adminCookie, `{"expectedRevision":1,"rpmLimit":25}`))
+	if savedPolicy["dailyBudgetCredits"] != "5.000000" || savedPolicy["monthlyBudgetCredits"] != "30.000000" || savedPolicy["revision"] != float64(2) {
+		t.Fatalf("局部更新必须保留现有预算并推进版本: %v", savedPolicy)
 	}
 	if rec := f.do("PUT", "/console/api/teams/"+f.otherTeam.ID+"/policy", f.adminCookie, policy); rec.Code != 403 {
 		t.Fatalf("foreign policy: %d", rec.Code)

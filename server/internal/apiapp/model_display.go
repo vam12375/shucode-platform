@@ -1,6 +1,7 @@
 package apiapp
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -28,7 +29,10 @@ func displayVersion(value any) string {
 	// Postgres JSONB 会重排对象键；版本按规范化内容计算，不能让成功写入返回的版本立即失效。
 	if raw, ok := value.(json.RawMessage); ok {
 		var normalized any
-		if json.Unmarshal(raw, &normalized) == nil {
+		// 目录里的整数先经 float64 会使相邻的大额 micro 值得到相同的版本。
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if decoder.Decode(&normalized) == nil {
 			value = normalized
 		}
 	}

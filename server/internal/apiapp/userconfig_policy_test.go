@@ -90,7 +90,7 @@ func TestUserConfigModelPolicyAndEmptyCatalog(t *testing.T) {
 	if rule["enabled"] != true || len(ids) != 1 || ids[0] != "model-b" || defaultModel != "model-b" {
 		t.Fatalf("信封必须只包含授权模型: %s", rec.Body.String())
 	}
-	if _, err := f.store.SaveTeamPolicy(ctx, store.TeamPolicyRecord{TeamID: teamID, AllowedModelIDs: []string{"missing-model"}}); err != nil {
+	if _, err := f.store.SaveTeamPolicy(ctx, store.TeamPolicyRecord{TeamID: teamID, Revision: 1, AllowedModelIDs: []string{"missing-model"}}); err != nil {
 		t.Fatal(err)
 	}
 	rec = requestUserConfig(f, token, etag)

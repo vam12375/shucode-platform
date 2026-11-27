@@ -456,11 +456,13 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		if _, ok := requireRoot(c.Request.Context(), deps, c); !ok {
 			return
 		}
-		models, e := s.Repo.Models(c.Request.Context())
+		models, raw, e := s.Repo.ModelCatalog(c.Request.Context())
 		if e != nil {
 			internalError(c, deps, e)
 			return
 		}
+		c.Header("ETag", mediaCatalogETag(raw))
+		c.Header("Cache-Control", "no-store")
 		c.JSON(200, okData(consoleMediaModels(models)))
 	})
 	router.PUT("/console/api/media/models", func(c *gin.Context) {
@@ -470,6 +472,24 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		}
 		var models []media.Model
 		if !mediaBody(c, &models) {
+			return
+		}
+		if models == nil {
+			c.JSON(400, fail(400, "媒体目录应为模型数组"))
+			return
+		}
+		match := c.GetHeader("If-Match")
+		if match == "" {
+			c.JSON(428, fail(428, "请刷新媒体目录后再保存"))
+			return
+		}
+		raw, e := deps.Store.GetConfigValue(c.Request.Context(), media.ConfigKey)
+		if e != nil {
+			internalError(c, deps, e)
+			return
+		}
+		if match != mediaCatalogETag(raw) {
+			c.JSON(409, fail(409, "媒体目录已更新，请核对最新配置"))
 			return
 		}
 		if e := media.ValidateModels(models); e != nil {
@@ -495,12 +515,23 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 				}
 			}
 		}
-		data, _ := json.Marshal(models)
-		if e := deps.Store.SetConfigValue(c.Request.Context(), media.ConfigKey, data); e != nil {
+		data, e := json.Marshal(models)
+		if e != nil {
 			internalError(c, deps, e)
 			return
 		}
+		changed, e := deps.Store.CompareAndSwapConfigValue(c.Request.Context(), media.ConfigKey, raw, data)
+		if e != nil {
+			internalError(c, deps, e)
+			return
+		}
+		if !changed {
+			c.JSON(409, fail(409, "媒体目录已更新，请核对最新配置"))
+			return
+		}
 		writeAudit(c.Request.Context(), deps, actor, "media.models.update", "media_catalog", media.ConfigKey, gin.H{"modelCount": len(models)})
+		c.Header("ETag", mediaCatalogETag(data))
+		c.Header("Cache-Control", "no-store")
 		c.JSON(200, okData(consoleMediaModels(models)))
 	})
 	router.GET("/console/api/media/projects", func(c *gin.Context) {
@@ -538,6 +569,10 @@ func registerMediaRoutes(router *gin.Engine, deps *Deps) {
 		c.JSON(200, okData(p))
 	})
 }
+func mediaCatalogETag(raw []byte) string {
+	return `"media-models-` + displayVersion(json.RawMessage(raw)) + `"`
+}
+
 func mediaBody(c *gin.Context, out any) bool {
 	limit := int64(256 << 10)
 	if c.Param("action") == "planning-result" {

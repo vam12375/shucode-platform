@@ -297,6 +297,7 @@ var (
 	ErrTeamAssetForbidden               = errors.New("team asset operation forbidden")
 	ErrPreferenceVersionConflict        = errors.New("user preference version conflict")
 	ErrCanvasToolPolicyRevisionConflict = errors.New("canvas tool policy revision conflict")
+	ErrTeamPolicyRevisionConflict       = errors.New("team policy revision conflict")
 	ErrBillingModeInvalid               = errors.New("invalid billing mode")
 	ErrPersonalAccountForbidden         = errors.New("personal billing account cannot be used as an organization")
 	ErrPaymentPackageConflict           = errors.New("payment package order conflicts with existing parameters")

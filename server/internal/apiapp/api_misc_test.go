@@ -91,15 +91,26 @@ func TestConsoleCORS(t *testing.T) {
 	engine := New(f.deps)
 
 	preflight := httptest.NewRecorder()
-	req := httptest.NewRequest("OPTIONS", "/console/api/auth/me", nil)
+	req := httptest.NewRequest("OPTIONS", "/console/api/media/models", nil)
 	req.Header.Set("origin", "https://console.example.com")
-	req.Header.Set("access-control-request-headers", "content-type, cookie")
+	req.Header.Set("access-control-request-method", "PUT")
+	req.Header.Set("access-control-request-headers", "content-type, if-match")
 	engine.ServeHTTP(preflight, req)
 	if preflight.Code != 204 ||
 		preflight.Header().Get("Access-Control-Allow-Origin") != "https://console.example.com" ||
 		preflight.Header().Get("Access-Control-Allow-Credentials") != "true" ||
-		!strings.Contains(preflight.Header().Get("Access-Control-Allow-Headers"), "content-type") {
+		!strings.Contains(preflight.Header().Get("Access-Control-Allow-Headers"), "if-match") {
 		t.Fatalf("CORS 预检不符: %d %v", preflight.Code, preflight.Header())
+	}
+	// 独立域名的浏览器必须能读取目录 ETag，才能在下次写入时携带 If-Match。
+	catalog := httptest.NewRecorder()
+	req = httptest.NewRequest("GET", "/console/api/media/models", nil)
+	req.Header.Set("origin", f.deps.Env.PublicConsoleOrigin)
+	req.Header.Set("cookie", f.loginAdmin())
+	engine.ServeHTTP(catalog, req)
+	if catalog.Code != 200 || catalog.Header().Get("ETag") == "" ||
+		catalog.Header().Get("Access-Control-Expose-Headers") != "ETag" {
+		t.Fatalf("跨域控制台无法读取目录版本: %d %v", catalog.Code, catalog.Header())
 	}
 	// 非 /console/api 路径不附加 CORS 头。
 	other := httptest.NewRecorder()

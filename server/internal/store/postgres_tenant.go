@@ -198,7 +198,7 @@ func (s *PostgresStore) UpdateTeamMember(ctx context.Context, teamID, userID str
 
 func getTeamPolicy(ctx context.Context, q tenantRowQuerier, teamID string) (*TeamPolicyRecord, error) {
 	var record TeamPolicyRecord
-	err := q.QueryRow(ctx, `SELECT t.id::text,COALESCE(p.daily_budget_credits::text,''),COALESCE(p.monthly_budget_credits::text,''),COALESCE(p.allowed_model_ids,'{}'::text[]),COALESCE(p.budget_alert_percent,80),COALESCE(p.updated_at,t.created_at),COALESCE(p.rpm_limit,0),COALESCE(p.tpm_limit,0),COALESCE(p.concurrency_limit,0) FROM teams t LEFT JOIN team_policies p ON p.team_id=t.id WHERE t.id=$1::uuid`, teamID).Scan(&record.TeamID, &record.DailyBudgetCredits, &record.MonthlyBudgetCredits, &record.AllowedModelIDs, &record.BudgetAlertPercent, &record.UpdatedAt, &record.RPMLimit, &record.TPMLimit, &record.ConcurrencyLimit)
+	err := q.QueryRow(ctx, `SELECT t.id::text,COALESCE(p.daily_budget_credits::text,''),COALESCE(p.monthly_budget_credits::text,''),COALESCE(p.allowed_model_ids,'{}'::text[]),COALESCE(p.budget_alert_percent,80),COALESCE(p.updated_at,t.created_at),COALESCE(p.rpm_limit,0),COALESCE(p.tpm_limit,0),COALESCE(p.concurrency_limit,0),COALESCE(p.policy_revision,0) FROM teams t LEFT JOIN team_policies p ON p.team_id=t.id WHERE t.id=$1::uuid`, teamID).Scan(&record.TeamID, &record.DailyBudgetCredits, &record.MonthlyBudgetCredits, &record.AllowedModelIDs, &record.BudgetAlertPercent, &record.UpdatedAt, &record.RPMLimit, &record.TPMLimit, &record.ConcurrencyLimit, &record.Revision)
 	if queryErrNoRows(err) {
 		return nil, nil
 	}
@@ -224,7 +224,16 @@ func (s *PostgresStore) SaveTeamPolicy(ctx context.Context, record TeamPolicyRec
 	if err != nil || !ok {
 		return nil, err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO team_policies(team_id,daily_budget_credits,monthly_budget_credits,allowed_model_ids,budget_alert_percent,updated_at,rpm_limit,tpm_limit,concurrency_limit) VALUES($1::uuid,$2::numeric,$3::numeric,$4,$5,$6,$7,$8,$9) ON CONFLICT(team_id) DO UPDATE SET daily_budget_credits=EXCLUDED.daily_budget_credits,monthly_budget_credits=EXCLUDED.monthly_budget_credits,allowed_model_ids=EXCLUDED.allowed_model_ids,budget_alert_percent=EXCLUDED.budget_alert_percent,updated_at=EXCLUDED.updated_at,rpm_limit=EXCLUDED.rpm_limit,tpm_limit=EXCLUDED.tpm_limit,concurrency_limit=EXCLUDED.concurrency_limit`, normalized.TeamID, nullIfEmpty(normalized.DailyBudgetCredits), nullIfEmpty(normalized.MonthlyBudgetCredits), normalized.AllowedModelIDs, normalized.BudgetAlertPercent, normalized.UpdatedAt, normalized.RPMLimit, normalized.TPMLimit, normalized.ConcurrencyLimit)
+	// 首次保存和已存在的策略共用团队锁；在锁内核对版本，两个管理员不能覆盖对方刚保存的限制。
+	current, err := getTeamPolicy(ctx, tx, record.TeamID)
+	if err != nil {
+		return nil, err
+	}
+	if current.Revision != record.Revision {
+		return nil, ErrTeamPolicyRevisionConflict
+	}
+	normalized.Revision++
+	_, err = tx.Exec(ctx, `INSERT INTO team_policies(team_id,daily_budget_credits,monthly_budget_credits,allowed_model_ids,budget_alert_percent,updated_at,rpm_limit,tpm_limit,concurrency_limit,policy_revision) VALUES($1::uuid,$2::numeric,$3::numeric,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(team_id) DO UPDATE SET daily_budget_credits=EXCLUDED.daily_budget_credits,monthly_budget_credits=EXCLUDED.monthly_budget_credits,allowed_model_ids=EXCLUDED.allowed_model_ids,budget_alert_percent=EXCLUDED.budget_alert_percent,updated_at=EXCLUDED.updated_at,rpm_limit=EXCLUDED.rpm_limit,tpm_limit=EXCLUDED.tpm_limit,concurrency_limit=EXCLUDED.concurrency_limit,policy_revision=EXCLUDED.policy_revision`, normalized.TeamID, nullIfEmpty(normalized.DailyBudgetCredits), nullIfEmpty(normalized.MonthlyBudgetCredits), normalized.AllowedModelIDs, normalized.BudgetAlertPercent, normalized.UpdatedAt, normalized.RPMLimit, normalized.TPMLimit, normalized.ConcurrencyLimit, normalized.Revision)
 	if err != nil {
 		return nil, err
 	}

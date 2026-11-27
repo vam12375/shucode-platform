@@ -4,7 +4,7 @@ import {
 } from "@shucode-platform/contracts/credits";
 import { useCallback, useEffect, useState } from "react";
 import { Clapperboard, FileJson, Plus } from "lucide-react";
-import { api } from "../api.js";
+import { api, apiWithResponse, type ApiError } from "../api.js";
 import { toastErr, toastOk } from "../components/Feedback.js";
 import { Glyph, PageTitle } from "../components/Icon.js";
 import { Select } from "../components/Select.js";
@@ -1304,6 +1304,7 @@ export function MediaModelsPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [catalogETag, setCatalogETag] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [jsonText, setJsonText] = useState("");
@@ -1325,13 +1326,17 @@ export function MediaModelsPage() {
   // 展开状态由调用方传入：挂载时无既往状态，放弃修改时带上当前展开的卡片。
   const load = useCallback(async (previousExpanded: Set<string> = new Set()) => {
     setLoading(true);
+    setCatalogETag(null);
     try {
-      const [models, providerData] = await Promise.all([
-        api<MediaModel[]>("/media/models"),
+      const [catalog, providerData] = await Promise.all([
+        apiWithResponse<MediaModel[]>("/media/models"),
         api<{ providers: ProviderOption[] }>("/providers"),
       ]);
-      const next = assignFamilyIds(models.map(toDraft));
+      const etag = catalog.response.headers.get("ETag");
+      if (!etag) throw new Error("未取得媒体目录版本，请重新读取。");
+      const next = assignFamilyIds(catalog.data.map(toDraft));
       const families = groupFamilies(next);
+      setCatalogETag(etag);
       setDrafts(next);
       setProviders(providerData.providers);
       // 只有一张卡时直接展开；多卡时保持折叠，展开过的卡片按身份认回。
@@ -1920,6 +1925,7 @@ export function MediaModelsPage() {
   };
 
   const save = async (): Promise<void> => {
+    if (!catalogETag || loading || busy) return;
     const problem = findDraftProblem(drafts, providers);
     if (problem) {
       setError(problem.message);
@@ -1932,11 +1938,13 @@ export function MediaModelsPage() {
     setError("");
     const previousExpanded = expandedKeysOf(drafts, expandedFamilies);
     try {
-      const saved = await api<MediaModel[]>("/media/models", {
+      const saved = await apiWithResponse<MediaModel[]>("/media/models", {
         method: "PUT",
+        headers: { "If-Match": catalogETag },
         body: JSON.stringify(drafts.map(toApiModel)),
       });
-      const next = assignFamilyIds(saved.map(toDraft));
+      setCatalogETag(saved.response.headers.get("ETag"));
+      const next = assignFamilyIds(saved.data.map(toDraft));
       setDrafts(next);
       setExpandedFamilies(expandMatching(next, previousExpanded));
       setBaseline(familySnapshots(next));
@@ -1944,7 +1952,9 @@ export function MediaModelsPage() {
       setAdvancedOpen(false);
       toastOk("新制作单将使用本次媒体模型配置", "已保存");
     } catch (saveError) {
-      const message = errorMessage(saveError);
+      const conflict = (saveError as ApiError).code === 409;
+      if (conflict) setCatalogETag(null);
+      const message = conflict ? "媒体目录已更新。本地草稿已保留，可在 JSON 批量编辑中复制后重新读取。" : errorMessage(saveError);
       setError(message);
       toastErr(message, "保存失败");
     } finally {
@@ -2373,7 +2383,7 @@ export function MediaModelsPage() {
                 <button
                   className="btn"
                   type="button"
-                  disabled={busy || !dirty}
+                  disabled={busy || !dirty || !catalogETag}
                   onClick={() => void save()}
                 >
                   {busy ? "保存中…" : "保存配置"}
@@ -2381,12 +2391,12 @@ export function MediaModelsPage() {
                 <button
                   className="btn btn-ghost"
                   type="button"
-                  disabled={busy || !dirty}
+                  disabled={busy || (!dirty && !!catalogETag)}
                   onClick={() => {
                     void load(expandedKeysOf(drafts, expandedFamilies));
                   }}
                 >
-                  放弃修改
+                  {dirty ? "放弃修改" : "重新读取"}
                 </button>
                 <span className="readout">{changeSummary} · 价格版本只影响新制作单</span>
               </div>

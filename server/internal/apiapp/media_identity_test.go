@@ -110,7 +110,7 @@ func TestMediaPublicIDRoundTripAndLegacyIdempotency(t *testing.T) {
 	if err := f.store.SetConfigValue(ctx, media.ConfigKey, config); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.store.SaveTeamPolicy(ctx, store.TeamPolicyRecord{TeamID: teamID, AllowedModelIDs: []string{internalID}}); err != nil {
+	if _, err := f.store.SaveTeamPolicy(ctx, store.TeamPolicyRecord{TeamID: teamID, Revision: 1, AllowedModelIDs: []string{internalID}}); err != nil {
 		t.Fatal(err)
 	}
 	request := agentRouteRequestBody()
@@ -136,7 +136,7 @@ func TestMediaPublicIDRoundTripAndLegacyIdempotency(t *testing.T) {
 		t.Fatal("persistent owner was rewritten", projects, err)
 	}
 	request["requestId"], request["modelId"] = "forbidden-alias", alias
-	if _, err := f.store.SaveTeamPolicy(ctx, store.TeamPolicyRecord{TeamID: teamID, AllowedModelIDs: []string{"another-model"}}); err != nil {
+	if _, err := f.store.SaveTeamPolicy(ctx, store.TeamPolicyRecord{TeamID: teamID, Revision: 2, AllowedModelIDs: []string{"another-model"}}); err != nil {
 		t.Fatal(err)
 	}
 	if response := agentRouteRequest(t, f, token, "POST", "/api/v1/media/agent/generations/quote", request); response.Code == 200 {

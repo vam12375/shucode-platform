@@ -15,6 +15,13 @@ export interface ApiError extends Error {
 
 /** /console/api 客户端：携带会话 cookie，统一解包 { code, data, msg } 信封。 */
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return (await apiWithResponse<T>(path, init)).data;
+}
+
+export async function apiWithResponse<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<{ data: T; response: Response }> {
   const initHeaders = init.headers as Record<string, string> | undefined;
   const response = await fetch(apiUrl(path), {
     ...init,
@@ -43,7 +50,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
     throw error;
   }
-  return (body?.data ?? undefined) as T;
+  return { data: (body?.data ?? undefined) as T, response };
 }
 
 export function navigate(path: string): void {
