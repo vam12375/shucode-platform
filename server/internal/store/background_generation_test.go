@@ -87,8 +87,29 @@ func testFullPrechargeAndBackgroundJobs(t *testing.T, ctx context.Context, s Pla
 	if err := s.SettleReservation(ctx, id, record); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.FinishBackgroundGeneration(ctx, id, []byte(`{"status":"completed"}`), 200, "application/json", now); err != nil {
+	// 旧版本先完成账本事务，再单独留存终态。中途退出后，改址只能阻断获取结果。
+	if err := s.HoldBackgroundGenerationForReview(ctx, id); err != nil {
 		t.Fatal(err)
+	}
+	awaiting, err := s.FindBackgroundGeneration(ctx, team.ID, job.ResponseID)
+	if err != nil || awaiting == nil || awaiting.LastError != BackgroundSettledResultUnavailable || awaiting.CompletedAt != nil {
+		t.Fatalf("旧版本已实扣的任务应仅待恢复结果: %+v %v", awaiting, err)
+	}
+	items, err := s.ListPendingSettlements(ctx, PendingSettlementFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range items {
+		if item.ReservationID == id {
+			t.Fatal("已实扣的旧任务不应被重新列为账务核对")
+		}
+	}
+	if err := s.FinishBackgroundGeneration(ctx, id, record, []byte(`{"status":"completed"}`), 200, "application/json", now); err != nil {
+		t.Fatal(err)
+	}
+	usage, err := s.ListUsage(ctx, UsageFilter{TeamID: team.ID, RequestID: id})
+	if err != nil || len(usage) != 1 || usage[0].CreditsMicro != 200_000 {
+		t.Fatalf("补齐旧终态不得重新入账: %+v %v", usage, err)
 	}
 	got, err := s.FindBackgroundGeneration(ctx, team.ID, job.ResponseID)
 	if err != nil || got == nil || got.CompletedAt == nil || string(got.FinalResponse) != `{"status":"completed"}` {

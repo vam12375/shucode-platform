@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/vam12375/shucode-platform/server/internal/credits"
 )
@@ -372,17 +373,41 @@ func (s *PostgresStore) GetQuotaReservation(ctx context.Context, id string) (*Qu
 }
 
 func (s *PostgresStore) SettleReservation(ctx context.Context, reservationID string, record UsageRecord) error {
+	return s.settleReservation(ctx, reservationID, record, nil)
+}
+
+func (s *PostgresStore) ApplyPendingSettlement(ctx context.Context, item PendingSettlementRecord) error {
+	return s.settleReservation(ctx, item.ReservationID, item.Record, &item.Attempts)
+}
+
+func (s *PostgresStore) settleReservation(ctx context.Context, reservationID string, record UsageRecord, expectedAttempts *int64) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if expectedAttempts != nil {
+		// API 与网关可能取到同一补偿。先锁定本轮版本，状态与账本一起提交，失败一起回滚。
+		tag, err := tx.Exec(ctx, `UPDATE pending_settlements SET status='applied',last_error=NULL,updated_at=now()
+			WHERE reservation_id=$1::uuid AND status='pending' AND attempts=$2`, reservationID, *expectedAttempts)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return ErrPendingSettlementChanged
+		}
+	}
+	return settleReservationAndCommit(ctx, tx, reservationID, record)
+}
+
+// 所有结算入口在各自事务中先锁任务/补偿行，最后共用这一处账本写入和提交。
+func settleReservationAndCommit(ctx context.Context, tx pgx.Tx, reservationID string, record UsageRecord) error {
 	if record.CreditsMicro < 0 || record.CreditsMicro > maxCreditFieldMicro {
 		return ErrInvalidCreditCharge
 	}
 	if record.ID == "" {
 		record.ID = newUUID()
 	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
 	var (
 		teamID    string
 		userID    string
@@ -393,7 +418,7 @@ func (s *PostgresStore) SettleReservation(ctx context.Context, reservationID str
 		bindingID string
 		deviceID  string
 	)
-	err = tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 		SELECT team_id::text, COALESCE(user_id::text,''), reserved_credits::text, status, request_id, postpaid, COALESCE(billing_binding_id::text,''), COALESCE(billing_device_token_id::text,'')
 		FROM quota_reservations WHERE id = $1::uuid FOR UPDATE`, reservationID).
 		Scan(&teamID, &userID, &reserved, &status, &requestID, &postpaid, &bindingID, &deviceID)
@@ -726,7 +751,7 @@ func (s *PostgresStore) ClaimBackgroundGenerations(ctx context.Context, now, lea
 	rows, err := tx.Query(ctx, `
 		WITH due AS (
 			SELECT reservation_id FROM gateway_background_generations
-			WHERE completed_at IS NULL AND next_poll_at <= $1
+			WHERE completed_at IS NULL AND next_poll_at <= $1 AND COALESCE(last_error,'') NOT IN ($4,$5)
 			ORDER BY next_poll_at
 			FOR UPDATE SKIP LOCKED
 			LIMIT $2
@@ -734,7 +759,7 @@ func (s *PostgresStore) ClaimBackgroundGenerations(ctx context.Context, now, lea
 		UPDATE gateway_background_generations j
 		SET next_poll_at=$3, attempts=j.attempts+1
 		FROM due WHERE j.reservation_id=due.reservation_id
-		RETURNING `+strings.ReplaceAll(backgroundGenerationCols, "reservation_id::text", "j.reservation_id::text"), now, limit, leaseUntil)
+		RETURNING `+strings.ReplaceAll(backgroundGenerationCols, "reservation_id::text", "j.reservation_id::text"), now, limit, leaseUntil, BackgroundEndpointUnverified, BackgroundSettledResultUnavailable)
 	if err != nil {
 		return nil, err
 	}
@@ -757,8 +782,8 @@ func (s *PostgresStore) ClaimBackgroundGenerations(ctx context.Context, now, lea
 }
 
 func (s *PostgresStore) RetryBackgroundGeneration(ctx context.Context, reservationID string, nextPollAt time.Time, lastError string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE gateway_background_generations SET next_poll_at=$2, last_error=$3 WHERE reservation_id=$1::uuid`,
-		reservationID, nextPollAt, emptyToNil(lastError))
+	_, err := s.pool.Exec(ctx, `UPDATE gateway_background_generations SET next_poll_at=$2, last_error=$3 WHERE reservation_id=$1::uuid
+		AND completed_at IS NULL AND COALESCE(last_error,'') NOT IN ($4,$5)`, reservationID, nextPollAt, emptyToNil(lastError), BackgroundEndpointUnverified, BackgroundSettledResultUnavailable)
 	return err
 }
 
@@ -767,17 +792,45 @@ func (s *PostgresStore) DeleteBackgroundGeneration(ctx context.Context, reservat
 	return err
 }
 
-func (s *PostgresStore) FinishBackgroundGeneration(ctx context.Context, reservationID string, response []byte, status int, contentType string, at time.Time) error {
-	_, err := s.pool.Exec(ctx, `
+func (s *PostgresStore) FinishBackgroundGeneration(ctx context.Context, reservationID string, record UsageRecord, response []byte, status int, contentType string, at time.Time) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `
 		UPDATE gateway_background_generations
 		SET final_response=$2, final_status=$3, final_content_type=$4, completed_at=$5, last_error=NULL
-		WHERE reservation_id=$1::uuid`, reservationID, response, status, contentType, at)
-	return err
+		WHERE reservation_id=$1::uuid AND completed_at IS NULL`, reservationID, response, status, contentType, at)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil
+	}
+	if err := resolveBackgroundProviderID(ctx, tx, &record); err != nil {
+		return err
+	}
+	// 改址前已发出的查询可能稍后带回权威终态；实际结算完成后同时关闭此前创建的核对事项。
+	if _, err := tx.Exec(ctx, `UPDATE pending_settlements SET status='applied',last_error=NULL,updated_at=$2
+		WHERE reservation_id=$1 AND error_type=$3`, reservationID, at, BackgroundEndpointUnverified); err != nil {
+		return err
+	}
+	// 同一事务中，费用写入失败会一并回滚结果和核对状态；旧版本已扣款的请求只补齐结果。
+	return settleReservationAndCommit(ctx, tx, reservationID, record)
 }
 
 // ---- 结算失败补偿 ----
 
+type settlementExecer interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
 func (s *PostgresStore) EnqueuePendingSettlement(ctx context.Context, reservationID string, record UsageRecord) error {
+	return enqueuePendingSettlement(ctx, s.pool, reservationID, record)
+}
+
+func enqueuePendingSettlement(ctx context.Context, db settlementExecer, reservationID string, record UsageRecord) error {
 	var snapshotJSON []byte
 	if record.PriceSnapshot != nil {
 		var err error
@@ -786,23 +839,26 @@ func (s *PostgresStore) EnqueuePendingSettlement(ctx context.Context, reservatio
 			return err
 		}
 	}
-	_, err := s.pool.Exec(ctx, `
+	_, err := db.Exec(ctx, `
 		INSERT INTO pending_settlements (
 			reservation_id, request_id, user_id, team_id, billing_binding_id, device_token_id, model, upstream_model,
 			provider_id, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
 			credits_micro, price_snapshot, usage_status, error_type, client_ip, latency_ms,
-			usage_created_at, reasoning_effort, reasoning_budget_tokens
+			usage_created_at, reasoning_effort, reasoning_budget_tokens, background_response_id
 		) VALUES (
 			$1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6::uuid, $7, $8,
-			$9::uuid, $10, $11, $12, $13, $14, $15::jsonb, $16, $17, $18, $19, $20::timestamptz, $21, $22
+			$9::uuid, $10, $11, $12, $13, $14, $15::jsonb, $16, $17, $18, $19, $20::timestamptz, $21, $22, $23
 		)
-		ON CONFLICT (reservation_id) DO NOTHING`,
+		ON CONFLICT (reservation_id) DO UPDATE SET background_response_id = EXCLUDED.background_response_id
+		WHERE pending_settlements.background_response_id IS NULL AND EXCLUDED.background_response_id IS NOT NULL
+			AND (pending_settlements.request_id, pending_settlements.team_id, pending_settlements.user_id)
+				= (EXCLUDED.request_id, EXCLUDED.team_id, EXCLUDED.user_id)`,
 		reservationID, record.RequestID, record.UserID, record.TeamID, nullIfEmpty(record.BillingBindingID), nullIfEmpty(record.DeviceTokenID),
 		record.Model, record.UpstreamModel, nullIfEmpty(record.ProviderID),
 		record.InputTokens, record.OutputTokens, record.CacheReadTokens, record.CacheCreationTokens,
 		record.CreditsMicro, nullableBytes(snapshotJSON), string(record.Status),
 		nullIfEmpty(record.ErrorType), nullIfEmpty(record.ClientIP), record.LatencyMs, record.CreatedAt,
-		nullIfEmpty(record.ReasoningEffort), record.ReasoningBudgetTokens)
+		nullIfEmpty(record.ReasoningEffort), record.ReasoningBudgetTokens, nullIfEmpty(record.BackgroundResponseID))
 	return err
 }
 
@@ -821,7 +877,7 @@ func (s *PostgresStore) ListPendingSettlements(ctx context.Context, filter Pendi
 			cache_read_tokens, cache_creation_tokens, credits_micro, price_snapshot,
 			usage_status, COALESCE(error_type, ''), COALESCE(client_ip, ''), latency_ms,
 			usage_created_at, status, attempts, COALESCE(last_error, ''),
-			next_attempt_at, created_at, updated_at, COALESCE(reasoning_effort, ''), reasoning_budget_tokens
+			next_attempt_at, created_at, updated_at, COALESCE(reasoning_effort, ''), reasoning_budget_tokens, COALESCE(background_response_id,'')
 		FROM pending_settlements
 		WHERE ($1::text = '' OR status = $1)
 			AND ($2::timestamptz IS NULL OR next_attempt_at <= $2::timestamptz)
@@ -845,7 +901,7 @@ func (s *PostgresStore) ListPendingSettlements(ctx context.Context, filter Pendi
 			&record.InputTokens, &record.OutputTokens, &record.CacheReadTokens, &record.CacheCreationTokens,
 			&record.CreditsMicro, &snapshot, &usageState, &record.ErrorType, &record.ClientIP,
 			&record.LatencyMs, &record.CreatedAt, &status, &item.Attempts, &item.LastError,
-			&item.NextAttemptAt, &item.CreatedAt, &item.UpdatedAt, &record.ReasoningEffort, &record.ReasoningBudgetTokens); err != nil {
+			&item.NextAttemptAt, &item.CreatedAt, &item.UpdatedAt, &record.ReasoningEffort, &record.ReasoningBudgetTokens, &record.BackgroundResponseID); err != nil {
 			return nil, err
 		}
 		record.Status = UsageStatus(usageState)
@@ -861,29 +917,14 @@ func (s *PostgresStore) ListPendingSettlements(ctx context.Context, filter Pendi
 	return out, rows.Err()
 }
 
-func (s *PostgresStore) MarkPendingSettlementApplied(ctx context.Context, reservationID string, at time.Time) error {
-	_, err := s.pool.Exec(ctx, `
+func (s *PostgresStore) RecordPendingSettlementFailure(ctx context.Context, reservationID string, expectedAttempts, attempts int64, reason string, retryAt *time.Time) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `
 		UPDATE pending_settlements
-		SET status = 'applied', last_error = NULL, updated_at = $2::timestamptz
-		WHERE reservation_id = $1::uuid`, reservationID, at)
-	return err
-}
-
-func (s *PostgresStore) MarkPendingSettlementRetry(ctx context.Context, reservationID string, attempts int64, lastError string, nextAttemptAt time.Time) error {
-	_, err := s.pool.Exec(ctx, `
-		UPDATE pending_settlements
-		SET status = 'pending', attempts = $2, last_error = $3,
-			next_attempt_at = $4::timestamptz, updated_at = now()
-		WHERE reservation_id = $1::uuid`, reservationID, attempts, lastError, nextAttemptAt)
-	return err
-}
-
-func (s *PostgresStore) MarkPendingSettlementFailed(ctx context.Context, reservationID string, attempts int64, lastError string) error {
-	_, err := s.pool.Exec(ctx, `
-		UPDATE pending_settlements
-		SET status = 'failed', attempts = $2, last_error = $3, updated_at = now()
-		WHERE reservation_id = $1::uuid`, reservationID, attempts, lastError)
-	return err
+		SET status = CASE WHEN $5::timestamptz IS NULL THEN 'failed' ELSE 'pending' END,
+			attempts=$3, last_error=$4, next_attempt_at=COALESCE($5::timestamptz,next_attempt_at), updated_at=now()
+		WHERE reservation_id=$1::uuid AND status='pending' AND attempts=$2`,
+		reservationID, expectedAttempts, attempts, reason, nullableTime(retryAt))
+	return tag.RowsAffected() != 0, err
 }
 
 func (s *PostgresStore) CountPendingSettlements(ctx context.Context, status PendingSettlementStatus) (int64, error) {

@@ -286,6 +286,28 @@ func (s *memoryStore) GetQuotaReservation(_ context.Context, id string) (*QuotaR
 func (s *memoryStore) SettleReservation(_ context.Context, reservationID string, record UsageRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.settleReservationLocked(reservationID, record)
+}
+
+func (s *memoryStore) ApplyPendingSettlement(_ context.Context, item PendingSettlementRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.pendingSettlements[item.ReservationID]
+	if !ok || current.Status != PendingSettlementPending || current.Attempts != item.Attempts {
+		return ErrPendingSettlementChanged
+	}
+	// 与 PG 同一临界区完成入账和标记，迟到的 worker 无法再写回失败。
+	err := s.settleReservationLocked(item.ReservationID, item.Record)
+	if err == nil || err == ErrCreditChargeCapped {
+		current.Status = PendingSettlementApplied
+		current.LastError = ""
+		current.UpdatedAt = time.Now()
+		s.pendingSettlements[item.ReservationID] = current
+	}
+	return err
+}
+
+func (s *memoryStore) settleReservationLocked(reservationID string, record UsageRecord) error {
 	if record.CreditsMicro < 0 || record.CreditsMicro > maxCreditFieldMicro {
 		return ErrInvalidCreditCharge
 	}
@@ -488,7 +510,7 @@ func (s *memoryStore) ClaimBackgroundGenerations(_ context.Context, now, leaseUn
 	}
 	out := make([]BackgroundGenerationJob, 0, limit)
 	for _, job := range s.backgroundJobs {
-		if job.CompletedAt == nil && !job.NextPollAt.After(now) {
+		if job.CompletedAt == nil && !job.AwaitingEndpointReview() && !job.NextPollAt.After(now) {
 			out = append(out, job)
 		}
 	}
@@ -510,7 +532,7 @@ func (s *memoryStore) RetryBackgroundGeneration(_ context.Context, reservationID
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	job, ok := s.backgroundJobs[reservationID]
-	if ok {
+	if ok && job.CompletedAt == nil && !job.AwaitingEndpointReview() {
 		job.NextPollAt = nextPollAt
 		job.LastError = lastError
 		s.backgroundJobs[reservationID] = job
@@ -525,12 +547,19 @@ func (s *memoryStore) DeleteBackgroundGeneration(_ context.Context, reservationI
 	return nil
 }
 
-func (s *memoryStore) FinishBackgroundGeneration(_ context.Context, reservationID string, response []byte, status int, contentType string, at time.Time) error {
+func (s *memoryStore) FinishBackgroundGeneration(_ context.Context, reservationID string, record UsageRecord, response []byte, status int, contentType string, at time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	job, ok := s.backgroundJobs[reservationID]
-	if !ok {
+	if !ok || job.CompletedAt != nil {
 		return nil
+	}
+	if _, exists := s.providers[record.ProviderID]; !exists {
+		record.ProviderID = ""
+	}
+	settleErr := s.settleReservationLocked(reservationID, record)
+	if settleErr != nil && settleErr != ErrCreditChargeCapped {
+		return settleErr
 	}
 	job.FinalResponse = append([]byte(nil), response...)
 	job.FinalStatus = status
@@ -539,7 +568,11 @@ func (s *memoryStore) FinishBackgroundGeneration(_ context.Context, reservationI
 	job.CompletedAt = &completedAt
 	job.LastError = ""
 	s.backgroundJobs[reservationID] = job
-	return nil
+	if pending, exists := s.pendingSettlements[reservationID]; exists && pending.Record.ErrorType == BackgroundEndpointUnverified {
+		pending.Status, pending.LastError, pending.UpdatedAt = PendingSettlementApplied, "", at
+		s.pendingSettlements[reservationID] = pending
+	}
+	return settleErr
 }
 
 // ---- 结算失败补偿 ----
@@ -547,7 +580,17 @@ func (s *memoryStore) FinishBackgroundGeneration(_ context.Context, reservationI
 func (s *memoryStore) EnqueuePendingSettlement(_ context.Context, reservationID string, record UsageRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, exists := s.pendingSettlements[reservationID]; exists {
+	return s.enqueuePendingSettlementLocked(reservationID, record)
+}
+
+func (s *memoryStore) enqueuePendingSettlementLocked(reservationID string, record UsageRecord) error {
+	if item, exists := s.pendingSettlements[reservationID]; exists {
+		// 旧行可能早于任务号字段；只用同一请求的文件回灌补齐，不覆盖首次保存的事实。
+		if item.Record.BackgroundResponseID == "" && record.BackgroundResponseID != "" &&
+			item.Record.RequestID == record.RequestID && item.Record.TeamID == record.TeamID && item.Record.UserID == record.UserID {
+			item.Record.BackgroundResponseID = record.BackgroundResponseID
+			s.pendingSettlements[reservationID] = item
+		}
 		return nil
 	}
 	now := time.Now()
@@ -595,49 +638,23 @@ func (s *memoryStore) ListPendingSettlements(_ context.Context, filter PendingSe
 	return out, nil
 }
 
-func (s *memoryStore) MarkPendingSettlementApplied(_ context.Context, reservationID string, at time.Time) error {
+func (s *memoryStore) RecordPendingSettlementFailure(_ context.Context, reservationID string, expectedAttempts, attempts int64, reason string, retryAt *time.Time) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	item, ok := s.pendingSettlements[reservationID]
-	if !ok {
-		return nil
+	if !ok || item.Status != PendingSettlementPending || item.Attempts != expectedAttempts {
+		return false, nil
 	}
-	item.Status = PendingSettlementApplied
-	item.LastError = ""
-	item.UpdatedAt = at
-	s.pendingSettlements[reservationID] = item
-	return nil
-}
-
-func (s *memoryStore) MarkPendingSettlementRetry(_ context.Context, reservationID string, attempts int64, lastError string, nextAttemptAt time.Time) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	item, ok := s.pendingSettlements[reservationID]
-	if !ok {
-		return nil
+	if retryAt == nil {
+		item.Status = PendingSettlementFailed
+	} else {
+		item.NextAttemptAt = *retryAt
 	}
-	item.Status = PendingSettlementPending
 	item.Attempts = attempts
-	item.LastError = lastError
-	item.NextAttemptAt = nextAttemptAt
+	item.LastError = reason
 	item.UpdatedAt = time.Now()
 	s.pendingSettlements[reservationID] = item
-	return nil
-}
-
-func (s *memoryStore) MarkPendingSettlementFailed(_ context.Context, reservationID string, attempts int64, lastError string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	item, ok := s.pendingSettlements[reservationID]
-	if !ok {
-		return nil
-	}
-	item.Status = PendingSettlementFailed
-	item.Attempts = attempts
-	item.LastError = lastError
-	item.UpdatedAt = time.Now()
-	s.pendingSettlements[reservationID] = item
-	return nil
+	return true, nil
 }
 
 func (s *memoryStore) InsertGatewayAttempt(_ context.Context, record GatewayAttemptRecord) error {

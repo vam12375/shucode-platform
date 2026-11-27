@@ -232,8 +232,9 @@ func TestObservedIncompleteUsageStillReplaysExactlyOnce(t *testing.T) {
 	if err := comp.Reconcile(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.store.PlatformStore.MarkPendingSettlementRetry(ctx, identity, 1, "replay_after_restart", time.Now().Add(-time.Minute)); err != nil {
-		t.Fatal(err)
+	next := time.Now().Add(-time.Minute)
+	if changed, err := f.store.PlatformStore.RecordPendingSettlementFailure(ctx, identity, 0, 1, "replay_after_restart", &next); err != nil || changed {
+		t.Fatalf("迟到的失败不应重新打开已结算任务: %v %v", changed, err)
 	}
 	if err := comp.Reconcile(ctx); err != nil {
 		t.Fatal(err)
@@ -266,6 +267,7 @@ func TestUnknownBackgroundSubmissionIsRetainedForReviewWithoutSettlement(t *test
 			const identity = "00000000-0000-4000-8000-000000000801"
 			f.record.CreditsMicro = 0
 			f.record.ErrorType = "background_submission_unknown"
+			f.record.BackgroundResponseID = "resp_known_before_queue_failure"
 			comp := f.compensator()
 			var err error
 			if source == "spool" {
@@ -282,7 +284,8 @@ func TestUnknownBackgroundSubmissionIsRetainedForReviewWithoutSettlement(t *test
 				}
 			}
 			failed, err := f.store.PlatformStore.ListPendingSettlements(ctx, store.PendingSettlementFilter{Status: store.PendingSettlementFailed, Limit: 10})
-			if err != nil || len(failed) != 1 || failed[0].LastError != "background_submission_requires_review" {
+			if err != nil || len(failed) != 1 || failed[0].LastError != "background_submission_requires_review" ||
+				failed[0].Record.BackgroundResponseID != f.record.BackgroundResponseID || failed[0].Attempts != 0 {
 				t.Fatalf("未知后台受理应留待人工核对: %+v %v", failed, err)
 			}
 			request, err := f.store.PlatformStore.GetQuotaReservation(ctx, identity)

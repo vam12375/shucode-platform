@@ -433,7 +433,8 @@ func registerConsoleOpsExtRoutes(router *gin.Engine, deps *Deps) {
 		for _, item := range append(pending, failed...) {
 			pendingRows = append(pendingRows, gin.H{
 				"reservationId": item.ReservationID, "requestId": item.Record.RequestID,
-				"teamId": item.Record.TeamID, "creditsMicro": item.Record.CreditsMicro,
+				"backgroundResponseId": item.Record.BackgroundResponseID,
+				"teamId":               item.Record.TeamID, "creditsMicro": item.Record.CreditsMicro,
 				"settlementStatus": item.Status, "usageStatus": item.Record.Status,
 				"attempts":  item.Attempts,
 				"lastError": item.LastError, "nextAttemptAt": isoString(item.NextAttemptAt),

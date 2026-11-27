@@ -209,8 +209,10 @@ type PlatformStore interface {
 	UpdateBackgroundGenerationUsage(ctx context.Context, reservationID string, record UsageRecord) (*BackgroundGenerationJob, error)
 	FindBackgroundGeneration(ctx context.Context, teamID, responseID string) (*BackgroundGenerationJob, error)
 	ClaimBackgroundGenerations(ctx context.Context, now, leaseUntil time.Time, limit int64) ([]BackgroundGenerationJob, error)
+	HoldBackgroundGenerationForReview(ctx context.Context, reservationID string) error
 	RetryBackgroundGeneration(ctx context.Context, reservationID string, nextPollAt time.Time, lastError string) error
-	FinishBackgroundGeneration(ctx context.Context, reservationID string, response []byte, status int, contentType string, at time.Time) error
+	// FinishBackgroundGeneration 首个终态在同一事务内完成额度实扣、结果留存与核对项关闭。
+	FinishBackgroundGeneration(ctx context.Context, reservationID string, record UsageRecord, response []byte, status int, contentType string, at time.Time) error
 	DeleteBackgroundGeneration(ctx context.Context, reservationID string) error
 
 	// ---- 结算失败补偿 ----
@@ -218,9 +220,10 @@ type PlatformStore interface {
 	EnqueuePendingSettlement(ctx context.Context, reservationID string, record UsageRecord) error
 	// ListPendingSettlements:按状态/到期时间列出补偿任务（worker 用 pending+due）。
 	ListPendingSettlements(ctx context.Context, filter PendingSettlementFilter) ([]PendingSettlementRecord, error)
-	MarkPendingSettlementApplied(ctx context.Context, reservationID string, at time.Time) error
-	MarkPendingSettlementRetry(ctx context.Context, reservationID string, attempts int64, lastError string, nextAttemptAt time.Time) error
-	MarkPendingSettlementFailed(ctx context.Context, reservationID string, attempts int64, lastError string) error
+	// ApplyPendingSettlement 在同一事务内校验 pending/attempts，完成实扣和补偿状态更新。
+	ApplyPendingSettlement(ctx context.Context, item PendingSettlementRecord) error
+	// RecordPendingSettlementFailure 只接受对应尝试的结果，retryAt 为空时转人工核对。
+	RecordPendingSettlementFailure(ctx context.Context, reservationID string, expectedAttempts, attempts int64, reason string, retryAt *time.Time) (bool, error)
 	CountPendingSettlements(ctx context.Context, status PendingSettlementStatus) (int64, error)
 	// InsertGatewayAttempt:追加一次上游尝试轨迹（供应商请求 ID/状态码/最终 outcome）。
 	InsertGatewayAttempt(ctx context.Context, record GatewayAttemptRecord) error
@@ -284,6 +287,7 @@ var (
 	ErrCreditChargeCapped               = errors.New("实扣金额已按团队额度下限封顶")
 	ErrInvalidCreditCharge              = errors.New("credit 金额非法或超出存储范围")
 	ErrReservationMismatch              = errors.New("reservation owner mismatch")
+	ErrPendingSettlementChanged         = errors.New("pending settlement already updated")
 	ErrInvalidInput                     = errors.New("invalid store input")
 	ErrDuplicate                        = errors.New("duplicate store input")
 	ErrTeamAssetStorageLimit            = errors.New("team asset storage limit exceeded")

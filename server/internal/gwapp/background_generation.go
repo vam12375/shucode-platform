@@ -25,6 +25,7 @@ import (
 const backgroundPollLease = time.Minute
 
 var safeResponseID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,256}$`)
+var errBackgroundEndpointUnverified = errors.New(store.BackgroundEndpointUnverified)
 
 func StartBackgroundGenerationWorker(ctx context.Context, deps Deps, interval time.Duration) {
 	if interval <= 0 {
@@ -66,7 +67,11 @@ func reconcileBackgroundGenerations(ctx context.Context, deps Deps) {
 func processBackgroundGeneration(ctx context.Context, deps Deps, job store.BackgroundGenerationJob) {
 	baseURL, apiKey, err := backgroundProvider(ctx, deps, job)
 	if err != nil {
-		retryBackgroundGeneration(ctx, deps, job, err.Error())
+		if errors.Is(err, errBackgroundEndpointUnverified) {
+			holdBackgroundEndpoint(ctx, deps, job)
+		} else {
+			retryBackgroundGeneration(ctx, deps, job, err.Error())
+		}
 		return
 	}
 	pollCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -213,22 +218,15 @@ func finishBackgroundGeneration(ctx context.Context, deps Deps, job store.Backgr
 		record.PriceSnapshot.Cost.EstimatedMicro = nil
 		record.PriceSnapshot.Cost.UsageEstimated = false
 	}
-	settleCtx, cancelSettle := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-	settleErr := deps.Store.SettleReservation(settleCtx, job.ReservationID, record)
-	cancelSettle()
-	if settleErr != nil {
-		retryBackgroundGeneration(ctx, deps, job, "后台生成结算失败: "+settleErr.Error())
-		return false
-	}
 	contentType = strings.TrimSpace(contentType)
 	if contentType == "" {
 		contentType = "application/json"
 	}
-	finishCtx, cancelFinish := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	finishErr := deps.Store.FinishBackgroundGeneration(finishCtx, job.ReservationID, body, http.StatusOK, contentType, completedAt)
+	finishCtx, cancelFinish := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	finishErr := deps.Store.FinishBackgroundGeneration(finishCtx, job.ReservationID, record, body, http.StatusOK, contentType, completedAt)
 	cancelFinish()
-	if finishErr != nil {
-		deps.Logger.Error("后台生成已结算但最终响应留存失败", "reservationId", job.ReservationID, "error", finishErr)
+	if finishErr != nil && !errors.Is(finishErr, store.ErrCreditChargeCapped) {
+		retryBackgroundGeneration(ctx, deps, job, "后台生成终态结算与留存失败: "+finishErr.Error())
 		return false
 	}
 	return true
@@ -302,30 +300,41 @@ func updateBackgroundCostSnapshot(snapshot *store.UsagePricingSnapshot, usage Us
 }
 
 func backgroundProvider(ctx context.Context, deps Deps, job store.BackgroundGenerationJob) (string, string, error) {
+	// 已结算但缺结果的旧任务允许用户在原地址恢复授权后重新查询；此前的账本可幂等复用。
+	if job.LastError == store.BackgroundEndpointUnverified || job.BaseURL == "" {
+		return "", "", errBackgroundEndpointUnverified
+	}
+	// 比较提交时与当前凭据所授权的 Responses 路径；同地址换钥可续跑，迁址及无地址的旧任务交人工核对。
+	endpoint := upstreamurl.Join(job.BaseURL, "/v1/responses")
 	if job.ProviderID == "" {
-		base := strings.TrimRight(job.BaseURL, "/")
-		if base == "" {
-			base = strings.TrimRight(deps.Env.UpstreamBaseURL, "/")
+		if endpoint != upstreamurl.Join(deps.Env.UpstreamBaseURL, "/v1/responses") {
+			return "", "", errBackgroundEndpointUnverified
 		}
-		return base, deps.Env.UpstreamAPIKey, nil
+		return job.BaseURL, deps.Env.UpstreamAPIKey, nil
 	}
 	provider, err := deps.Store.GetUpstreamProvider(ctx, job.ProviderID)
 	if err != nil {
 		return "", "", err
 	}
-	if provider == nil {
-		return "", "", fmt.Errorf("后台生成供应商已不存在")
+	if provider == nil || endpoint != upstreamurl.Join(provider.BaseURL, "/v1/responses") {
+		return "", "", errBackgroundEndpointUnverified
 	}
 	key, err := decryptProviderKey(deps, provider)
 	if err != nil {
 		return "", "", err
 	}
-	// 任务绑定创建时的 endpoint，供应商后来改址不能把既有任务与凭据发送到新目标。
-	base := strings.TrimRight(job.BaseURL, "/")
-	if base == "" {
-		base = strings.TrimRight(provider.BaseURL, "/")
+	return job.BaseURL, key, nil
+}
+
+func holdBackgroundEndpoint(ctx context.Context, deps Deps, job store.BackgroundGenerationJob) {
+	if job.AwaitingEndpointReview() || job.CompletedAt != nil {
+		return
 	}
-	return base, key, nil
+	reviewCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if err := deps.Store.HoldBackgroundGenerationForReview(reviewCtx, job.ReservationID); err != nil {
+		deps.Logger.Error("后台任务转人工核对失败", "reservationId", job.ReservationID, "error", err)
+	}
 }
 
 func backgroundResponseURL(baseURL, responseID string, cancel bool) string {
@@ -417,6 +426,20 @@ func handleBackgroundResponseProxy(c *gin.Context, deps Deps, method string, can
 	}
 	baseURL, apiKey, err := backgroundProvider(c.Request.Context(), deps, *job)
 	if err != nil {
+		if errors.Is(err, errBackgroundEndpointUnverified) {
+			if job.CompletedAt != nil {
+				openAIError(c, 409, "conflict_error", "任务已结算，上游地址无法确认，删除尚未执行")
+				return
+			}
+			holdBackgroundEndpoint(c.Request.Context(), deps, *job)
+			billing, readErr := deps.Store.GetQuotaReservation(c.Request.Context(), job.ReservationID)
+			if readErr == nil && billing != nil && billing.Status == store.ReservationSettled {
+				openAIError(c, 409, "conflict_error", "任务已结算，上游地址无法确认，最终结果待恢复")
+			} else {
+				openAIError(c, 409, "conflict_error", "后台任务的上游地址无法确认，请联系管理员核对")
+			}
+			return
+		}
 		deps.Logger.Warn("读取后台生成供应商失败", "reservationId", job.ReservationID, "error", err)
 		openAIError(c, 502, "api_error", "后台任务供应商暂时不可用，任务将继续核对")
 		return

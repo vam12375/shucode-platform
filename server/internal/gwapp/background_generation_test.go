@@ -2,6 +2,8 @@ package gwapp
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -21,6 +23,48 @@ func backgroundTestDeps(f *gatewayFixture) Deps {
 	return Deps{
 		Store: f.store, Env: f.env, Now: time.Now, HTTPClient: f.upstream.Client(),
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+}
+
+func TestBackgroundCredentialEndpointBinding(t *testing.T) {
+	st, err := store.NewMemoryStore(t.Context(), store.MemoryOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deps := Deps{Store: st, Env: &Env{UpstreamBaseURL: "https://default.example", UpstreamAPIKey: "env-fixture"}}
+	box, err := crypto.NewSecretBox(base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deps.SecretBox = box
+	key, err := box.Encrypt("rotated-test-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := st.CreateUpstreamProvider(t.Context(), store.CreateUpstreamProviderInput{
+		Name: "test", BaseURL: "https://current.example/v1", Protocol: store.ProtocolOpenAIResponses, APIKeyCiphertext: key,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		job  store.BackgroundGenerationJob
+		want string
+	}{
+		{store.BackgroundGenerationJob{ProviderID: provider.ID, BaseURL: "https://current.example/"}, "rotated-test-key"},
+		{store.BackgroundGenerationJob{ProviderID: provider.ID, BaseURL: "https://previous.example"}, ""},
+		{store.BackgroundGenerationJob{ProviderID: provider.ID}, ""},
+		{store.BackgroundGenerationJob{BaseURL: deps.Env.UpstreamBaseURL}, deps.Env.UpstreamAPIKey},
+		{store.BackgroundGenerationJob{BaseURL: "https://previous.example"}, ""},
+	} {
+		_, got, err := backgroundProvider(t.Context(), deps, tc.job)
+		if tc.want == "" {
+			if !errors.Is(err, errBackgroundEndpointUnverified) || got != "" {
+				t.Fatal("未能验证任务地址时不应提供凭据")
+			}
+		} else if err != nil || got != tc.want {
+			t.Fatalf("同一目标的当前凭据应可用: %v", err)
+		}
 	}
 }
 

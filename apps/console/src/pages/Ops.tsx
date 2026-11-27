@@ -119,6 +119,7 @@ interface ReservationRow {
 interface PendingSettlementRow {
   reservationId: string;
   requestId: string;
+  backgroundResponseId?: string;
   teamId: string;
   creditsMicro: number;
   settlementStatus: "pending" | "failed";
@@ -709,6 +710,7 @@ export function OpsPage() {
                 <th scope="col">创建时间</th>
                 <th scope="col">下次重试</th>
                 <th scope="col">request ID</th>
+                <th scope="col">上游任务 ID</th>
                 <th scope="col">团队</th>
                 <th scope="col">补偿状态</th>
                 <th scope="col">用量状态</th>
@@ -723,6 +725,7 @@ export function OpsPage() {
                   <td className="num">{formatShanghaiTime(row.createdAt)}</td>
                   <td className="num">{formatShanghaiTime(row.nextAttemptAt)}</td>
                   <td><code>{row.requestId}</code></td>
+                  <td><code>{row.backgroundResponseId || "—"}</code></td>
                   <td>{row.teamId.slice(0, 8)}</td>
                   <td>
                     <Chip tone={row.settlementStatus === "failed" ? "stop" : "hot"}>
@@ -737,7 +740,7 @@ export function OpsPage() {
               ))}
               {(reconciliation?.pendingSettlements.length ?? 0) === 0 ? (
                 <tr>
-                  <td colSpan={9} className="readout">没有待重试或转人工的结算补偿。</td>
+                  <td colSpan={10} className="readout">没有待重试或转人工的结算补偿。</td>
                 </tr>
               ) : null}
             </tbody>

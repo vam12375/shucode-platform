@@ -33,6 +33,12 @@ func TestMemoryStoreSuite(t *testing.T) {
 }
 
 func TestPostgresStoreSuite(t *testing.T) {
+	runSuite(t, context.Background(), NewIntegrationPostgres(t))
+}
+
+// NewIntegrationPostgres 供 store 外部测试包将真实 worker 接入同样隔离的 PG 测试库。
+func NewIntegrationPostgres(t *testing.T) PlatformStore {
+	t.Helper()
 	baseURL := os.Getenv("TEST_DATABASE_URL")
 	if baseURL == "" {
 		t.Skip("未设置 TEST_DATABASE_URL,跳过 Postgres conformance")
@@ -42,8 +48,8 @@ func TestPostgresStoreSuite(t *testing.T) {
 		migrationsDir = "../../migrations"
 	}
 	store, closer := newPostgresForTest(t, baseURL, migrationsDir)
-	defer closer()
-	runSuite(t, context.Background(), store)
+	t.Cleanup(closer)
+	return store
 }
 
 // TestCrossImplParity:同一份 usage 数据在 PG 与内存实现的

@@ -400,7 +400,7 @@ type UsageRecord struct {
 	ProviderID            string `json:"providerId,omitempty"`
 	ReasoningEffort       string `json:"reasoningEffort,omitempty"`
 	ReasoningBudgetTokens *int64 `json:"reasoningBudgetTokens,omitempty"`
-	// 后台受理核对保留已取得的供应商结果 ID；只随内部补偿 JSON 保存。
+	// 已取得的上游任务号随数据库及文件补偿记录保存，供后台核对使用。
 	BackgroundResponseID string                `json:"backgroundResponseId,omitempty"`
 	InputTokens          int64                 `json:"inputTokens"`
 	OutputTokens         int64                 `json:"outputTokens"`

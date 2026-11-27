@@ -3,12 +3,111 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+func testBackgroundEndpointReview(t *testing.T, ctx context.Context, s PlatformStore) {
+	team, user := postpaidFixture(t, ctx, s, "endpoint-review")
+	id := uuid.NewString()
+	if decision, err := s.AdmitUsage(ctx, ReserveQuotaInput{ID: id, TeamID: team.ID, UserID: user.ID, RequestID: id}); err != nil || decision != ReserveReserved {
+		t.Fatalf("admit: %s %v", decision, err)
+	}
+	at := time.Now().UTC().Truncate(time.Millisecond)
+	// provider_id 在历史任务里是无外键快照，目标目录可能已删除相应行。
+	missingProviderID := uuid.NewString()
+	job := BackgroundGenerationJob{ReservationID: id, ResponseID: "resp_" + id, ProviderID: missingProviderID,
+		BaseURL: "https://previous.example", TeamID: team.ID, UserID: user.ID, NextPollAt: at, CreatedAt: at,
+		Record: UsageRecord{ID: uuid.NewString(), RequestID: id, TeamID: team.ID, UserID: user.ID, ProviderID: missingProviderID,
+			Model: "model", UpstreamModel: "model", CreatedAt: at}}
+	if err := s.CreateBackgroundGeneration(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.HoldBackgroundGenerationForReview(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RetryBackgroundGeneration(ctx, id, at, ""); err != nil {
+		t.Fatal(err)
+	}
+	held, err := s.FindBackgroundGeneration(ctx, team.ID, job.ResponseID)
+	if err != nil || held == nil || held.LastError != BackgroundEndpointUnverified || held.CompletedAt != nil {
+		t.Fatalf("搁置状态被迟到重试覆盖: %+v %v", held, err)
+	}
+	rows, err := s.ListPendingSettlements(ctx, PendingSettlementFilter{Status: PendingSettlementFailed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, row := range rows {
+		if row.ReservationID == id {
+			found = row.Record.BackgroundResponseID == job.ResponseID && row.Record.ProviderID == "" && row.Record.CreditsMicro == 0
+		}
+	}
+	if !found {
+		t.Fatal("人工核对项缺少已知上游任务身份")
+	}
+	due, err := s.ClaimBackgroundGenerations(ctx, at.Add(time.Second), at.Add(time.Minute), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range due {
+		if item.ReservationID == id {
+			t.Fatal("等待人工核对时不应再次领取")
+		}
+	}
+
+	invalid := job.Record
+	invalid.CreditsMicro = -1
+	if err := s.FinishBackgroundGeneration(ctx, id, invalid, []byte("invalid"), 200, "application/json", at); !errors.Is(err, ErrInvalidCreditCharge) {
+		t.Fatalf("账本失败应整笔回滚: %v", err)
+	}
+	stillHeld, err := s.FindBackgroundGeneration(ctx, team.ID, job.ResponseID)
+	if err != nil || stillHeld == nil || stillHeld.CompletedAt != nil || !stillHeld.AwaitingEndpointReview() {
+		t.Fatalf("结算回滚后应继续保留核对项: %+v %v", stillHeld, err)
+	}
+	// 两个改址前发出的查询相继给出终态。余额、流水与留存结果必须来自同一个获胜事务。
+	done := make(chan error, 2)
+	for charge := int64(1); charge <= 2; charge++ {
+		go func() {
+			record := job.Record
+			record.Status, record.CreditsMicro = UsageStatusOk, charge
+			body := []byte(fmt.Sprintf(`{"charge":%d}`, charge))
+			done <- s.FinishBackgroundGeneration(ctx, id, record, body, 200, "application/json", at)
+		}()
+	}
+	for range 2 {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	closed, err := s.FindBackgroundGeneration(ctx, team.ID, job.ResponseID)
+	if err != nil || closed == nil || closed.CompletedAt == nil {
+		t.Fatalf("权威终态未留存: %+v %v", closed, err)
+	}
+	usage, err := s.ListUsage(ctx, UsageFilter{TeamID: team.ID, RequestID: id})
+	if err != nil || len(usage) != 1 || usage[0].CreditsMicro < 1 || usage[0].CreditsMicro > 2 ||
+		usage[0].ProviderID != "" || fmt.Sprintf(`{"charge":%d}`, usage[0].CreditsMicro) != string(closed.FinalResponse) {
+		t.Fatalf("流水与首次留存结果不一致: %+v %s %v", usage, closed.FinalResponse, err)
+	}
+	account, err := s.GetTeam(ctx, team.ID)
+	if err != nil || account == nil || account.UsedCredits != creditMicroString(usage[0].CreditsMicro) {
+		t.Fatalf("已记流水与余额不一致: %+v %v", account, err)
+	}
+	resolved, err := s.ListPendingSettlements(ctx, PendingSettlementFilter{Status: PendingSettlementApplied})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range resolved {
+		if item.ReservationID == id {
+			return
+		}
+	}
+	t.Fatal("首次合法终态未关闭原核对项")
+}
 
 func testBackgroundUsageObservation(t *testing.T, ctx context.Context, s PlatformStore) {
 	team, user := postpaidFixture(t, ctx, s, "observed-background")
@@ -76,7 +175,9 @@ func testBackgroundUsageObservation(t *testing.T, ctx context.Context, s Platfor
 	if _, err := s.UpdateBackgroundGenerationUsage(ctx, id, invalid); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("非法观察不得入库: %v", err)
 	}
-	if err := s.FinishBackgroundGeneration(ctx, id, []byte(`{"status":"completed"}`), 200, "application/json", at); err != nil {
+	actual := again.Record
+	actual.Status = UsageStatusOk
+	if err := s.FinishBackgroundGeneration(ctx, id, actual, []byte(`{"status":"completed"}`), 200, "application/json", at); err != nil {
 		t.Fatal(err)
 	}
 	late := job.Record

@@ -989,6 +989,10 @@ func (s *failingSettleStore) SettleReservation(context.Context, string, store.Us
 	return errors.New("database unavailable")
 }
 
+func (s *failingSettleStore) FinishBackgroundGeneration(context.Context, string, store.UsageRecord, []byte, int, string, time.Time) error {
+	return errors.New("database unavailable")
+}
+
 type recordingSettlementFallback struct {
 	mu      sync.Mutex
 	records []store.UsageRecord

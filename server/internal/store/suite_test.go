@@ -51,6 +51,7 @@ func runSuite(t *testing.T, ctx context.Context, s PlatformStore) {
 	t.Run("quota-reservations", func(t *testing.T) { testReservations(t, ctx, s) })
 	t.Run("postpaid-usage", func(t *testing.T) { testPostpaidUsage(t, ctx, s) })
 	t.Run("background-usage-observation", func(t *testing.T) { testBackgroundUsageObservation(t, ctx, s) })
+	t.Run("background-endpoint-review", func(t *testing.T) { testBackgroundEndpointReview(t, ctx, s) })
 	t.Run("full-precharge-background", func(t *testing.T) { testFullPrechargeAndBackgroundJobs(t, ctx, s) })
 	t.Run("pending-settlements", func(t *testing.T) { testPendingSettlements(t, ctx, s) })
 	t.Run("upstream-routes", func(t *testing.T) { testUpstreamRoutes(t, ctx, s) })
@@ -586,6 +587,11 @@ func testPendingSettlements(t *testing.T, ctx context.Context, s PlatformStore) 
 	budget = 1
 	replayed := record
 	replayed.ReasoningEffort = "low"
+	replayed.BackgroundResponseID = "resp_from_spool"
+	if err := s.EnqueuePendingSettlement(ctx, reservationID, replayed); err != nil {
+		t.Fatal(err)
+	}
+	replayed.BackgroundResponseID = "resp_conflicting"
 	if err := s.EnqueuePendingSettlement(ctx, reservationID, replayed); err != nil {
 		t.Fatal(err)
 	}
@@ -598,7 +604,7 @@ func testPendingSettlements(t *testing.T, ctx context.Context, s PlatformStore) 
 	item := pending[0]
 	if item.ReservationID != reservationID || item.Record.RequestID != input.RequestID ||
 		item.Record.CreditsMicro != 500 || item.Record.Status != UsageStatusError ||
-		item.Record.PriceSnapshot == nil || item.Attempts != 0 ||
+		item.Record.PriceSnapshot == nil || item.Attempts != 0 || item.Record.BackgroundResponseID != "resp_from_spool" ||
 		item.Record.ReasoningEffort != "max" || item.Record.ReasoningBudgetTokens == nil || *item.Record.ReasoningBudgetTokens != 4096 {
 		t.Fatalf("待结算记录不符: %+v", item)
 	}
@@ -611,8 +617,14 @@ func testPendingSettlements(t *testing.T, ctx context.Context, s PlatformStore) 
 		t.Fatalf("待结算计数不符: %d %v", count, err)
 	}
 	next := now.Add(time.Minute)
-	if err := s.MarkPendingSettlementRetry(ctx, reservationID, 1, "db unavailable", next); err != nil {
-		t.Fatal(err)
+	if changed, err := s.RecordPendingSettlementFailure(ctx, reservationID, 0, 1, "db unavailable", &next); err != nil || !changed {
+		t.Fatalf("重试写回失败: %v %v", changed, err)
+	}
+	if changed, err := s.RecordPendingSettlementFailure(ctx, reservationID, 0, 1, "stale failure", nil); err != nil || changed {
+		t.Fatalf("旧尝试不能覆盖新版重试: %v %v", changed, err)
+	}
+	if err := s.ApplyPendingSettlement(ctx, item); !errors.Is(err, ErrPendingSettlementChanged) {
+		t.Fatalf("旧尝试不能入账: %v", err)
 	}
 	dueNow, _ := s.ListPendingSettlements(ctx, PendingSettlementFilter{
 		Status: PendingSettlementPending, DueBefore: &now,
@@ -626,8 +638,35 @@ func testPendingSettlements(t *testing.T, ctx context.Context, s PlatformStore) 
 	if len(dueLater) != 1 || dueLater[0].Attempts != 1 || dueLater[0].LastError != "db unavailable" {
 		t.Fatalf("重试状态不符: %+v", dueLater)
 	}
-	if err := s.MarkPendingSettlementApplied(ctx, reservationID, now.Add(2*time.Minute)); err != nil {
-		t.Fatal(err)
+	job := dueLater[0]
+	wrongOwner := job
+	wrongOwner.Record.RequestID = "wrong-owner-request"
+	wrongOwner.Record.UserID = newUUID()
+	if err := s.ApplyPendingSettlement(ctx, wrongOwner); !errors.Is(err, ErrReservationMismatch) {
+		t.Fatalf("错误归属应回滚补偿状态: %v", err)
+	}
+	// 两个 worker 取到相同版本，余额、流水与完成标记只能一起提交一次。
+	done := make(chan error, 2)
+	for range 2 {
+		go func() { done <- s.ApplyPendingSettlement(ctx, job) }()
+	}
+	first, second := <-done, <-done
+	if !((first == nil && errors.Is(second, ErrPendingSettlementChanged)) ||
+		(second == nil && errors.Is(first, ErrPendingSettlementChanged))) {
+		t.Fatalf("并发补偿结果错误: %v / %v", first, second)
+	}
+	for _, retryAt := range []*time.Time{nil, &next} {
+		if changed, err := s.RecordPendingSettlementFailure(ctx, reservationID, 1, 2, "late error", retryAt); err != nil || changed {
+			t.Fatalf("已入账任务不得被迟到回报覆盖: %v %v", changed, err)
+		}
+	}
+	charged, err := s.GetTeam(ctx, team.ID)
+	if err != nil || charged.UsedCredits != "0.000500" || charged.ReservedCredits != "0.000000" {
+		t.Fatalf("并发补偿应只扣一次并解除占款: %+v %v", charged, err)
+	}
+	records, err := s.ListUsage(ctx, UsageFilter{TeamID: team.ID})
+	if err != nil || len(records) != 1 || records[0].RequestID != input.RequestID || records[0].CreditsMicro != 500 {
+		t.Fatalf("并发补偿应只有一条匹配的流水: %+v %v", records, err)
 	}
 	if count, err := s.CountPendingSettlements(ctx, PendingSettlementPending); err != nil || count != 0 {
 		t.Fatalf("补偿完成后不应再有 pending: %d %v", count, err)
@@ -635,7 +674,14 @@ func testPendingSettlements(t *testing.T, ctx context.Context, s PlatformStore) 
 	applied, err := s.ListPendingSettlements(ctx, PendingSettlementFilter{
 		Status: PendingSettlementApplied, Limit: 10,
 	})
-	if err != nil || len(applied) != 1 || applied[0].Record.ReasoningEffort != "max" || applied[0].Record.ReasoningBudgetTokens == nil || *applied[0].Record.ReasoningBudgetTokens != 4096 {
+	var completed *PendingSettlementRecord
+	for i := range applied {
+		if applied[i].ReservationID == reservationID {
+			completed = &applied[i]
+			break
+		}
+	}
+	if err != nil || completed == nil || completed.Record.ReasoningEffort != "max" || completed.Record.ReasoningBudgetTokens == nil || *completed.Record.ReasoningBudgetTokens != 4096 {
 		t.Fatalf("applied 状态不符: %d %v", len(applied), err)
 	}
 	// 已完成的补偿不能被后续幂等入队重置回 pending。

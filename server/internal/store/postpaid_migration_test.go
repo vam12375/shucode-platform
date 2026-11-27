@@ -137,8 +137,8 @@ func TestPostpaidMigrationPreservesExecutionIdentity(t *testing.T) {
 	if err != nil || len(pending) != 1 || pending[0].ReservationID != activeID || pending[0].Record.CreditsMicro != actual.CreditsMicro {
 		t.Fatalf("补偿原身份和费用不能丢失: %+v %v", pending, err)
 	}
-	if pending[0].Record.ReasoningEffort != "" || pending[0].Record.ReasoningBudgetTokens != nil {
-		t.Fatalf("历史补偿不能伪造思考参数: %+v", pending[0].Record)
+	if pending[0].Record.ReasoningEffort != "" || pending[0].Record.ReasoningBudgetTokens != nil || pending[0].Record.BackgroundResponseID != "" {
+		t.Fatalf("历史补偿不能伪造思考参数或未知的上游任务号: %+v", pending[0].Record)
 	}
 	job, err := s.FindBackgroundGeneration(ctx, team.ID, "migration-response")
 	if err != nil || job == nil || job.ReservationID != activeID || job.Record.CreditsMicro != actual.CreditsMicro {

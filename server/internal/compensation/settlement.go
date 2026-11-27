@@ -69,8 +69,7 @@ func (c *SettlementCompensator) Persist(ctx context.Context, reservationID strin
 		return errors.New("结算补偿器未配置")
 	}
 	if err := c.Store.EnqueuePendingSettlement(ctx, reservationID, record); err == nil {
-		// 上一次 spool 回灌成功后可能残留同名文件；成功入库即可删除。
-		_ = c.removeSpool(reservationID)
+		// 历史文件可能带有本次记录缺少的上游任务号，只有该文件自身成功回灌后才能删除。
 		return nil
 	} else if spoolErr := c.writeSpool(reservationID, record); spoolErr != nil {
 		return fmt.Errorf("待结算表写入失败（%v），本地 spool 也失败: %w", err, spoolErr)
@@ -100,54 +99,44 @@ func (c *SettlementCompensator) Reconcile(ctx context.Context) error {
 		return errors.Join(append(errs, fmt.Errorf("读取待结算表: %w", err))...)
 	}
 	for _, item := range items {
-		// 旧版本可能把最大输出估算写入补偿；升级后不能把这些 token 当成真实用量自动实扣。
-		if reason := settlementReviewReason(item.Record); reason != "" {
-			if err := c.Store.MarkPendingSettlementFailed(ctx, item.ReservationID, item.Attempts, reason); err != nil {
-				errs = append(errs, fmt.Errorf("标记补偿待核对失败 %s: %w", item.ReservationID, err))
-			}
-			c.Logger.Warn("结算记录转人工核对，未自动扣费", "reservationId", item.ReservationID, "requestId", item.Record.RequestID)
-			continue
-		}
-		settleCtx, cancel := context.WithTimeout(ctx, settleTimeout)
-		settleErr := c.Store.SettleReservation(settleCtx, item.ReservationID, item.Record)
-		cancel()
-		if settleErr == nil || errors.Is(settleErr, store.ErrCreditChargeCapped) {
-			if err := c.Store.MarkPendingSettlementApplied(ctx, item.ReservationID, c.Now()); err != nil {
-				errs = append(errs, fmt.Errorf("标记补偿完成失败 %s: %w", item.ReservationID, err))
-			}
-			if errors.Is(settleErr, store.ErrCreditChargeCapped) {
+		attempts := item.Attempts
+		var retryAt *time.Time
+		// 未知受理或旧估算只转人工核对，不参与自动结算，也不增加实扣尝试次数。
+		reason := settlementReviewReason(item.Record)
+		if reason == "" {
+			settleCtx, cancel := context.WithTimeout(ctx, settleTimeout)
+			settleErr := c.Store.ApplyPendingSettlement(settleCtx, item)
+			cancel()
+			switch {
+			case errors.Is(settleErr, store.ErrPendingSettlementChanged):
+				continue
+			case errors.Is(settleErr, store.ErrCreditChargeCapped):
 				c.Logger.Warn("待结算补偿已按团队额度下限封顶", "reservationId", item.ReservationID, "requestId", item.Record.RequestID)
-			} else {
+				continue
+			case settleErr == nil:
 				c.Logger.Info("待结算补偿完成", "reservationId", item.ReservationID, "requestId", item.Record.RequestID)
+				continue
 			}
-			continue
-		}
-		attempts := item.Attempts + 1
-		if errors.Is(settleErr, store.ErrReservationNotFound) {
-			// 预留行已不存在（数据被清理/删除），重试不会成功，直接转人工对账。
-			if err := c.Store.MarkPendingSettlementFailed(ctx, item.ReservationID, attempts, truncateError(settleErr)); err != nil {
-				errs = append(errs, fmt.Errorf("标记补偿失败失败 %s: %w", item.ReservationID, err))
+			attempts++
+			reason = truncateError(settleErr)
+			if !errors.Is(settleErr, store.ErrReservationNotFound) && attempts < c.maxAttempts() {
+				next := c.Now().Add(c.retryDelay(attempts))
+				retryAt = &next
 			}
-			c.Logger.Error("待结算补偿的预留不存在，转人工对账",
-				"reservationId", item.ReservationID, "requestId", item.Record.RequestID)
-			continue
 		}
-		if max := c.maxAttempts(); attempts >= max {
-			if err := c.Store.MarkPendingSettlementFailed(ctx, item.ReservationID, attempts, truncateError(settleErr)); err != nil {
-				errs = append(errs, fmt.Errorf("标记补偿失败失败 %s: %w", item.ReservationID, err))
-			}
-			c.Logger.Error("待结算补偿超过重试上限，转人工对账",
-				"reservationId", item.ReservationID, "requestId", item.Record.RequestID,
-				"attempts", attempts, "error", settleErr)
-			continue
+		changed, err := c.Store.RecordPendingSettlementFailure(ctx, item.ReservationID, item.Attempts, attempts, reason, retryAt)
+		switch {
+		case err != nil:
+			errs = append(errs, fmt.Errorf("记录补偿结果失败 %s: %w", item.ReservationID, err))
+		case !changed:
+			// 另一 worker 已经入账或推进了重试版本，当前回报无效。
+		case retryAt == nil:
+			c.Logger.Warn("结算记录转人工核对", "reservationId", item.ReservationID, "requestId", item.Record.RequestID,
+				"attempts", attempts, "reason", reason)
+		default:
+			c.Logger.Warn("待结算补偿重试失败", "reservationId", item.ReservationID, "requestId", item.Record.RequestID,
+				"attempts", attempts, "nextAttemptAt", *retryAt, "reason", reason)
 		}
-		next := c.Now().Add(c.retryDelay(attempts))
-		if err := c.Store.MarkPendingSettlementRetry(ctx, item.ReservationID, attempts, truncateError(settleErr), next); err != nil {
-			errs = append(errs, fmt.Errorf("记录补偿重试失败 %s: %w", item.ReservationID, err))
-		}
-		c.Logger.Warn("待结算补偿重试失败",
-			"reservationId", item.ReservationID, "requestId", item.Record.RequestID,
-			"attempts", attempts, "nextAttemptAt", next, "error", settleErr)
 	}
 	return errors.Join(errs...)
 }
@@ -275,16 +264,16 @@ func (c *SettlementCompensator) writeSpool(reservationID string, record store.Us
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, filepath.Join(c.SpoolDir, reservationID+".json"))
-}
-
-func (c *SettlementCompensator) removeSpool(reservationID string) error {
-	if c.SpoolDir == "" {
-		return nil
-	}
-	err := os.Remove(filepath.Join(c.SpoolDir, reservationID+".json"))
-	if err != nil && !os.IsNotExist(err) {
+	// 原子保留第一份完整记录；后来的已知任务号可单独回灌到同一条数据库记录。
+	path := filepath.Join(c.SpoolDir, reservationID+".json")
+	if err := os.Link(tmpName, path); !os.IsExist(err) {
 		return err
+	}
+	if record.BackgroundResponseID != "" {
+		err := os.Link(tmpName, filepath.Join(c.SpoolDir, reservationID+".task.json"))
+		if !os.IsExist(err) {
+			return err
+		}
 	}
 	return nil
 }
@@ -307,6 +296,9 @@ func legacyEstimatedUsage(record store.UsageRecord) bool {
 }
 
 func settlementReviewReason(record store.UsageRecord) string {
+	if record.ErrorType == store.BackgroundEndpointUnverified {
+		return store.BackgroundEndpointUnverified
+	}
 	if legacyEstimatedUsage(record) {
 		return "legacy_estimated_usage_requires_review"
 	}
